@@ -1,0 +1,1883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Command Unit — Cosmos ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy:    #0F1E35;
+    --navy2:   #162640;
+    --purple:  #6C3FC5;
+    --purple2: #8B5CF6;
+    --purpleL: #EDE9FE;
+    --purpleD: #4C1D95;
+    --accent:  #F0A500;
+    --accentL: #FEF3C7;
+    --green:   #059669;
+    --greenL:  #D1FAE5;
+    --red:     #DC2626;
+    --redL:    #FEE2E2;
+    --blue:    #2563EB;
+    --blueL:   #DBEAFE;
+    --bg:      #F4F6FA;
+    --card:    #FFFFFF;
+    --border:  #E2E8F0;
+    --text1:   #0F1E35;
+    --text2:   #475569;
+    --text3:   #94A3B8;
+    --sidebar: 240px;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text1);
+    min-height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: var(--sidebar);
+    background: var(--navy);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    position: fixed;
+    left: 0; top: 0;
+    z-index: 100;
+  }
+
+  .sidebar-logo {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .sidebar-logo .cosmos {
+    font-family: 'Syne', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .sidebar-logo .module-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 800;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .module-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--purple2);
+    box-shadow: 0 0 8px var(--purple2);
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    padding: 12px 0;
+    overflow-y: auto;
+  }
+  .nav-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.25);
+    padding: 16px 20px 6px;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-radius: 0;
+    transition: all 0.15s;
+    color: rgba(255,255,255,0.55);
+    font-size: 13.5px;
+    font-weight: 400;
+    position: relative;
+    border-left: 3px solid transparent;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.85); }
+  .nav-item.active {
+    background: rgba(108,63,197,0.2);
+    color: #fff;
+    border-left-color: var(--purple2);
+    font-weight: 500;
+  }
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+  .nav-badge {
+    margin-left: auto;
+    background: var(--red);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .sidebar-user {
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .user-avatar {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--purple), var(--purple2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: #fff;
+    font-family: 'Syne', sans-serif;
+    flex-shrink: 0;
+  }
+  .user-info { flex: 1; min-width: 0; }
+  .user-name { font-size: 13px; font-weight: 500; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .user-role { font-size: 11px; color: rgba(255,255,255,0.35); }
+
+  /* ── MAIN ── */
+  .main {
+    margin-left: var(--sidebar);
+    flex: 1;
+    height: 100vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 0 28px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .topbar-breadcrumb {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--text2);
+  }
+  .topbar-breadcrumb .current { color: var(--text1); font-weight: 500; }
+  .topbar-breadcrumb .sep { color: var(--text3); }
+  .topbar-actions { display: flex; align-items: center; gap: 12px; }
+  .topbar-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 8px; border: 1.5px solid var(--border);
+    background: var(--card); font-size: 13px; font-weight: 500; cursor: pointer;
+    color: var(--text1); transition: all 0.15s; font-family: 'DM Sans', sans-serif;
+  }
+  .topbar-btn:hover { border-color: var(--purple2); color: var(--purple); }
+  .topbar-btn.primary {
+    background: var(--purple); border-color: var(--purple);
+    color: #fff;
+  }
+  .topbar-btn.primary:hover { background: var(--purpleD); border-color: var(--purpleD); }
+
+  /* ── PAGE CONTENT ── */
+  .page { display: none; padding: 28px; }
+  .page.active { display: block; }
+
+  .page-header {
+    margin-bottom: 24px;
+  }
+  .page-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px; font-weight: 800;
+    color: var(--text1); margin-bottom: 4px;
+  }
+  .page-subtitle { font-size: 13.5px; color: var(--text2); }
+
+  /* ── STATS ROW ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--accent-color, var(--purple));
+  }
+  .stat-label { font-size: 12px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .stat-value { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: var(--text1); margin-bottom: 6px; }
+  .stat-meta { font-size: 12px; color: var(--text3); display: flex; align-items: center; gap: 4px; }
+  .stat-up { color: var(--green); font-weight: 500; }
+  .stat-down { color: var(--red); font-weight: 500; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .card-title { font-size: 14px; font-weight: 600; color: var(--text1); }
+  .card-body { padding: 20px; }
+
+  /* ── TABLE ── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    background: var(--bg);
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--text2); padding: 10px 16px; text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: #F8FAFC; }
+  td { padding: 12px 16px; font-size: 13.5px; color: var(--text1); vertical-align: middle; }
+  .td-muted { color: var(--text2); font-size: 12.5px; }
+
+  /* ── BADGES ── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 9px; border-radius: 6px;
+    font-size: 11.5px; font-weight: 500; white-space: nowrap;
+  }
+  .badge-green  { background: var(--greenL); color: #065F46; }
+  .badge-red    { background: var(--redL);   color: #991B1B; }
+  .badge-purple { background: var(--purpleL); color: var(--purpleD); }
+  .badge-blue   { background: var(--blueL);  color: #1E40AF; }
+  .badge-gold   { background: var(--accentL); color: #92400E; }
+  .badge-gray   { background: #F1F5F9; color: var(--text2); }
+  .badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+  /* ── FORM ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.span2 { grid-column: span 2; }
+  .form-group.span3 { grid-column: span 3; }
+  label { font-size: 12.5px; font-weight: 500; color: var(--text1); }
+  .label-req { color: var(--red); }
+  input, select, textarea {
+    padding: 9px 12px; border: 1.5px solid var(--border);
+    border-radius: 8px; font-size: 13.5px; font-family: 'DM Sans', sans-serif;
+    color: var(--text1); background: var(--card); transition: border-color 0.15s;
+    outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--purple2); }
+  textarea { resize: vertical; min-height: 80px; }
+  .form-hint { font-size: 11.5px; color: var(--text3); }
+
+  /* ── TOGGLE ── */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-label { font-size: 13.5px; font-weight: 500; color: var(--text1); }
+  .toggle-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .toggle {
+    width: 40px; height: 22px; border-radius: 11px;
+    background: var(--border); cursor: pointer; position: relative;
+    transition: background 0.2s; flex-shrink: 0;
+  }
+  .toggle.on { background: var(--purple); }
+  .toggle::after {
+    content: ''; position: absolute;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #fff; top: 3px; left: 3px;
+    transition: left 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .toggle.on::after { left: 21px; }
+
+  /* ── GRID LAYOUTS ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  .main-side { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(15,30,53,0.5); backdrop-filter: blur(4px);
+    z-index: 200; align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--card); border-radius: 16px;
+    width: 600px; max-width: 95vw; max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.2);
+  }
+  .modal-header {
+    padding: 20px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; background: var(--card); z-index: 1;
+  }
+  .modal-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; }
+  .modal-close { cursor: pointer; font-size: 20px; color: var(--text3); line-height: 1; padding: 4px; }
+  .modal-close:hover { color: var(--text1); }
+  .modal-body { padding: 24px; }
+  .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+
+  /* ── ALERT / NOTICE ── */
+  .alert {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 14px 16px; border-radius: 10px;
+    font-size: 13.5px; margin-bottom: 20px;
+  }
+  .alert-purple { background: var(--purpleL); border: 1px solid #C4B5FD; color: var(--purpleD); }
+  .alert-gold { background: var(--accentL); border: 1px solid #FCD34D; color: #92400E; }
+  .alert-red { background: var(--redL); border: 1px solid #FCA5A5; color: #991B1B; }
+  .alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+  /* ── TABS ── */
+  .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+  .tab {
+    padding: 10px 18px; font-size: 13.5px; font-weight: 500;
+    cursor: pointer; color: var(--text2); border-bottom: 2px solid transparent;
+    margin-bottom: -2px; transition: all 0.15s;
+  }
+  .tab:hover { color: var(--text1); }
+  .tab.active { color: var(--purple); border-bottom-color: var(--purple); font-weight: 600; }
+
+  /* ── SEARCH ── */
+  .search-wrap { position: relative; }
+  .search-wrap input { padding-left: 36px; }
+  .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: 14px; }
+
+  /* ── SECTION DIVIDER ── */
+  .section-divider { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text3); margin: 24px 0 12px; }
+
+  /* ── AUDIT LOG ── */
+  .audit-item { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .audit-item:last-child { border-bottom: none; }
+  .audit-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--purple2); flex-shrink: 0; margin-top: 6px; }
+  .audit-content { flex: 1; }
+  .audit-action { font-size: 13.5px; font-weight: 500; color: var(--text1); }
+  .audit-meta { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .audit-time { font-size: 11.5px; color: var(--text3); font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+
+  /* ── PENDING CARD ── */
+  .pending-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+  }
+  .pending-item:last-child { border-bottom: none; }
+  .pending-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+  .pending-info { flex: 1; }
+  .pending-title { font-size: 13.5px; font-weight: 500; }
+  .pending-sub { font-size: 12px; color: var(--text2); }
+
+  /* ── KPI MINI ── */
+  .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .kpi-mini { background: var(--bg); border-radius: 8px; padding: 12px 14px; }
+  .kpi-mini-label { font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+  .kpi-mini-value { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: var(--text1); }
+
+  /* ── PERMISSION TABLE ── */
+  .perm-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .perm-table th { background: var(--bg); padding: 8px 12px; text-align: left; font-weight: 600; color: var(--text2); border-bottom: 1px solid var(--border); font-size: 11.5px; }
+  .perm-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  .perm-table tr:last-child td { border-bottom: none; }
+  .perm-check { color: var(--green); font-size: 15px; }
+  .perm-cross { color: var(--text3); font-size: 14px; }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  /* ── EMPTY STATE ── */
+  .empty { text-align: center; padding: 48px 20px; color: var(--text3); }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-text { font-size: 14px; }
+
+  /* ── STEP INDICATOR ── */
+  .steps { display: flex; align-items: center; gap: 0; margin-bottom: 28px; }
+  .step { display: flex; align-items: center; gap: 8px; }
+  .step-num { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--text3); }
+  .step.done .step-num { background: var(--green); border-color: var(--green); color: #fff; }
+  .step.active .step-num { background: var(--purple); border-color: var(--purple); color: #fff; }
+  .step-label { font-size: 12.5px; font-weight: 500; color: var(--text2); }
+  .step.active .step-label { color: var(--purple); }
+  .step-line { flex: 1; height: 2px; background: var(--border); margin: 0 8px; }
+  .step-line.done { background: var(--green); }
+
+  /* ── SETTINGS ROW ── */
+  .setting-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-key { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--purple); background: var(--purpleL); padding: 2px 8px; border-radius: 4px; }
+  .setting-val { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--text1); }
+
+  /* Utility */
+  .flex { display: flex; }
+  .items-center { align-items: center; }
+  .gap-2 { gap: 8px; }
+  .gap-3 { gap: 12px; }
+  .mb-4 { margin-bottom: 16px; }
+  .mb-5 { margin-bottom: 20px; }
+  .mt-4 { margin-top: 16px; }
+  .text-sm { font-size: 12.5px; }
+  .text-xs { font-size: 11.5px; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+  .fw-600 { font-weight: 600; }
+  .w-full { width: 100%; }
+  .ml-auto { margin-left: auto; }
+</style>
+</head>
+<body>
+
+<!-- ════════════ SIDEBAR ════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="cosmos">🌌 Cosmos ERP</div>
+    <div class="module-name">
+      <span>⚙️</span> Command Unit
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Overview</div>
+    <div class="nav-item active" onclick="showPage('dashboard', this)">
+      <span class="icon">⊞</span> Dashboard
+    </div>
+
+    <div class="nav-section-label">Configuration</div>
+    <div class="nav-item" onclick="showPage('stores', this)">
+      <span class="icon">🏪</span> Store Management
+    </div>
+    <div class="nav-item" onclick="showPage('users', this)">
+      <span class="icon">👤</span> User Management
+    </div>
+    <div class="nav-item" onclick="showPage('roles', this)">
+      <span class="icon">🔐</span> Roles & Permissions
+    </div>
+    <div class="nav-item" onclick="showPage('modules', this)">
+      <span class="icon">🔌</span> Module Access
+    </div>
+
+    <div class="nav-section-label">Catalogue</div>
+    <div class="nav-item" onclick="showPage('homebrands', this)">
+      <span class="icon">🏷️</span> Home Brands
+    </div>
+    <div class="nav-item" onclick="showPage('locations', this)">
+      <span class="icon">📍</span> Location Types
+    </div>
+
+    <div class="nav-section-label">Business Rules</div>
+    <div class="nav-item" onclick="showPage('settings', this)">
+      <span class="icon">⚙️</span> System Settings
+    </div>
+    <div class="nav-item" onclick="showPage('membership', this)">
+      <span class="icon">🌟</span> Membership Tiers
+    </div>
+    <div class="nav-item" onclick="showPage('leavetypes', this)">
+      <span class="icon">📅</span> Leave Types
+    </div>
+
+    <div class="nav-section-label">Foundry Masters</div>
+    <div class="nav-item" onclick="showPage('foundry-settings', this)">
+      <span class="icon">🔩</span> Foundry Settings
+    </div>
+
+    <div class="nav-section-label">Monitoring</div>
+    <div class="nav-item" onclick="showPage('audit', this)">
+      <span class="icon">📋</span> Audit Logs
+      <span class="nav-badge">12</span>
+    </div>
+
+    <div class="nav-section-label">Switch Module</div>
+    <div class="nav-item" onclick="window.location.href='/foundry.html'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
+      <span class="icon">🔩</span> Foundry (Procurement)
+    </div>
+    <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.35);font-size:12.5px">
+      <span class="icon">🚪</span> Sign Out
+    </div>
+  </nav>
+  <div class="sidebar-user">
+    <div class="user-avatar">TJ</div>
+    <div class="user-info">
+      <div class="user-name">Talha Junani</div>
+      <div class="user-role">Super Admin</div>
+    </div>
+  </div>
+</aside>
+
+<!-- ════════════ MAIN ════════════ -->
+<main class="main">
+
+  <!-- TOPBAR -->
+  <div class="topbar" id="topbar">
+    <div class="topbar-breadcrumb">
+      <span>Command Unit</span>
+      <span class="sep">›</span>
+      <span class="current" id="breadcrumb-current">Dashboard</span>
+    </div>
+    <div class="topbar-actions" id="topbar-actions">
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: DASHBOARD ═══ -->
+  <div class="page active" id="page-dashboard">
+    <div class="page-header">
+      <div class="page-title">Good morning, Talha 👋</div>
+      <div class="page-subtitle">Here's what's happening across the Eyewoot network today.</div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card" style="--accent-color:#6C3FC5">
+        <div class="stat-label">Network Revenue Today</div>
+        <div class="stat-value">₹1,84,250</div>
+        <div class="stat-meta"><span class="stat-up">↑ 12%</span> vs yesterday</div>
+      </div>
+      <div class="stat-card" style="--accent-color:#059669">
+        <div class="stat-label">Active Stores</div>
+        <div class="stat-value">14</div>
+        <div class="stat-meta">2 coming soon · 1 inactive</div>
+      </div>
+      <div class="stat-card" style="--accent-color:#F0A500">
+        <div class="stat-label">Total Active Users</div>
+        <div class="stat-value">87</div>
+        <div class="stat-meta">Across all modules</div>
+      </div>
+      <div class="stat-card" style="--accent-color:#DC2626">
+        <div class="stat-label">Pending Approvals</div>
+        <div class="stat-value">5</div>
+        <div class="stat-meta"><span class="stat-down">3 bill discrepancies</span> · 2 leaves</div>
+      </div>
+    </div>
+
+    <div class="main-side">
+      <div style="display:flex;flex-direction:column;gap:20px;">
+
+        <!-- Top SKUs -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Top SKUs Today</div>
+            <span class="badge badge-purple">Live</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>SKU</th><th>Product</th><th>Units Sold</th><th>Revenue</th><th>Stock</th></tr></thead>
+              <tbody>
+                <tr><td class="font-mono text-xs">RB-AVTR-BLKGLD</td><td>Ray-Ban Aviator Black Gold</td><td>12</td><td>₹71,400</td><td><span class="badge badge-green">In Stock</span></td></tr>
+                <tr><td class="font-mono text-xs">EWS-BOTAN-TRNBLU</td><td>EW Studio Botanica Transparent Blue</td><td>9</td><td>₹26,100</td><td><span class="badge badge-gold">Low Stock</span></td></tr>
+                <tr><td class="font-mono text-xs">TT-CLASS-SLVR</td><td>Titan Classic Silver</td><td>7</td><td>₹24,500</td><td><span class="badge badge-green">In Stock</span></td></tr>
+                <tr><td class="font-mono text-xs">EWS-CSTAL-MTTBLU</td><td>EW Studio Coastal Matte Blue</td><td>6</td><td>₹17,400</td><td><span class="badge badge-red">Out of Stock</span></td></tr>
+                <tr><td class="font-mono text-xs">WW-VTGRD-BLKGLD</td><td>WoodWear Vintage Round Black Gold</td><td>5</td><td>₹21,750</td><td><span class="badge badge-green">In Stock</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Attendance -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Attendance Rate — Network Today</div>
+            <span class="badge badge-green">86% present</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Store</th><th>Expected</th><th>Present</th><th>Late</th><th>Absent</th><th>Rate</th></tr></thead>
+              <tbody>
+                <tr><td>Surat Main</td><td>8</td><td>7</td><td>1</td><td>0</td><td><span class="badge badge-green">87.5%</span></td></tr>
+                <tr><td>Bharuch Centre</td><td>5</td><td>5</td><td>0</td><td>0</td><td><span class="badge badge-green">100%</span></td></tr>
+                <tr><td>Vadodara Mall</td><td>6</td><td>4</td><td>2</td><td>0</td><td><span class="badge badge-gold">66.7%</span></td></tr>
+                <tr><td>Anand</td><td>4</td><td>4</td><td>0</td><td>0</td><td><span class="badge badge-green">100%</span></td></tr>
+                <tr><td>Navsari</td><td>4</td><td>3</td><td>0</td><td>1</td><td><span class="badge badge-gold">75%</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right column -->
+      <div style="display:flex;flex-direction:column;gap:20px;">
+
+        <!-- Pending Approvals -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Pending Approvals</div>
+            <span class="badge badge-red">5</span>
+          </div>
+          <div class="card-body">
+            <div class="pending-item">
+              <div class="pending-icon" style="background:#FEE2E2">🧾</div>
+              <div class="pending-info">
+                <div class="pending-title">Bill Discrepancy — ₹340</div>
+                <div class="pending-sub">Optics Bazaar · Surat Main · 2h ago</div>
+              </div>
+              <button class="topbar-btn primary" style="padding:5px 10px;font-size:12px">Review</button>
+            </div>
+            <div class="pending-item">
+              <div class="pending-icon" style="background:#FEE2E2">🧾</div>
+              <div class="pending-info">
+                <div class="pending-title">Bill Discrepancy — ₹120</div>
+                <div class="pending-sub">Vision Mart · Bharuch · 4h ago</div>
+              </div>
+              <button class="topbar-btn primary" style="padding:5px 10px;font-size:12px">Review</button>
+            </div>
+            <div class="pending-item">
+              <div class="pending-icon" style="background:#FEE2E2">🧾</div>
+              <div class="pending-info">
+                <div class="pending-title">Bill Discrepancy — ₹80</div>
+                <div class="pending-sub">ABC Optics · Vadodara · 5h ago</div>
+              </div>
+              <button class="topbar-btn primary" style="padding:5px 10px;font-size:12px">Review</button>
+            </div>
+            <div class="pending-item">
+              <div class="pending-icon" style="background:#DBEAFE">📅</div>
+              <div class="pending-info">
+                <div class="pending-title">Leave Request — Rahul Shah</div>
+                <div class="pending-sub">Casual Leave · 2 days · Surat Main</div>
+              </div>
+              <button class="topbar-btn" style="padding:5px 10px;font-size:12px">View</button>
+            </div>
+            <div class="pending-item">
+              <div class="pending-icon" style="background:#DBEAFE">📅</div>
+              <div class="pending-info">
+                <div class="pending-title">Leave Request — Priya Mehta</div>
+                <div class="pending-sub">Sick Leave · 1 day · Bharuch</div>
+              </div>
+              <button class="topbar-btn" style="padding:5px 10px;font-size:12px">View</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Audit -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Recent Audit Activity</div>
+            <span class="badge badge-gray" onclick="showPage('audit', document.querySelector('[onclick*=audit]'))" style="cursor:pointer">View all →</span>
+          </div>
+          <div class="card-body">
+            <div class="audit-item">
+              <div class="audit-dot"></div>
+              <div class="audit-content">
+                <div class="audit-action">Purchase registered — EW Studio Botanica</div>
+                <div class="audit-meta">Procurement Mgr · Surat Main</div>
+              </div>
+              <div class="audit-time">09:42</div>
+            </div>
+            <div class="audit-item">
+              <div class="audit-dot" style="background:var(--red)"></div>
+              <div class="audit-content">
+                <div class="audit-action">Bill discrepancy flagged — ₹340</div>
+                <div class="audit-meta">System · Foundry</div>
+              </div>
+              <div class="audit-time">09:38</div>
+            </div>
+            <div class="audit-item">
+              <div class="audit-dot" style="background:var(--green)"></div>
+              <div class="audit-content">
+                <div class="audit-action">New store activated — Anand</div>
+                <div class="audit-meta">Talha Junani · Command Unit</div>
+              </div>
+              <div class="audit-time">08:15</div>
+            </div>
+            <div class="audit-item">
+              <div class="audit-dot"></div>
+              <div class="audit-content">
+                <div class="audit-action">User created — Meera Patel (Store Mgr)</div>
+                <div class="audit-meta">HR Admin · Army</div>
+              </div>
+              <div class="audit-time">07:55</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: STORES ═══ -->
+  <div class="page" id="page-stores">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Store Management</div>
+        <div class="page-subtitle">14 active stores · 2 coming soon · 1 inactive</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-store')">+ Add Store</button>
+    </div>
+
+    <div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="stat-card" style="--accent-color:#059669"><div class="stat-label">Active</div><div class="stat-value">14</div></div>
+      <div class="stat-card" style="--accent-color:#F0A500"><div class="stat-label">Coming Soon</div><div class="stat-value">2</div></div>
+      <div class="stat-card" style="--accent-color:#94A3B8"><div class="stat-label">Inactive</div><div class="stat-value">1</div></div>
+      <div class="stat-card" style="--accent-color:#6C3FC5"><div class="stat-label">Total</div><div class="stat-value">17</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="flex items-center gap-3" style="flex:1;gap:12px">
+          <div class="search-wrap" style="flex:1;max-width:320px">
+            <span class="search-icon">🔍</span>
+            <input id="store-search" type="text" placeholder="Search stores..." style="width:100%">
+          </div>
+          <select id="store-filter-format" style="min-width:140px">
+            <option value="">All Formats</option>
+            <option value="Eyewoot-Owned">Eyewoot-Owned</option>
+            <option value="Franchise">Franchise</option>
+            <option value="Kiosk / Pop-up">Kiosk / Pop-up</option>
+            <option value="Online / D2C">Online / D2C</option>
+          </select>
+          <select id="store-filter-status" style="min-width:130px">
+            <option value="">All Statuses</option>
+            <option value="ACTIVE">Active</option>
+            <option value="COMING_SOON">Coming Soon</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Store</th><th>Code</th><th>Format</th><th>City</th><th>GSTIN</th><th>Modules</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="fw-600">Eyewoot Surat Main</div><div class="td-muted">Ring Road, Surat</div></td>
+              <td class="font-mono text-xs">EW-SRT-01</td>
+              <td><span class="badge badge-purple">Eyewoot-Owned</span></td>
+              <td>Surat, GJ</td>
+              <td class="font-mono text-xs">24AABCE1234F1Z5</td>
+              <td><span class="badge badge-green">All 6</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px" onclick="openModal('modal-store-detail')">Edit</button></td>
+            </tr>
+            <tr>
+              <td><div class="fw-600">Franchise — Bharuch Centre</div><div class="td-muted">Station Road, Bharuch</div></td>
+              <td class="font-mono text-xs">EW-BRC-01</td>
+              <td><span class="badge badge-blue">Franchise</span></td>
+              <td>Bharuch, GJ</td>
+              <td class="font-mono text-xs">24BBBCE5678F1Z2</td>
+              <td><span class="badge badge-blue">POS · Foundry · Army</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
+            </tr>
+            <tr>
+              <td><div class="fw-600">Franchise — Vadodara Mall</div><div class="td-muted">Inorbit Mall, Vadodara</div></td>
+              <td class="font-mono text-xs">EW-VDR-01</td>
+              <td><span class="badge badge-blue">Franchise</span></td>
+              <td>Vadodara, GJ</td>
+              <td class="font-mono text-xs">24CCCCE9012F1Z8</td>
+              <td><span class="badge badge-blue">POS · Foundry · Army</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
+            </tr>
+            <tr>
+              <td><div class="fw-600">Eyewoot Anand</div><div class="td-muted">Anand-Vidyanagar Road</div></td>
+              <td class="font-mono text-xs">EW-AND-01</td>
+              <td><span class="badge badge-purple">Eyewoot-Owned</span></td>
+              <td>Anand, GJ</td>
+              <td class="font-mono text-xs">24DDDCE3456F1Z1</td>
+              <td><span class="badge badge-green">All 6</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
+            </tr>
+            <tr>
+              <td><div class="fw-600">Kiosk — Amroli</div><div class="td-muted">Amroli Arcade, Surat</div></td>
+              <td class="font-mono text-xs">EW-SRT-K1</td>
+              <td><span class="badge badge-gold">Kiosk / Pop-up</span></td>
+              <td>Surat, GJ</td>
+              <td class="font-mono text-xs">24AABCE1234F1Z5</td>
+              <td><span class="badge badge-gray">POS only</span></td>
+              <td><span class="badge badge-gold"><span class="badge-dot"></span>Coming Soon</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
+            </tr>
+            <tr>
+              <td><div class="fw-600">Eyewoot Go — D2C Online</div><div class="td-muted">Virtual · HQ operated</div></td>
+              <td class="font-mono text-xs">EW-D2C-01</td>
+              <td><span class="badge badge-gray">Online / D2C</span></td>
+              <td>— (HQ)</td>
+              <td class="font-mono text-xs">24AABCE1234F1Z5</td>
+              <td><span class="badge badge-gray">Foundry · Go</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: USERS ═══ -->
+  <div class="page" id="page-users">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">User Management</div>
+        <div class="page-subtitle">Core Users only — Super Admin and HR Admin accounts</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-user')">+ Add Core User</button>
+    </div>
+
+    <div class="alert alert-purple">
+      <span class="alert-icon">ℹ️</span>
+      <div><strong>Scope:</strong> Command Unit manages Super Admin and HR Admin accounts only. All store staff (Store Managers, Cashiers, Optometrists, etc.) are created and managed by HR in Army.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="flex items-center" style="gap:12px;flex:1">
+          <div class="search-wrap" style="flex:1;max-width:300px">
+            <span class="search-icon">🔍</span>
+            <input type="text" placeholder="Search users...">
+          </div>
+          <select style="min-width:150px">
+            <option>All Roles</option>
+            <option>Super Admin</option>
+            <option>HR Admin</option>
+          </select>
+          <select style="min-width:130px">
+            <option>All Statuses</option>
+            <option>Active</option>
+            <option>Inactive</option>
+            <option>Suspended</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>User</th><th>Phone</th><th>Email</th><th>Role</th><th>Last Login</th><th>Status</th><th></th></tr></thead>
+          <tbody id="users-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: ROLES ═══ -->
+  <div class="page" id="page-roles">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Roles & Permissions</div>
+        <div class="page-subtitle">Data-driven RBAC — no code changes needed to add or edit roles</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-role')">+ Add Role</button>
+    </div>
+
+    <div class="two-col">
+      <!-- Role list -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">All Roles</div></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Role</th><th>Level</th><th>Scope</th><th>Status</th><th style="min-width:130px"></th></tr></thead>
+            <tbody id="roles-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Permissions detail -->
+      <div class="card" id="role-detail-panel">
+        <div class="card-header"><div class="card-title" id="role-detail-title">Select a role to view permissions</div></div>
+        <div class="card-body" id="role-detail-body">
+          <div class="empty"><div class="empty-icon">🔐</div><div class="empty-text">Click "View" on any role to see its permissions matrix</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: MODULE ACCESS ═══ -->
+  <div class="page" id="page-modules">
+    <div class="page-header">
+      <div class="page-title">Module Access Control</div>
+      <div class="page-subtitle">Enable or disable Cosmos modules per user. Changes take effect on next login.</div>
+    </div>
+
+    <div class="alert alert-gold">
+      <span class="alert-icon">⚠️</span>
+      <div>Disabling a module for a user will immediately block them from accessing it. Active sessions are not terminated — module is hidden on next page load.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Module Toggles by User</div>
+        <select id="module-user-select" style="min-width:240px" onchange="loadModuleAccess()">
+          <option value="">— Select a user —</option>
+        </select>
+        <button class="topbar-btn primary" style="margin-left:12px;font-size:12px" id="save-modules-btn" onclick="saveModuleChanges()" disabled>Save Changes</button>
+      </div>
+      <div class="card-body" id="module-toggles-body">
+        <div class="empty"><div class="empty-icon">👤</div><div class="empty-text">Select a user to manage their module access</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: HOME BRANDS ═══ -->
+  <div class="page" id="page-homebrands">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Home Brand Management</div>
+        <div class="page-subtitle">Eyewoot's private label brands — used in Foundry procurement for local supplier products</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-brand')">+ Add Home Brand</button>
+    </div>
+
+    <div class="alert alert-purple">
+      <span class="alert-icon">🔒</span>
+      <div>Home Brands are Eyewoot's public-facing brand identity for private label products. The real supplier's name is <strong>never</strong> shown publicly. Brand Codes are immutable once SKUs have been generated under them.</div>
+    </div>
+
+    <div class="three-col">
+      <div class="card">
+        <div style="padding:20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+          <div style="width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,#6C3FC5,#8B5CF6);display:flex;align-items:center;justify-content:center;font-size:20px">👓</div>
+          <div><div class="fw-600" style="font-size:15px">EW Studio</div><div class="td-muted font-mono" style="font-size:11px">EWS</div></div>
+          <span class="badge badge-green ml-auto">Active</span>
+        </div>
+        <div class="card-body">
+          <div class="td-muted text-sm mb-4">Premium private label frames. Positioned as Eyewoot's flagship home brand.</div>
+          <div class="flex items-center gap-2"><span class="text-xs td-muted">SKUs generated:</span><span class="badge badge-purple font-mono">142</span></div>
+        </div>
+        <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px">
+          <button class="topbar-btn" style="flex:1;justify-content:center;font-size:12px">Edit</button>
+          <button class="topbar-btn" style="flex:1;justify-content:center;font-size:12px;color:var(--text3)" disabled>Deactivate</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="padding:20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+          <div style="width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,#059669,#10B981);display:flex;align-items:center;justify-content:center;font-size:20px">🏃</div>
+          <div><div class="fw-600" style="font-size:15px">EW Sport</div><div class="td-muted font-mono" style="font-size:11px">EWSP</div></div>
+          <span class="badge badge-green ml-auto">Active</span>
+        </div>
+        <div class="card-body">
+          <div class="td-muted text-sm mb-4">Sports and active lifestyle frames. Lightweight, impact-resistant designs.</div>
+          <div class="flex items-center gap-2"><span class="text-xs td-muted">SKUs generated:</span><span class="badge badge-purple font-mono">38</span></div>
+        </div>
+        <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px">
+          <button class="topbar-btn" style="flex:1;justify-content:center;font-size:12px">Edit</button>
+          <button class="topbar-btn" style="flex:1;justify-content:center;font-size:12px" onclick="openModal('modal-deactivate')">Deactivate</button>
+        </div>
+      </div>
+
+      <div class="card" style="border:2px dashed var(--border);background:transparent;display:flex;align-items:center;justify-content:center;min-height:180px;cursor:pointer" onclick="openModal('modal-new-brand')">
+        <div style="text-align:center;color:var(--text3)">
+          <div style="font-size:32px;margin-bottom:8px">+</div>
+          <div style="font-size:13.5px;font-weight:500">Add Home Brand</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: LOCATION TYPES ═══ -->
+  <div class="page" id="page-locations">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Location Type Configuration</div>
+        <div class="page-subtitle">Define stock location types for the SKU Stock Distribution View. New types added here — no code change needed.</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-location')">+ Add Location Type</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Type Key</th><th>Display Name</th><th>Icon</th><th>Visible To Roles</th><th>Scope</th><th>Built-in</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="font-mono text-xs">WAREHOUSE</td><td>HQ Warehouse</td><td>🏭</td>
+              <td class="td-muted text-xs">Super Admin, Procurement Mgr, Store Manager (read)</td>
+              <td><span class="badge badge-purple">All</span></td>
+              <td><span class="badge badge-gray">Built-in</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px;opacity:0.4" disabled>Edit</button></td>
+            </tr>
+            <tr>
+              <td class="font-mono text-xs">AT_STORE</td><td>Store</td><td>🏪</td>
+              <td class="td-muted text-xs">Super Admin, Store Manager (own), Franchise Owner (own)</td>
+              <td><span class="badge badge-blue">Own</span></td>
+              <td><span class="badge badge-gray">Built-in</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px;opacity:0.4" disabled>Edit</button></td>
+            </tr>
+            <tr>
+              <td class="font-mono text-xs">IN_TRANSIT</td><td>In Transit</td><td>🚚</td>
+              <td class="td-muted text-xs">Super Admin, Store Manager, Procurement Mgr</td>
+              <td><span class="badge badge-purple">All</span></td>
+              <td><span class="badge badge-gray">Built-in</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px;opacity:0.4" disabled>Edit</button></td>
+            </tr>
+            <tr>
+              <td class="font-mono text-xs">PROMOTER_RESERVED</td><td>Promoter Reserved</td><td>🤝</td>
+              <td class="td-muted text-xs">Super Admin only</td>
+              <td><span class="badge badge-purple">All</span></td>
+              <td><span class="badge badge-gray">Built-in</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px;opacity:0.4" disabled>Edit</button></td>
+            </tr>
+            <tr>
+              <td class="font-mono text-xs">ONLINE_RESERVED</td><td>Online Reserved (D2C)</td><td>📦</td>
+              <td class="td-muted text-xs">Super Admin only</td>
+              <td><span class="badge badge-purple">All</span></td>
+              <td><span class="badge badge-gray">Built-in</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px;opacity:0.4" disabled>Edit</button></td>
+            </tr>
+            <tr>
+              <td class="font-mono text-xs">KIOSK</td><td>Kiosk</td><td>🛒</td>
+              <td class="td-muted text-xs">Super Admin, Store Manager (own)</td>
+              <td><span class="badge badge-blue">Own</span></td>
+              <td><span class="badge badge-purple">Custom</span></td>
+              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
+              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: SYSTEM SETTINGS ═══ -->
+  <div class="page" id="page-settings">
+    <div class="page-header">
+      <div class="page-title">System Settings</div>
+      <div class="page-subtitle">Global business rules — changes apply immediately across all modules. All rates read at runtime — no app update required.</div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab(this,'tab-gst')">GST Rates</div>
+      <div class="tab" onclick="switchTab(this,'tab-performance')">Performance Weights</div>
+      <div class="tab" onclick="switchTab(this,'tab-loyalty')">Loyalty Rules</div>
+      <div class="tab" onclick="switchTab(this,'tab-promoter')">Promoter Commission</div>
+      <div class="tab" onclick="switchTab(this,'tab-misc')">Miscellaneous</div>
+    </div>
+
+    <div id="tab-gst">
+      <div class="card">
+        <div class="card-header"><div class="card-title">GST Rates by HSN / SAC Code</div><button class="topbar-btn primary" style="font-size:12px" onclick="openNewGstModal()">+ Add Rate</button></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>HSN / SAC</th><th>Category</th><th>GST Rate</th><th>CGST</th><th>SGST</th><th>Applied To</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="font-mono text-xs">9004</td><td>Spectacle / Sunglasses Frames</td><td class="fw-600">12%</td><td class="td-muted">6%</td><td class="td-muted">6%</td><td class="td-muted text-xs">All frame SKUs at POS + Foundry</td><td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td></tr>
+              <tr><td class="font-mono text-xs">SAC 9985</td><td>Lens Services (SV, Bifocal, Progressive)</td><td class="fw-600">18%</td><td class="td-muted">9%</td><td class="td-muted">9%</td><td class="td-muted text-xs">All lens service SKUs at POS</td><td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td></tr>
+              <tr><td class="font-mono text-xs">SAC 9985</td><td>Eye Test / Consultation</td><td class="fw-600">18%</td><td class="td-muted">9%</td><td class="td-muted">9%</td><td class="td-muted text-xs">Eye test service SKUs at POS</td><td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td></tr>
+              <tr><td class="font-mono text-xs">8714</td><td>Accessories (cases, cords)</td><td class="fw-600">12%</td><td class="td-muted">6%</td><td class="td-muted">6%</td><td class="td-muted text-xs">Accessory SKUs at POS</td><td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-performance" style="display:none">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Performance Score Weights — Army Module</div><button class="topbar-btn primary" style="font-size:12px">Save Changes</button></div>
+        <div class="card-body">
+          <div class="alert alert-gold"><span class="alert-icon">⚠️</span><div>Weights must sum to 100%. Changes apply to the next month's performance calculations.</div></div>
+          <div class="form-grid">
+            <div class="form-group"><label>Sales Performance <span class="font-mono" style="color:var(--purple);font-size:11px">POS data</span></label><input type="number" value="35"><div class="form-hint">% — Compared against store average and personal target</div></div>
+            <div class="form-group"><label>Attendance <span class="font-mono" style="color:var(--purple);font-size:11px">GPS + selfie</span></label><input type="number" value="25"><div class="form-hint">% — Late arrivals and absences reduce this score</div></div>
+            <div class="form-group"><label>Manager Rating <span class="font-mono" style="color:var(--purple);font-size:11px">Monthly 1–5</span></label><input type="number" value="20"><div class="form-hint">% — Mandatory monthly submission by Store Manager</div></div>
+            <div class="form-group"><label>Task Completion <span class="font-mono" style="color:var(--purple);font-size:11px">Army tasks</span></label><input type="number" value="10"><div class="form-hint">% — Assigned vs completed with proof</div></div>
+            <div class="form-group"><label>Training Completion <span class="font-mono" style="color:var(--purple);font-size:11px">Army training</span></label><input type="number" value="10"><div class="form-hint">% — Modules assigned and completed this month</div></div>
+            <div class="form-group"><label>Total</label><input type="number" value="100" style="border-color:var(--green);font-weight:600" readonly></div>
+          </div>
+          <div class="section-divider">Incentive Tiers</div>
+          <div class="form-grid-3">
+            <div class="form-group"><label>Elite Tier — Min Score</label><input type="number" value="90"></div>
+            <div class="form-group"><label>Elite Bonus %</label><input type="number" value="20"></div>
+            <div class="form-group" style="visibility:hidden"></div>
+            <div class="form-group"><label>Strong Tier — Min Score</label><input type="number" value="75"></div>
+            <div class="form-group"><label>Strong Bonus %</label><input type="number" value="10"></div>
+            <div class="form-group" style="visibility:hidden"></div>
+            <div class="form-group"><label>Good Tier — Min Score</label><input type="number" value="60"></div>
+            <div class="form-group"><label>Good Bonus %</label><input type="number" value="5"></div>
+            <div class="form-group" style="visibility:hidden"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-loyalty" style="display:none">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Loyalty Points Rules</div><button class="topbar-btn primary" style="font-size:12px">Save Changes</button></div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="form-group"><label>Points Earned per ₹10 Spent</label><input type="number" value="1"><div class="form-hint">e.g. 1 point per ₹10 = 0.1 points per rupee</div></div>
+            <div class="form-group"><label>Points Required for ₹1 Discount</label><input type="number" value="10"><div class="form-hint">10 points = ₹1 at POS redemption</div></div>
+            <div class="form-group"><label>Minimum Points to Redeem</label><input type="number" value="100"></div>
+            <div class="form-group"><label>Points Expiry (months)</label><input type="number" value="12"><div class="form-hint">0 = points never expire</div></div>
+          </div>
+          <div class="section-divider">Tier Thresholds</div>
+          <div class="form-grid-3">
+            <div class="form-group"><label>🥉 Bronze — From (points)</label><input type="number" value="0"></div>
+            <div class="form-group"><label>🥈 Silver — From (points)</label><input type="number" value="1000"></div>
+            <div class="form-group"><label>🥇 Gold — From (points)</label><input type="number" value="5000"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-promoter" style="display:none">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Promoter Commission Settings</div><button class="topbar-btn primary" style="font-size:12px">Save Changes</button></div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="form-group"><label>Referral Commission Rate</label><input type="text" value="5%"><div class="form-hint">% of sale value when referred customer completes a purchase</div></div>
+            <div class="form-group"><label>D2C Commission Rate</label><input type="text" value="7%"><div class="form-hint">% of order value via Promoter catalogue link</div></div>
+            <div class="form-group"><label>Direct Sale Commission Rate</label><input type="text" value="8%"><div class="form-hint">% when Promoter places a direct order on behalf of customer</div></div>
+            <div class="form-group"><label>Payout Cycle</label><select><option>Monthly</option><option>Weekly</option></select></div>
+            <div class="form-group"><label>Minimum Payout Threshold (₹)</label><input type="number" value="500"></div>
+            <div class="form-group"><label>Bill Discrepancy Threshold (₹)</label><input type="number" value="50"><div class="form-hint">Beyond this — Super Admin approval required</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-misc" style="display:none">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Miscellaneous Settings</div></div>
+        <div class="card-body">
+          <div class="setting-row"><div><div class="fw-600 text-sm">Army Attendance Radius</div><div class="td-muted text-xs">GPS validation radius from store coordinates</div></div><div><input type="number" value="100" style="width:100px"> m</div></div>
+          <div class="setting-row"><div><div class="fw-600 text-sm">Rx Validity Period</div><div class="td-muted text-xs">Months before a prescription is considered stale</div></div><div><input type="number" value="12" style="width:100px"> months</div></div>
+          <div class="setting-row"><div><div class="fw-600 text-sm">Slow Mover Alert Threshold</div><div class="td-muted text-xs">Days without a sale before SKU is flagged as slow mover</div></div><div><input type="number" value="30" style="width:100px"> days</div></div>
+          <div class="setting-row"><div><div class="fw-600 text-sm">Low Stock Reorder Threshold</div><div class="td-muted text-xs">Default minimum units at warehouse before alert fires</div></div><div><input type="number" value="5" style="width:100px"> units</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: MEMBERSHIP ═══ -->
+  <div class="page" id="page-membership">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Membership Tiers</div>
+        <div class="page-subtitle">Eyewoot membership plans — sold by Promoters and on Eyewoot Go</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-membership')">+ Add Tier</button>
+    </div>
+    <div class="three-col">
+      <div class="card">
+        <div style="padding:20px;background:linear-gradient(135deg,#F5F5F5,#E2E8F0);border-bottom:1px solid var(--border)">
+          <div style="font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--text2);margin-bottom:6px">🥈 Silver</div>
+          <div style="font-family:'Syne',sans-serif;font-size:24px;font-weight:800">₹499 <span style="font-size:14px;font-weight:400;color:var(--text2)">/year</span></div>
+        </div>
+        <div class="card-body">
+          <div class="td-muted text-sm mb-4">10% discount on frames · Priority appointments · Free lens cleaning kit</div>
+          <div class="flex items-center gap-2 mb-4"><span class="text-xs td-muted">Promoter commission:</span><span class="badge badge-gold">₹50 / sale</span></div>
+          <div class="flex items-center gap-2"><span class="text-xs td-muted">Loyalty tier upgrade:</span><span class="badge badge-blue">→ Silver tier</span></div>
+        </div>
+        <div style="padding:12px 20px;border-top:1px solid var(--border)"><button class="topbar-btn w-full" style="justify-content:center;font-size:12px">Edit</button></div>
+      </div>
+      <div class="card">
+        <div style="padding:20px;background:linear-gradient(135deg,#FDF2DC,#FDE68A);border-bottom:1px solid var(--border)">
+          <div style="font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#92400E;margin-bottom:6px">🥇 Gold</div>
+          <div style="font-family:'Syne',sans-serif;font-size:24px;font-weight:800">₹999 <span style="font-size:14px;font-weight:400;color:#92400E">/year</span></div>
+        </div>
+        <div class="card-body">
+          <div class="td-muted text-sm mb-4">20% discount on frames · Premium lens upgrade · Free annual eye test · Priority support</div>
+          <div class="flex items-center gap-2 mb-4"><span class="text-xs td-muted">Promoter commission:</span><span class="badge badge-gold">₹100 / sale</span></div>
+          <div class="flex items-center gap-2"><span class="text-xs td-muted">Loyalty tier upgrade:</span><span class="badge badge-gold">→ Gold tier</span></div>
+        </div>
+        <div style="padding:12px 20px;border-top:1px solid var(--border)"><button class="topbar-btn w-full" style="justify-content:center;font-size:12px">Edit</button></div>
+      </div>
+      <div class="card" style="border:2px dashed var(--border);background:transparent;display:flex;align-items:center;justify-content:center;min-height:200px;cursor:pointer" onclick="openModal('modal-new-membership')">
+        <div style="text-align:center;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">+</div><div style="font-size:13.5px;font-weight:500">Add Tier</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: LEAVE TYPES ═══ -->
+  <div class="page" id="page-leavetypes">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Leave Types</div>
+        <div class="page-subtitle">HR leave types — read by Army attendance and performance modules</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-leave')">+ Add Leave Type</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Leave Type</th><th>Annual Quota</th><th>Carry Forward</th><th>Requires Approval</th><th>Affects Score</th><th>Paid</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="fw-600">Casual Leave</td><td>12 days</td><td><span class="badge badge-green">Yes — max 6</span></td><td><span class="badge badge-gold">Yes</span></td><td><span class="badge badge-red">Yes</span></td><td><span class="badge badge-green">Paid</span></td><td><span class="badge badge-green">Active</span></td><td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td></tr>
+            <tr><td class="fw-600">Sick Leave</td><td>6 days</td><td><span class="badge badge-gray">No</span></td><td><span class="badge badge-gray">No</span></td><td><span class="badge badge-gray">No</span></td><td><span class="badge badge-green">Paid</span></td><td><span class="badge badge-green">Active</span></td><td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td></tr>
+            <tr><td class="fw-600">Earned Leave</td><td>15 days</td><td><span class="badge badge-green">Yes — max 15</span></td><td><span class="badge badge-gold">Yes</span></td><td><span class="badge badge-red">Yes</span></td><td><span class="badge badge-green">Paid</span></td><td><span class="badge badge-green">Active</span></td><td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td></tr>
+            <tr><td class="fw-600">Maternity Leave</td><td>90 days</td><td><span class="badge badge-gray">No</span></td><td><span class="badge badge-gold">Yes</span></td><td><span class="badge badge-gray">No</span></td><td><span class="badge badge-green">Paid</span></td><td><span class="badge badge-green">Active</span></td><td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td></tr>
+            <tr><td class="fw-600">Unpaid Leave</td><td>— (no quota)</td><td><span class="badge badge-gray">No</span></td><td><span class="badge badge-gold">Yes</span></td><td><span class="badge badge-red">Yes</span></td><td><span class="badge badge-red">Unpaid</span></td><td><span class="badge badge-green">Active</span></td><td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: FOUNDRY SETTINGS ═══ -->
+  <div class="page" id="page-foundry-settings">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Foundry Settings</div>
+        <div class="page-subtitle">Master data for all Foundry form dropdowns — changes populate immediately in Foundry forms</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" id="foundry-add-value-btn">+ Add Value</button>
+    </div>
+
+    <div class="alert alert-blue" style="margin-bottom:16px">
+      <span class="alert-icon">ℹ️</span>
+      <div>Select a lookup type below to view, add, edit or disable its values. These values appear as dropdown options in the Foundry procurement forms.</div>
+    </div>
+
+    <!-- Lookup Type Tabs -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px" id="foundry-lookup-tabs"></div>
+
+    <!-- Values Table -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title" id="foundry-lookup-type-title">Select a lookup type above</div>
+        <div class="td-muted text-xs" id="foundry-lookup-type-desc"></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Key (Internal)</th>
+              <th>Label (Displayed in forms)</th>
+              <th>Description / Use Case</th>
+              <th>Order</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="foundry-lookup-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: AUDIT LOGS ═══ -->
+  <div class="page" id="page-audit">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Audit Logs</div>
+        <div class="page-subtitle">Every action across all 6 Cosmos modules — append-only, never deletable</div>
+      </div>
+      <button class="topbar-btn ml-auto">⬇ Export CSV</button>
+    </div>
+
+    <div class="card mb-5">
+      <div class="card-header">
+        <div class="flex items-center" style="gap:12px;flex:1;flex-wrap:wrap">
+          <div class="search-wrap" style="flex:1;min-width:200px">
+            <span class="search-icon">🔍</span>
+            <input type="text" placeholder="Search logs...">
+          </div>
+          <select style="min-width:140px"><option>All Modules</option><option>Command Unit</option><option>Foundry</option><option>Store OS</option><option>Army</option><option>Eyewoot Go</option><option>Promoter</option></select>
+          <select style="min-width:140px"><option>All Actions</option><option>CREATE</option><option>UPDATE</option><option>DELETE</option><option>LOGIN</option><option>BYPASS</option><option>APPROVE</option><option>REJECT</option><option>EXPORT</option></select>
+          <input type="date" style="min-width:140px">
+          <input type="date" style="min-width:140px">
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Timestamp</th><th>Module</th><th>Action</th><th>Table</th><th>User</th><th>Store</th><th>Notes</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="font-mono text-xs" style="white-space:nowrap">09:42:11</td>
+              <td><span class="badge badge-blue">Foundry</span></td>
+              <td><span class="badge badge-green">CREATE</span></td>
+              <td class="font-mono text-xs">purchases</td>
+              <td class="text-sm">Arjun Mehta</td>
+              <td class="td-muted text-xs">Surat Main</td>
+              <td class="td-muted text-xs">EW Studio Botanica — 200 units</td>
+              <td><button class="topbar-btn" style="padding:4px 8px;font-size:11px">Detail</button></td>
+            </tr>
+            <tr>
+              <td class="font-mono text-xs" style="white-space:nowrap">09:38:05</td>
+              <td><span class="badge badge-blue">Foundry</span></td>
+              <td><span class="badge badge-red">BYPASS</span></td>
+              <td class="font-mono text-xs">branding_jobs</td>
+              <td class="text-sm">Arjun Mehta</td>
+              <td class="td-muted text-xs">Surat Main</td>
+              <td class="td-muted text-xs">Bill discrepancy ₹340 — awaiting approval</td>
+              <td><button class="topbar-btn" style="padding:4px 8px;font-size:11px">Detail</button></td>
+            </tr>
+            <tr>
+              <td class="font-mono text-xs" style="white-space:nowrap">08:15:33</td>
+              <td><span class="badge badge-purple">Command Unit</span></td>
+              <td><span class="badge badge-gold">UPDATE</span></td>
+              <td class="font-mono text-xs">stores</td>
+              <td class="text-sm">Talha Junani</td>
+              <td class="td-muted text-xs">HQ</td>
+              <td class="td-muted text-xs">Store status: coming_soon → active</td>
+              <td><button class="topbar-btn" style="padding:4px 8px;font-size:11px">Detail</button></td>
+            </tr>
+            <tr>
+              <td class="font-mono text-xs" style="white-space:nowrap">07:55:18</td>
+              <td><span class="badge badge-gold">Army</span></td>
+              <td><span class="badge badge-green">CREATE</span></td>
+              <td class="font-mono text-xs">users</td>
+              <td class="text-sm">Nisha Patel</td>
+              <td class="td-muted text-xs">HQ</td>
+              <td class="td-muted text-xs">New store manager — Meera Patel, Anand store</td>
+              <td><button class="topbar-btn" style="padding:4px 8px;font-size:11px">Detail</button></td>
+            </tr>
+            <tr>
+              <td class="font-mono text-xs" style="white-space:nowrap">07:30:04</td>
+              <td><span class="badge badge-gray">Store OS</span></td>
+              <td><span class="badge badge-red">VOID</span></td>
+              <td class="font-mono text-xs">sales</td>
+              <td class="text-sm">Karan Shah</td>
+              <td class="td-muted text-xs">Bharuch</td>
+              <td class="td-muted text-xs">Sale voided — customer changed mind before leaving</td>
+              <td><button class="topbar-btn" style="padding:4px 8px;font-size:11px">Detail</button></td>
+            </tr>
+            <tr>
+              <td class="font-mono text-xs" style="white-space:nowrap">Yesterday 18:22</td>
+              <td><span class="badge badge-purple">Command Unit</span></td>
+              <td><span class="badge badge-gold">UPDATE</span></td>
+              <td class="font-mono text-xs">system_settings</td>
+              <td class="text-sm">Talha Junani</td>
+              <td class="td-muted text-xs">HQ</td>
+              <td class="td-muted text-xs">Loyalty points expiry changed: 6 → 12 months</td>
+              <td><button class="topbar-btn" style="padding:4px 8px;font-size:11px">Detail</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ════════════ MODALS ════════════ -->
+
+<!-- New Store -->
+<div class="modal-overlay" id="modal-new-store">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add New Store</div>
+      <div class="modal-close" onclick="closeModal('modal-new-store')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="steps">
+        <div class="step active"><div class="step-num">1</div><div class="step-label">Identity</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="step-num">2</div><div class="step-label">Location</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="step-num">3</div><div class="step-label">Modules</div></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group"><label>Store Name <span class="label-req">*</span></label><input id="new-store-name" type="text" placeholder="e.g. Eyewoot Surat Main"></div>
+        <div class="form-group"><label>Store Code <span class="label-req">*</span></label><input id="new-store-code" type="text" placeholder="e.g. EW-SRT-01"><div class="form-hint">Auto-generated — can be overridden</div></div>
+        <div class="form-group"><label>Store Format <span class="label-req">*</span></label><select id="new-store-format"><option>Eyewoot-Owned</option><option>Franchise</option><option>Kiosk / Pop-up</option><option>Online / D2C</option></select></div>
+        <div class="form-group"><label>Status</label><select id="new-store-status"><option>Coming Soon</option><option selected>Active</option><option>Inactive</option></select></div>
+        <div class="form-group"><label>GSTIN</label><input id="new-store-gstin" type="text" placeholder="24AABCE1234F1Z5" class="font-mono"></div>
+        <div class="form-group"><label>State (for GST)</label><input id="new-store-state" type="text" placeholder="e.g. Gujarat"></div>
+        <div class="form-group"><label>City</label><input id="new-store-city" type="text" placeholder="e.g. Surat"></div>
+        <div class="form-group"><label>Store Phone</label><input id="new-store-phone" type="text" placeholder="+91 98765 43210"></div>
+        <div class="form-group span2"><label>Address</label><textarea id="new-store-address" placeholder="Full store address"></textarea></div>
+      </div>
+      <div id="new-store-error" class="td-muted" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-new-store')">Cancel</button>
+      <button class="topbar-btn primary" id="new-store-save-btn">Save Store</button>
+    </div>
+  </div>
+</div>
+
+<!-- New User -->
+<div class="modal-overlay" id="modal-new-user">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add Core User</div>
+      <div class="modal-close" onclick="closeModal('modal-new-user')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-purple"><span class="alert-icon">ℹ️</span><div>This creates a <strong>Super Admin</strong> or <strong>HR Admin</strong> account only. Store staff are created in Army by HR Admin.</div></div>
+      <div class="form-grid">
+        <div class="form-group"><label>Full Name <span class="label-req">*</span></label><input id="new-user-fullname" type="text" placeholder="Full name"></div>
+        <div class="form-group"><label>Username <span class="label-req">*</span></label><input id="new-user-username" type="text" placeholder="e.g. talha.junani"></div>
+        <div class="form-group"><label>Password <span class="label-req">*</span></label><input id="new-user-password" type="password" placeholder="Min 6 characters"></div>
+        <div class="form-group"><label>Role <span class="label-req">*</span></label>
+          <select id="new-user-role">
+            <option value="super_admin">Super Admin</option>
+            <option value="hr_admin">HR Admin</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Phone Number</label><input id="new-user-phone" type="text" placeholder="+91 98765 43210"></div>
+        <div class="form-group"><label>Email</label><input id="new-user-email" type="email" placeholder="user@eyewoot.com"></div>
+        <div class="form-group"><label>Status</label>
+          <select id="new-user-status">
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div id="new-user-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-new-user')">Cancel</button>
+      <button class="topbar-btn primary" id="new-user-save-btn">Create User</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit User -->
+<div class="modal-overlay" id="modal-edit-user">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title" id="edit-user-title">Edit User</div></div>
+      <div class="modal-close" onclick="closeModal('modal-edit-user')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Full Name <span class="label-req">*</span></label><input id="edit-user-fullname" type="text"></div>
+        <div class="form-group"><label>Role <span class="label-req">*</span></label>
+          <select id="edit-user-role">
+            <option value="super_admin">Super Admin</option>
+            <option value="hr_admin">HR Admin</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Phone</label><input id="edit-user-phone" type="text"></div>
+        <div class="form-group"><label>Email</label><input id="edit-user-email" type="email"></div>
+        <div class="form-group"><label>New Password</label><input id="edit-user-password" type="password" placeholder="Leave blank to keep current"></div>
+        <div class="form-group"><label>Status</label>
+          <select id="edit-user-status">
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div id="edit-user-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-edit-user')">Cancel</button>
+      <button class="topbar-btn" style="border-color:#DC2626;color:#DC2626" id="edit-user-deactivate-btn">Deactivate</button>
+      <button class="topbar-btn primary" id="edit-user-save-btn">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Role -->
+<div class="modal-overlay" id="modal-new-role">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add New Role</div>
+      <div class="modal-close" onclick="closeModal('modal-new-role')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Role Key <span class="label-req">*</span></label><input id="new-role-key" type="text" placeholder="e.g. store_manager" class="font-mono"><div class="form-hint">Lowercase, underscores. Used in JWT claims.</div></div>
+        <div class="form-group"><label>Display Name <span class="label-req">*</span></label><input id="new-role-display" type="text" placeholder="e.g. Store Manager"></div>
+        <div class="form-group"><label>Hierarchy Level <span class="label-req">*</span></label><input id="new-role-level" type="number" placeholder="1–10" min="1" max="99"><div class="form-hint">Lower = more authority.</div></div>
+        <div class="form-group"><label>Scope</label>
+          <select id="new-role-global">
+            <option value="0">Store-scoped (own store)</option>
+            <option value="1">Global (all stores)</option>
+          </select>
+        </div>
+      </div>
+      <div id="new-role-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-new-role')">Cancel</button>
+      <button class="topbar-btn primary" id="new-role-save-btn">Save Role</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Role -->
+<div class="modal-overlay" id="modal-edit-role">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title" id="edit-role-title">Edit Role</div></div>
+      <div class="modal-close" onclick="closeModal('modal-edit-role')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Role Key</label><input id="edit-role-key" class="font-mono" readonly style="background:var(--bg2)"></div>
+        <div class="form-group"><label>Display Name <span class="label-req">*</span></label><input id="edit-role-display" type="text"></div>
+        <div class="form-group"><label>Hierarchy Level <span class="label-req">*</span></label><input id="edit-role-level" type="number" min="1" max="99"></div>
+        <div class="form-group"><label>Scope</label>
+          <select id="edit-role-global">
+            <option value="0">Store-scoped (own store)</option>
+            <option value="1">Global (all stores)</option>
+          </select>
+        </div>
+      </div>
+      <div id="edit-role-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-edit-role')">Cancel</button>
+      <button class="topbar-btn" style="border-color:#DC2626;color:#DC2626" id="edit-role-delete-btn">Delete</button>
+      <button class="topbar-btn primary" id="edit-role-save-btn">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Home Brand -->
+<div class="modal-overlay" id="modal-new-brand">
+  <div class="modal" style="width:500px">
+    <div class="modal-header">
+      <div class="modal-title">Add Home Brand</div>
+      <div class="modal-close" onclick="closeModal('modal-new-brand')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Brand Name <span class="label-req">*</span></label><input id="new-brand-name" type="text" placeholder="e.g. EW Studio"></div>
+        <div class="form-group"><label>Brand Code <span class="label-req">*</span></label><input id="new-brand-code" type="text" placeholder="e.g. EWS" class="font-mono" style="text-transform:uppercase"><div class="form-hint">3–10 chars. Immutable once SKUs are generated.</div></div>
+        <div class="form-group span2"><label>Brand Description</label><textarea id="new-brand-desc" placeholder="Positioning and target audience..."></textarea></div>
+      </div>
+      <div id="new-brand-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-new-brand')">Cancel</button>
+      <button class="topbar-btn primary" id="new-brand-save-btn">Create Home Brand</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Home Brand -->
+<div class="modal-overlay" id="modal-edit-brand">
+  <div class="modal" style="width:500px">
+    <div class="modal-header">
+      <div><div class="modal-title" id="edit-brand-title">Edit Brand</div></div>
+      <div class="modal-close" onclick="closeModal('modal-edit-brand')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Brand Name <span class="label-req">*</span></label><input id="edit-brand-name" type="text"></div>
+        <div class="form-group"><label>Brand Code</label><input id="edit-brand-code" class="font-mono" readonly style="background:var(--bg2)"></div>
+        <div class="form-group span2"><label>Brand Description</label><textarea id="edit-brand-desc"></textarea></div>
+      </div>
+      <div id="edit-brand-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-edit-brand')">Cancel</button>
+      <button class="topbar-btn" style="border-color:#DC2626;color:#DC2626" id="edit-brand-deactivate-btn">Deactivate</button>
+      <button class="topbar-btn primary" id="edit-brand-save-btn">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Location Type -->
+<div class="modal-overlay" id="modal-new-location">
+  <div class="modal" style="width:500px">
+    <div class="modal-header">
+      <div class="modal-title">Add Location Type</div>
+      <div class="modal-close" onclick="closeModal('modal-new-location')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Type Key <span class="label-req">*</span></label><input type="text" placeholder="e.g. KIOSK" class="font-mono" style="text-transform:uppercase"><div class="form-hint">Uppercase, no spaces. Used in DB and stock movements.</div></div>
+        <div class="form-group"><label>Display Name <span class="label-req">*</span></label><input type="text" placeholder="e.g. Kiosk"></div>
+        <div class="form-group"><label>Display Icon</label><input type="text" placeholder="e.g. 🛒"><div class="form-hint">Emoji shown in SKU Stock Distribution View.</div></div>
+        <div class="form-group"><label>Scope</label><select><option>own — user sees only their store</option><option>all — Super Admin sees all</option><option>none — not visible in stock view</option></select></div>
+        <div class="form-group span2"><label>Visible To Roles</label><div style="display:flex;gap:8px;flex-wrap:wrap;padding:10px;border:1.5px solid var(--border);border-radius:8px">
+          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer"><input type="checkbox" checked> Super Admin</label>
+          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer"><input type="checkbox"> Store Manager</label>
+          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer"><input type="checkbox"> Procurement Mgr</label>
+          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer"><input type="checkbox"> Franchise Owner</label>
+        </div></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-new-location')">Cancel</button>
+      <button class="topbar-btn primary">Create Location Type</button>
+    </div>
+  </div>
+</div>
+
+<!-- Store Detail Modal -->
+<div class="modal-overlay" id="modal-store-detail">
+  <div class="modal" style="width:680px">
+    <div class="modal-header">
+      <div><div class="modal-title" id="edit-store-title">Store</div><div id="edit-store-subtitle" style="font-size:12px;color:var(--text2);margin-top:2px"></div></div>
+      <div class="modal-close" onclick="closeModal('modal-store-detail')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="tabs" style="margin-bottom:16px">
+        <div class="tab active" onclick="switchTab(this,'stab-details')">Details</div>
+        <div class="tab" onclick="switchTab(this,'stab-modules')">Modules</div>
+        <div class="tab" onclick="switchTab(this,'stab-stats')">Stats</div>
+      </div>
+      <div id="stab-details">
+        <div class="form-grid">
+          <div class="form-group"><label>Store Name</label><input id="edit-store-name"></div>
+          <div class="form-group"><label>Store Code</label><input id="edit-store-code" class="font-mono"></div>
+          <div class="form-group"><label>Store Format</label><select id="edit-store-format"><option>Eyewoot-Owned</option><option>Franchise</option><option>Kiosk / Pop-up</option><option>Online / D2C</option></select></div>
+          <div class="form-group"><label>Status</label><select id="edit-store-status"><option>Active</option><option>Inactive</option><option>Coming Soon</option></select></div>
+          <div class="form-group"><label>GSTIN</label><input id="edit-store-gstin" class="font-mono"></div>
+          <div class="form-group"><label>State</label><input id="edit-store-state"></div>
+          <div class="form-group"><label>City</label><input id="edit-store-city"></div>
+          <div class="form-group"><label>Store Phone</label><input id="edit-store-phone"></div>
+          <div class="form-group span2"><label>Address</label><textarea id="edit-store-address"></textarea></div>
+        </div>
+        <div id="edit-store-error" class="td-muted" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+      </div>
+      <div id="stab-modules" style="display:none">
+        <div class="toggle-row"><div><div class="toggle-label">🔩 Foundry</div></div><div class="toggle on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="toggle-row"><div><div class="toggle-label">🧾 Store OS (POS)</div></div><div class="toggle on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="toggle-row"><div><div class="toggle-label">🪖 Army</div></div><div class="toggle on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="toggle-row"><div><div class="toggle-label">📱 Eyewoot Go</div></div><div class="toggle on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="toggle-row"><div><div class="toggle-label">🤝 Promoter</div></div><div class="toggle on" onclick="this.classList.toggle('on')"></div></div>
+      </div>
+      <div id="stab-stats" style="display:none">
+        <div class="kpi-row">
+          <div class="kpi-mini">
+            <div class="kpi-mini-label">Created At</div>
+            <div class="kpi-mini-value" id="store-created-at">—</div>
+          </div>
+          <div class="kpi-mini">
+            <div class="kpi-mini-label">Last Updated</div>
+            <div class="kpi-mini-value" id="store-updated-at">—</div>
+          </div>
+          <div class="kpi-mini">
+            <div class="kpi-mini-label">Status</div>
+            <div class="kpi-mini-value" id="store-status-kpi">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-store-detail')">Cancel</button>
+      <button class="topbar-btn primary" id="edit-store-save-btn">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Membership -->
+<div class="modal-overlay" id="modal-new-membership">
+  <div class="modal" style="width:500px">
+    <div class="modal-header">
+      <div class="modal-title">Add Membership Tier</div>
+      <div class="modal-close" onclick="closeModal('modal-new-membership')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Tier Name <span class="label-req">*</span></label><input id="new-tier-name" type="text" placeholder="e.g. Eyewoot Platinum"></div>
+        <div class="form-group"><label>Annual Fee (₹) <span class="label-req">*</span></label><input id="new-tier-fee" type="number" placeholder="e.g. 1499"></div>
+        <div class="form-group span2"><label>Benefits</label><textarea id="new-tier-benefits" placeholder="List key benefits for customers..."></textarea></div>
+        <div class="form-group"><label>Loyalty Tier</label><input id="new-tier-loyalty" type="text" placeholder="e.g. Gold"></div>
+        <div class="form-group"><label>Promoter Commission (₹)</label><input id="new-tier-commission" type="number" placeholder="e.g. 150"></div>
+      </div>
+      <div id="new-tier-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-new-membership')">Cancel</button>
+      <button class="topbar-btn primary" id="new-tier-save-btn">Create Tier</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Membership Tier -->
+<div class="modal-overlay" id="modal-edit-membership">
+  <div class="modal" style="width:500px">
+    <div class="modal-header">
+      <div><div class="modal-title" id="edit-tier-title">Edit Membership Tier</div></div>
+      <div class="modal-close" onclick="closeModal('modal-edit-membership')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Tier Name <span class="label-req">*</span></label><input id="edit-tier-name" type="text"></div>
+        <div class="form-group"><label>Annual Fee (₹) <span class="label-req">*</span></label><input id="edit-tier-fee" type="number"></div>
+        <div class="form-group span2"><label>Benefits</label><textarea id="edit-tier-benefits"></textarea></div>
+        <div class="form-group"><label>Loyalty Tier</label><input id="edit-tier-loyalty" type="text"></div>
+        <div class="form-group"><label>Promoter Commission (₹)</label><input id="edit-tier-commission" type="number"></div>
+        <div class="form-group"><label>Status</label>
+          <select id="edit-tier-status">
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div id="edit-tier-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-edit-membership')">Cancel</button>
+      <button class="topbar-btn" style="border-color:#DC2626;color:#DC2626" id="edit-tier-deactivate-btn">Deactivate</button>
+      <button class="topbar-btn primary" id="edit-tier-save-btn">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Leave Type -->
+<div class="modal-overlay" id="modal-new-leave">
+  <div class="modal" style="width:500px">
+    <div class="modal-header">
+      <div class="modal-title">Add Leave Type</div>
+      <div class="modal-close" onclick="closeModal('modal-new-leave')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group span2"><label>Leave Type Name <span class="label-req">*</span></label><input id="new-leave-name" type="text" placeholder="e.g. Paternity Leave"></div>
+        <div class="form-group"><label>Annual Quota (days)</label><input id="new-leave-quota" type="number" placeholder="e.g. 5"><div class="form-hint">Leave blank for no quota</div></div>
+        <div class="form-group"><label>Max Carry Forward (days)</label><input id="new-leave-carry" type="number" placeholder="0 = no carry forward"></div>
+        <div class="form-group"><label>Requires Approval</label>
+          <select id="new-leave-approval"><option value="1">Yes</option><option value="0">No</option></select>
+        </div>
+        <div class="form-group"><label>Paid / Unpaid</label>
+          <select id="new-leave-paid"><option value="1">Paid</option><option value="0">Unpaid</option></select>
+        </div>
+        <div class="form-group"><label>Affects Attendance Score</label>
+          <select id="new-leave-score"><option value="1">Yes</option><option value="0">No</option></select>
+        </div>
+      </div>
+      <div id="new-leave-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-new-leave')">Cancel</button>
+      <button class="topbar-btn primary" id="new-leave-save-btn">Create Leave Type</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Leave Type -->
+<div class="modal-overlay" id="modal-edit-leave">
+  <div class="modal" style="width:500px">
+    <div class="modal-header">
+      <div><div class="modal-title" id="edit-leave-title">Edit Leave Type</div></div>
+      <div class="modal-close" onclick="closeModal('modal-edit-leave')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group span2"><label>Leave Type Name <span class="label-req">*</span></label><input id="edit-leave-name" type="text"></div>
+        <div class="form-group"><label>Annual Quota (days)</label><input id="edit-leave-quota" type="number"></div>
+        <div class="form-group"><label>Max Carry Forward (days)</label><input id="edit-leave-carry" type="number"></div>
+        <div class="form-group"><label>Requires Approval</label>
+          <select id="edit-leave-approval"><option value="1">Yes</option><option value="0">No</option></select>
+        </div>
+        <div class="form-group"><label>Paid / Unpaid</label>
+          <select id="edit-leave-paid"><option value="1">Paid</option><option value="0">Unpaid</option></select>
+        </div>
+        <div class="form-group"><label>Affects Score</label>
+          <select id="edit-leave-score"><option value="1">Yes</option><option value="0">No</option></select>
+        </div>
+        <div class="form-group"><label>Status</label>
+          <select id="edit-leave-status"><option value="1">Active</option><option value="0">Inactive</option></select>
+        </div>
+      </div>
+      <div id="edit-leave-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-edit-leave')">Cancel</button>
+      <button class="topbar-btn" style="border-color:#DC2626;color:#DC2626" id="edit-leave-deactivate-btn">Deactivate</button>
+      <button class="topbar-btn primary" id="edit-leave-save-btn">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- New / Edit GST Rate -->
+<div class="modal-overlay" id="modal-edit-gst">
+  <div class="modal" style="width:560px">
+    <div class="modal-header">
+      <div class="modal-title" id="edit-gst-title">GST Rate</div>
+      <div class="modal-close" onclick="closeModal('modal-edit-gst')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>HSN / SAC Code <span class="label-req">*</span></label><input id="edit-gst-hsn" class="font-mono" type="text" placeholder="e.g. 9004"></div>
+        <div class="form-group"><label>Category <span class="label-req">*</span></label><input id="edit-gst-category" type="text" placeholder="e.g. Spectacle Frames"></div>
+        <div class="form-group"><label>GST Rate (%) <span class="label-req">*</span></label><input id="edit-gst-rate" type="number" step="0.01" placeholder="e.g. 12"></div>
+        <div class="form-group"><label>CGST Rate (%)</label><input id="edit-gst-cgst" type="number" step="0.01" placeholder="e.g. 6"></div>
+        <div class="form-group"><label>SGST Rate (%)</label><input id="edit-gst-sgst" type="number" step="0.01" placeholder="e.g. 6"></div>
+        <div class="form-group"><label>Applied To</label><input id="edit-gst-applied" type="text" placeholder="e.g. All frame SKUs at POS"></div>
+      </div>
+      <div id="edit-gst-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-edit-gst')">Cancel</button>
+      <button class="topbar-btn" style="border-color:#DC2626;color:#DC2626" id="edit-gst-delete-btn" style="display:none">Deactivate</button>
+      <button class="topbar-btn primary" id="edit-gst-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Foundry Lookup Value Modal (Add / Edit) -->
+<div class="modal-overlay" id="modal-foundry-lookup">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="foundry-lookup-modal-title">Add Lookup Value</div>
+      <div class="modal-close" onclick="closeModal('modal-foundry-lookup')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Lookup Type</label><input id="fl-type" readonly style="background:var(--bg2);font-family:monospace"></div>
+        <div class="form-group"><label>Key (Internal Code) <span class="label-req">*</span></label><input id="fl-key" placeholder="e.g. LOCAL_SUPPLIER" class="font-mono"><div class="form-hint">Uppercase, underscores. Auto-formatted on save.</div></div>
+        <div class="form-group span2"><label>Label (shown in forms) <span class="label-req">*</span></label><input id="fl-label" placeholder="e.g. Local Supplier (Home Brand)"></div>
+        <div class="form-group span2"><label>Description / Use Case</label><textarea id="fl-desc" placeholder="Explain when and why this option is used..."></textarea></div>
+        <div class="form-group"><label>Display Order</label><input id="fl-order" type="number" min="0" placeholder="0"></div>
+        <div class="form-group"><label>Status</label>
+          <select id="fl-active">
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div id="foundry-lookup-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-foundry-lookup')">Cancel</button>
+      <button class="topbar-btn primary" id="foundry-lookup-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ SCRIPTS ════════════ -->
+<script>
+function showPage(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if (el) el.classList.add('active');
+  const labels = {
+    dashboard: 'Dashboard', stores: 'Store Management', users: 'User Management',
+    roles: 'Roles & Permissions', modules: 'Module Access Control',
+    homebrands: 'Home Brand Management', locations: 'Location Type Config',
+    settings: 'System Settings', membership: 'Membership Tiers',
+    leavetypes: 'Leave Types', 'foundry-settings': 'Foundry Settings', audit: 'Audit Logs'
+  };
+  document.getElementById('breadcrumb-current').textContent = labels[id] || id;
+}
+
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+function switchTab(el, targetId) {
+  const parent = el.closest('.tabs') || el.parentElement;
+  const siblings = parent.querySelectorAll ? parent.querySelectorAll('.tab') : [];
+  siblings.forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  const allTabs = document.querySelectorAll('[id^="tab-"], [id^="stab-"]');
+  const prefix = targetId.startsWith('stab') ? 'stab-' : 'tab-';
+  allTabs.forEach(t => { if (t.id.startsWith(prefix)) t.style.display = 'none'; });
+  const target = document.getElementById(targetId);
+  if (target) target.style.display = '';
+}
+
+// showRoleDetail is now handled dynamically by command-unit-prototype.js
+</script>
+<script src="/js/command-unit-prototype.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{
+  "name": "cosmos-erp",
+  "version": "1.0.0",
+  "description": "Cosmos ERP — Command Unit + Foundry · Node.js + MSSQL · Stored Procedures · REST API · IIS + PM2",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "keywords": [
+    "cosmos",
+    "eyewoot",
+    "erp",
+    "command-unit",
+    "foundry",
+    "nodejs",
+    "mssql"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.0.0",
+    "joi": "^17.13.3",
+    "jsonwebtoken": "^9.0.2",
+    "mssql": "^10.0.2",
+    "multer": "^1.4.5-lts.1",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.33.4",
+    "uuid": "^9.0.1",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

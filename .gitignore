@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Environment — never commit secrets
+.env
+
+# Uploaded product media (user content)
+src/public/uploads/
+
+# Logs
+logs/
+*.log
+server.log
+
+# PM2
+.pm2/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.suo
+*.user
+
+# Build artifacts
+dist/
+build/
