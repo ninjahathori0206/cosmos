@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foundry — Cosmos ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<style>
+  .flatpickr-calendar { font-family: 'DM Sans', sans-serif; font-size: 13px; }
+  .flatpickr-day.selected, .flatpickr-day.selected:hover { background: var(--acc, #2e7dd1); border-color: var(--acc, #2e7dd1); }
+  input.datepicker { cursor: pointer; }
+</style>
+<style>
+  :root {
+    --navy:    #0F1E35;
+    --navy2:   #162640;
+    --acc:     #1A5FA8;   /* Foundry steel blue */
+    --acc2:    #2E7DD1;
+    --accL:    #DBEAFE;
+    --accD:    #0F3D6E;
+    --teal:    #0E7490;
+    --tealL:   #CFFAFE;
+    --gold:    #B45309;
+    --goldL:   #FEF3C7;
+    --green:   #059669;
+    --greenL:  #D1FAE5;
+    --red:     #DC2626;
+    --redL:    #FEE2E2;
+    --orange:  #C2410C;
+    --orangeL: #FFEDD5;
+    --bg:      #F0F4F9;
+    --card:    #FFFFFF;
+    --border:  #E2E8F0;
+    --text1:   #0F1E35;
+    --text2:   #475569;
+    --text3:   #94A3B8;
+    --sidebar: 248px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'DM Sans',sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; display:flex; overflow:hidden; }
+
+  /* SIDEBAR */
+  .sidebar { width:var(--sidebar); background:var(--navy); height:100vh; display:flex; flex-direction:column; flex-shrink:0; position:fixed; left:0; top:0; z-index:100; }
+  .sidebar-logo { padding:20px 20px 16px; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .cosmos-tag { font-family:'Syne',sans-serif; font-size:10px; font-weight:700; letter-spacing:3px; color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:3px; }
+  .module-name { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; }
+  .mod-dot { width:8px; height:8px; border-radius:50%; background:var(--acc2); box-shadow:0 0 8px var(--acc2); }
+  .sidebar-nav { flex:1; padding:10px 0; overflow-y:auto; }
+  .nav-group { font-size:10px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,0.22); padding:14px 20px 5px; }
+  .nav-item { display:flex; align-items:center; gap:10px; padding:10px 20px; cursor:pointer; color:rgba(255,255,255,0.52); font-size:13px; font-weight:400; border-left:3px solid transparent; transition:all .15s; }
+  .nav-item:hover { background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.85); }
+  .nav-item.active { background:rgba(46,125,209,0.18); color:#fff; border-left-color:var(--acc2); font-weight:500; }
+  .nav-item .ic { font-size:15px; width:20px; text-align:center; }
+  .nav-badge { margin-left:auto; background:var(--red); color:#fff; font-size:10px; font-weight:600; padding:1px 6px; border-radius:10px; font-family:'JetBrains Mono',monospace; }
+  .nav-badge.gold { background:var(--gold); }
+  .sidebar-user { padding:14px 20px; border-top:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; gap:10px; }
+  .u-av { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; font-family:'Syne',sans-serif; flex-shrink:0; }
+  .u-name { font-size:12.5px; font-weight:500; color:#fff; }
+  .u-role { font-size:11px; color:rgba(255,255,255,0.35); }
+
+  /* MAIN */
+  .main { margin-left:var(--sidebar); flex:1; height:100vh; overflow-y:auto; display:flex; flex-direction:column; }
+
+  /* TOPBAR */
+  .topbar { background:var(--card); border-bottom:1px solid var(--border); padding:0 28px; height:54px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; position:sticky; top:0; z-index:50; }
+  .breadcrumb { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text2); }
+  .breadcrumb .cur { color:var(--text1); font-weight:500; }
+  .tb-actions { display:flex; align-items:center; gap:10px; }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; border:1.5px solid var(--border); background:var(--card); font-size:13px; font-weight:500; cursor:pointer; color:var(--text1); transition:all .15s; font-family:'DM Sans',sans-serif; white-space:nowrap; }
+  .btn:hover { border-color:var(--acc2); color:var(--acc); }
+  .btn.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .btn.primary:hover { background:var(--accD); }
+  .btn.danger { background:var(--red); border-color:var(--red); color:#fff; }
+  .btn.sm { padding:5px 10px; font-size:12px; }
+  .btn.xs { padding:3px 8px; font-size:11.5px; }
+
+  /* PAGE */
+  .page { display:none; padding:26px; }
+  .page.active { display:block; }
+  .ph { margin-bottom:22px; }
+  .pt { font-family:'Syne',sans-serif; font-size:21px; font-weight:800; color:var(--text1); margin-bottom:3px; }
+  .ps { font-size:13px; color:var(--text2); }
+
+  /* STATS */
+  .sg4 { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
+  .sg3 { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:22px; }
+  .sc { background:var(--card); border:1px solid var(--border); border-radius:11px; padding:18px; position:relative; overflow:hidden; }
+  .sc::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--sc-color, var(--acc)); }
+  .sl { font-size:11.5px; font-weight:500; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+  .sv { font-family:'Syne',sans-serif; font-size:26px; font-weight:800; color:var(--text1); margin-bottom:5px; }
+  .sm { font-size:12px; color:var(--text3); }
+  .sup { color:var(--green); font-weight:500; }
+  .sdn { color:var(--red); font-weight:500; }
+
+  /* CARD */
+  .card { background:var(--card); border:1px solid var(--border); border-radius:11px; overflow:hidden; }
+  .ch { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .ct { font-size:14px; font-weight:600; color:var(--text1); }
+  .cb { padding:18px; }
+
+  /* TABLE */
+  .tw { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  thead th { background:var(--bg); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.7px; color:var(--text2); padding:9px 14px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
+  tbody tr { border-bottom:1px solid var(--border); transition:background .1s; }
+  tbody tr:last-child { border-bottom:none; }
+  tbody tr:hover { background:#F8FAFC; }
+  td { padding:11px 14px; font-size:13px; color:var(--text1); vertical-align:middle; }
+  .td2 { color:var(--text2); font-size:12px; }
+  .label-sm { font-size:11px; color:var(--text2); text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px; }
+
+  /* BADGE */
+  .b { display:inline-flex; align-items:center; gap:3px; padding:3px 8px; border-radius:5px; font-size:11.5px; font-weight:500; white-space:nowrap; }
+  .b-blue   { background:var(--accL);   color:#1E40AF; }
+  .b-green  { background:var(--greenL); color:#065F46; }
+  .b-red    { background:var(--redL);   color:#991B1B; }
+  .b-gold   { background:var(--goldL);  color:#92400E; }
+  .b-teal   { background:var(--tealL);  color:#164E63; }
+  .b-orange { background:var(--orangeL);color:#9A3412; }
+  .b-gray   { background:#F1F5F9;       color:var(--text2); }
+  .b-purple { background:#EDE9FE;       color:#4C1D95; }
+  .bdot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+
+  /* PIPELINE STEPS */
+  .pipeline { display:flex; align-items:stretch; gap:0; margin-bottom:24px; }
+  .pstep { flex:1; background:var(--card); border:1px solid var(--border); padding:14px 16px; cursor:pointer; transition:all .15s; position:relative; }
+  .pstep:not(:last-child)::after { content:'›'; position:absolute; right:-10px; top:50%; transform:translateY(-50%); font-size:18px; color:var(--text3); z-index:1; }
+  .pstep:first-child { border-radius:10px 0 0 10px; }
+  .pstep:last-child { border-radius:0 10px 10px 0; }
+  .pstep.active { background:var(--accL); border-color:var(--acc2); }
+  .pstep.done { background:var(--greenL); border-color:#6EE7B7; }
+  .pstep-num { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text3); margin-bottom:4px; }
+  .pstep.active .pstep-num { color:var(--acc); }
+  .pstep.done .pstep-num { color:var(--green); }
+  .pstep-title { font-size:12.5px; font-weight:600; color:var(--text1); }
+  .pstep-sub { font-size:11px; color:var(--text2); margin-top:2px; }
+
+  /* FORM */
+  .fg2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .fg3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; }
+  .fg4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:14px; }
+  .fgrp { display:flex; flex-direction:column; gap:5px; }
+  .fgrp.s2 { grid-column:span 2; }
+  .fgrp.s3 { grid-column:span 3; }
+  .fgrp.s4 { grid-column:span 4; }
+  label { font-size:12px; font-weight:500; color:var(--text1); }
+  .req { color:var(--red); }
+  input,select,textarea { padding:8px 11px; border:1.5px solid var(--border); border-radius:7px; font-size:13px; font-family:'DM Sans',sans-serif; color:var(--text1); background:var(--card); transition:border-color .15s; outline:none; width:100%; }
+  input:focus,select:focus,textarea:focus { border-color:var(--acc2); }
+  textarea { resize:vertical; min-height:72px; }
+  .fhint { font-size:11px; color:var(--text3); }
+
+  /* COLOURS TABLE */
+  .colour-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); }
+  .colour-row:last-child { border-bottom:none; }
+  .colour-swatch { width:24px; height:24px; border-radius:5px; border:1px solid var(--border); flex-shrink:0; }
+
+  /* MISC */
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .three-col { display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; }
+  .main-side { display:grid; grid-template-columns:1fr 320px; gap:18px; align-items:start; }
+  .flex { display:flex; }
+  .ic { align-items:center; }
+  .g2 { gap:8px; }
+  .g3 { gap:12px; }
+  .mb3 { margin-bottom:12px; }
+  .mb4 { margin-bottom:16px; }
+  .mb5 { margin-bottom:20px; }
+  .mt4 { margin-top:16px; }
+  .mla { margin-left:auto; }
+  .mono { font-family:'JetBrains Mono',monospace; }
+  .xs { font-size:11.5px; }
+  .sm-txt { font-size:12.5px; }
+  .fw6 { font-weight:600; }
+  .w100 { width:100%; }
+  .col-stack { display:flex; flex-direction:column; gap:18px; }
+  .sep { border:none; border-top:1px solid var(--border); margin:16px 0; }
+  .section-lbl { font-size:11px; font-weight:600; letter-spacing:1.5px; text-transform:uppercase; color:var(--text3); margin:18px 0 10px; }
+
+  /* RATE CARD */
+  .rate-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:0; border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:18px; }
+  .rate-cell { padding:14px 16px; border-right:1px solid var(--border); }
+  .rate-cell:last-child { border-right:none; }
+  .rate-lbl { font-size:11px; color:var(--text2); margin-bottom:4px; }
+  .rate-val { font-family:'Syne',sans-serif; font-size:22px; font-weight:800; }
+  .rate-meta { font-size:11px; color:var(--text3); margin-top:3px; }
+
+  /* ── SKU CATALOGUE CARDS (Lenskart-style) ─────────────────────────────── */
+  .sku-cat-grid-wrap { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:18px; }
+  .sku-card {
+    background:#fff;
+    border:1px solid #e8e8e8;
+    border-radius:14px;
+    overflow:hidden;
+    transition:box-shadow .2s, transform .2s;
+    position:relative;
+    display:flex;
+    flex-direction:column;
+  }
+  .sku-card:hover { box-shadow:0 8px 32px rgba(0,0,0,.12); transform:translateY(-3px); }
+  .sku-img {
+    height:200px;
+    background:#f7f9fc;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:52px;
+    overflow:hidden;
+    position:relative;
+    border-bottom:1px solid #f0f0f0;
+  }
+  .sku-img img { width:100%; height:100%; object-fit:contain; padding:10px; }
+  .sku-img-fallback { font-size:52px; opacity:.4; }
+  .sku-body { padding:14px 14px 12px; flex:1; display:flex; flex-direction:column; }
+  .sku-brand { font-size:11px; font-weight:600; color:var(--acc); text-transform:uppercase; letter-spacing:.06em; margin-bottom:3px; }
+  .sku-name { font-size:14px; font-weight:700; color:var(--text1); line-height:1.35; margin-bottom:4px; }
+  .sku-spec { font-size:11px; color:var(--text2); margin-bottom:8px; }
+  .sku-swatches { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  .sku-swatch {
+    width:22px; height:22px; border-radius:50%;
+    border:2px solid transparent;
+    cursor:pointer;
+    transition:transform .15s, box-shadow .15s, border-color .15s;
+    position:relative; flex-shrink:0;
+    box-shadow:0 1px 3px rgba(0,0,0,.2);
+  }
+  .sku-swatch:hover { transform:scale(1.18); }
+  .sku-swatch.active { border-color:var(--primary); box-shadow:0 0 0 3px rgba(59,130,246,.25); transform:scale(1.12); }
+  .sku-swatch-count { font-size:11px; color:var(--text2); align-self:center; }
+  .sku-colour-label { font-size:11.5px; color:var(--text2); margin-bottom:6px; min-height:16px; }
+  .sku-price-row { display:flex; align-items:baseline; justify-content:space-between; margin-top:auto; padding-top:8px; border-top:1px solid #f0f0f0; }
+  .sku-price { font-size:18px; font-weight:800; color:var(--text1); font-family:'Syne',sans-serif; }
+  .sku-code { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text3,#bbb); margin-top:6px; }
+  .sku-view-btn { width:100%; margin-top:10px; font-size:12.5px; padding:7px; }
+  /* Table group header */
+  .tbl-group-hdr { background:#f8f9fc; }
+  .tbl-group-hdr td { font-weight:700; font-size:12px; color:var(--text2); padding:7px 12px !important; border-bottom:2px solid var(--border); }
+  .tbl-colour-row:hover td { background:#fafafa; }
+  .tbl-colour-row td:first-child { padding-left:28px !important; }
+
+  /* BARCODE PRINT MODAL */
+  .bc-sku-row { display:flex; align-items:center; gap:8px; padding:7px 12px; border-bottom:1px solid var(--border); font-size:12.5px; }
+  .bc-sku-row:last-child { border-bottom:none; }
+  .bc-sku-row input[type=checkbox] { width:15px; height:15px; cursor:pointer; flex-shrink:0; }
+  .bc-sku-code { font-family:'JetBrains Mono',monospace; font-weight:600; font-size:11.5px; }
+  .bc-sku-info { font-size:11px; color:var(--text2); }
+  .bc-label-row { display:flex; gap:4px; margin-bottom:4px; flex-wrap:nowrap; }
+  .bc-label-cell { border:1px dashed #ccc; border-radius:3px; background:#fff; padding:3px 4px; text-align:center; width:72px; flex-shrink:0; overflow:hidden; }
+  .bc-label-cell svg { display:block; margin:0 auto; }
+  .bc-label-code { font-size:5.5px; font-family:'JetBrains Mono',monospace; margin-top:2px; word-break:break-all; line-height:1.3; color:#333; text-align:center; }
+  .bc-empty-cell { border:1px dashed #eee; border-radius:3px; background:#fafafa; width:72px; flex-shrink:0; height:62px; }
+
+  /* STOCK LOCATION BAR */
+  .loc-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); }
+  .loc-row:last-child { border-bottom:none; }
+  .loc-icon { font-size:18px; width:30px; text-align:center; }
+  .loc-name { font-size:13.5px; font-weight:500; flex:1; }
+  .loc-units { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; color:var(--text1); }
+  .loc-sub { font-size:11.5px; color:var(--text2); }
+
+  /* LENS CARD */
+  .lens-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .lens-name { font-size:14px; font-weight:600; color:var(--text1); margin-bottom:4px; }
+  .lens-type { font-size:11.5px; color:var(--acc); font-weight:500; margin-bottom:8px; }
+  .lens-tags { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px; }
+  .lens-price { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; }
+
+  /* ALERT */
+  .alert { display:flex; align-items:flex-start; gap:10px; padding:12px 14px; border-radius:9px; font-size:13px; margin-bottom:16px; }
+  .alert-blue   { background:var(--accL);   border:1px solid #93C5FD; color:#1E3A8A; }
+  .alert-gold   { background:var(--goldL);  border:1px solid #FCD34D; color:#92400E; }
+  .alert-green  { background:var(--greenL); border:1px solid #6EE7B7; color:#065F46; }
+  .alert-red    { background:var(--redL);   border:1px solid #FCA5A5; color:#991B1B; }
+
+  /* MODAL */
+  .overlay { display:none; position:fixed; inset:0; background:rgba(15,30,53,.55); backdrop-filter:blur(4px); z-index:200; align-items:center; justify-content:center; }
+  .overlay.open { display:flex; }
+  .modal { background:var(--card); border-radius:14px; width:640px; max-width:96vw; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+  .modal.wide { width:800px; }
+  .modal.narrow { width:480px; }
+  .mh { padding:18px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; background:var(--card); z-index:1; }
+  .mt-title { font-family:'Syne',sans-serif; font-size:16px; font-weight:700; }
+  .mc { cursor:pointer; font-size:20px; color:var(--text3); }
+  .mc:hover { color:var(--text1); }
+  .mb { padding:22px; }
+  .mf { padding:14px 22px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px; }
+
+  /* TABS */
+  .tabs { display:flex; border-bottom:2px solid var(--border); margin-bottom:18px; }
+  .tab { padding:9px 16px; font-size:13px; font-weight:500; cursor:pointer; color:var(--text2); border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .15s; }
+  .tab:hover { color:var(--text1); }
+  .tab.active { color:var(--acc); border-bottom-color:var(--acc); font-weight:600; }
+
+  /* SEARCH */
+  .sw { position:relative; }
+  .sw input { padding-left:34px; }
+  .si { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--text3); font-size:13px; }
+
+  /* PROGRESS BAR */
+  .pbar-wrap { height:6px; background:var(--border); border-radius:3px; overflow:hidden; margin-top:6px; }
+  .pbar { height:100%; border-radius:3px; background:var(--acc); }
+
+  /* TOGGLE */
+  .tog { width:38px; height:20px; border-radius:10px; background:var(--border); cursor:pointer; position:relative; transition:background .2s; flex-shrink:0; }
+  .tog.on { background:var(--acc); }
+  .tog::after { content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; top:3px; left:3px; transition:left .2s; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+  .tog.on::after { left:21px; }
+
+  ::-webkit-scrollbar { width:4px; height:4px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+
+  .empty { text-align:center; padding:40px 20px; color:var(--text3); }
+  .empty-ic { font-size:36px; margin-bottom:10px; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="cosmos-tag">🌌 Cosmos ERP</div>
+    <div class="module-name"><span>🔩</span><span>Foundry</span></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-group">Overview</div>
+    <div class="nav-item active" onclick="nav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
+
+    <div class="nav-group">Procurement</div>
+    <div class="nav-item" onclick="nav('purchases',this)"><span class="ic">📋</span> Purchases <span id="purchases-nav-badge" class="nav-badge" style="display:none"></span></div>
+    <div class="nav-item" onclick="nav('new-purchase',this)"><span class="ic">＋</span> New Purchase</div>
+    <div class="nav-item" onclick="nav('bill-verify',this)"><span class="ic">🧾</span> Bill Verification <span id="bv-nav-badge" class="nav-badge gold" style="display:none"></span></div>
+    <div class="nav-item" onclick="nav('branding',this)"><span class="ic">🏷️</span> Branding <span id="branding-nav-badge" class="nav-badge gold" style="display:none"></span></div>
+    <div class="nav-item" onclick="nav('digitisation',this)"><span class="ic">📸</span> Digitisation <span id="digi-nav-badge" class="nav-badge gold" style="display:none"></span></div>
+
+    <div class="nav-group">Catalogue</div>
+    <div class="nav-item" onclick="nav('sku-catalogue',this)"><span class="ic">🗂️</span> SKU Catalogue</div>
+    <div class="nav-item" onclick="nav('stock-view',this)"><span class="ic">📦</span> Stock View</div>
+    <div class="nav-item" onclick="nav('stock-transfer',this)"><span class="ic">🚚</span> Stock Transfer</div>
+    <div class="nav-item" onclick="nav('lens-portfolio',this)"><span class="ic">👁️</span> Lens Portfolio</div>
+    <div class="nav-item" onclick="nav('master-catalogue',this)"><span class="ic">📖</span> Master Catalogue</div>
+
+    <div class="nav-group">Intelligence</div>
+    <div class="nav-item" onclick="nav('rate-intelligence',this)"><span class="ic">💰</span> Rate Intelligence</div>
+    <div class="nav-item" onclick="nav('suppliers',this)"><span class="ic">🏭</span> Suppliers</div>
+    <div class="nav-item" onclick="nav('maker-master',this)"><span class="ic">🏗️</span> Maker Master</div>
+
+    <div class="nav-group">System</div>
+    <div class="nav-item" onclick="window.location.href='/finance.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
+    <div class="nav-item" onclick="window.location.href='/command-unit.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
+    <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.3);font-size:12px"><span class="ic">🚪</span> Sign Out</div>
+  </nav>
+  <div class="sidebar-user" style="cursor:pointer" id="foundry-sidebar-user">
+    <div class="u-av" id="foundry-user-av">AM</div>
+    <div><div class="u-name" id="foundry-user-name">Loading...</div><div class="u-role" id="foundry-user-role">Procurement</div></div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <div class="topbar">
+    <div class="breadcrumb">Foundry <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="bc">Dashboard</span></div>
+    <div class="tb-actions" id="tba"></div>
+  </div>
+
+  <!-- ═══ DASHBOARD ═══ -->
+  <div class="page active" id="page-dashboard">
+    <div class="ph"><div class="pt">Foundry Dashboard</div><div class="ps">Supply chain overview · HQ Warehouse · All procurement activity</div></div>
+    <div class="sg4">
+      <div class="sc" style="--sc-color:var(--acc)"><div class="sl">Active Purchases</div><div class="sv" id="dash-active-purchases">—</div><div class="sm" id="dash-pending-bill">— pending bill verification</div></div>
+      <div class="sc" style="--sc-color:var(--teal)"><div class="sl">SKUs in Catalogue</div><div class="sv" id="dash-skus">—</div><div class="sm">Live SKUs in system</div></div>
+      <div class="sc" style="--sc-color:var(--gold)"><div class="sl">Warehouse Stock</div><div class="sv" id="dash-warehouse">—</div><div class="sm">Units available for transfer</div></div>
+      <div class="sc" style="--sc-color:var(--green)"><div class="sl">Active Suppliers</div><div class="sv" id="dash-suppliers">—</div><div class="sm">Active vendor accounts</div></div>
+    </div>
+
+    <div class="two-col mb4">
+      <!-- Recent Purchases -->
+      <div class="card">
+        <div class="ch"><div class="ct">Recent Purchases</div><button class="btn sm" onclick="nav('purchases',document.querySelector('[onclick*=purchases]'))">View All →</button></div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>ID</th><th>Brand / Collection</th><th>Qty</th><th>Rate</th><th>Stage</th></tr></thead>
+            <tbody id="dash-recent-purchases"><tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Low Stock -->
+      <div class="card">
+        <div class="ch"><div class="ct">Low Stock Alerts</div><span class="b b-red">14 SKUs</span></div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>SKU</th><th>Product</th><th>Warehouse</th><th>Threshold</th></tr></thead>
+            <tbody>
+              <tr><td class="mono xs">EWS-BOTAN-TRNBLU</td><td>Botanica Transparent Blue</td><td class="fw6" style="color:var(--red)">2</td><td class="td2">5</td></tr>
+              <tr><td class="mono xs">RB-AVTR-BLKGLD</td><td>Aviator Black Gold</td><td class="fw6" style="color:var(--red)">3</td><td class="td2">10</td></tr>
+              <tr><td class="mono xs">WW-VTGRD-BLKGLD</td><td>Vintage Round BG</td><td class="fw6" style="color:var(--gold)">4</td><td class="td2">5</td></tr>
+              <tr><td class="mono xs">EWS-CSTAL-MTTBLU</td><td>Coastal Matte Blue</td><td class="fw6" style="color:var(--red)">0</td><td class="td2">5</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pipeline Status -->
+    <div class="card">
+      <div class="ch"><div class="ct">Procurement Pipeline — All Active</div></div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Purchase ID</th><th>Brand · Collection · Style</th><th>Supplier</th><th>Qty</th><th>Purchase Rate</th><th>Stage</th><th>Days Open</th><th></th></tr></thead>
+          <tbody id="dash-pipeline"><tr><td colspan="8" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ NEW PURCHASE ═══ -->
+  <div class="page" id="page-new-purchase">
+    <div class="ph flex ic"><div><div class="pt">New Purchase Registration</div><div class="ps">Stage 1 of 5 — Enter bill header, then add all items from this bill</div></div></div>
+
+    <div class="pipeline">
+      <div class="pstep active"><div class="pstep-num">STAGE 1</div><div class="pstep-title">📋 Purchase Reg.</div><div class="pstep-sub">Current step</div></div>
+      <div class="pstep"><div class="pstep-num">STAGE 2</div><div class="pstep-title">🧾 Bill Verify</div><div class="pstep-sub">After save</div></div>
+      <div class="pstep"><div class="pstep-num">STAGE 3</div><div class="pstep-title">🏷️ Branding</div><div class="pstep-sub">Or bypass</div></div>
+      <div class="pstep"><div class="pstep-num">STAGE 4</div><div class="pstep-title">📸 Digitisation</div><div class="pstep-sub">SKU creation</div></div>
+      <div class="pstep"><div class="pstep-num">STAGE 5</div><div class="pstep-title">🏭 Warehouse</div><div class="pstep-sub">Live stock</div></div>
+    </div>
+
+    <div id="new-purchase-error" style="display:none;color:var(--red);background:var(--redL);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+
+    <!-- ── Bill Header (shared across all items in this bill) ── -->
+    <div class="card mb4">
+      <div class="ch"><div class="ct">Bill Header</div><div class="cb-hint xs td2">All items on this bill share the same supplier &amp; bill reference</div></div>
+      <div class="cb">
+        <div class="fg3">
+          <div class="fgrp">
+            <label>Supplier <span class="req">*</span></label>
+            <select id="bill-supplier-select" onchange="onBillSupplierChange(this)">
+              <option value="">— Select Supplier —</option>
+            </select>
+            <div class="fhint" id="bill-supplier-hint" style="display:none"></div>
+          </div>
+          <div class="fgrp"><label>Bill Reference / Invoice No.</label><input id="bill-ref-input" placeholder="e.g. INV-2024-001 (optional)"></div>
+          <div class="fgrp"><label>Purchase Date <span class="req">*</span></label><input type="text" id="bill-purchase-date-input" placeholder="dd/MM/yyyy" readonly class="datepicker"></div>
+          <div class="fgrp"><label>Transport / Freight Cost (₹)</label><input type="number" id="bill-transport-input" placeholder="0" min="0" step="0.01" oninput="recalcGrandTotal()"></div>
+          <div class="fgrp"><label>PO Reference</label><input id="bill-po-ref-input" placeholder="Optional PO number"></div>
+          <div class="fgrp"><label>Notes</label><input id="bill-notes-input" placeholder="Any additional notes..."></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Items Container ── -->
+    <div id="purchase-items-container">
+      <!-- Items rendered by JS: addPurchaseItem() -->
+    </div>
+
+    <div class="flex ic g2 mb4">
+      <button class="btn sm" id="add-item-btn" onclick="addPurchaseItem()">+ Add Another Item</button>
+      <button class="btn sm" id="dup-item-btn" onclick="duplicatePurchaseItem()" title="Copy all fields from the last item">⧉ Duplicate Last Item</button>
+      <span class="xs td2" id="items-count-hint">1 item</span>
+    </div>
+
+    <!-- ── Bill Grand Total Summary ── -->
+    <div class="card mb4">
+      <div class="ch"><div class="ct">Grand Total Summary</div></div>
+      <div class="cb">
+        <div id="bill-grand-total-rows" style="display:flex;flex-direction:column;gap:8px">
+          <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Items Sub-Total</span><span class="mono xs" id="grand-subtotal">₹0</span></div>
+          <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Total GST</span><span class="mono xs" id="grand-gst">₹0</span></div>
+          <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Transport / Freight</span><span class="mono xs" id="grand-transport">₹0</span></div>
+          <hr class="sep" style="margin:4px 0">
+          <div class="flex ic" style="justify-content:space-between"><span class="fw6">Grand Total (Expected Bill)</span><span class="mono fw6" id="grand-total" style="font-size:16px;color:var(--acc)">₹0</span></div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn primary" id="save-purchase-btn" style="justify-content:center;padding:12px 32px;font-size:14px" onclick="handleSavePurchase()">Save All Items → Bill Verification</button>
+  </div>
+
+  <!-- ═══ PURCHASES LIST ═══ -->
+  <div class="page" id="page-purchases">
+    <div class="ph flex ic"><div><div class="pt">All Purchases</div><div class="ps">Full procurement history across all pipeline stages</div></div><button class="btn primary mla" onclick="nav('new-purchase',document.querySelector('[onclick*=new-purchase]'))">+ New Purchase</button></div>
+    <div class="sg4">
+      <div class="sc" style="--sc-color:var(--gold)"><div class="sl">Bill Verification</div><div class="sv" id="pstat-bill">—</div></div>
+      <div class="sc" style="--sc-color:var(--acc)"><div class="sl">Branding</div><div class="sv" id="pstat-brand">—</div></div>
+      <div class="sc" style="--sc-color:var(--teal)"><div class="sl">Digitisation</div><div class="sv" id="pstat-digit">—</div></div>
+      <div class="sc" style="--sc-color:var(--green)"><div class="sl">Warehouse Ready</div><div class="sv" id="pstat-wh">—</div></div>
+    </div>
+    <div class="card">
+      <div class="ch">
+        <div class="flex ic g3" style="flex:1">
+          <div class="sw" style="flex:1;max-width:280px"><span class="si">🔍</span><input id="purchases-search" placeholder="Search purchases..." oninput="loadPurchases()"></div>
+          <select id="purchases-stage-filter" style="min-width:160px" onchange="loadPurchases()">
+            <option value="">All Stages</option>
+            <option value="PENDING_BILL_VERIFICATION">Pending Bill Verification</option>
+            <option value="BILL_DISCREPANCY">Bill Discrepancy</option>
+            <option value="PENDING_BRANDING">Pending Branding</option>
+            <option value="BRANDING_DISPATCHED">Branding Dispatched</option>
+            <option value="PENDING_DIGITISATION">Pending Digitisation</option>
+            <option value="WAREHOUSE_READY">Warehouse Ready</option>
+          </select>
+        </div>
+      </div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Bill ID</th><th>Supplier</th><th>Bill Ref</th><th>Items</th><th>Total Qty</th><th>Expected Bill</th><th>Stage</th><th>Date</th><th></th></tr></thead>
+          <tbody id="purchases-tbody"><tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text3)">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ BILL VERIFICATION ═══ -->
+  <div class="page" id="page-bill-verify">
+    <div class="ph flex ic"><div><div class="pt">Bill Verification</div><div class="ps">Stage 2 — Enter actual supplier bill and reconcile against expected amount</div></div><button class="btn sm mla" id="bv-print-btn" onclick="printBillSummary()" style="display:none">🖨 Print Summary</button></div>
+
+    <!-- LIST VIEW -->
+    <div id="bv-list-section">
+      <div class="card mb4">
+        <div class="ch"><div class="ct">Pending Bill Verification</div><span class="b b-gold" id="bv-list-count">—</span></div>
+        <div class="cb">
+          <div class="tw"><table>
+            <thead><tr><th>Bill ID</th><th>Supplier</th><th>Bill Ref</th><th>Items</th><th>Total Qty</th><th>Expected Bill</th><th>Date</th><th>Action</th></tr></thead>
+            <tbody id="bv-list-tbody"><tr><td colspan="8" class="tc td2 p12">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DETAIL VIEW -->
+    <div id="bv-detail-section" style="display:none">
+      <div class="mb3"><button class="btn sm" onclick="showBvList()">← Back to List</button></div>
+    <div class="pipeline">
+      <div class="pstep done"><div class="pstep-num">STAGE 1</div><div class="pstep-title">📋 Purchase Reg.</div><div class="pstep-sub">✓ Complete</div></div>
+      <div class="pstep active"><div class="pstep-num">STAGE 2</div><div class="pstep-title">🧾 Bill Verify</div><div class="pstep-sub">Action required</div></div>
+      <div class="pstep"><div class="pstep-num">STAGE 3</div><div class="pstep-title">🏷️ Branding</div></div>
+      <div class="pstep"><div class="pstep-num">STAGE 4</div><div class="pstep-title">📸 Digitisation</div></div>
+      <div class="pstep"><div class="pstep-num">STAGE 5</div><div class="pstep-title">🏭 Warehouse</div></div>
+    </div>
+    <div class="main-side">
+      <div class="col-stack">
+        <!-- Dynamic header summary populated by JS -->
+        <div class="card" id="bv-header-card">
+          <div class="ch"><div class="ct" id="bv-title">Purchase Summary</div><span class="b b-gold" id="bv-status-badge">Pending</span></div>
+          <div class="cb">
+            <div class="fg3 mb4" id="bv-meta"></div>
+            <!-- Items table -->
+            <div class="section-lbl mb2">Items in this Purchase</div>
+            <div class="tw"><table>
+              <thead><tr><th>Product</th><th>Brand</th><th>Product Type</th><th>Rate</th><th>Qty</th><th>GST%</th><th>Item Total</th></tr></thead>
+              <tbody id="bv-items-tbody"><tr><td colspan="7" class="tc td2 p12">Loading...</td></tr></tbody>
+            </table></div>
+          </div>
+        </div>
+        <div class="card" id="bill-entry-form-card">
+          <div class="ch"><div class="ct">Enter Supplier Bill</div></div>
+          <div class="cb">
+            <div id="bill-verify-error" style="display:none;color:var(--red);background:var(--redL);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+            <div class="fg2 mb4">
+              <div class="fgrp"><label>Actual Bill Amount (₹) <span class="req">*</span></label><input type="number" placeholder="Enter amount from supplier invoice..." id="actual-bill" oninput="reconcile()"></div>
+              <div class="fgrp"><label>Bill Number <span class="req">*</span></label><input id="bill-number-input" placeholder="Supplier invoice number" class="mono"></div>
+              <div class="fgrp"><label>Bill Date <span class="req">*</span></label><input type="text" id="bill-date-input" placeholder="dd/MM/yyyy" readonly class="datepicker"></div>
+              <div class="fgrp"><label>Discrepancy Note</label><input id="discrepancy-note-input" placeholder="Explain variance if any..."></div>
+            </div>
+            <div id="reconcile-result"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-stack">
+        <div class="card">
+          <div class="ch"><div class="ct">Expected Bill Breakdown</div></div>
+          <div class="cb">
+            <div id="bv-breakdown" style="display:flex;flex-direction:column;gap:8px">
+              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Items Sub-total</span><span class="mono xs" id="bv-subtotal">₹0</span></div>
+              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Transport</span><span class="mono xs" id="bv-transport">₹0</span></div>
+              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Total GST</span><span class="mono xs" id="bv-gst">₹0</span></div>
+              <hr class="sep" style="margin:4px 0">
+              <div class="flex ic" style="justify-content:space-between"><span class="fw6">Expected Total</span><span class="mono fw6" id="bv-expected" style="font-size:16px;color:var(--acc)">₹0</span></div>
+            </div>
+            <hr class="sep">
+            <div class="xs td2">Threshold: <span class="mono" style="color:var(--text1)">±₹50</span> auto-approved · Beyond requires Super Admin</div>
+          </div>
+        </div>
+        <button class="btn primary w100" id="verify-bill-btn" style="justify-content:center;padding:11px;font-size:14px" onclick="handleVerifyBill()">Verify Bill → Next Stage</button>
+      </div>
+    </div>
+    </div><!-- /bv-detail-section -->
+  </div>
+
+  <!-- ═══ BRANDING ═══ -->
+  <div class="page" id="page-branding">
+    <div class="ph flex ic"><div><div class="pt">Branding</div><div class="ps">Stage 3 — Dispatch all items to branding team · Receive and verify</div></div><button class="btn sm mla" id="branding-print-btn" onclick="printBrandingDispatch()" style="display:none">🖨 Print Dispatch Order</button></div>
+
+    <!-- LIST VIEW -->
+    <div id="branding-list-section">
+      <div class="card mb4">
+        <div class="ch"><div class="ct">Pending Branding</div><span class="b b-blue" id="branding-list-count">—</span></div>
+        <div class="cb">
+          <div class="tw"><table>
+            <thead><tr><th>Bill ID</th><th>Supplier</th><th>Bill Ref</th><th>Items</th><th>Total Qty</th><th>Stage</th><th>Date</th><th>Action</th></tr></thead>
+            <tbody id="branding-list-tbody"><tr><td colspan="8" class="tc td2 p12">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DETAIL VIEW -->
+    <div id="branding-detail-section" style="display:none">
+      <div class="mb3"><button class="btn sm" onclick="showBrandingList()">← Back to List</button></div>
+    <div class="pipeline">
+      <div class="pstep done"><div class="pstep-num">STAGE 1</div><div class="pstep-title">📋 Purchase Reg.</div><div class="pstep-sub">✓</div></div>
+      <div class="pstep done"><div class="pstep-num">STAGE 2</div><div class="pstep-title">🧾 Bill Verify</div><div class="pstep-sub">✓</div></div>
+      <div class="pstep active" id="branding-pstep"><div class="pstep-num">STAGE 3</div><div class="pstep-title">🏷️ Branding</div><div class="pstep-sub" id="branding-pstep-sub">In progress</div></div>
+      <div class="pstep"><div class="pstep-num">STAGE 4</div><div class="pstep-title">📸 Digitisation</div></div>
+      <div class="pstep"><div class="pstep-num">STAGE 5</div><div class="pstep-title">🏭 Warehouse</div></div>
+    </div>
+
+    <div class="main-side">
+      <div class="col-stack">
+        <!-- Purchase header info -->
+        <div class="card">
+          <div class="ch"><div class="ct" id="branding-hdr-title">Branding Dispatch Order</div><span class="b" id="branding-status-badge">—</span></div>
+          <div class="cb"><div class="fg3 mb2" id="branding-meta"></div></div>
+        </div>
+        <!-- All items with colours -->
+        <div class="card">
+          <div class="ch"><div class="ct">All Items &amp; Colour Quantities</div></div>
+          <div class="cb">
+            <div id="branding-items-area"><div class="empty"><div class="empty-ic">⏳</div><div>Loading items...</div></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><div class="ct">Branding Instructions</div></div>
+          <div class="cb">
+            <div class="fgrp"><label>Special Instructions</label><textarea id="branding-instructions-input" rows="3" placeholder="e.g. Apply matte finish label, EW Studio logo centred on left temple..."></textarea></div>
+          </div>
+        </div>
+        <button class="btn primary w100" id="branding-dispatch-btn" style="justify-content:center;padding:11px" onclick="handleBrandingDispatch()">Confirm Dispatch → DISPATCHED TO BRANDING</button>
+      </div>
+
+      <div class="col-stack">
+        <div class="card" id="branding-receipt-card" style="display:none">
+          <div class="ch"><div class="ct">Branding Receipt &amp; Verification</div><span class="b b-blue">Awaiting Return</span></div>
+          <div class="cb">
+            <div class="alert alert-gold" id="branding-dispatch-info"><span>⚠️</span><div>Dispatched on <span id="branding-dispatched-date">—</span>. Confirm receipt when all items are returned.</div></div>
+            <button class="btn primary w100 mt4" id="branding-receive-btn" style="justify-content:center" onclick="handleBrandingReceive()">Confirm Receipt → Digitisation</button>
+            <div style="margin-top:10px"><button class="btn sm w100" id="branding-bypass-btn" style="justify-content:center;color:var(--text3)" onclick="showBrandingBypassModal()">Bypass Branding (skip to Digitisation)</button></div>
+          </div>
+        </div>
+        <div class="card" id="branding-bypass-card" style="display:none">
+          <div class="ch"><div class="ct">Bypass Branding</div></div>
+          <div class="cb">
+            <div class="fgrp"><label>Reason <span class="req">*</span></label><textarea id="bypass-reason-input" rows="2" placeholder="Why are items going directly to digitisation?"></textarea></div>
+            <button class="btn primary w100 mt2" onclick="handleBrandingBypass()">Bypass → Send to Digitisation</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div><!-- /branding-detail-section -->
+  </div>
+
+  <!-- ═══ DIGITISATION ═══ -->
+  <div class="page" id="page-digitisation">
+    <div class="ph flex ic"><div><div class="pt">Digitisation</div><div class="ps">Stage 4 — Generate SKUs for each colour variant · Publish to catalogue</div></div><span class="b mla" id="digi-skus-badge" style="font-size:13px"></span></div>
+
+    <!-- LIST VIEW -->
+    <div id="digi-list-section">
+      <div class="card mb4">
+        <div class="ch"><div class="ct">Pending Digitisation</div><span class="b b-teal" id="digi-list-count">—</span></div>
+        <div class="cb">
+          <div class="tw"><table>
+            <thead><tr><th>Bill ID</th><th>Supplier</th><th>Bill Ref</th><th>Items</th><th>Total Qty</th><th>Date</th><th>Action</th></tr></thead>
+            <tbody id="digi-list-tbody"><tr><td colspan="7" class="tc td2 p12">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DETAIL VIEW -->
+    <div id="digi-detail-section" style="display:none">
+      <div class="mb3"><button class="btn sm" onclick="showDigiList()">← Back to List</button></div>
+    <div class="pipeline">
+      <div class="pstep done"><div class="pstep-num">STAGE 1</div><div class="pstep-title">📋 Purchase Reg.</div></div>
+      <div class="pstep done"><div class="pstep-num">STAGE 2</div><div class="pstep-title">🧾 Bill Verify</div></div>
+      <div class="pstep done"><div class="pstep-num">STAGE 3</div><div class="pstep-title">🏷️ Branding</div></div>
+      <div class="pstep active"><div class="pstep-num">STAGE 4</div><div class="pstep-title">📸 Digitisation</div><div class="pstep-sub" id="digi-pstep-sub">Loading...</div></div>
+      <div class="pstep"><div class="pstep-num">STAGE 5</div><div class="pstep-title">🏭 Warehouse</div></div>
+    </div>
+
+    <!-- Purchase summary bar -->
+    <div id="digi-summary-bar" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <span class="xs td2">Loading...</span>
+    </div>
+
+    <!-- Items tabs for digitisation -->
+    <div id="digi-items-container">
+      <!-- populated by JS: one tab-group per item, one tab per colour -->
+    </div>
+
+    <!-- Publish all -->
+    <div class="flex ic g2 mt4" style="border-top:1px solid var(--border);padding-top:16px">
+      <div><div class="fw6" id="digi-progress-label">0 / 0 SKUs generated</div><div class="xs td2 mt1">All SKUs must be generated before publishing to warehouse</div></div>
+      <button class="btn primary mla" id="publish-all-btn" style="padding:12px 28px;font-size:15px" onclick="handleWarehouseReady(window._currentHeaderId)">Publish All to Warehouse ✓</button>
+    </div>
+    </div><!-- /digi-detail-section -->
+  </div>
+
+  <!-- ═══ SKU CATALOGUE ═══ -->
+  
+  <!-- ═══ PURCHASE VIEW (all pipeline stages, read-only) ═══ -->
+  <div class="page" id="page-purchase-view">
+    <div class="ph flex ic">
+      <div>
+        <div class="pt" id="pv-title">Purchase History</div>
+        <div class="ps" id="pv-subtitle">Full pipeline view — all stages</div>
+      </div>
+      <button class="btn sm mla" onclick="loadPurchases();nav('purchases',document.querySelector('.nav-item[onclick*=&quot;purchases&quot;]'))">&#8592; All Purchases</button>
+    </div>
+    <!-- Clickable pipeline bar — all stages accessible -->
+    <div class="pipeline" id="pv-pipeline">
+      <div class="pstep" id="pv-step-1" onclick="switchPVStage(1)" title="View Purchase Registration">
+        <div class="pstep-num">STAGE 1</div><div class="pstep-title">&#128203; Purchase Reg.</div>
+        <div class="pstep-sub" id="pv-sub-1">&#10003; Complete</div>
+      </div>
+      <div class="pstep" id="pv-step-2" onclick="switchPVStage(2)" title="View Bill Verification">
+        <div class="pstep-num">STAGE 2</div><div class="pstep-title">&#129534; Bill Verify</div>
+        <div class="pstep-sub" id="pv-sub-2">&#10003; Verified</div>
+      </div>
+      <div class="pstep" id="pv-step-3" onclick="switchPVStage(3)" title="View Branding">
+        <div class="pstep-num">STAGE 3</div><div class="pstep-title">&#127991; Branding</div>
+        <div class="pstep-sub" id="pv-sub-3">&#10003; Complete</div>
+      </div>
+      <div class="pstep" id="pv-step-4" onclick="switchPVStage(4)" title="View Digitisation">
+        <div class="pstep-num">STAGE 4</div><div class="pstep-title">&#128247; Digitisation</div>
+        <div class="pstep-sub" id="pv-sub-4">&#10003; SKUs Ready</div>
+      </div>
+      <div class="pstep" id="pv-step-5" onclick="switchPVStage(5)" title="View Warehouse">
+        <div class="pstep-num">STAGE 5</div><div class="pstep-title">&#127981; Warehouse</div>
+        <div class="pstep-sub" id="pv-sub-5">LIVE</div>
+      </div>
+    </div>
+    <div id="pv-loading" class="empty"><div class="empty-ic">&#9203;</div><div>Loading purchase data&#8230;</div></div>
+    <div id="pv-error" style="display:none;color:var(--red);background:var(--redL);border-radius:8px;padding:14px 16px"></div>
+    <div id="pv-stage-1" style="display:none"></div>
+    <div id="pv-stage-2" style="display:none"></div>
+    <div id="pv-stage-3" style="display:none"></div>
+    <div id="pv-stage-4" style="display:none"></div>
+    <div id="pv-stage-5" style="display:none"></div>
+  </div>
+<div class="page" id="page-sku-catalogue">
+    <div class="ph flex ic">
+      <div><div class="pt">SKU Catalogue</div><div class="ps" id="sku-cat-subtitle">Loading&#8230;</div></div>
+      <div class="flex g2 mla">
+        <button class="btn sm" id="cat-grid-btn" onclick="setCatalogueView('grid')" style="background:var(--acc2);color:#fff">&#8862; Grid</button>
+        <button class="btn sm" id="cat-table-btn" onclick="setCatalogueView('table')">&#9776; Table</button>
+      </div>
+    </div>
+    <div class="card mb4"><div class="cb"><div class="flex ic g3" style="flex-wrap:wrap">
+      <div class="sw" style="flex:1;min-width:200px"><span class="si">&#128269;</span><input id="cat-search" placeholder="Search SKU, product name, brand&#8230;" oninput="debounceCatSearch()"></div>
+      <select id="cat-brand-filter" style="min-width:130px" onchange="window.loadSkuCatalogue()"><option value="">All Brands</option></select>
+      <select id="cat-type-filter" style="min-width:130px" onchange="window.loadSkuCatalogue()">
+        <option value="">All Types</option><option value="FRAMES">Frames</option>
+        <option value="SUNGLASSES">Sunglasses</option><option value="READERS">Readers</option><option value="SPORTS">Sports</option>
+      </select>
+      <select id="cat-status-filter" style="min-width:130px" onchange="window.loadSkuCatalogue()">
+        <option value="LIVE">Live (Active)</option><option value="">All Status</option>
+      </select>
+    </div></div></div>
+    <div id="sku-cat-grid" class="sku-cat-grid-wrap">
+      <div class="empty"><div class="empty-ic">&#128230;</div><div>Loading SKUs&#8230;</div></div>
+    </div>
+    <div id="sku-cat-table" style="display:none">
+      <div class="card"><div class="tw"><table>
+        <thead><tr><th>SKU Code</th><th>Colour</th><th>Brand</th><th>Type</th><th>Sale Price</th><th>Stock</th><th>Purchased</th><th>Status</th><th></th></tr></thead>
+        <tbody id="sku-cat-tbody"><tr><td colspan="9" class="tc td2 p12">Loading&#8230;</td></tr></tbody>
+      </table></div></div>
+    </div>
+  </div>
+
+  <!-- ═══ STOCK VIEW ═══ -->
+  <div class="page" id="page-stock-view">
+    <div class="ph"><div class="pt">SKU Stock Distribution View</div><div class="ps">Real-time stock across all locations for any SKU</div></div>
+    <div class="card mb4">
+      <div class="cb">
+        <div class="flex ic g3">
+          <div class="sw" style="flex:1;position:relative">
+            <span class="si">🔍</span>
+            <input id="sv-search-q" placeholder="Search SKU code, barcode, product name or colour…" autocomplete="off"
+              oninput="onStockViewSearch()" onkeydown="if(event.key==='Enter')doStockViewSearch()">
+            <span id="sv-search-spinner" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text3)">…</span>
+          </div>
+          <button class="btn primary" onclick="doStockViewSearch()">Search</button>
+        </div>
+        <div id="sv-search-results" style="display:none;border:1px solid var(--border);border-radius:8px;margin-top:6px;max-height:300px;overflow-y:auto;background:var(--card)"></div>
+      </div>
+    </div>
+
+    <div id="sv-empty-state" style="text-align:center;padding:40px 20px;color:var(--text3)">
+      <div style="font-size:40px;margin-bottom:12px">📦</div>
+      <div style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">Search for a SKU to view stock distribution</div>
+      <div style="font-size:12.5px">Type a SKU code, barcode, product name, or colour and select from the results</div>
+    </div>
+
+    <div id="sv-distribution-panel" style="display:none">
+      <div class="main-side">
+        <div class="col-stack">
+          <div class="card">
+            <div class="ch" id="sv-sku-header"></div>
+            <div class="cb" id="sv-locations-list"></div>
+          </div>
+        </div>
+        <div class="col-stack">
+          <div class="card">
+            <div class="ch"><div class="ct">Stock Accounting</div></div>
+            <div class="cb" id="sv-accounting" style="display:flex;flex-direction:column;gap:8px"></div>
+          </div>
+          <div class="card">
+            <div class="ch"><div class="ct">Quick Actions</div></div>
+            <div class="cb col-stack" style="gap:8px">
+              <button class="btn w100" style="justify-content:center" onclick="nav('stock-transfer',document.querySelector('.nav-item[onclick*=\'stock-transfer\']'))">📦 Create Transfer Order</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="sv-error-state" style="display:none;background:var(--redL);border:1px solid var(--red);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--red)"></div>
+  </div>
+
+  <!-- ═══ STOCK TRANSFER ═══ -->
+  <div class="page" id="page-stock-transfer">
+    <style>
+      /* ── Mobile-first Stock Transfer styles ──────────────────────────────── */
+      #page-stock-transfer .st-header {
+        display:flex;flex-direction:column;gap:12px;margin-bottom:16px
+      }
+      #page-stock-transfer .st-scan-area {
+        border:2px dashed var(--border);border-radius:12px;
+        overflow:hidden;background:#000;
+        min-height:220px;display:flex;align-items:center;justify-content:center;
+        position:relative
+      }
+      #page-stock-transfer #st-reader { width:100% }
+      #page-stock-transfer .st-scan-overlay {
+        position:absolute;inset:0;display:flex;flex-direction:column;
+        align-items:center;justify-content:center;gap:8px;
+        background:rgba(0,0,0,.55);color:#fff;font-size:13px;text-align:center;padding:16px
+      }
+      #page-stock-transfer .st-scan-icon { font-size:48px;line-height:1 }
+      #page-stock-transfer .st-cart-row {
+        display:flex;align-items:center;gap:10px;padding:10px 12px;
+        border-bottom:1px solid var(--border);
+      }
+      #page-stock-transfer .st-cart-row:last-child { border-bottom:none }
+      #page-stock-transfer .st-cart-qty {
+        display:flex;align-items:center;gap:6px;
+      }
+      #page-stock-transfer .st-qty-btn {
+        width:30px;height:30px;border-radius:50%;
+        border:1.5px solid var(--border);background:var(--bg2);
+        font-size:16px;line-height:1;cursor:pointer;
+        display:flex;align-items:center;justify-content:center;
+        font-weight:700;color:var(--text1)
+      }
+      #page-stock-transfer .st-qty-val {
+        min-width:28px;text-align:center;font-size:15px;font-weight:700
+      }
+      #page-stock-transfer .st-remove-btn {
+        margin-left:auto;background:none;border:none;
+        color:var(--red);font-size:20px;cursor:pointer;padding:4px
+      }
+      #page-stock-transfer .st-empty-cart {
+        text-align:center;padding:32px 16px;color:var(--text3);font-size:13px
+      }
+      #page-stock-transfer .st-feedback {
+        position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+        background:#111;color:#fff;padding:10px 20px;border-radius:24px;
+        font-size:13px;font-weight:600;z-index:9999;
+        opacity:0;transition:opacity .25s;pointer-events:none
+      }
+      #page-stock-transfer .st-feedback.show { opacity:1 }
+      @media (min-width:700px) {
+        #page-stock-transfer .st-header { flex-direction:row;align-items:flex-end }
+        #page-stock-transfer .st-scan-area { min-height:280px }
+      }
+    </style>
+
+    <div class="ph">
+      <div class="pt">Stock Transfer</div>
+      <div class="ps">Move stock from HQ Warehouse to a store — scan SKU QR codes or search manually</div>
+    </div>
+
+    <!-- Transfer controls header -->
+    <div class="card mb4">
+      <div class="ch"><div class="ct">Transfer Setup</div></div>
+      <div class="cb">
+        <div class="st-header">
+          <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:11px;font-weight:600;color:var(--text3)">Destination Store</label>
+            <select id="st-store-sel" style="padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text1);font-size:14px">
+              <option value="">— Select destination store —</option>
+            </select>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:11px;font-weight:600;color:var(--text3)">Transfer Note (optional)</label>
+            <input type="text" id="st-notes" placeholder="e.g. Weekly stock replenishment"
+              style="padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text1);font-size:14px">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scan + Search -->
+    <div class="card mb4">
+      <div class="ch">
+        <div class="ct">Add Items</div>
+        <div style="display:flex;gap:8px;margin-left:auto">
+          <button class="btn sm" id="st-cam-btn" onclick="stToggleCamera()">📷 Scan QR</button>
+        </div>
+      </div>
+      <div class="cb">
+        <!-- Camera scanner -->
+        <div id="st-scan-container" style="display:none;margin-bottom:12px">
+          <div class="st-scan-area">
+            <div id="st-reader"></div>
+            <div id="st-scan-overlay" class="st-scan-overlay">
+              <div class="st-scan-icon">📷</div>
+              <div>Tap <strong>Scan QR</strong> to start your camera</div>
+            </div>
+          </div>
+          <button class="btn w100 mt3" style="justify-content:center;color:var(--red)" onclick="stStopCamera()">✕ Stop Camera</button>
+        </div>
+
+        <!-- Manual / scanner-wedge search -->
+        <div class="sw" style="margin-bottom:8px">
+          <span class="si">🔍</span>
+          <input type="text" id="st-search-input" placeholder="Type SKU code, model, or scan with hardware scanner…"
+            style="font-size:14px"
+            oninput="stSearchDebounce()" onkeydown="stSearchKeydown(event)">
+        </div>
+
+        <!-- Search results dropdown -->
+        <div id="st-search-results" style="display:none;border:1.5px solid var(--border);border-radius:8px;overflow:hidden;max-height:280px;overflow-y:auto;margin-bottom:4px"></div>
+      </div>
+    </div>
+
+    <!-- Transfer Cart -->
+    <div class="card mb4">
+      <div class="ch">
+        <div class="ct">Transfer Cart</div>
+        <span id="st-cart-count" class="badge" style="margin-left:8px">0 items</span>
+        <button class="btn sm" style="margin-left:auto;color:var(--red)" onclick="stClearCart()" id="st-clear-cart-btn" style="display:none">Clear Cart</button>
+      </div>
+      <div id="st-cart-body">
+        <div class="st-empty-cart">
+          <div style="font-size:36px;margin-bottom:8px">🛒</div>
+          <div>No items added yet — scan or search SKUs to start</div>
+        </div>
+      </div>
+      <div class="cb" id="st-submit-row" style="display:none;padding-top:12px;border-top:1px solid var(--border)">
+        <button class="btn primary w100" style="font-size:15px;padding:12px;justify-content:center" onclick="stSubmitTransfer()">
+          🚚 Transfer to Store
+        </button>
+      </div>
+    </div>
+
+    <!-- Transfer History -->
+    <div class="card">
+      <div class="ch">
+        <div class="ct">Transfer History</div>
+        <button class="btn sm" style="margin-left:auto" onclick="stLoadHistory()">↻ Refresh</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>SKU</th>
+              <th>Product</th>
+              <th>Brand</th>
+              <th>Colour</th>
+              <th class="tc">Qty</th>
+              <th>To Store</th>
+              <th>By</th>
+            </tr>
+          </thead>
+          <tbody id="st-history-tbody">
+            <tr><td colspan="8" class="tc td2 p12">Loading history…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Toast feedback -->
+    <div class="st-feedback" id="st-toast"></div>
+  </div>
+
+  <!-- ═══ LENS PORTFOLIO ═══ -->
+  <div class="page" id="page-lens-portfolio">
+    <div class="ph flex ic"><div><div class="pt">Lens Portfolio</div><div class="ps">Virtual lens catalogue — managed by HQ · Stores activate what they carry</div></div><button class="btn primary mla" onclick="openM('modal-new-lens')">+ Add Lens Product</button></div>
+
+    <div class="alert alert-blue"><span>🔒</span><div>Supplier confidentiality: <strong>Source Brand and Source Name are internal only</strong>. Only Lens Brand and Lens Name are shown publicly on POS, Store OS Browser, and Eyewoot Go.</div></div>
+
+    <div class="card mb4">
+      <div class="ch">
+        <div class="flex ic g3" style="flex:1">
+          <div class="sw" style="flex:1;max-width:260px"><span class="si">🔍</span><input placeholder="Search lens products..."></div>
+          <select style="min-width:150px"><option>All Lens Types</option><option>Single Vision</option><option>Progressive</option><option>Bifocal</option><option>Zero Power</option></select>
+          <select style="min-width:130px"><option>All Brands</option><option>EW Studio Lenses</option><option>Essilor</option><option>Hoya</option></select>
+          <select style="min-width:130px"><option>All Status</option><option>Active</option><option>Discontinued</option><option>Draft</option></select>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+      <div class="lens-card">
+        <div class="lens-name">EW ClearView BLU 1.56</div>
+        <div class="lens-type">Single Vision</div>
+        <div class="lens-tags">
+          <span class="b b-teal xs">BLU Screen</span>
+          <span class="b b-gray xs">1.56 Index</span>
+          <span class="b b-gray xs">Polycarbonate</span>
+          <span class="b b-gray xs">AR Coating</span>
+        </div>
+        <div class="xs td2 mb3">Blocks blue light, reduces digital eye strain. AR coating reduces reflections.</div>
+        <div class="flex ic" style="justify-content:space-between"><div class="lens-price">₹1,200</div><span class="b b-green xs">Active</span></div>
+        <div class="xs td2 mt4 mono" style="color:var(--text3)">EWL-SV-PC-156</div>
+        <hr class="sep">
+        <div class="flex g2"><button class="btn xs" onclick="openM('modal-lens-detail')">Edit</button><button class="btn xs">Store Activation</button></div>
+      </div>
+
+      <div class="lens-card">
+        <div class="lens-name">EW PhotoChrome 1.61</div>
+        <div class="lens-type">Single Vision</div>
+        <div class="lens-tags">
+          <span class="b b-orange xs">Photochromic</span>
+          <span class="b b-gray xs">1.61 Index</span>
+          <span class="b b-gray xs">High Index</span>
+          <span class="b b-gray xs">UV420</span>
+        </div>
+        <div class="xs td2 mb3">Darkens automatically in sunlight. Full UV protection. Ideal for outdoor use.</div>
+        <div class="flex ic" style="justify-content:space-between"><div class="lens-price">₹2,400</div><span class="b b-green xs">Active</span></div>
+        <div class="xs td2 mt4 mono" style="color:var(--text3)">EWL-SV-HI-161</div>
+        <hr class="sep">
+        <div class="flex g2"><button class="btn xs">Edit</button><button class="btn xs">Store Activation</button></div>
+      </div>
+
+      <div class="lens-card">
+        <div class="lens-name">EW Progressive Pro 1.67</div>
+        <div class="lens-type">Progressive</div>
+        <div class="lens-tags">
+          <span class="b b-blue xs">Progressive</span>
+          <span class="b b-gray xs">1.67 Index</span>
+          <span class="b b-gray xs">Trivex</span>
+          <span class="b b-gray xs">AR + Hardcoat</span>
+        </div>
+        <div class="xs td2 mb3">Premium no-line bifocal. Wide corridor design for comfortable transition zones.</div>
+        <div class="flex ic" style="justify-content:space-between"><div class="lens-price">₹4,800</div><span class="b b-green xs">Active</span></div>
+        <div class="xs td2 mt4 mono" style="color:var(--text3)">EWL-PR-TRX-167</div>
+        <hr class="sep">
+        <div class="flex g2"><button class="btn xs">Edit</button><button class="btn xs">Store Activation</button></div>
+      </div>
+
+      <div class="lens-card">
+        <div class="lens-name">EW ZeroBlue 1.50</div>
+        <div class="lens-type">Zero Power</div>
+        <div class="lens-tags">
+          <span class="b b-teal xs">BLU Screen</span>
+          <span class="b b-gray xs">1.50 Index</span>
+          <span class="b b-gray xs">CR-39</span>
+          <span class="b b-gray xs">UV420</span>
+        </div>
+        <div class="xs td2 mb3">Non-prescriptive blue light protection. Perfect for screen workers who don't need power correction.</div>
+        <div class="flex ic" style="justify-content:space-between"><div class="lens-price">₹800</div><span class="b b-green xs">Active</span></div>
+        <div class="xs td2 mt4 mono" style="color:var(--text3)">EWL-ZP-CR39-150</div>
+        <hr class="sep">
+        <div class="flex g2"><button class="btn xs">Edit</button><button class="btn xs">Store Activation</button></div>
+      </div>
+
+      <div class="lens-card" style="border:2px dashed var(--border);background:transparent;display:flex;align-items:center;justify-content:center;min-height:200px;cursor:pointer" onclick="openM('modal-new-lens')">
+        <div style="text-align:center;color:var(--text3)"><div style="font-size:28px;margin-bottom:8px">+</div><div class="sm-txt fw6">Add Lens Product</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ RATE INTELLIGENCE ═══ -->
+  <div class="page" id="page-rate-intelligence">
+    <div class="ph"><div class="pt">Vendor &amp; Product Rate Intelligence</div><div class="ps">Lowest · Highest · Last rate · Trend — all automatic from purchase history</div></div>
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab(this,'rtab-product')">Product-Centric View</div>
+      <div class="tab" onclick="switchTab(this,'rtab-vendor')">Vendor-Centric View</div>
+    </div>
+
+    <div id="rtab-product">
+      <div class="card mb4"><div class="cb"><div class="flex ic g3"><div class="sw" style="flex:1"><span class="si">🔍</span><input placeholder="Search product — EW Collection + Style..."></div><button class="btn primary">Search</button></div></div></div>
+
+      <div class="card">
+        <div class="ch"><div><div class="fw6">EW Studio · Botanica Series · Style VR-01</div><div class="xs td2">Source Collection: Classic TR-90 Series · Product Type: Frames · 3 Vendors</div></div></div>
+        <div class="cb">
+          <div class="rate-strip">
+            <div class="rate-cell"><div class="rate-lbl">📉 Lowest Rate Ever</div><div class="rate-val" style="color:var(--green)">₹160</div><div class="rate-meta">ABC Optics · 14 Mar 2024</div></div>
+            <div class="rate-cell"><div class="rate-lbl">📈 Highest Rate Ever</div><div class="rate-val" style="color:var(--red)">₹240</div><div class="rate-meta">Optics World · 02 Jan 2023</div></div>
+            <div class="rate-cell"><div class="rate-lbl">🕐 Last Purchased</div><div class="rate-val" style="color:var(--acc)">₹185</div><div class="rate-meta">ABC Optics · 08 Jan 2025</div></div>
+          </div>
+          <div class="tw">
+            <table>
+              <thead><tr><th>Vendor</th><th>Purchases</th><th>Lowest Rate</th><th>Highest Rate</th><th>Last Rate</th><th>Last Purchase</th><th>Trend</th></tr></thead>
+              <tbody>
+                <tr style="background:#F0FFF4"><td class="fw6">ABC Optics</td><td>6</td><td class="fw6 mono" style="color:var(--green)">₹160</td><td class="mono td2">₹190</td><td class="fw6 mono">₹185</td><td class="td2 xs">08 Jan 2025</td><td><span class="b b-green">↓ ₹5 cheaper</span></td></tr>
+                <tr><td class="fw6">Moradabad Glass</td><td>3</td><td class="mono td2">₹175</td><td class="mono td2">₹210</td><td class="fw6 mono">₹210</td><td class="td2 xs">15 Nov 2024</td><td><span class="b b-red">↑ ₹35 higher</span></td></tr>
+                <tr><td class="fw6">Optics World</td><td>2</td><td class="mono td2">₹220</td><td class="mono td2">₹240</td><td class="mono td2">₹220</td><td class="td2 xs">02 Jan 2023</td><td><span class="b b-gray">— Inactive</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="rtab-vendor" style="display:none">
+      <div class="card mb4"><div class="cb"><div class="flex ic g3"><div class="sw" style="flex:1"><span class="si">🔍</span><input placeholder="Search vendor..."></div><button class="btn primary">Search</button></div></div></div>
+      <div class="card">
+        <div class="ch"><div><div class="fw6">ABC Optics, Moradabad</div><div class="xs td2">Total Products: 4 · Total Purchases: 18 · Last Purchase: 08 Jan 2025</div></div></div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Product (EW Collection · Style)</th><th>Source Collection</th><th>Purchases</th><th>Lowest ₹</th><th>Highest ₹</th><th>Last Rate</th></tr></thead>
+            <tbody>
+              <tr><td class="fw6">Botanica Series · VR-01</td><td class="mono xs td2">Classic TR-90 Series</td><td>6</td><td class="mono fw6" style="color:var(--green)">₹160</td><td class="mono td2">₹190</td><td class="mono fw6">₹185</td></tr>
+              <tr><td class="fw6">Coastal Wave · CW-03</td><td class="mono xs td2">Ocean Flex Series</td><td>5</td><td class="mono fw6" style="color:var(--green)">₹140</td><td class="mono td2">₹175</td><td class="mono fw6">₹155</td></tr>
+              <tr><td class="fw6">Midnight Steel · MS-02</td><td class="mono xs td2">Pro Metal Series</td><td>4</td><td class="mono fw6" style="color:var(--green)">₹220</td><td class="mono td2">₹260</td><td class="mono fw6">₹240</td></tr>
+              <tr><td class="fw6">Heritage Round · HR-01</td><td class="mono xs td2">Vintage Round TR</td><td>3</td><td class="mono fw6" style="color:var(--green)">₹180</td><td class="mono td2">₹195</td><td class="mono fw6">₹180</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ MASTER CATALOGUE ═══ -->
+  <div class="page" id="page-master-catalogue">
+    <div class="ph flex ic"><div><div class="pt">Master Catalogue</div><div class="ps">Every Brand + Collection + Style combination ever purchased — the backbone of repeat detection</div></div></div>
+    <div class="card">
+      <div class="ch">
+        <div class="flex ic g3" style="flex:1">
+          <div class="sw" style="flex:1;max-width:280px"><span class="si">🔍</span><input placeholder="Search products..."></div>
+          <select style="min-width:140px"><option>All Source Types</option><option>Local Supplier</option><option>Direct Brand</option><option>Import</option></select>
+          <select style="min-width:130px"><option>All Status</option><option>Active</option><option>Discontinued</option><option>Seasonal</option></select>
+        </div>
+      </div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Brand (Public)</th><th>EW Collection</th><th>Source Collection</th><th>Style / Model</th><th>Source Type</th><th>Product Type</th><th>Branding</th><th>Status</th><th>Purchases</th></tr></thead>
+          <tbody>
+            <tr><td class="fw6">EW Studio</td><td>Botanica Series</td><td class="mono xs td2">Classic TR-90 Series</td><td class="mono xs">VR-01</td><td><span class="b b-blue">Local Supplier</span></td><td><span class="b b-gray">Frames</span></td><td><span class="b b-green">Required</span></td><td><span class="b b-green">Active</span></td><td class="fw6">6</td></tr>
+            <tr><td class="fw6">Ray-Ban</td><td>Aviator Series</td><td class="td2">—</td><td class="mono xs">RB3025</td><td><span class="b b-purple">Direct Brand</span></td><td><span class="b b-gray">Sunglasses</span></td><td><span class="b b-gray">Bypass OK</span></td><td><span class="b b-green">Active</span></td><td class="fw6">4</td></tr>
+            <tr><td class="fw6">EW Sport</td><td>Coastal Wave</td><td class="mono xs td2">Ocean Flex Series</td><td class="mono xs">CW-03</td><td><span class="b b-blue">Local Supplier</span></td><td><span class="b b-gray">Frames</span></td><td><span class="b b-green">Required</span></td><td><span class="b b-green">Active</span></td><td class="fw6">5</td></tr>
+            <tr><td class="fw6">WoodWear</td><td>Vintage Round</td><td class="td2">—</td><td class="mono xs">VR-01</td><td><span class="b b-purple">Direct Brand</span></td><td><span class="b b-gray">Frames</span></td><td><span class="b b-gray">Bypass OK</span></td><td><span class="b b-green">Active</span></td><td class="fw6">3</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SUPPLIERS ═══ -->
+  <div class="page" id="page-suppliers">
+    <div class="ph flex ic"><div><div class="pt">Supplier Management</div><div class="ps">All vendors who supply products to Eyewoot</div></div><button class="btn primary mla" onclick="openNewSupplierModal()">+ Add Supplier</button></div>
+    <div class="card">
+      <div class="ch"><div class="sw" style="flex:1;max-width:300px"><span class="si">🔍</span><input id="suppliers-search" placeholder="Search suppliers..." oninput="loadSuppliers()"></div></div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Supplier</th><th>Code</th><th>City</th><th>GSTIN</th><th>Status</th><th></th></tr></thead>
+          <tbody id="suppliers-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ MAKER MASTER ═══ -->
+  <div class="page" id="page-maker-master">
+    <div class="ph flex ic"><div><div class="pt">Maker Master</div><div class="ps">Manufacturers / factories that produce eyewear for Eyewoot brands</div></div><button class="btn primary mla" onclick="openNewMakerModal()">+ Add Maker</button></div>
+    <div class="card">
+      <div class="ch"><div class="sw" style="flex:1;max-width:300px"><span class="si">🔍</span><input id="makers-search" placeholder="Search makers..." oninput="loadMakers()"></div></div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Maker Name</th><th>Code</th><th>Country</th><th>Description</th><th>Status</th><th></th></tr></thead>
+          <tbody id="makers-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- MODALS -->
+<div class="overlay" id="modal-new-lens">
+  <div class="modal">
+    <div class="mh"><div class="mt-title">Add Lens Product</div><div class="mc" onclick="closeM('modal-new-lens')">×</div></div>
+    <div class="mb">
+      <div class="alert alert-blue"><span>🔒</span><div><strong>Supplier Confidentiality:</strong> Source Brand and Source Name are internal only. Lens Brand and Lens Name are shown publicly.</div></div>
+      <div class="section-lbl">Public Identity</div>
+      <div class="fg2 mb4">
+        <div class="fgrp"><label>Lens Name (Public) <span class="req">*</span></label><input placeholder="e.g. EW ClearView BLU 1.56"></div>
+        <div class="fgrp"><label>Lens Brand (Public) <span class="req">*</span></label><input placeholder="e.g. EW Studio Lenses"></div>
+      </div>
+      <div class="section-lbl">Internal / Supplier</div>
+      <div class="fg2 mb4">
+        <div class="fgrp"><label>Source Brand (Internal)</label><input placeholder="Supplier's brand name..."><div class="fhint">Never shown publicly</div></div>
+        <div class="fgrp"><label>Source Name (Internal)</label><input placeholder="Supplier's product name/ref..."><div class="fhint">Never shown publicly</div></div>
+      </div>
+      <div class="section-lbl">Lens Attributes</div>
+      <div class="fg3 mb4">
+        <div class="fgrp"><label>Lens Type <span class="req">*</span></label><select><option>Single Vision</option><option>Progressive</option><option>Bifocal</option><option>Zero Power</option></select></div>
+        <div class="fgrp"><label>Lens Material <span class="req">*</span></label><select><option>CR-39</option><option>Polycarbonate</option><option>Trivex</option><option>High Index</option></select></div>
+        <div class="fgrp"><label>Index <span class="req">*</span></label><select><option>1.50</option><option>1.56</option><option>1.61</option><option>1.67</option><option>1.74</option></select></div>
+      </div>
+      <div class="fg2 mb4">
+        <div class="fgrp s2"><label>Lens Coatings</label><div style="display:flex;gap:8px;flex-wrap:wrap;padding:9px 11px;border:1.5px solid var(--border);border-radius:7px">
+          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer;font-size:12.5px"><input type="checkbox" checked> AR (Anti-Reflective)</label>
+          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer;font-size:12.5px"><input type="checkbox"> Hardcoat</label>
+          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer;font-size:12.5px"><input type="checkbox"> UV420</label>
+          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer;font-size:12.5px"><input type="checkbox"> Mirror</label>
+        </div></div>
+      </div>
+      <div class="fg2 mb4">
+        <div class="fgrp"><label>Price MRP (₹) <span class="req">*</span></label><input type="number" placeholder="e.g. 1200"></div>
+        <div class="fgrp"><label>Catalogue Status</label><select><option>Active</option><option>Draft</option></select></div>
+        <div class="fgrp s2"><label>Benefits (Customer-Facing)</label><textarea placeholder="Key benefits in customer language..."></textarea></div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('modal-new-lens')">Cancel</button><button class="btn primary">Save Lens Product</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-lens-detail">
+  <div class="modal narrow">
+    <div class="mh"><div><div class="mt-title">EW ClearView BLU 1.56</div><div style="font-size:11px;color:var(--text2);margin-top:2px" class="mono">EWL-SV-PC-156</div></div><div class="mc" onclick="closeM('modal-lens-detail')">×</div></div>
+    <div class="mb">
+      <div class="tabs" style="margin-bottom:14px">
+        <div class="tab active" onclick="switchTab(this,'ltab-pub')">Public</div>
+        <div class="tab" onclick="switchTab(this,'ltab-int')">Internal</div>
+        <div class="tab" onclick="switchTab(this,'ltab-stores')">Store Activation</div>
+      </div>
+      <div id="ltab-pub">
+        <div class="col-stack" style="gap:10px">
+          <div class="fgrp"><label>Lens Name</label><input value="EW ClearView BLU 1.56"></div>
+          <div class="fgrp"><label>Lens Brand</label><input value="EW Studio Lenses"></div>
+          <div class="fgrp"><label>Price MRP (₹)</label><input type="number" value="1200"></div>
+          <div class="fgrp"><label>Benefits</label><textarea>Blocks blue light, reduces digital eye strain. AR coating reduces reflections for clear vision.</textarea></div>
+        </div>
+      </div>
+      <div id="ltab-int" style="display:none">
+        <div class="alert alert-blue"><span>🔒</span><div>Visible to Super Admin and Foundry team only.</div></div>
+        <div class="col-stack" style="gap:10px">
+          <div class="fgrp"><label>Source Brand</label><input value="Essilor" class="mono"></div>
+          <div class="fgrp"><label>Source Name</label><input value="Crizal Easy UV" class="mono"></div>
+        </div>
+      </div>
+      <div id="ltab-stores" style="display:none">
+        <div class="xs td2 mb4">Toggle which stores offer this lens product. Default: OFF for all stores.</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="flex ic" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="sm-txt">Eyewoot Surat Main</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+          <div class="flex ic" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="sm-txt">Franchise — Bharuch</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+          <div class="flex ic" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="sm-txt">Franchise — Vadodara</span><div class="tog" onclick="this.classList.toggle('on')"></div></div>
+          <div class="flex ic" style="justify-content:space-between;padding:10px 0"><span class="sm-txt">Eyewoot Anand</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('modal-lens-detail')">Cancel</button><button class="btn primary">Save Changes</button></div>
+  </div>
+</div>
+
+<!-- ── Edit Purchase (Stage 1 only) ── -->
+<div class="overlay" id="modal-edit-purchase">
+  <div class="modal" style="max-width:520px">
+    <div class="mh"><div class="mt-title">Edit Purchase — Stage 1</div><div class="mc" onclick="closeM('modal-edit-purchase')">×</div></div>
+    <div class="mb">
+      <div id="edit-purchase-error" style="display:none;color:var(--red);background:var(--redL);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+      <input type="hidden" id="edit-purchase-id">
+      <div class="fg2 mb4">
+        <div class="fgrp">
+          <label>Supplier</label>
+          <select id="edit-supplier-select">
+            <option value="">— Select Supplier —</option>
+          </select>
+        </div>
+        <div class="fgrp"><label>Bill Reference</label><input id="edit-bill-ref" placeholder="Invoice / bill number..."></div>
+        <div class="fgrp"><label>Purchase Date</label><input type="text" id="edit-purchase-date" placeholder="dd/MM/yyyy" readonly class="datepicker"></div>
+        <div class="fgrp"><label>Purchase Rate (₹)</label><input type="number" id="edit-purchase-rate" placeholder="0.00"></div>
+        <div class="fgrp"><label>Quantity</label><input type="number" id="edit-quantity" placeholder="0"></div>
+        <div class="fgrp"><label>Transport Cost (₹)</label><input type="number" id="edit-transport" placeholder="0"></div>
+        <div class="fgrp"><label>GST %</label><input type="number" id="edit-gst-pct" placeholder="e.g. 12"></div>
+        <div class="fgrp"><label>PO Reference</label><input id="edit-po-reference" placeholder="PO number..."></div>
+        <div class="fgrp"><label>Notes</label><input id="edit-notes" placeholder="Notes..."></div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('modal-edit-purchase')">Cancel</button><button class="btn primary" id="save-edit-purchase-btn" onclick="handleSaveEditPurchase()">Save Changes</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-new-supplier">
+  <div class="modal">
+    <div class="mh"><div class="mt-title" id="supplier-modal-title">Add Supplier</div><div class="mc" onclick="closeM('modal-new-supplier')">×</div></div>
+    <div class="mb">
+      <div id="supplier-modal-error" style="display:none;color:var(--red);background:var(--redL);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+      <input type="hidden" id="supplier-editing-id">
+      <div class="fg2 mb4">
+        <div class="fgrp"><label>Vendor Name <span class="req">*</span></label><input id="sup-vendor-name" placeholder="Full business name..." oninput="autoFillVendorCode(this.value)"></div>
+        <div class="fgrp"><label>Vendor Code <span class="fhint" style="display:inline">(auto-generated)</span></label><div class="flex ic g2"><input id="sup-vendor-code" placeholder="Auto..." class="mono" style="flex:1"><button type="button" class="btn sm" onclick="refreshVendorCode()" title="Regenerate code">↺</button></div></div>
+        <div class="fgrp"><label>City</label><input id="sup-city" placeholder="e.g. Moradabad"></div>
+        <div class="fgrp"><label>State</label><input id="sup-state" placeholder="e.g. Gujarat"></div>
+        <div class="fgrp"><label>GSTIN</label><input id="sup-gstin" placeholder="15-char GST number" class="mono"></div>
+        <div class="fgrp"><label>Contact Person · Phone</label><input id="sup-contact-person" placeholder="Name · Phone"></div>
+        <div class="fgrp"><label>Contact Phone</label><input id="sup-contact-phone" placeholder="+91 XXXXX XXXXX"></div>
+        <div class="fgrp"><label>Payment Terms</label><select id="sup-payment-terms"><option value="">Select payment terms...</option></select></div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('modal-new-supplier')">Cancel</button><button class="btn primary" id="save-supplier-btn" onclick="handleSaveSupplier()">Add Supplier</button></div>
+  </div>
+</div>
+
+<!-- ── Maker Master Modal ── -->
+<div class="overlay" id="modal-maker">
+  <div class="modal">
+    <div class="mh"><div class="mt-title" id="maker-modal-title">Add Maker</div><div class="mc" onclick="closeM('modal-maker')">×</div></div>
+    <div class="mb">
+      <div id="maker-modal-error" style="display:none;color:var(--red);background:var(--redL);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+      <input type="hidden" id="maker-editing-id">
+      <div class="fg2 mb4">
+        <div class="fgrp"><label>Maker / Factory Name <span class="req">*</span></label><input id="maker-name" placeholder="e.g. Zhejiang Optics Co."></div>
+        <div class="fgrp"><label>Maker Code <span class="req">*</span></label><input id="maker-code" placeholder="e.g. ZHEJ-001" class="mono"></div>
+        <div class="fgrp"><label>Country</label><input id="maker-country" placeholder="e.g. China, India, Italy"></div>
+        <div class="fgrp s2"><label>Description</label><textarea id="maker-description" rows="2" placeholder="Brief description of what they manufacture..."></textarea></div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('modal-maker')">Cancel</button><button class="btn primary" id="save-maker-btn" onclick="handleSaveMaker()">Add Maker</button></div>
+  </div>
+</div>
+
+<!-- SKU / Product Detail Modal -->
+<div class="overlay" id="modal-sku-detail">
+  <div class="modal" style="max-width:680px">
+    <div class="mh">
+      <div class="mt-title" id="sku-detail-title">Product Details</div>
+      <div class="mc" onclick="closeM('modal-sku-detail')">×</div>
+    </div>
+    <div class="mb" id="sku-detail-body" style="min-height:220px">
+      <div class="tc td2">Loading…</div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('modal-sku-detail')">Close</button></div>
+  </div>
+</div>
+
+<!-- ── Barcode Print Modal ── -->
+<div class="overlay" id="modal-barcode-print">
+  <div class="modal" style="max-width:900px;width:96vw;max-height:92vh;overflow:hidden;display:flex;flex-direction:column">
+    <div class="mh" style="flex-shrink:0">
+      <div class="mt-title">🏷️ Print Barcode Labels</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px">TSC P210 · TSPL2 · 15 mm × 15 mm · 6UP layout</div>
+      <div class="mc" onclick="closeM('modal-barcode-print')">×</div>
+    </div>
+    <div class="mb" style="flex:1;overflow-y:auto;padding:16px;display:flex;gap:16px;flex-wrap:wrap">
+
+      <!-- Left: SKU list -->
+      <div style="flex:1;min-width:280px">
+        <div class="flex ic mb2" style="justify-content:space-between">
+          <div class="section-lbl">SKUs to Print</div>
+          <div class="flex ic g2">
+            <button class="btn btn-sm" onclick="bcSelectAll(true)">All</button>
+            <button class="btn btn-sm" onclick="bcSelectAll(false)">None</button>
+          </div>
+        </div>
+        <div id="bc-sku-list" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px"></div>
+        <div class="mt3" style="border:1px solid var(--border);border-radius:8px;padding:10px">
+          <div class="section-lbl mb2">Override Qty (Set All)</div>
+          <div class="flex ic g2">
+            <input id="bc-copies" type="number" min="1" max="9999" placeholder="e.g. 5" style="width:70px" oninput="bcApplyGlobalQty()">
+            <button class="btn btn-sm" onclick="bcApplyGlobalQty()">Set All</button>
+            <button class="btn btn-sm" onclick="bcResetQty()" title="Reset to stock quantity">↺ Reset</button>
+          </div>
+          <div style="font-size:10px;color:var(--text2);margin-top:5px">Default = each SKU's stock quantity</div>
+        </div>
+        <div class="mt3">
+          <label class="section-lbl">Label type</label>
+          <select id="bc-type" onchange="bcRenderPreview()" style="margin-top:4px">
+            <option value="QR" selected>QR Code</option>
+            <option value="CODE128">Code 128 (barcode)</option>
+          </select>
+        </div>
+        <div id="bc-printer-status" class="mt3" style="font-size:12px;padding:8px 10px;border-radius:6px;background:#f8f8f8;border:1px solid var(--border)">
+          <span id="bc-status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ccc;margin-right:6px"></span>
+          <span id="bc-status-text">Printer not connected</span>
+        </div>
+      </div>
+
+      <!-- Right: Preview -->
+      <div style="flex:2;min-width:300px">
+        <div class="section-lbl mb2">Label Preview <span style="font-size:10px;color:var(--text2);font-weight:400">(6UP · actual proportions)</span></div>
+        <div id="bc-preview-wrap" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px;min-height:200px;overflow:auto">
+          <div id="bc-preview-rows"></div>
+        </div>
+        <div id="bc-summary" class="mt2" style="font-size:12px;color:var(--text2)"></div>
+      </div>
+    </div>
+    <div class="mf" style="flex-shrink:0;gap:8px">
+      <button class="btn" onclick="closeM('modal-barcode-print')">Cancel</button>
+      <button class="btn btn-outline" id="bc-connect-btn" onclick="bcConnectPrinter()">🔌 Connect Printer (USB)</button>
+      <button class="btn btn-primary" id="bc-print-btn" onclick="bcPrint()">🖨️ Print Labels</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const bcMap = {
+  dashboard:'Dashboard', purchases:'All Purchases', 'new-purchase':'New Purchase',
+  'bill-verify':'Bill Verification', branding:'Branding', digitisation:'Digitisation',
+  'sku-catalogue':'SKU Catalogue', 'stock-view':'Stock View', 'stock-transfer':'Stock Transfer', 'lens-portfolio':'Lens Portfolio',
+  'master-catalogue':'Master Catalogue', 'rate-intelligence':'Rate Intelligence',
+  suppliers:'Suppliers', 'maker-master':'Maker Master'
+};
+
+function nav(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if (el) el.classList.add('active');
+  document.getElementById('bc').textContent = bcMap[id] || id;
+}
+
+function openM(id) { document.getElementById(id).classList.add('open'); }
+function closeM(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); }));
+
+function switchTab(el, tid) {
+  const parent = el.closest('.tabs');
+  if (parent) parent.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  // figure out prefix
+  const prefix = tid.startsWith('dtab') ? 'dtab' : tid.startsWith('rtab') ? 'rtab' : tid.startsWith('ltab') ? 'ltab' : null;
+  if (prefix) document.querySelectorAll('[id^="'+prefix+'"]').forEach(t => t.style.display = 'none');
+  const t = document.getElementById(tid);
+  if (t) t.style.display = '';
+}
+
+function handleSourceType(sel) { /* delegated to handleItemSourceType() in foundry-prototype.js */ }
+function checkRepeat() { /* delegated to checkItemRepeat() in foundry-prototype.js */ }
+function calcBill() { /* delegated to calcItemBill() in foundry-prototype.js */ }
+
+function reconcile() {
+  const actual = parseFloat(document.getElementById('actual-bill').value) || 0;
+  const expected = 41664;
+  const diff = actual - expected;
+  const res = document.getElementById('reconcile-result');
+  if (!actual) { res.innerHTML = ''; return; }
+  const abs = Math.abs(diff);
+  if (abs <= 50) {
+    res.innerHTML = `<div class="alert alert-green"><span>✅</span><div><strong>MATCHED</strong> — Difference: ₹${diff.toFixed(0)}. Within ±₹50 threshold. Auto-approved.</div></div>`;
+  } else {
+    res.innerHTML = `<div class="alert alert-red"><span>⚠️</span><div><strong>DISCREPANCY</strong> — Difference: ₹${diff.toFixed(0)}. Beyond ±₹50 threshold. Super Admin approval required.<br><div class="fgrp" style="margin-top:8px"><label style="font-size:12px">Discrepancy Note (required)</label><textarea placeholder="Explain the variance..."></textarea></div></div></div>`;
+  }
+}
+
+function addColour() {
+  const row = document.createElement('div');
+  row.className = 'colour-row';
+  row.innerHTML = `<div class="colour-swatch" style="background:#888"></div><input placeholder="Colour name" style="flex:2"><input placeholder="Code" class="mono" style="flex:1;max-width:100px"><input type="number" placeholder="Qty" style="flex:1;max-width:80px"><button class="btn xs" style="color:var(--red);border-color:var(--redL)" onclick="this.closest('.colour-row').remove()">✕</button>`;
+  document.getElementById('colour-rows').appendChild(row);
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="/js/foundry-prototype.js" defer></script>
+<script>
+// Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)
+document.addEventListener('DOMContentLoaded', function() {
+  function fpInit(el) {
+    if (!el) return;
+    flatpickr(el, {
+      dateFormat: 'd/m/Y',        // display as dd/MM/yyyy
+      allowInput: false,
+      disableMobile: true,
+      onChange: function(selectedDates, dateStr) {
+        // store ISO yyyy-MM-dd in a hidden sibling for API use
+        const iso = selectedDates[0] ? selectedDates[0].toISOString().split('T')[0] : '';
+        let hidden = el.parentElement.querySelector('input[type=hidden][data-fp]');
+        if (!hidden) {
+          hidden = document.createElement('input');
+          hidden.type = 'hidden';
+          hidden.dataset.fp = '1';
+          hidden.id = el.id + '_iso';
+          el.parentElement.appendChild(hidden);
+        }
+        hidden.value = iso;
+      }
+    });
+  }
+  document.querySelectorAll('input.datepicker').forEach(fpInit);
+
+  // Re-init when new purchase item cards are added dynamically
+  // (handled by MutationObserver on the items container)
+  const obs = new MutationObserver(function(muts) {
+    muts.forEach(function(m) {
+      m.addedNodes.forEach(function(node) {
+        if (node.nodeType === 1) {
+          node.querySelectorAll('input.datepicker:not(.flatpickr-input)').forEach(fpInit);
+        }
+      });
+    });
+  });
+  const container = document.getElementById('purchase-items-container');
+  if (container) obs.observe(container, { childList: true, subtree: true });
+});
+
+// Global helper: get ISO date from a flatpickr input (reads hidden sibling or parses dd/MM/yyyy)
+window.getFpIso = function(inputId) {
+  const hidden = document.getElementById(inputId + '_iso');
+  if (hidden && hidden.value) return hidden.value;
+  // Fallback: parse dd/MM/yyyy manually
+  const el = document.getElementById(inputId);
+  if (!el || !el.value) return '';
+  const parts = el.value.split('/');
+  if (parts.length !== 3) return '';
+  return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+};
+</script>
+</body>
+</html>
