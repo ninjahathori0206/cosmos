@@ -1,5 +1,17 @@
 const API_KEY = 'CHANGE_ME_API_KEY';
 
+// ── Mobile sidebar toggle ──────────────────────────────────────────────────────
+function openSidebar() {
+  document.querySelector('.sidebar').classList.add('open');
+  document.getElementById('fy-sidebar-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeSidebar() {
+  document.querySelector('.sidebar').classList.remove('open');
+  document.getElementById('fy-sidebar-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const token = sessionStorage.getItem('cosmos_token');
   const userRaw = sessionStorage.getItem('cosmos_user');
@@ -7,6 +19,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!token || !userRaw) { window.location.href = '/'; return; }
 
   const user = JSON.parse(userRaw);
+
+  const mods = user.modules;
+  const hasMap = mods && typeof mods === 'object' && Object.keys(mods).length > 0;
+  if (hasMap && mods.foundry === false) {
+    if (mods.command_unit !== false) window.location.href = '/command-unit.html';
+    else if (mods.finance !== false) window.location.href = '/finance.html';
+    else if (mods.storepilot !== false) window.location.href = '/storepilot.html';
+    else window.location.href = '/';
+    return;
+  }
+
   const nameEl = document.getElementById('foundry-user-name');
   const roleEl = document.getElementById('foundry-user-role');
   const avEl   = document.getElementById('foundry-user-av');
@@ -14,6 +37,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (roleEl) roleEl.textContent = user.role || 'Procurement';
   if (avEl && user.full_name) {
     avEl.textContent = user.full_name.split(' ').filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+  }
+
+  if (typeof window.applyCosmosModuleSwitchNav === 'function') {
+    window.applyCosmosModuleSwitchNav('fd-switch-module-wrap', user);
   }
 
   // ── HTTP helpers ──────────────────────────────────────────────────────────
@@ -54,27 +81,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const inr = (n) => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
   const inrD = (n) => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // dd/MM/yyyy
+  // ── IST date helper ───────────────────────────────────────────────────────
+  function istToday() {
+    const [d, m, y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/');
+    return `${y}-${m}-${d}`;
+  }
+
+  // dd/MM/yyyy (IST)
   function fmtDate(d) {
     if (!d) return '—';
     const dt = new Date(d);
-    const dd = String(dt.getDate()).padStart(2, '0');
-    const mm = String(dt.getMonth() + 1).padStart(2, '0');
-    const yyyy = dt.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
+    if (isNaN(dt)) return String(d);
+    return dt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' });
   }
 
-  // dd/MM/yyyy HH:mm:ss
+  // dd/MM/yyyy HH:mm:ss (IST)
   function fmtDateTime(d) {
     if (!d) return '—';
     const dt = new Date(d);
-    const dd = String(dt.getDate()).padStart(2, '0');
-    const mm = String(dt.getMonth() + 1).padStart(2, '0');
-    const yyyy = dt.getFullYear();
-    const HH = String(dt.getHours()).padStart(2, '0');
-    const min = String(dt.getMinutes()).padStart(2, '0');
-    const ss  = String(dt.getSeconds()).padStart(2, '0');
-    return `${dd}/${mm}/${yyyy} ${HH}:${min}:${ss}`;
+    if (isNaN(dt)) return String(d);
+    return dt.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
   }
 
   const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
@@ -407,7 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ? `<span style="background:#e3f2fd;color:#1565c0;padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:4px">${r.total_purchases} purchase${r.total_purchases !== 1 ? 's' : ''}</span>`
         : '';
       const lastDate = r.last_purchase_date
-        ? `<span style="color:var(--text3);font-size:11px;margin-left:4px">· last ${new Date(r.last_purchase_date).toLocaleDateString('en-IN', {month:'short',year:'numeric'})}</span>`
+        ? `<span style="color:var(--text3);font-size:11px;margin-left:4px">· last ${new Date(r.last_purchase_date).toLocaleDateString('en-GB', { month:'short', year:'numeric', timeZone: 'Asia/Kolkata' })}</span>`
         : '';
       const rateBadge = r.last_purchase_rate != null
         ? `<span style="background:#f3e5f5;color:#6a1b9a;padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:4px">₹${Number(r.last_purchase_rate).toLocaleString('en-IN')}/unit</span>`
@@ -577,7 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _itemCount = 0;
     const container = document.getElementById('purchase-items-container');
     if (container) container.innerHTML = '';
-    const today = new Date().toISOString().split('T')[0];
+    const today = istToday();
     // Set today as default in flatpickr if not already set
     const fpEl = document.getElementById('bill-purchase-date-input');
     if (fpEl && !fpEl.value && fpEl._flatpickr) fpEl._flatpickr.setDate(new Date(), true);
@@ -1403,7 +1429,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('bv-expected').textContent   = inrD(expected);
 
       // Pre-fill date
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = istToday();
       const billDateEl = document.getElementById('bill-date-input');
       if (billDateEl && !billDateEl.value && billDateEl._flatpickr) billDateEl._flatpickr.setDate(new Date(), true);
 
@@ -1735,7 +1761,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td style="padding:7px 12px;text-align:center;font-weight:700">${info.qty}</td>
       </tr>`).join('');
 
-    const today = new Date().toLocaleDateString('en-GB');
+    const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' });
 
     openPrintWindow(`Branding Dispatch Order — Purchase #${h.header_id}`, `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
@@ -3039,7 +3065,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div style="text-align:right">
           <div class="xs td2">Total Stock</div>
-          <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:var(--acc)">${sku.total_stock}</div>
+          <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:28px;font-weight:800;color:var(--acc)">${sku.total_stock}</div>
           <div class="xs td2">units across all locations</div>
         </div>`;
     }
@@ -3054,9 +3080,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const pct = (q) => Math.round((q / maxQty) * 100);
         const locIcon = (t) => t === 'WAREHOUSE' ? '🏭' : t === 'STORE' || t === 'AT_STORE' ? '🏪' : t === 'IN_TRANSIT' ? '🚚' : '📦';
         const locBadge = (t) => {
-          if (t === 'WAREHOUSE') return `<span class="b b-green xs">Available</span>`;
+          if (t === 'WAREHOUSE') return `<span class="b b-green xs">Warehouse</span>`;
           if (t === 'STORE' || t === 'AT_STORE') return `<span class="b b-gray xs">At Store</span>`;
-          if (t === 'IN_TRANSIT') return `<span class="b b-blue xs">In Transit</span>`;
+          if (t === 'IN_TRANSIT') return `<span class="b b-orange xs">In Transit</span>`;
           return `<span class="b b-teal xs">${t}</span>`;
         };
 
@@ -3081,18 +3107,28 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Stock accounting summary
+    // Stock accounting summary — always show Warehouse + Stores rows
     const accEl = document.getElementById('sv-accounting');
     if (accEl) {
-      const byType = {};
-      locs.forEach((l) => { const k = l.location_type; byType[k] = (byType[k] || 0) + l.qty; });
-      const rows = Object.entries(byType).map(([k, v]) => {
-        const label = k === 'WAREHOUSE' ? 'Warehouse' : k === 'STORE' || k === 'AT_STORE' ? 'At Stores' : k === 'IN_TRANSIT' ? 'In Transit' : k;
-        return `<div class="flex ic" style="justify-content:space-between"><span class="xs td2">${label}</span><span class="mono fw6">${v}</span></div>`;
-      });
-      accEl.innerHTML = rows.join('') + `
+      // Prefer explicit fields from RS1 header (warehouse_qty / store_qty added in SP update)
+      const wqty = sku.warehouse_qty != null ? Number(sku.warehouse_qty) : locs.filter(l => l.location_type === 'WAREHOUSE').reduce((s, l) => s + l.qty, 0);
+      const sqty = sku.store_qty    != null ? Number(sku.store_qty)    : locs.filter(l => l.location_type === 'STORE' || l.location_type === 'AT_STORE').reduce((s, l) => s + l.qty, 0);
+      const tqty = sku.store_qty    != null ? (wqty + sqty)            : sku.total_stock;
+
+      const warehouseRow = `
+        <div class="flex ic" style="justify-content:space-between;padding:4px 0">
+          <span class="xs td2" style="display:flex;align-items:center;gap:4px">🏭 <span>HQ Warehouse</span></span>
+          <span class="mono fw6" style="color:${wqty > 0 ? 'var(--green)' : 'var(--text3)'}">${wqty}</span>
+        </div>`;
+      const storeRow = `
+        <div class="flex ic" style="justify-content:space-between;padding:4px 0">
+          <span class="xs td2" style="display:flex;align-items:center;gap:4px">🏪 <span>At Stores</span></span>
+          <span class="mono fw6">${sqty}</span>
+        </div>`;
+
+      accEl.innerHTML = warehouseRow + storeRow + `
         <hr class="sep" style="margin:4px 0">
-        <div class="flex ic" style="justify-content:space-between"><span class="sm-txt fw6">Total</span><span class="mono fw6" style="color:var(--acc)">${sku.total_stock}</span></div>
+        <div class="flex ic" style="justify-content:space-between"><span class="sm-txt fw6">Total</span><span class="mono fw6" style="color:var(--acc)">${tqty}</span></div>
         <hr class="sep" style="margin:4px 0">
         <div class="flex ic" style="justify-content:space-between"><span class="xs td2">Sale Price</span><span class="mono xs">₹${Number(sku.sale_price||0).toLocaleString('en-IN')}</span></div>
         <div class="flex ic" style="justify-content:space-between"><span class="xs td2">Barcode</span><span class="mono xs">${sku.barcode || '—'}</span></div>`;
@@ -3126,6 +3162,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id === 'sku-catalogue')    loadSkuCatalogue();
     if (id === 'stock-view')       loadStockView();
     if (id === 'stock-transfer')   stInit();
+    if (id === 'transfer-requests') loadTransferRequests();
+    if (id === 'movement-list')     loadMovementList();
     // Only load the list when navigating from sidebar (not when opening a detail directly)
     if (!skipList) {
       if (id === 'bill-verify')  loadBillVerifyList();
@@ -3536,10 +3574,8 @@ ${initScript}
     function stFmtDate(v) {
       if (!v) return '—';
       const d = new Date(v);
-      return isNaN(d) ? v : d.toLocaleString('en-IN', {
-        day:'2-digit', month:'short', year:'numeric',
-        hour:'2-digit', minute:'2-digit'
-      });
+      if (isNaN(d)) return String(v);
+      return d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
     }
 
     // ── Init (called once on first nav) ───────────────────────────────────────
@@ -3783,13 +3819,14 @@ ${initScript}
       const btn = document.querySelector('#st-submit-row button');
       if (btn) { btn.disabled = true; btn.textContent = '⏳ Transferring…'; }
       try {
-        await apiPost('/api/stock-transfers', {
+        const resp = await apiPost('/api/stock-transfer-docs', {
           to_store_id: Number(storeId),
           lines: _cart.map((r) => ({ sku_id: r.sku_id, qty: r.qty })),
           notes: notes || null
         });
         const storeName = document.getElementById('st-store-sel').selectedOptions[0]?.text || 'store';
-        stToast(`✓ Transferred to ${storeName}`, '#16a34a');
+        const docId     = resp?.data?.doc_id;
+        stToast(`✓ Transfer Doc #${docId} dispatched to ${storeName} — awaiting store acceptance`, '#16a34a');
         _cart = [];
         stRenderCart();
         document.getElementById('st-notes').value = '';
@@ -3797,7 +3834,7 @@ ${initScript}
       } catch (err) {
         stToast('Transfer failed: ' + err.message, '#e53e3e');
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '🚚 Transfer to Store'; }
+        if (btn) { btn.disabled = false; btn.textContent = '🚚 Dispatch to Store'; }
       }
     };
 
@@ -3827,6 +3864,553 @@ ${initScript}
       }
     };
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TRANSFER REQUESTS  (PRD §8.3 — store-to-HQ lifecycle)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const TR_STATUS_BADGE = {
+    SUBMITTED:  'b-gold',
+    APPROVED:   'b-blue',
+    DISPATCHED: 'b-orange',
+    RECEIVED:   'b-green',
+    REJECTED:   'b-red'
+  };
+
+  function trEsc(s) {
+    return String(s == null ? '—' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  let _trFilter    = '';
+  let _trExpanded  = null;
+  let _ftrDispatchSearchResults = [];
+
+  window.setTrFilter = function (status, btn) {
+    _trFilter = status;
+    document.querySelectorAll('#page-transfer-requests .btn.sm[id^="ftr-tab-"]').forEach((b) => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    loadTransferRequests();
+  };
+
+  window.loadTransferRequests = async function () {
+    const wrap  = document.getElementById('ftr-list-wrap');
+    const errEl = document.getElementById('ftr-err');
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+    if (wrap)  wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>';
+
+    try {
+      const qs = new URLSearchParams({ top_n: 100 });
+      if (_trFilter) qs.set('status', _trFilter);
+      const rows = await apiGet('/api/transfer-requests?' + qs.toString());
+
+      // Update nav badge with pending count
+      const pending = rows.filter((r) => r.status === 'SUBMITTED').length;
+      const badge   = document.getElementById('tr-nav-badge');
+      if (badge) {
+        badge.textContent = pending || '';
+        badge.style.display = pending ? '' : 'none';
+      }
+
+      if (!rows.length) {
+        wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">No transfer requests</div>';
+        return;
+      }
+
+      wrap.innerHTML = `
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>Store</th><th>Requested by</th>
+                <th>Date</th><th>Items</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((r) => `
+                <tr style="cursor:pointer" onclick="expandTrRequest(${r.request_id})">
+                  <td class="mono fw6" style="color:var(--acc)">#${r.request_id}</td>
+                  <td>${trEsc(r.store_name || r.store_id)}</td>
+                  <td>${trEsc(r.requested_by_fullname || r.requested_by_name)}</td>
+                  <td class="xs">${fmtDate(r.created_at)}</td>
+                  <td><span class="b b-gray">${r.line_count} SKU${r.line_count !== 1 ? 's' : ''}</span></td>
+                  <td><span class="b ${TR_STATUS_BADGE[r.status] || 'b-gray'}">${r.status}</span></td>
+                  <td>
+                    ${r.status === 'SUBMITTED' ? `
+                      <button class="btn sm primary" onclick="event.stopPropagation();trQuickApprove(${r.request_id})">✓ Approve</button>
+                      <button class="btn sm" style="color:var(--red);border-color:var(--red);margin-left:4px" onclick="event.stopPropagation();trReject(${r.request_id})">✕ Reject</button>
+                    ` : ''}
+                    ${r.status === 'APPROVED' ? `
+                      <button class="btn sm primary" onclick="event.stopPropagation();expandTrRequest(${r.request_id})">🚚 Preview &amp; Dispatch</button>
+                    ` : ''}
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    } catch (err) {
+      if (errEl) { errEl.textContent = 'Failed to load: ' + err.message; errEl.style.display = 'block'; }
+      if (wrap)  wrap.innerHTML = '';
+    }
+  };
+
+  window.expandTrRequest = async function (requestId) {
+    const card  = document.getElementById('ftr-detail-card');
+    const body  = document.getElementById('ftr-detail-body');
+    const title = document.getElementById('ftr-detail-title');
+    if (!card) return;
+    if (title) title.textContent = `Request #${requestId}`;
+    if (body)  body.innerHTML = '<div style="padding:16px;color:var(--text3)">Loading…</div>';
+    card.style.display = '';
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    try {
+      const req  = await apiGet(`/api/transfer-requests/${requestId}`);
+      _trExpanded = req;
+
+      const canApprove  = req.status === 'SUBMITTED';
+      const canDispatch = req.status === 'APPROVED';
+
+      const inpStyle = 'width:64px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center;outline:none';
+
+      const linesHtmlReadonly = (req.lines || []).map((l) => `
+        <tr>
+          <td class="mono xs">${trEsc(l.sku_code)}</td>
+          <td>${trEsc(l.description || '')}</td>
+          <td>${trEsc(l.brand_name  || '')}</td>
+          <td style="text-align:right"><span class="b b-gray">${l.requested_qty}</span></td>
+          <td style="text-align:right">${l.approved_qty   != null ? `<span class="b b-blue">${l.approved_qty}</span>`    : '<span style="color:var(--text3)">—</span>'}</td>
+          <td style="text-align:right">${l.dispatched_qty != null ? `<span class="b b-orange">${l.dispatched_qty}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+          <td style="text-align:right">${l.received_qty   != null ? `<span class="b b-green">${l.received_qty}</span>`   : '<span style="color:var(--text3)">—</span>'}</td>
+        </tr>`).join('');
+
+      const linesHtmlApprove = (req.lines || []).map((l) => `
+        <tr>
+          <td class="mono xs">${trEsc(l.sku_code)}</td>
+          <td>${trEsc(l.description || '')}</td>
+          <td>${trEsc(l.brand_name  || '')}</td>
+          <td style="text-align:right"><span class="b b-gray">${l.requested_qty}</span></td>
+          <td style="text-align:right">${l.approved_qty   != null ? `<span class="b b-blue">${l.approved_qty}</span>`    : '<span style="color:var(--text3)">—</span>'}</td>
+          <td style="text-align:right">${l.dispatched_qty != null ? `<span class="b b-orange">${l.dispatched_qty}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+          <td style="text-align:right">${l.received_qty   != null ? `<span class="b b-green">${l.received_qty}</span>`   : '<span style="color:var(--text3)">—</span>'}</td>
+          <td>
+            <input type="number" class="ftr-approve-qty" data-line-id="${l.line_id}"
+              value="${l.requested_qty}" min="0" max="${l.requested_qty}"
+              style="${inpStyle}"
+              onclick="event.stopPropagation()">
+          </td>
+        </tr>`).join('');
+
+      const linesHtmlDispatch = (req.lines || []).map((l) => {
+        const defDisp = (l.approved_qty != null && l.approved_qty > 0) ? l.approved_qty : l.requested_qty;
+        return `
+        <tr class="ftr-dispatch-req-row" data-line-id="${l.line_id}">
+          <td class="mono xs">${trEsc(l.sku_code)}</td>
+          <td>${trEsc(l.description || '')}</td>
+          <td>${trEsc(l.brand_name  || '')}</td>
+          <td style="text-align:right"><span class="b b-gray">${l.requested_qty}</span></td>
+          <td style="text-align:right">${l.approved_qty != null ? `<span class="b b-blue">${l.approved_qty}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+          <td style="text-align:right">
+            <input type="number" class="ftr-dispatch-qty" min="0" value="${defDisp}" style="${inpStyle}" onclick="event.stopPropagation()">
+          </td>
+          <td>
+            <button type="button" class="btn sm" onclick="event.stopPropagation();this.closest('tr').remove()">Remove</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      let tableBlock;
+      if (canApprove) {
+        tableBlock = `
+          <div class="tw mb4">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th><th>Description</th><th>Brand</th>
+                  <th style="text-align:right">Requested</th>
+                  <th style="text-align:right">Approved</th>
+                  <th style="text-align:right">Dispatched</th>
+                  <th style="text-align:right">Received</th>
+                  <th style="min-width:80px">Set approved qty</th>
+                </tr>
+              </thead>
+              <tbody>${linesHtmlApprove}</tbody>
+            </table>
+          </div>`;
+      } else if (canDispatch) {
+        tableBlock = `
+          <div class="hint" style="margin-bottom:14px">
+            <strong>Goods Transfer preview:</strong> Adjust dispatch quantities, remove lines, or add warehouse SKUs. Confirming creates a transfer document (warehouse decremented now; store accepts then verifies under Incoming Goods).
+          </div>
+          <div class="tw mb3">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th><th>Description</th><th>Brand</th>
+                  <th style="text-align:right">Requested</th>
+                  <th style="text-align:right">Approved</th>
+                  <th style="text-align:right">Dispatch qty</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>${linesHtmlDispatch}</tbody>
+              <tbody id="ftr-dispatch-extra-tbody"></tbody>
+            </table>
+          </div>
+          <div style="margin-bottom:16px;padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border)">
+            <div style="font-weight:600;margin-bottom:8px;font-size:13px">Add item from HQ Warehouse</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input type="text" id="ftr-dispatch-search" placeholder="SKU code or keyword…"
+                style="flex:1;min-width:180px;max-width:320px;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
+                onclick="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();ftrDispatchSearch();}">
+              <button type="button" class="btn sm" onclick="event.stopPropagation();ftrDispatchSearch()">Search</button>
+            </div>
+            <div id="ftr-dispatch-search-results" style="display:none;margin-top:10px;border:1px solid var(--border);border-radius:6px;max-height:220px;overflow:auto;background:var(--bg)"></div>
+          </div>`;
+      } else {
+        tableBlock = `
+          <div class="tw mb4">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th><th>Description</th><th>Brand</th>
+                  <th style="text-align:right">Requested</th>
+                  <th style="text-align:right">Approved</th>
+                  <th style="text-align:right">Dispatched</th>
+                  <th style="text-align:right">Received</th>
+                </tr>
+              </thead>
+              <tbody>${linesHtmlReadonly}</tbody>
+            </table>
+          </div>`;
+      }
+
+      body.innerHTML = `
+        <div style="padding:16px 20px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+            <span class="b ${TR_STATUS_BADGE[req.status] || 'b-gray'}">${req.status}</span>
+            <span class="xs" style="color:var(--text2)">Store: <strong>${trEsc(req.store_name || req.store_id)}</strong></span>
+            <span class="xs" style="color:var(--text2)">By: <strong>${trEsc(req.requested_by_fullname || req.requested_by_name)}</strong></span>
+            <span class="xs" style="color:var(--text2)">Submitted: ${fmtDate(req.created_at)}</span>
+            ${req.notes ? `<span class="xs" style="color:var(--text2)">Notes: <em>${trEsc(req.notes)}</em></span>` : ''}
+            ${req.review_notes ? `<span class="xs" style="color:var(--text2)">Review note: <em>${trEsc(req.review_notes)}</em></span>` : ''}
+          </div>
+
+          ${tableBlock}
+
+          ${canApprove ? `
+            <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+              <div>
+                <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">Review note (optional)</label>
+                <input type="text" id="ftr-review-note" placeholder="Note to store manager…"
+                  style="width:260px;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
+                  onclick="event.stopPropagation()">
+              </div>
+              <button class="btn primary" onclick="trApproveFromDetail(${req.request_id})">✓ Approve request</button>
+              <button class="btn sm" style="color:var(--red);border-color:var(--red)" onclick="trReject(${req.request_id})">✕ Reject</button>
+              <span id="ftr-detail-msg" style="font-size:12px;min-height:16px"></span>
+            </div>
+          ` : ''}
+          ${canDispatch ? `
+            <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+              <div>
+                <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">Note on transfer document (optional)</label>
+                <input type="text" id="ftr-dispatch-note" placeholder="Shown on Goods Transfer…"
+                  style="width:min(100%,400px);padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
+                  onclick="event.stopPropagation()">
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <button type="button" class="btn primary" id="ftr-dispatch-confirm-btn" onclick="trDispatchConfirm(${req.request_id})">✓ Confirm dispatch (create Goods Transfer)</button>
+                <span id="ftr-detail-msg" style="font-size:12px;min-height:16px"></span>
+              </div>
+            </div>
+          ` : ''}
+        </div>`;
+    } catch (err) {
+      if (body) body.innerHTML = `<div style="padding:16px;color:var(--red)">Error: ${trEsc(err.message)}</div>`;
+    }
+  };
+
+  window.closeTrDetail = function () {
+    const card = document.getElementById('ftr-detail-card');
+    if (card) card.style.display = 'none';
+    _trExpanded = null;
+  };
+
+  // Quick approve from the list row (no qty adjustment)
+  window.trQuickApprove = async function (requestId) {
+    if (!confirm(`Approve transfer request #${requestId} with the requested quantities?`)) return;
+    try {
+      await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'APPROVED' });
+      loadTransferRequests();
+      closeTrDetail();
+    } catch (err) { alert('Error: ' + err.message); }
+  };
+
+  // Approve from the detail panel (with per-line qty editing)
+  window.trApproveFromDetail = async function (requestId) {
+    const lines = [];
+    document.querySelectorAll('.ftr-approve-qty').forEach((inp) => {
+      lines.push({ line_id: Number(inp.dataset.lineId), approved_qty: Math.max(0, Number(inp.value) || 0) });
+    });
+    const note  = (document.getElementById('ftr-review-note') || {}).value || null;
+    const msgEl = document.getElementById('ftr-detail-msg');
+    try {
+      await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'APPROVED', lines, notes: note || null });
+      if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Approved.'; }
+      setTimeout(() => { loadTransferRequests(); closeTrDetail(); }, 900);
+    } catch (err) {
+      if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
+    }
+  };
+
+  window.trReject = async function (requestId) {
+    const note = prompt(`Reason for rejecting request #${requestId} (shown to store manager):`);
+    if (note === null) return; // cancelled
+    try {
+      await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'REJECTED', notes: note || null });
+      loadTransferRequests();
+      closeTrDetail();
+    } catch (err) { alert('Error: ' + err.message); }
+  };
+
+  window.ftrDispatchSearch = async function () {
+    const inp   = document.getElementById('ftr-dispatch-search');
+    const resEl = document.getElementById('ftr-dispatch-search-results');
+    const q     = (inp && inp.value || '').trim();
+    _ftrDispatchSearchResults = [];
+    if (!resEl) return;
+    if (!q) { resEl.style.display = 'none'; resEl.innerHTML = ''; return; }
+    try {
+      const rows = await apiGet(`/api/stock-transfers/available?q=${encodeURIComponent(q)}`);
+      _ftrDispatchSearchResults = rows || [];
+      if (!rows || !rows.length) {
+        resEl.style.display = '';
+        resEl.innerHTML = `<div style="padding:12px 14px;color:var(--text3);font-size:13px">No SKUs found for "${trEsc(q)}"</div>`;
+        return;
+      }
+      resEl.style.display = '';
+      resEl.innerHTML = rows.slice(0, 12).map((r, i) => `
+        <div onclick="ftrPickDispatchSku(${i})"
+             style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px"
+             onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''">
+          <div style="flex:1;min-width:0">
+            <div class="mono" style="font-size:12px;font-weight:700;color:var(--acc2)">${trEsc(r.sku_code)}</div>
+            <div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${trEsc(r.product_name || '')}</div>
+            <div style="font-size:11px;color:var(--text3)">${trEsc(r.brand_name || '')} · ${trEsc(r.colour_name || '')}</div>
+          </div>
+          <span style="font-size:13px;font-weight:700;color:#16a34a;white-space:nowrap">${Number(r.warehouse_qty) || 0} WH</span>
+          <button type="button" class="btn xs primary" style="white-space:nowrap">+ Add</button>
+        </div>`).join('');
+    } catch (err) {
+      resEl.style.display = '';
+      resEl.innerHTML = `<div style="padding:12px 14px;color:var(--red);font-size:13px">${trEsc(err.message)}</div>`;
+    }
+  };
+
+  window.ftrPickDispatchSku = function (index) {
+    const r = _ftrDispatchSearchResults[index];
+    if (!r || !r.sku_id) return;
+    const tbody = document.getElementById('ftr-dispatch-extra-tbody');
+    const resEl = document.getElementById('ftr-dispatch-search-results');
+    const inpS  = document.getElementById('ftr-dispatch-search');
+    if (resEl) { resEl.innerHTML = ''; resEl.style.display = 'none'; }
+    if (inpS) inpS.value = '';
+    if (!tbody) return;
+    const wh = Math.max(0, Number(r.warehouse_qty) || 0);
+    const existing = tbody.querySelector(`tr.ftr-dispatch-extra-row[data-sku-id="${r.sku_id}"]`);
+    if (existing) {
+      const qInp = existing.querySelector('.ftr-dispatch-extra-qty');
+      if (qInp) {
+        const cap = wh || 999999;
+        const n   = Math.min(cap, Math.max(1, Number(qInp.value) + 1));
+        qInp.value = n;
+      }
+      return;
+    }
+    const tr = document.createElement('tr');
+    tr.className = 'ftr-dispatch-extra-row';
+    tr.dataset.skuId = String(r.sku_id);
+    const cap = wh || 999999;
+    tr.innerHTML = `
+      <td class="mono xs">${trEsc(r.sku_code)}</td>
+      <td colspan="2" style="font-size:12.5px">${trEsc(r.product_name || '')} · ${trEsc(r.colour_name || '')} <span style="font-size:10px;color:var(--text3)">(added)</span></td>
+      <td style="text-align:center;color:var(--text3)">—</td>
+      <td style="text-align:center;color:var(--text3)">—</td>
+      <td style="text-align:right">
+        <input type="number" class="ftr-dispatch-extra-qty" min="1" max="${cap}" value="1" style="width:64px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center;outline:none" onclick="event.stopPropagation()">
+      </td>
+      <td><button type="button" class="btn sm" onclick="event.stopPropagation();this.closest('tr').remove()">Remove</button></td>`;
+    tbody.appendChild(tr);
+  };
+
+  window.ftrAfterDispatchNav = function () {
+    const navEl = document.querySelector('.sidebar-nav .nav-item[onclick*="movement-list"]');
+    if (typeof nav === 'function') nav('movement-list', navEl || null);
+    if (typeof loadMovementList === 'function') loadMovementList();
+    closeTrDetail();
+  };
+
+  window.trDispatchConfirm = async function (requestId) {
+    const msgEl = document.getElementById('ftr-detail-msg');
+    const btn   = document.getElementById('ftr-dispatch-confirm-btn');
+    if (msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
+
+    const lines = [];
+    document.querySelectorAll('#ftr-detail-body .ftr-dispatch-req-row').forEach((tr) => {
+      const lid = tr.dataset.lineId;
+      const inp = tr.querySelector('.ftr-dispatch-qty');
+      const q   = Math.max(0, Number(inp && inp.value) || 0);
+      lines.push({ line_id: Number(lid), dispatched_qty: q });
+    });
+
+    const extra_lines = [];
+    document.querySelectorAll('#ftr-detail-body .ftr-dispatch-extra-row').forEach((tr) => {
+      const skuId = Number(tr.dataset.skuId);
+      const inp   = tr.querySelector('.ftr-dispatch-extra-qty');
+      const q     = Math.max(0, Number(inp && inp.value) || 0);
+      if (q > 0 && skuId) extra_lines.push({ sku_id: skuId, qty: q });
+    });
+
+    const hasReqLine = lines.some((l) => l.dispatched_qty > 0);
+    if (!hasReqLine && !extra_lines.length) {
+      if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Set a dispatch quantity on at least one request line, or add an item from warehouse.'; }
+      return;
+    }
+
+    const notes = ((document.getElementById('ftr-dispatch-note') || {}).value || '').trim() || null;
+    const payload = { status: 'DISPATCHED', lines, notes };
+    if (extra_lines.length) payload.extra_lines = extra_lines;
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
+    try {
+      const data  = await apiPut(`/api/transfer-requests/${requestId}/status`, payload);
+      const docId = data.doc_id;
+      loadTransferRequests();
+      const body = document.getElementById('ftr-detail-body');
+      if (body) {
+        body.innerHTML = `
+          <div style="padding:20px 22px">
+            <div style="color:var(--green);font-weight:700;font-size:15px;margin-bottom:10px">Goods Transfer created</div>
+            <p style="margin:0 0 8px;font-size:13px;color:var(--text2)">Transfer document <strong class="mono">#${docId != null ? docId : '—'}</strong> is <strong>Dispatched</strong>. HQ Warehouse stock has been decremented.</p>
+            <p style="margin:0 0 16px;font-size:13px;color:var(--text2)">The store will see it under <strong>Incoming Goods</strong>, then <strong>Accept</strong> and <strong>Verify &amp; Stock</strong> to credit store balance.</p>
+            <button type="button" class="btn primary" onclick="ftrAfterDispatchNav()">Open Movement List</button>
+          </div>`;
+      }
+    } catch (err) {
+      if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = err.message; }
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Confirm dispatch (create Goods Transfer)'; }
+    }
+  };
+
+  /** @deprecated Use expandTrRequest — opens dispatch preview */
+  window.trDispatch = function (requestId) {
+    expandTrRequest(requestId);
+  };
+
+  // Auto-load pending count for nav badge on startup
+  (async () => {
+    try {
+      const rows   = await apiGet('/api/transfer-requests?status=SUBMITTED&top_n=50');
+      const badge  = document.getElementById('tr-nav-badge');
+      if (badge && rows.length) { badge.textContent = rows.length; badge.style.display = ''; }
+    } catch (_) {}
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MOVEMENT LIST  (Store Connect › Movement List)
+  // ─────────────────────────────────────────────────────────────────────────
+  let _mlFilter = '';
+
+  window.setMlFilter = function (status, btn) {
+    _mlFilter = status;
+    document.querySelectorAll('#page-movement-list .btn.sm[id^="ml-tab-"]').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    loadMovementList();
+  };
+
+  window.closeMlDetail = function () {
+    const d = document.getElementById('ml-detail');
+    if (d) d.style.display = 'none';
+  };
+
+  window.loadMovementList = async function () {
+    const wrap  = document.getElementById('ml-list');
+    const errEl = document.getElementById('ml-err');
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+    if (wrap)  wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>';
+    closeMlDetail();
+    try {
+      const qs   = _mlFilter ? `?status=${_mlFilter}` : '';
+      const docs = await apiGet('/api/stock-transfer-docs' + qs);
+      if (!docs.length) {
+        wrap.innerHTML = '<div class="empty-state"><div class="ei">📋</div><div class="et">No transfer documents found</div><div class="es">Dispatch a Goods Transfer to see records here.</div></div>';
+        return;
+      }
+      const statusBadge = s => {
+        const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
+        return map[s] || `<span class="badge">${s}</span>`;
+      };
+      wrap.innerHTML = docs.map(d => `
+        <div class="list-row" onclick="expandMlDoc(${d.doc_id})" style="cursor:pointer">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;margin-bottom:2px">Doc #${d.doc_id} — ${d.doc_type === 'DIRECT' ? '📦 Goods Transfer' : '📬 From Request #' + d.source_request_id}</div>
+            <div style="font-size:12px;color:var(--text3)">→ ${d.store_name || 'Store #' + d.to_store_id} &nbsp;·&nbsp; ${fmtDateTime(d.dispatched_at)}</div>
+          </div>
+          <div>${statusBadge(d.status)}</div>
+        </div>`).join('');
+    } catch (e) {
+      if (errEl) { errEl.textContent = 'Failed to load: ' + e.message; errEl.style.display = ''; }
+      if (wrap)  wrap.innerHTML = '';
+    }
+  };
+
+  window.expandMlDoc = async function (docId) {
+    const titleEl = document.getElementById('ml-detail-title');
+    const bodyEl  = document.getElementById('ml-detail-body');
+    const panEl   = document.getElementById('ml-detail');
+    if (!panEl) return;
+    panEl.style.display = '';
+    titleEl.textContent = `Transfer Document #${docId}`;
+    bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>';
+    panEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    try {
+      const doc = await apiGet(`/api/stock-transfer-docs/${docId}`);
+      const fmtDt = dt => dt ? fmtDateTime(dt) : '—';
+      const statusBadge = s => {
+        const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
+        return map[s] || `<span class="badge">${s}</span>`;
+      };
+      const lines = (doc.lines || []).map(l => `
+        <tr>
+          <td>${l.sku_code || l.sku_id}</td>
+          <td>${[l.product_name, l.colour_name].filter(Boolean).join(' · ')}</td>
+          <td style="text-align:center">${l.qty_sent}</td>
+          <td style="text-align:center">${l.qty_received != null ? l.qty_received : '—'}</td>
+        </tr>`).join('');
+      bodyEl.innerHTML = `
+        <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px">
+          <div><span style="color:var(--text3);font-size:12px">Type</span><br>${doc.doc_type === 'DIRECT' ? 'Goods Transfer (Direct)' : 'From Request #' + doc.source_request_id}</div>
+          <div><span style="color:var(--text3);font-size:12px">Status</span><br>${statusBadge(doc.status)}</div>
+          <div><span style="color:var(--text3);font-size:12px">To Store</span><br>${doc.store_name || 'Store #' + doc.to_store_id}</div>
+          <div><span style="color:var(--text3);font-size:12px">Dispatched</span><br>${fmtDt(doc.dispatched_at)}</div>
+          ${doc.accepted_at ? `<div><span style="color:var(--text3);font-size:12px">Accepted</span><br>${fmtDt(doc.accepted_at)}</div>` : ''}
+          ${doc.stocked_at  ? `<div><span style="color:var(--text3);font-size:12px">Stocked</span><br>${fmtDt(doc.stocked_at)}</div>` : ''}
+        </div>
+        ${doc.notes ? `<div style="margin-bottom:14px;color:var(--text2);font-size:13px">📝 ${doc.notes}</div>` : ''}
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="border-bottom:1px solid var(--border)">
+            <th style="text-align:left;padding:6px 8px;color:var(--text3)">SKU</th>
+            <th style="text-align:left;padding:6px 8px;color:var(--text3)">Description</th>
+            <th style="text-align:center;padding:6px 8px;color:var(--text3)">Sent</th>
+            <th style="text-align:center;padding:6px 8px;color:var(--text3)">Received</th>
+          </tr></thead>
+          <tbody>${lines}</tbody>
+        </table>`;
+    } catch (e) {
+      bodyEl.innerHTML = `<div class="err-msg">Failed to load document: ${e.message}</div>`;
+    }
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // INIT

@@ -39,7 +39,7 @@ AS BEGIN
     IF EXISTS (SELECT 1 FROM dbo.maker_master WHERE maker_code = @maker_code)
     BEGIN RAISERROR('Maker code already exists.',16,1); RETURN; END;
     INSERT INTO dbo.maker_master (maker_name, maker_code, description, country, is_active, created_at, updated_at)
-    VALUES (@maker_name, @maker_code, @description, @country, 1, GETDATE(), GETDATE());
+    VALUES (@maker_name, @maker_code, @description, @country, 1, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
     DECLARE @id INT = SCOPE_IDENTITY();
     SELECT maker_id, maker_name, maker_code, description, country, is_active, created_at
     FROM dbo.maker_master WHERE maker_id = @id;
@@ -72,7 +72,7 @@ AS BEGIN
       description = ISNULL(@description, description),
       country     = ISNULL(@country,     country),
       is_active   = ISNULL(@is_active,   is_active),
-      updated_at  = GETDATE()
+      updated_at  = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE maker_id = @maker_id;
     SELECT maker_id, maker_name, maker_code, description, country, is_active, updated_at
     FROM dbo.maker_master WHERE maker_id = @maker_id;

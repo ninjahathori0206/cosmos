@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Store Pilot — Cosmos ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy:    #0B1F33;
+    --navy2:   #132F4A;
+    --acc:     #1D6FD4;
+    --acc2:    #2B8CFF;
+    --accL:    #E8F4FF;
+    --accD:    #1560B5;
+    --gold:    #D97706;
+    --goldL:   #FFFBEB;
+    --green:   #059669;
+    --greenL:  #ECFDF5;
+    --red:     #DC2626;
+    --redL:    #FEE2E2;
+    --blue:    #1D6FD4;
+    --blueL:   #DBEAFE;
+    --bg:      #F4F7FB;
+    --card:    #FFFFFF;
+    --border:  #D8E4F0;
+    --text1:   #0F172A;
+    --text2:   #5C6B7A;
+    --text3:   #8B9CAE;
+    --sidebar: 252px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; display:flex; overflow:hidden; }
+
+  /* ── SIDEBAR ──────────────────────────────────────────────────────────────── */
+  .sidebar { width:var(--sidebar); background:var(--navy); height:100vh; display:flex; flex-direction:column; flex-shrink:0; position:fixed; left:0; top:0; z-index:100; }
+  .sidebar-logo { padding:20px 20px 16px; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .cosmos-tag { font-family:'Plus Jakarta Sans',sans-serif; font-size:10px; font-weight:700; letter-spacing:3px; color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:3px; }
+  .module-name { font-family:'Plus Jakarta Sans',sans-serif; font-size:18px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; }
+  .mod-dot { width:8px; height:8px; border-radius:50%; background:var(--acc2); box-shadow:0 0 8px var(--acc2); }
+  .sidebar-nav { flex:1; padding:10px 0; overflow-y:auto; }
+  .nav-group { font-size:10px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,0.22); padding:14px 20px 5px; }
+  .nav-item { display:flex; align-items:center; gap:10px; padding:10px 20px; cursor:pointer; color:rgba(255,255,255,0.52); font-size:13px; font-weight:400; border-left:3px solid transparent; transition:all .15s; }
+  .nav-item:hover { background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.85); }
+  .nav-item.active { background:rgba(43,140,255,0.2); color:#fff; border-left-color:var(--acc2); font-weight:500; }
+  .nav-item .ic { font-size:15px; width:20px; text-align:center; }
+  .sidebar-user { padding:14px 20px; border-top:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; gap:10px; }
+  .u-av { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; font-family:'Plus Jakarta Sans',sans-serif; flex-shrink:0; }
+  .u-name { font-size:12.5px; font-weight:500; color:#fff; }
+  .u-role { font-size:11px; color:rgba(255,255,255,0.35); }
+
+  /* ── MAIN ─────────────────────────────────────────────────────────────────── */
+  .main { margin-left:var(--sidebar); flex:1; height:100vh; overflow-y:auto; display:flex; flex-direction:column; }
+  .topbar { background:var(--card); border-bottom:1px solid var(--border); padding:0 28px; height:54px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; position:sticky; top:0; z-index:50; }
+  .breadcrumb { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text2); }
+  .breadcrumb .cur { color:var(--text1); font-weight:500; }
+
+  /* ── PAGES ────────────────────────────────────────────────────────────────── */
+  .page { display:none; padding:26px; }
+  .page.active { display:block; }
+  .ph { margin-bottom:22px; }
+  .pt { font-family:'Plus Jakarta Sans',sans-serif; font-size:20px; font-weight:700; color:var(--text1); }
+  .ps { font-size:13px; color:var(--text2); margin-top:3px; }
+
+  /* ── STAT CARDS ───────────────────────────────────────────────────────────── */
+  .sg4 { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px; }
+  @media (max-width:1100px) { .sg4 { grid-template-columns:repeat(2,1fr); } }
+  .sc { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:18px 20px; border-top:3px solid var(--sc-color,var(--acc)); }
+  .sl { font-size:11.5px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+  .sv { font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:500; color:var(--text1); }
+  .sm { font-size:11.5px; color:var(--text3); margin-top:3px; }
+
+  /* ── CARD ─────────────────────────────────────────────────────────────────── */
+  .card { background:var(--card); border:1.5px solid var(--border); border-radius:12px; margin-bottom:18px; }
+  .ch { display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .ct { font-size:14px; font-weight:600; color:var(--text1); }
+  .cb { padding:18px 20px; color:var(--text2); font-size:14px; line-height:1.55; }
+  .hint { background:var(--accL); border:1px solid rgba(43,140,255,0.25); border-radius:10px; padding:14px 16px; font-size:13px; color:var(--accD); margin-top:12px; }
+
+  /* ── TABLE ────────────────────────────────────────────────────────────────── */
+  .tw { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; padding:9px 14px; font-size:11px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; border-bottom:2px solid var(--border); white-space:nowrap; }
+  td { padding:10px 14px; border-bottom:1px solid var(--border); color:var(--text1); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:rgba(43,140,255,0.025); }
+  .mono { font-family:'IBM Plex Mono',monospace; font-size:12px; }
+
+  /* ── BADGES ───────────────────────────────────────────────────────────────── */
+  .b { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap; }
+  .b-green  { background:var(--greenL); color:var(--green); }
+  .b-red    { background:var(--redL);   color:var(--red); }
+  .b-gold   { background:var(--goldL);  color:var(--gold); }
+  .b-blue   { background:var(--blueL);  color:var(--blue); }
+  .b-gray   { background:#F1F5F9;       color:var(--text2); }
+  .b-orange { background:var(--accL);   color:var(--accD); }
+
+  /* ── SEARCH BAR ───────────────────────────────────────────────────────────── */
+  .sw { position:relative; }
+  .sw input { width:100%; padding:8px 36px 8px 12px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'Inter',sans-serif; background:var(--card); color:var(--text1); outline:none; transition:border-color .15s; }
+  .sw input:focus { border-color:var(--acc2); }
+  .sw .sp-spin { position:absolute; right:10px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text3); display:none; }
+
+  /* ── BUTTONS ──────────────────────────────────────────────────────────────── */
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; border:1.5px solid var(--border); background:var(--card); font-size:13px; font-weight:500; cursor:pointer; color:var(--text1); transition:all .15s; font-family:'Inter',sans-serif; white-space:nowrap; }
+  .btn:hover { border-color:var(--acc2); color:var(--acc); }
+  .btn.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .btn.primary:hover { background:var(--accD); }
+  .btn.sm { padding:5px 10px; font-size:12px; }
+  .btn:disabled { opacity:0.5; cursor:default; pointer-events:none; }
+
+  /* ── TWO-COL GRID ─────────────────────────────────────────────────────────── */
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:900px) { .two-col { grid-template-columns:1fr; } }
+
+  /* ── EMPTY / ERROR STATES ─────────────────────────────────────────────────── */
+  .empty-state { text-align:center; padding:40px 20px; color:var(--text3); }
+  .empty-state .ei { font-size:32px; margin-bottom:8px; }
+  .empty-state .et { font-size:13.5px; }
+  .err-msg { color:var(--red); font-size:12.5px; padding:10px 14px; background:var(--redL); border-radius:8px; display:none; margin-bottom:12px; }
+
+  /* ── STOCK DETAIL PANEL ───────────────────────────────────────────────────── */
+  .detail-panel { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:0; overflow:hidden; }
+  .detail-header { padding:16px 18px; border-bottom:1px solid var(--border); background:linear-gradient(135deg,rgba(29,111,212,0.06),rgba(43,140,255,0.04)); }
+  .detail-sku { font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; color:var(--acc); }
+  .detail-desc { font-size:13px; color:var(--text2); margin-top:3px; }
+  .detail-total { font-family:'Plus Jakarta Sans',sans-serif; font-size:28px; font-weight:800; color:var(--text1); }
+  .loc-row { display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-bottom:1px solid var(--border); font-size:13px; }
+  .loc-row:last-child { border-bottom:none; }
+  .loc-name { font-weight:500; color:var(--text1); }
+  .loc-type { font-size:11px; color:var(--text3); margin-top:2px; }
+
+  /* ── RESULT ROWS (stock network search) ──────────────────────────────────── */
+  .result-row { display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s; }
+  .result-row:last-child { border-bottom:none; }
+  .result-row:hover { background:rgba(43,140,255,0.04); }
+  .result-row.selected { background:rgba(43,140,255,0.08); }
+  .rr-code { font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; color:var(--acc); }
+  .rr-desc { font-size:12.5px; color:var(--text2); margin-top:2px; }
+
+  /* ── AVAILABLE ROWS (transfer search) ────────────────────────────────────── */
+  .avail-row { display:flex; align-items:center; gap:10px; padding:10px 18px; border-bottom:1px solid var(--border); }
+  .avail-row:last-child { border-bottom:none; }
+  .avail-row:hover { background:rgba(43,140,255,0.025); }
+
+  /* ── TRANSFER CART ────────────────────────────────────────────────────────── */
+  .cart-item { display:flex; align-items:center; gap:10px; padding:10px 18px; border-bottom:1px solid var(--border); }
+  .cart-item:last-child { border-bottom:none; }
+  .qty-input { width:60px; padding:5px 8px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; font-family:'Inter',sans-serif; color:var(--text1); background:var(--card); text-align:center; outline:none; transition:border-color .15s; }
+  .qty-input:focus { border-color:var(--acc2); }
+
+  /* ── FORM TEXTAREA ────────────────────────────────────────────────────────── */
+  .form-textarea { width:100%; padding:8px 12px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'Inter',sans-serif; color:var(--text1); background:var(--card); resize:vertical; outline:none; transition:border-color .15s; }
+  .form-textarea:focus { border-color:var(--acc2); }
+
+  /* ── SKU CARD GRID ────────────────────────────────────────────────────────── */
+  .sku-card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:14px; padding:18px; }
+  .sku-card { background:var(--card); border:1.5px solid var(--border); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; transition:border-color .15s, box-shadow .15s; }
+  .sku-card:hover { border-color:var(--acc2); box-shadow:0 2px 12px rgba(43,140,255,0.09); }
+  .sku-card-head { padding:13px 15px 10px; border-bottom:1px solid var(--border); }
+  .sku-card-code { font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; color:var(--acc); letter-spacing:.5px; }
+  .sku-card-brand { font-size:12px; color:var(--text2); margin-top:2px; }
+  .sku-card-name { font-size:13px; font-weight:500; color:var(--text1); margin-top:5px; line-height:1.35; }
+  .sku-card-body { padding:10px 15px; flex:1; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .sku-card-foot { padding:10px 15px; border-top:1px solid var(--border); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .sku-card-locs { padding:0 15px 12px; border-top:1px solid var(--border); display:none; }
+  .sku-card-locs.open { display:block; }
+  .sku-loc-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:12.5px; }
+  .sku-loc-row:last-child { border-bottom:none; }
+  .sku-loc-name { color:var(--text2); }
+  .cat-cart-bar { position:sticky; bottom:0; background:var(--navy); color:#fff; padding:12px 26px; display:flex; align-items:center; gap:14px; z-index:40; border-top:2px solid var(--acc2); }
+  .cat-cart-bar-text { font-size:13.5px; font-weight:500; flex:1; }
+  .cat-cart-bar-btn { background:var(--acc2); color:#fff; border:none; border-radius:8px; padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif; transition:background .15s; }
+  .cat-cart-bar-btn:hover { background:var(--accD); }
+
+  /* ── HAMBURGER / MOBILE SIDEBAR ──────────────────────────────────────────── */
+  .menu-toggle { display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:8px; background:var(--bg); border:1.5px solid var(--border); cursor:pointer; flex-shrink:0; gap:0; flex-direction:column; padding:0; }
+  .menu-toggle span { display:block; width:16px; height:2px; border-radius:2px; background:var(--text1); transition:all .2s; }
+  .menu-toggle span:nth-child(2) { margin:3px 0; }
+  .sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:99; }
+  .sidebar-overlay.open { display:block; }
+
+  /* ── RESPONSIVE BREAKPOINTS ───────────────────────────────────────────────── */
+  @media (max-width:768px) {
+    /* Sidebar: off-canvas slide */
+    .sidebar { transform:translateX(-100%); transition:transform .25s ease; position:fixed; z-index:200; height:100vh; }
+    .sidebar.open { transform:translateX(0); }
+    /* Main: no sidebar margin */
+    .main { margin-left:0 !important; }
+    /* Show hamburger */
+    .menu-toggle { display:flex; }
+    /* Topbar compact */
+    .topbar { padding:0 14px; gap:10px; }
+    /* Page padding */
+    .page { padding:14px; }
+    /* Page header text */
+    .pt { font-size:17px; }
+    .ps { font-size:12px; }
+    /* Stat grids: 2 cols */
+    .sg4 { grid-template-columns:1fr 1fr !important; gap:10px; }
+    .sg3 { grid-template-columns:1fr 1fr !important; gap:10px; }
+    /* All other grids: 1 col */
+    .two-col { grid-template-columns:1fr !important; }
+    .three-col { grid-template-columns:1fr !important; }
+    .main-side { grid-template-columns:1fr !important; }
+    /* Table horizontal scroll */
+    .tw { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    table { min-width:520px; }
+    /* Larger touch targets */
+    .nav-item { min-height:48px; padding:12px 20px; }
+    .btn { min-height:40px; }
+    .qty-input { width:72px; padding:7px 10px; }
+    /* SKU card grid: single column on very small */
+    .sku-card-grid { grid-template-columns:1fr; gap:10px; padding:12px; }
+    /* Cart bar: full width */
+    .cat-cart-bar { padding:10px 16px; }
+  }
+
+  /* ── PRINT ────────────────────────────────────────────────────────────────── */
+  @media print {
+    .sidebar, .topbar, .btn, #sp-switch-module-wrap { display:none !important; }
+    .main { margin-left:0 !important; height:auto !important; overflow:visible !important; }
+    .page { display:none !important; }
+    #page-reports.active { display:block !important; padding:20px !important; }
+    .sc, .card { break-inside:avoid; }
+    .hint { display:none !important; }
+  }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="cosmos-tag">🌌 Cosmos ERP</div>
+    <div class="module-name"><span class="mod-dot"></span><span>Store Pilot</span></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-group">Overview</div>
+    <div class="nav-item active" onclick="spNav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
+
+    <div class="nav-group">Stock View</div>
+    <div class="nav-item" onclick="spNav('stock-browse',this)"><span class="ic">🗂️</span> Browse Catalogue</div>
+    <div class="nav-item" onclick="spNav('store-catalogue',this)"><span class="ic">🏪</span> Store Catalogue</div>
+
+    <div class="nav-group">Foundry Connect</div>
+    <div class="nav-item" onclick="spNav('transfers-create',this)"><span class="ic">📦</span> Request Goods</div>
+    <div class="nav-item" onclick="spNav('incoming-transfers',this)">
+      <span class="ic">📥</span> Incoming Goods
+      <span id="sp-inc-badge" class="b b-orange" style="font-size:10px;margin-left:auto;display:none"></span>
+    </div>
+    <div class="nav-item" onclick="spNav('movement-list',this)"><span class="ic">📋</span> Movement List</div>
+    <div class="nav-item" onclick="spNav('transfers-history',this)" style="display:none"><span class="ic">📋</span> My Requests</div>
+
+    <div class="nav-group">Reports</div>
+    <div class="nav-item" onclick="spNav('reports',this)"><span class="ic">📊</span> Store Reports</div>
+
+    <div id="sp-switch-module-wrap">
+      <div class="nav-group">Switch Module</div>
+      <div class="nav-item" data-cosmos-module="foundry" onclick="window.location.href='/foundry.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🔩</span> Full Foundry</div>
+      <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
+      <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
+    </div>
+    <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.3);font-size:12px"><span class="ic">🚪</span> Sign Out</div>
+  </nav>
+  <div class="sidebar-user">
+    <div class="u-av" id="sp-user-av">—</div>
+    <div>
+      <div class="u-name" id="sp-user-name">Loading…</div>
+      <div class="u-role" id="sp-user-role">Store Pilot</div>
+    </div>
+  </div>
+</aside>
+
+<div class="sidebar-overlay" id="sp-sidebar-overlay" onclick="closeSidebar()"></div>
+
+<main class="main">
+  <div class="topbar">
+    <button class="menu-toggle" id="sp-menu-toggle" onclick="openSidebar()" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="breadcrumb">Store Pilot <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="sp-bc">Dashboard</span></div>
+    <span id="dash-last-updated" style="font-size:11.5px;color:var(--text3)"></span>
+  </div>
+
+  <!-- ═══════════════ DASHBOARD ═══════════════ -->
+  <div class="page active" id="page-dashboard">
+    <div class="ph" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div class="pt">Store command centre</div>
+        <div class="ps">Real-time overview — stock, transfers, and store performance at a glance.</div>
+      </div>
+      <button class="btn sm" onclick="loadDashboard()">↻ Refresh</button>
+    </div>
+
+    <div class="sg4">
+      <div class="sc" style="--sc-color:var(--acc)">
+        <div class="sl">Transfers received</div>
+        <div class="sv" id="dash-transfer-count">—</div>
+        <div class="sm" id="dash-transfer-meta">Loading…</div>
+      </div>
+      <div class="sc" style="--sc-color:var(--gold)">
+        <div class="sl">Live SKUs in store</div>
+        <div class="sv" id="dash-sku-count">—</div>
+        <div class="sm">SKUs with stock at this store</div>
+      </div>
+      <div class="sc" style="--sc-color:#94A3B8;opacity:0.75">
+        <div class="sl">Revenue today</div>
+        <div class="sv" style="color:var(--text3)">—</div>
+        <div class="sm" style="color:var(--text3)">Requires POS integration</div>
+      </div>
+      <div class="sc" style="--sc-color:#94A3B8;opacity:0.75">
+        <div class="sl">Orders pending</div>
+        <div class="sv" style="color:var(--text3)">—</div>
+        <div class="sm" style="color:var(--text3)">Requires POS integration</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ch">
+        <div class="ct">Recent inbound transfers</div>
+        <button class="btn sm" style="margin-left:auto" onclick="loadDashboard()">↻</button>
+      </div>
+      <div id="dash-recent-transfers">
+        <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ch"><div class="ct">About Store Pilot</div></div>
+      <div class="cb">
+        <p><strong>Store Pilot</strong> is the Store Manager's command centre — monitor stock levels, track inbound transfers, and review store performance, all without touching POS.</p>
+        <div class="hint">
+          <strong>Revenue, Orders, and Attendance</strong> widgets will populate once Store OS (POS) and Army are live.
+          This dashboard auto-refreshes every 60 seconds.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ STOCK VIEW: BROWSE CATALOGUE ═══════════════ -->
+  <div class="page" id="page-stock-browse" style="padding-bottom:0">
+    <div class="ph" style="padding:26px 26px 0">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="pt">Browse Catalogue</div>
+          <div class="ps">Full live SKU catalogue — add items to your request cart and place a goods request to HQ.</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="sw" style="width:260px">
+            <input type="text" id="bc-q" placeholder="Brand, type, SKU code…" oninput="onBrowseCatalogueSearch(this.value)">
+            <span class="sp-spin" id="bc-spin">…</span>
+          </div>
+          <button class="btn sm" onclick="loadBrowseCatalogue()">↻</button>
+        </div>
+      </div>
+      <div id="bc-err" class="err-msg" style="margin:12px 0 0"></div>
+    </div>
+    <div id="bc-grid" class="sku-card-grid">
+      <div style="grid-column:1/-1"><div class="empty-state"><div class="ei">⏳</div><div class="et">Loading catalogue…</div></div></div>
+    </div>
+    <div id="bc-cart-bar" class="cat-cart-bar" style="display:none">
+      <span class="cat-cart-bar-text">🛒 <span id="bc-cart-count">0</span> items in request cart</span>
+      <button class="cat-cart-bar-btn" onclick="goToRequestGoods()">Review &amp; Place Request →</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ STOCK VIEW: STORE CATALOGUE ═══════════════ -->
+  <div class="page" id="page-store-catalogue" style="padding-bottom:0">
+    <div class="ph" style="padding:26px 26px 0">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="pt">Store Catalogue</div>
+          <div class="ps">Items currently in stock at your store — add to request cart to request more from HQ.</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="sw" style="width:260px">
+            <input type="text" id="sc-q" placeholder="Brand, type, SKU code…" oninput="onStoreCatalogueSearch(this.value)">
+            <span class="sp-spin" id="sc-spin">…</span>
+          </div>
+          <button class="btn sm" onclick="loadStoreCatalogue()">↻</button>
+        </div>
+      </div>
+      <div id="sc-err" class="err-msg" style="margin:12px 0 0"></div>
+    </div>
+    <div id="sc-grid" class="sku-card-grid">
+      <div style="grid-column:1/-1"><div class="empty-state"><div class="ei">⏳</div><div class="et">Loading store stock…</div></div></div>
+    </div>
+    <div id="sc-cart-bar" class="cat-cart-bar" style="display:none">
+      <span class="cat-cart-bar-text">🛒 <span id="sc-cart-count">0</span> items in request cart</span>
+      <button class="cat-cart-bar-btn" onclick="goToRequestGoods()">Review &amp; Place Request →</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TRANSFERS: HISTORY ═══════════════ -->
+  <div class="page" id="page-transfers-history">
+    <div class="ph">
+      <div class="pt">My Transfer Requests</div>
+      <div class="ps">Stock requests submitted by your store to HQ Foundry for approval and dispatch.</div>
+    </div>
+
+    <div class="hint" style="margin-bottom:18px">
+      <strong>Store Request flow:</strong>
+      You submit a request (SUBMITTED) → HQ reviews and approves quantities (APPROVED) →
+      HQ dispatches stock and inventory is updated automatically (DISPATCHED) →
+      Confirm goods received (RECEIVED). Use <strong>New Request</strong> to start one.
+    </div>
+
+    <!-- Status filter tabs -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
+      <button class="btn sm active" id="sp-tr-tab-all"        onclick="setSpTrFilter('',this)">All</button>
+      <button class="btn sm"        id="sp-tr-tab-submitted"  onclick="setSpTrFilter('SUBMITTED',this)">Pending</button>
+      <button class="btn sm"        id="sp-tr-tab-approved"   onclick="setSpTrFilter('APPROVED',this)">Approved</button>
+      <button class="btn sm"        id="sp-tr-tab-dispatched" onclick="setSpTrFilter('DISPATCHED',this)">Dispatched</button>
+      <button class="btn sm"        id="sp-tr-tab-received"   onclick="setSpTrFilter('RECEIVED',this)">Received</button>
+      <button class="btn sm"        id="sp-tr-tab-rejected"   onclick="setSpTrFilter('REJECTED',this)">Rejected</button>
+      <button class="btn sm"        style="margin-left:auto"  onclick="loadTransferHistory()">↻ Refresh</button>
+    </div>
+
+    <div id="fmov-err" class="err-msg" style="margin-bottom:12px"></div>
+
+    <div class="card">
+      <div id="tr-history-wrap">
+        <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
+      </div>
+    </div>
+
+    <!-- Inline detail panel for a selected request -->
+    <div id="sp-tr-detail" class="card" style="display:none">
+      <div class="ch" style="justify-content:space-between">
+        <div class="ct" id="sp-tr-detail-title">Request details</div>
+        <button class="btn sm" onclick="closeSpTrDetail()">✕ Close</button>
+      </div>
+      <div id="sp-tr-detail-body"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TRANSFERS: REQUEST TRANSFER ═══════════════ -->
+  <div class="page" id="page-transfers-create">
+    <div class="ph">
+      <div class="pt">Request Goods</div>
+      <div class="ps">Request stock from HQ Warehouse — Foundry reviews, approves quantities, and dispatches to your store.</div>
+    </div>
+
+    <div class="hint" style="margin-bottom:20px">
+      <strong>How this works:</strong> Search stock available at the HQ Warehouse, add items to your request, and submit.
+      HQ Foundry reviews → approves quantities → dispatches from Warehouse to your store (inventory updates automatically).
+      Once goods arrive, confirm receipt under <strong>Stock Requests → My Requests</strong>.
+      Lifecycle: <strong>SUBMITTED → APPROVED → DISPATCHED → RECEIVED</strong>.
+    </div>
+
+    <!-- Shown only when user has no store assignment -->
+    <div id="transfer-create-no-store" style="display:none">
+      <div class="card">
+        <div class="cb" style="color:var(--text3)">
+          Transfer requests are only available for store-scoped accounts. Your account does not have a store
+          assignment — contact your administrator.
+        </div>
+      </div>
+    </div>
+
+    <!-- Main form (store-scoped users only) -->
+    <div id="transfer-create-form">
+      <div class="two-col" style="align-items:start">
+
+        <!-- Left: SKU search -->
+        <div class="card">
+          <div class="ch">
+            <div class="ct">Search HQ Warehouse stock</div>
+            <div class="sw" style="flex:1;max-width:280px;margin-left:auto">
+              <input type="text" id="tc-search" placeholder="Brand, type, or SKU code…" oninput="onTransferSearch(this.value)">
+              <span class="sp-spin" id="tc-spin">…</span>
+            </div>
+          </div>
+          <div id="tc-err" class="err-msg" style="margin:12px 18px 0"></div>
+          <div id="tc-results">
+            <div class="empty-state">
+              <div class="ei">🔍</div>
+              <div class="et">Search to see stock available at HQ warehouse</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: cart + submit -->
+        <div>
+          <div class="card" style="margin-bottom:14px">
+            <div class="ch">
+              <div class="ct">Request cart</div>
+              <span id="tc-cart-count" class="b b-orange" style="font-size:11px">0 items</span>
+            </div>
+            <div id="tc-cart-body">
+              <div class="empty-state" style="padding:28px 20px">
+                <div class="ei">🛒</div>
+                <div class="et">Add items from search results</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="ch"><div class="ct">Destination &amp; notes</div></div>
+            <div style="padding:16px 20px 0">
+              <div style="margin-bottom:14px">
+                <div style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Destination store</div>
+                <div id="tc-dest-store" style="font-size:13px;color:var(--text1);padding:8px 12px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px">Loading…</div>
+              </div>
+              <div style="margin-bottom:16px">
+                <div style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Notes (optional)</div>
+                <textarea id="tc-notes" rows="2" class="form-textarea" placeholder="Reason, urgency, or delivery deadline…"></textarea>
+              </div>
+            </div>
+            <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button class="btn primary" id="tc-submit-btn" onclick="submitTransfer()">Submit request</button>
+              <button class="btn sm" onclick="clearTransferCart()">Clear cart</button>
+              <span id="tc-submit-msg" style="font-size:12px;min-height:16px"></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ REPORTS ═══════════════ -->
+  <div class="page" id="page-reports">
+    <div class="ph" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div class="pt">Store reports</div>
+        <div class="ps">Transfer and stock summary — generated from available data. Auto-generated when daily, weekly, and monthly triggers are configured.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn sm" onclick="loadReports()">↻ Refresh</button>
+        <button class="btn sm" onclick="window.print()">🖨️ Print</button>
+      </div>
+    </div>
+
+    <div class="sg4" id="reports-stats">
+      <div style="grid-column:1/-1;padding:16px;color:var(--text3);font-size:13px">Loading report data…</div>
+    </div>
+
+    <div class="card">
+      <div class="ch">
+        <div class="ct">Transfers received — this month</div>
+        <span id="reports-month-label" class="b b-gray" style="font-size:11px"></span>
+      </div>
+      <div id="reports-transfer-table">
+        <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card" style="border-top-color:#94A3B8;opacity:0.8">
+        <div class="ch">
+          <div class="ct" style="color:var(--text2)">Revenue report</div>
+          <span class="b b-gray" style="font-size:10px;margin-left:auto">Requires POS</span>
+        </div>
+        <div class="cb" style="color:var(--text3);font-size:13px">
+          Daily, weekly, and monthly revenue summaries — vs targets, prior periods, and top-performing SKUs.
+          Will populate automatically once Store OS (POS) is live.
+        </div>
+      </div>
+      <div class="card" style="border-top-color:#94A3B8;opacity:0.8">
+        <div class="ch">
+          <div class="ct" style="color:var(--text2)">Orders report</div>
+          <span class="b b-gray" style="font-size:10px;margin-left:auto">Requires POS</span>
+        </div>
+        <div class="cb" style="color:var(--text3);font-size:13px">
+          Lens fitting orders by status, overdue counts, and average fulfilment time.
+          Will populate automatically once Store OS (POS) is live.
+        </div>
+      </div>
+      <div class="card" style="border-top-color:#94A3B8;opacity:0.8">
+        <div class="ch">
+          <div class="ct" style="color:var(--text2)">Staff attendance</div>
+          <span class="b b-gray" style="font-size:10px;margin-left:auto">Requires Army</span>
+        </div>
+        <div class="cb" style="color:var(--text3);font-size:13px">
+          Daily attendance for your store — present, on leave, late arrivals (read-only from Army).
+          Will populate once the Army module is live.
+        </div>
+      </div>
+      <div class="card" style="border-top-color:#94A3B8;opacity:0.8">
+        <div class="ch">
+          <div class="ct" style="color:var(--text2)">GST summary</div>
+          <span class="b b-gray" style="font-size:10px;margin-left:auto">Requires POS</span>
+        </div>
+        <div class="cb" style="color:var(--text3);font-size:13px">
+          Monthly tax summary for compliance and filing. PDF export available once POS billing data is live.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ INCOMING TRANSFERS ═══════════════ -->
+  <div class="page" id="page-incoming-transfers">
+    <style>
+      .inc-tr-row { display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s }
+      .inc-tr-row:last-child { border-bottom:none }
+      .inc-tr-row:hover { background:var(--hover) }
+      .inc-tr-meta { flex:1;min-width:0 }
+      .inc-tr-id   { font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--acc) }
+      .inc-tr-sub  { font-size:12px;color:var(--text2);margin-top:2px }
+      .inc-verify-line { display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border) }
+      .inc-verify-line:last-child { border-bottom:none }
+    </style>
+
+    <div class="ph">
+      <div class="pt">Incoming Goods</div>
+      <div class="ps">Stock dispatched from HQ Warehouse to your store — accept then verify quantities to credit your store balance.</div>
+    </div>
+
+    <div class="hint" style="margin-bottom:18px">
+      <strong>Two steps:</strong>
+      1) <strong>Accept</strong> — confirm the shipment has physically arrived at your store.
+      2) <strong>Verify &amp; Stock</strong> — enter the actual quantities received; your store stock balance updates immediately.
+    </div>
+
+    <!-- Status filter tabs -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
+      <button class="btn sm active" id="sp-inc-tab-all"        onclick="setIncFilter('',this)">All</button>
+      <button class="btn sm"        id="sp-inc-tab-dispatched" onclick="setIncFilter('DISPATCHED',this)">📦 Dispatched</button>
+      <button class="btn sm"        id="sp-inc-tab-accepted"   onclick="setIncFilter('ACCEPTED',this)">✓ Accepted</button>
+      <button class="btn sm"        id="sp-inc-tab-stocked"    onclick="setIncFilter('STOCKED',this)">🏪 Stocked</button>
+      <button class="btn sm"        style="margin-left:auto"   onclick="loadIncomingTransfers()">↻ Refresh</button>
+    </div>
+
+    <div id="sp-inc-err" class="err-msg" style="margin-bottom:12px"></div>
+
+    <div class="card">
+      <div id="sp-inc-list">
+        <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
+      </div>
+    </div>
+
+    <!-- Detail / action panel -->
+    <div id="sp-inc-detail" class="card" style="display:none;margin-top:16px">
+      <div class="ch" style="justify-content:space-between">
+        <div class="ct" id="sp-inc-detail-title">Transfer details</div>
+        <button class="btn sm" onclick="closeIncDetail()">✕ Close</button>
+      </div>
+      <div id="sp-inc-detail-body"></div>
+    </div>
+  </div>
+
+  <!-- ═══ MOVEMENT LIST ═══ -->
+  <div class="page" id="page-movement-list">
+    <div class="ph">
+      <div class="pt">Movement List</div>
+      <div class="ps">All stock transfer documents sent from HQ Warehouse to your store — view dispatch, acceptance and stocking history.</div>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
+      <button class="btn sm active" id="sp-ml-tab-all"        onclick="setSpMlFilter('',this)">All</button>
+      <button class="btn sm"        id="sp-ml-tab-dispatched" onclick="setSpMlFilter('DISPATCHED',this)">📦 Dispatched</button>
+      <button class="btn sm"        id="sp-ml-tab-accepted"   onclick="setSpMlFilter('ACCEPTED',this)">✓ Accepted</button>
+      <button class="btn sm"        id="sp-ml-tab-stocked"    onclick="setSpMlFilter('STOCKED',this)">🏪 Stocked</button>
+      <button class="btn sm"        style="margin-left:auto"  onclick="loadSpMovementList()">↻ Refresh</button>
+    </div>
+
+    <div id="sp-ml-err" class="err-msg" style="margin-bottom:12px"></div>
+
+    <div class="card">
+      <div id="sp-ml-list">
+        <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
+      </div>
+    </div>
+
+    <div id="sp-ml-detail" class="card" style="display:none;margin-top:16px">
+      <div class="ch" style="justify-content:space-between">
+        <div class="ct" id="sp-ml-detail-title">Transfer document</div>
+        <button class="btn sm" onclick="closeSpMlDetail()">✕ Close</button>
+      </div>
+      <div id="sp-ml-detail-body"></div>
+    </div>
+  </div>
+
+</main>
+
+<script src="/js/cosmos-module-switch.js" defer></script>
+<script src="/js/storepilot-prototype.js" defer></script>
+</body>
+</html>

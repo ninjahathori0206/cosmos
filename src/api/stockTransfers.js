@@ -111,6 +111,26 @@ router.get('/history', async (req, res, next) => {
   }
 });
 
+// ── GET /api/stock-transfers/store-catalogue ─────────────────────────────────
+// Returns SKUs with qty > 0 at a specific store, for the StorePilot Store Catalogue page.
+// Query params: store_id (required), q (optional search)
+router.get('/store-catalogue', async (req, res, next) => {
+  try {
+    const { store_id, q } = req.query;
+    const storeId = Number(store_id);
+    if (!storeId || storeId <= 0) {
+      return res.status(400).json({ success: false, message: 'store_id is required' });
+    }
+    const result = await executeStoredProcedure('sp_Store_Catalogue', {
+      store_id: { type: sql.Int,          value: storeId },
+      q:        { type: sql.NVarChar(200), value: q || null }
+    });
+    return res.json({ success: true, data: result.recordset || [] });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // ── POST /api/stock-transfers ─────────────────────────────────────────────────
 // Creates a direct HQ-to-store stock transfer.
 // Body: { to_store_id, lines: [{ sku_id, qty }], notes? }
@@ -125,19 +145,24 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    const userId = req.user && req.user.user_id ? Number(req.user.user_id) : null;
-    const linesJson = JSON.stringify(value.lines);
+    const userId    = req.user && req.user.user_id ? Number(req.user.user_id) : null;
+    const linesJson = JSON.stringify(value.lines.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
 
-    const result = await executeStoredProcedure('sp_StockTransfer_Create', {
-      lines_json:  { type: sql.NVarChar(sql.MAX), value: linesJson },
-      to_store_id: { type: sql.Int,               value: value.to_store_id },
-      notes:       { type: sql.VarChar(500),       value: value.notes || null },
-      created_by:  { type: sql.Int,                value: userId }
+    // Creates a Transfer Document: WAREHOUSE balance decrements immediately.
+    // Store must Accept then Stock the document to credit their balance.
+    const result = await executeStoredProcedure('sp_StockTransferDoc_Dispatch', {
+      lines_json:        { type: sql.NVarChar(sql.MAX), value: linesJson },
+      to_store_id:       { type: sql.Int,               value: value.to_store_id },
+      doc_type:          { type: sql.VarChar(10),        value: 'DIRECT' },
+      source_request_id: { type: sql.Int,               value: null },
+      notes:             { type: sql.NVarChar(500),      value: value.notes || null },
+      dispatched_by:     { type: sql.Int,               value: userId }
     });
 
+    const docId = result.recordset?.[0]?.doc_id;
     return res.status(201).json({
       success: true,
-      data: result.recordset && result.recordset[0]
+      data: { doc_id: docId }
     });
   } catch (err) {
     if (err.code === 'EREQUEST') {

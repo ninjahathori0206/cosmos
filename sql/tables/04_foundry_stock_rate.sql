@@ -15,8 +15,8 @@ BEGIN
     sale_price         DECIMAL(10,2) NOT NULL,
     status             VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     created_by         INT NULL,
-    created_at         DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at         DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at         DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at         DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_skus_product_master
       FOREIGN KEY (product_master_id) REFERENCES dbo.product_master(product_id),
     CONSTRAINT FK_skus_purchase_colour
@@ -47,8 +47,8 @@ BEGIN
     is_published        BIT NOT NULL DEFAULT 0,
     approved_by         INT NULL,
     approved_at         DATETIME NULL,
-    created_at          DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at          DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at          DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at          DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_sku_digitisation_sku
       FOREIGN KEY (sku_id) REFERENCES dbo.skus(sku_id),
     CONSTRAINT FK_sku_digitisation_approved_by
@@ -67,7 +67,7 @@ BEGIN
     is_primary    BIT NOT NULL DEFAULT 0,
     display_order INT NOT NULL DEFAULT 0,
     created_by    INT NULL,
-    created_at    DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at    DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_sku_media_sku
       FOREIGN KEY (sku_id) REFERENCES dbo.skus(sku_id),
     CONSTRAINT FK_sku_media_created_by
@@ -84,7 +84,7 @@ BEGIN
     location_id    INT NOT NULL,
     location_name  VARCHAR(200) NULL,
     qty            INT NOT NULL DEFAULT 0,
-    last_updated   DATETIME NOT NULL DEFAULT GETDATE(),
+    last_updated   DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_stock_balances_sku
       FOREIGN KEY (sku_id) REFERENCES dbo.skus(sku_id),
     CONSTRAINT UQ_stock_balances_sku_location
@@ -106,7 +106,7 @@ BEGIN
     reference_id       VARCHAR(100) NULL,
     notes              VARCHAR(500) NULL,
     created_by         INT NULL,
-    created_at         DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at         DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_stock_movements_sku
       FOREIGN KEY (sku_id) REFERENCES dbo.skus(sku_id),
     CONSTRAINT FK_stock_movements_created_by
@@ -125,8 +125,8 @@ BEGIN
     scope            VARCHAR(50) NOT NULL,
     is_active        BIT NOT NULL DEFAULT 1,
     created_by       INT NULL,
-    created_at       DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at       DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at       DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at       DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_location_visibility_config_created_by
       FOREIGN KEY (created_by) REFERENCES dbo.users(user_id)
   );
@@ -145,7 +145,7 @@ BEGIN
     previous_rate    DECIMAL(10,2) NULL,
     rate_trend       VARCHAR(10) NULL,
     rate_delta       DECIMAL(10,2) NULL,
-    updated_at       DATETIME NOT NULL DEFAULT GETDATE(),
+    updated_at       DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_vendor_product_rates_product
       FOREIGN KEY (product_master_id) REFERENCES dbo.product_master(product_id),
     CONSTRAINT FK_vendor_product_rates_supplier
@@ -166,7 +166,7 @@ BEGIN
     total_supplier_count    INT NOT NULL DEFAULT 0,
     last_purchased_rate     DECIMAL(10,2) NULL,
     last_purchased_supplier_id INT NULL,
-    updated_at              DATETIME NOT NULL DEFAULT GETDATE(),
+    updated_at              DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_product_rate_summary_product
       FOREIGN KEY (product_master_id) REFERENCES dbo.product_master(product_id),
     CONSTRAINT FK_product_rate_summary_lowest_supplier

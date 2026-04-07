@@ -160,7 +160,7 @@ AS BEGIN
 
       -- Decrement warehouse
       UPDATE dbo.stock_balances
-      SET qty = qty - @qty, last_updated = GETDATE()
+      SET qty = qty - @qty, last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
       WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE';
 
       -- Upsert store balance
@@ -169,11 +169,11 @@ AS BEGIN
         WHERE sku_id = @sku_id AND location_type = 'STORE' AND location_id = @to_store_id
       )
         UPDATE dbo.stock_balances
-        SET qty = qty + @qty, last_updated = GETDATE()
+        SET qty = qty + @qty, last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
         WHERE sku_id = @sku_id AND location_type = 'STORE' AND location_id = @to_store_id;
       ELSE
         INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, location_name, qty, last_updated)
-        VALUES (@sku_id, 'STORE', @to_store_id, @store_name, @qty, GETDATE());
+        VALUES (@sku_id, 'STORE', @to_store_id, @store_name, @qty, DATEADD(MINUTE, 330, SYSUTCDATETIME()));
 
       -- Audit movement
       INSERT INTO dbo.stock_movements
@@ -196,7 +196,7 @@ AS BEGIN
     SELECT
       @to_store_id  AS to_store_id,
       @store_name   AS to_store_name,
-      GETDATE()     AS transferred_at,
+      DATEADD(MINUTE, 330, SYSUTCDATETIME())     AS transferred_at,
       @created_by   AS created_by;
 
   END TRY

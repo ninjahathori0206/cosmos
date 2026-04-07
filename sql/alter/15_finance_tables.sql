@@ -19,8 +19,8 @@ BEGIN
     is_void        BIT NOT NULL DEFAULT 0,
     void_reason    VARCHAR(300) NULL,
     created_by     INT NULL,
-    created_at     DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at     DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at     DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at     DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_sp_supplier  FOREIGN KEY (supplier_id) REFERENCES dbo.suppliers(supplier_id),
     CONSTRAINT FK_sp_user      FOREIGN KEY (created_by)  REFERENCES dbo.users(user_id),
     CONSTRAINT CK_sp_mode      CHECK (payment_mode IN ('NEFT','RTGS','CHEQUE','CASH','UPI'))
@@ -38,7 +38,7 @@ BEGIN
     payment_id     INT NOT NULL,
     header_id      INT NOT NULL,
     allocated_amt  DECIMAL(12,2) NOT NULL,
-    created_at     DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at     DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_pa_payment FOREIGN KEY (payment_id) REFERENCES dbo.supplier_payments(payment_id),
     CONSTRAINT FK_pa_header  FOREIGN KEY (header_id)  REFERENCES dbo.purchase_headers(header_id),
     CONSTRAINT CK_pa_amt     CHECK (allocated_amt > 0)

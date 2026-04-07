@@ -175,7 +175,7 @@ BEGIN
     sup.vendor_name AS supplier_name,
     mk.vendor_name  AS maker_name,
     hb.brand_name,
-    DATEDIFF(day, p.created_at, GETDATE()) AS days_open
+    DATEDIFF(day, p.created_at, DATEADD(MINUTE, 330, SYSUTCDATETIME())) AS days_open
   FROM dbo.purchases p
   LEFT JOIN dbo.product_master pm  ON p.product_master_id = pm.product_id
   LEFT JOIN dbo.suppliers sup      ON p.supplier_id       = sup.supplier_id
@@ -244,7 +244,7 @@ BEGIN
       bill_status      = @new_bill_status,
       pipeline_status  = @new_pipeline,
       discrepancy_note = CASE WHEN @diff > 50 THEN @discrepancy_note ELSE NULL END,
-      updated_at       = GETDATE()
+      updated_at       = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE purchase_id = @purchase_id;
 
     SELECT
@@ -308,7 +308,7 @@ BEGIN
       status, created_by
     )
     VALUES (
-      @purchase_id, GETDATE(), @expected_return_date,
+      @purchase_id, DATEADD(MINUTE, 330, SYSUTCDATETIME()), @expected_return_date,
       @branding_instructions, @label_spec_url,
       'DISPATCHED', @created_by
     );
@@ -323,7 +323,7 @@ BEGIN
 
     -- Advance pipeline
     UPDATE dbo.purchases
-    SET pipeline_status = 'BRANDING_DISPATCHED', updated_at = GETDATE()
+    SET pipeline_status = 'BRANDING_DISPATCHED', updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE purchase_id = @purchase_id;
 
     SELECT bj.branding_job_id, bj.status, bj.dispatch_date, bj.expected_return_date
@@ -361,14 +361,14 @@ BEGIN
 
     UPDATE dbo.branding_jobs
     SET
-      actual_return_date = GETDATE(),
+      actual_return_date = DATEADD(MINUTE, 330, SYSUTCDATETIME()),
       status             = 'RECEIVED',
       bypass_reason      = @discrepancy_note,
-      updated_at         = GETDATE()
+      updated_at         = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE branding_job_id = @branding_job_id;
 
     UPDATE dbo.purchases
-    SET pipeline_status = 'PENDING_DIGITISATION', updated_at = GETDATE()
+    SET pipeline_status = 'PENDING_DIGITISATION', updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE purchase_id = @purchase_id;
 
     SELECT
@@ -420,7 +420,7 @@ BEGIN
 
     -- Cancel any existing active branding jobs first
     UPDATE dbo.branding_jobs
-    SET status = 'CANCELLED', updated_at = GETDATE()
+    SET status = 'CANCELLED', updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE purchase_id = @purchase_id AND status NOT IN ('CANCELLED','BYPASSED');
 
     INSERT INTO dbo.branding_jobs (
@@ -431,7 +431,7 @@ BEGIN
     );
 
     UPDATE dbo.purchases
-    SET pipeline_status = 'PENDING_DIGITISATION', updated_at = GETDATE()
+    SET pipeline_status = 'PENDING_DIGITISATION', updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE purchase_id = @purchase_id;
 
     SELECT purchase_id, pipeline_status FROM dbo.purchases WHERE purchase_id = @purchase_id;
@@ -513,7 +513,7 @@ BEGIN
     SET @sku_code = @try_code;
 
     -- Generate barcode: timestamp-based unique number
-    DECLARE @barcode VARCHAR(100) = 'EW' + REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR(20), GETDATE(), 120), '-',''),':',''),' ','')
+    DECLARE @barcode VARCHAR(100) = 'EW' + REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR(20), DATEADD(MINUTE, 330, SYSUTCDATETIME()), 120), '-',''),':',''),' ','')
       + RIGHT('000' + CAST(@purchase_colour_id AS VARCHAR(10)), 5);
 
     INSERT INTO dbo.skus (
@@ -583,7 +583,7 @@ BEGIN
   SET NOCOUNT ON;
 
   UPDATE dbo.skus
-  SET sale_price = @sale_price, updated_at = GETDATE()
+  SET sale_price = @sale_price, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
   WHERE sku_id = @sku_id;
 
   SELECT sku_id, sku_code, sale_price, status FROM dbo.skus WHERE sku_id = @sku_id;
@@ -606,7 +606,7 @@ BEGIN
   BEGIN TRY
     -- Publish all DRAFT SKUs for this purchase
     UPDATE sk
-    SET sk.status = 'LIVE', sk.updated_at = GETDATE()
+    SET sk.status = 'LIVE', sk.updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     FROM dbo.skus sk
     JOIN dbo.purchase_colours pc ON sk.purchase_colour_id = pc.colour_id
     WHERE pc.purchase_id = @purchase_id
@@ -614,7 +614,7 @@ BEGIN
 
     -- Update purchase pipeline
     UPDATE dbo.purchases
-    SET pipeline_status = 'WAREHOUSE_READY', updated_at = GETDATE()
+    SET pipeline_status = 'WAREHOUSE_READY', updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE purchase_id = @purchase_id;
 
     -- Seed stock balances for warehouse
@@ -688,7 +688,7 @@ BEGIN
       po_reference      = ISNULL(@po_reference, po_reference),
       bill_ref          = ISNULL(@bill_ref, bill_ref),
       notes             = ISNULL(@notes, notes),
-      updated_at        = GETDATE()
+      updated_at        = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE purchase_id = @purchase_id;
 
     SELECT

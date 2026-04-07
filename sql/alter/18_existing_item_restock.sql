@@ -272,7 +272,7 @@ AS BEGIN
        status, created_at, updated_at, header_id, item_id, item_colour_id, image_url, video_url)
     VALUES
       (@product_master_id, @skuCode, @barcode, @quantity, @cost_price, @sale_price,
-       'LIVE', GETDATE(), GETDATE(), @header_id, @item_id, @item_colour_id, @colour_image_url, @colour_video_url);
+       'LIVE', DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()), @header_id, @item_id, @item_colour_id, @colour_image_url, @colour_video_url);
 
     SELECT
       sk.sku_id,
@@ -466,19 +466,19 @@ AS BEGIN
 
     UPDATE dbo.skus
     SET status = 'LIVE',
-        updated_at = GETDATE()
+        updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
 
     UPDATE dbo.purchase_headers
     SET pipeline_status = 'WAREHOUSE_READY',
-        warehouse_at = GETDATE(),
-        updated_at = GETDATE()
+        warehouse_at = DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+        updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
 
     -- New SKU lines: create or increase warehouse stock for SKUs created by this purchase.
     UPDATE sb
     SET sb.qty = sb.qty + pic.quantity,
-        sb.last_updated = GETDATE()
+        sb.last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     FROM dbo.stock_balances sb
     JOIN dbo.skus sk
       ON sk.sku_id = sb.sku_id
@@ -487,7 +487,7 @@ AS BEGIN
     JOIN dbo.purchase_item_colours pic ON pic.colour_id = sk.item_colour_id;
 
     INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, qty, last_updated)
-    SELECT sk.sku_id, 'WAREHOUSE', 1, pic.quantity, GETDATE()
+    SELECT sk.sku_id, 'WAREHOUSE', 1, pic.quantity, DATEADD(MINUTE, 330, SYSUTCDATETIME())
     FROM dbo.skus sk
     JOIN dbo.purchase_item_colours pic ON pic.colour_id = sk.item_colour_id
     WHERE sk.header_id = @header_id
@@ -501,7 +501,7 @@ AS BEGIN
     -- Restock lines: increase total purchased qty and warehouse stock on the linked SKU.
     UPDATE sk
     SET sk.quantity = ISNULL(sk.quantity, 0) + pic.quantity,
-        sk.updated_at = GETDATE()
+        sk.updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     FROM dbo.skus sk
     JOIN dbo.purchase_item_colours pic ON pic.linked_sku_id = sk.sku_id
     JOIN dbo.purchase_items pi ON pi.item_id = pic.item_id
@@ -510,7 +510,7 @@ AS BEGIN
 
     UPDATE sb
     SET sb.qty = sb.qty + pic.quantity,
-        sb.last_updated = GETDATE()
+        sb.last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     FROM dbo.stock_balances sb
     JOIN dbo.purchase_item_colours pic
       ON pic.linked_sku_id = sb.sku_id
@@ -520,7 +520,7 @@ AS BEGIN
       AND pic.linked_sku_id IS NOT NULL;
 
     INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, qty, last_updated)
-    SELECT pic.linked_sku_id, 'WAREHOUSE', 1, pic.quantity, GETDATE()
+    SELECT pic.linked_sku_id, 'WAREHOUSE', 1, pic.quantity, DATEADD(MINUTE, 330, SYSUTCDATETIME())
     FROM dbo.purchase_item_colours pic
     JOIN dbo.purchase_items pi ON pi.item_id = pic.item_id
     WHERE pi.header_id = @header_id

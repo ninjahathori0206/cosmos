@@ -511,11 +511,14 @@
     </div>
 
     <div class="nav-section-label">Switch Module</div>
-    <div class="nav-item" onclick="window.location.href='/foundry.html'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
+    <div class="nav-item" data-cosmos-module="foundry" onclick="window.location.href='/foundry.html'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
       <span class="icon">🔩</span> Foundry (Procurement)
     </div>
-    <div class="nav-item" onclick="window.location.href='/finance.html'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
+    <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance.html'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
       <span class="icon">💰</span> Finance (AP)
+    </div>
+    <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot.html'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
+      <span class="icon">🏬</span> StorePilot (Showroom)
     </div>
     <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.35);font-size:12.5px">
       <span class="icon">🚪</span> Sign Out
@@ -862,7 +865,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>User</th><th>Phone</th><th>Email</th><th>Role</th><th>Last Login</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>User</th><th>Store</th><th>Phone</th><th>Email</th><th>Role</th><th>Last Login</th><th>Status</th><th></th></tr></thead>
           <tbody id="users-tbody"></tbody>
         </table>
       </div>
@@ -885,7 +888,7 @@
         <div class="card-header"><div class="card-title">All Roles</div></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Role</th><th>Level</th><th>Scope</th><th>Status</th><th style="min-width:130px"></th></tr></thead>
+            <thead><tr><th>Role</th><th>Status</th><th style="min-width:130px"></th></tr></thead>
             <tbody id="roles-tbody"></tbody>
           </table>
         </div>
@@ -905,24 +908,24 @@
   <div class="page" id="page-modules">
     <div class="page-header">
       <div class="page-title">Module Access Control</div>
-      <div class="page-subtitle">Enable or disable Cosmos modules per user. Changes take effect on next login.</div>
+      <div class="page-subtitle">Modules are assigned by <strong>role</strong>. When you define a role (Roles &amp; Permissions), you choose which Cosmos modules it may access. Users inherit modules from their role. Store-level toggles below are an optional location cap.</div>
     </div>
 
     <div class="alert alert-gold">
       <span class="alert-icon">⚠️</span>
-      <div>Disabling a module for a user will immediately block them from accessing it. Active sessions are not terminated — module is hidden on next page load.</div>
+      <div>Module access is defined on <strong>roles</strong>, not on individual users. Go to <strong>Roles &amp; Permissions → View → Module access</strong> to set which modules a role may use. Store-level policy below is an optional cap for location-scoped users.</div>
     </div>
 
     <div class="card">
       <div class="card-header">
-        <div class="card-title">Module Toggles by User</div>
-        <select id="module-user-select" style="min-width:240px" onchange="loadModuleAccess()">
-          <option value="">— Select a user —</option>
+        <div class="card-title">Modules per store</div>
+        <select id="module-store-select" style="min-width:260px" onchange="loadStoreModuleAccess()">
+          <option value="">— Select a store —</option>
         </select>
-        <button class="topbar-btn primary" style="margin-left:12px;font-size:12px" id="save-modules-btn" onclick="saveModuleChanges()" disabled>Save Changes</button>
+        <button class="topbar-btn primary" style="margin-left:12px;font-size:12px" id="save-store-modules-btn" onclick="saveStoreModuleChanges()" disabled>Save Store Modules</button>
       </div>
-      <div class="card-body" id="module-toggles-body">
-        <div class="empty"><div class="empty-icon">👤</div><div class="empty-text">Select a user to manage their module access</div></div>
+      <div class="card-body" id="store-module-toggles-body">
+        <div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">Select a store to enable or disable modules for that location</div></div>
       </div>
     </div>
   </div>
@@ -1417,12 +1420,17 @@
         <div class="form-group"><label>Password <span class="label-req">*</span></label><input id="new-user-password" type="password" placeholder="Min 6 characters"></div>
         <div class="form-group"><label>Role <span class="label-req">*</span></label>
           <select id="new-user-role">
-            <option value="super_admin">Super Admin</option>
-            <option value="hr_admin">HR Admin</option>
+            <option value="">— Select a role —</option>
           </select>
         </div>
         <div class="form-group"><label>Phone Number</label><input id="new-user-phone" type="text" placeholder="+91 98765 43210"></div>
         <div class="form-group"><label>Email</label><input id="new-user-email" type="email" placeholder="user@eyewoot.com"></div>
+        <div class="form-group span2"><label>Store assignment</label>
+          <select id="new-user-store">
+            <option value="">— HQ / Global (no single store) —</option>
+          </select>
+          <div class="td-muted text-xs" style="margin-top:4px">Optional. Store staff from Army should still get a store here when they use Command Unit or store-scoped modules.</div>
+        </div>
         <div class="form-group"><label>Status</label>
           <select id="new-user-status">
             <option value="1">Active</option>
@@ -1451,13 +1459,17 @@
         <div class="form-group"><label>Full Name <span class="label-req">*</span></label><input id="edit-user-fullname" type="text"></div>
         <div class="form-group"><label>Role <span class="label-req">*</span></label>
           <select id="edit-user-role">
-            <option value="super_admin">Super Admin</option>
-            <option value="hr_admin">HR Admin</option>
+            <option value="">— Select a role —</option>
           </select>
         </div>
         <div class="form-group"><label>Phone</label><input id="edit-user-phone" type="text"></div>
         <div class="form-group"><label>Email</label><input id="edit-user-email" type="email"></div>
         <div class="form-group"><label>New Password</label><input id="edit-user-password" type="password" placeholder="Leave blank to keep current"></div>
+        <div class="form-group span2"><label>Store assignment</label>
+          <select id="edit-user-store">
+            <option value="">— HQ / Global (no single store) —</option>
+          </select>
+        </div>
         <div class="form-group"><label>Status</label>
           <select id="edit-user-status">
             <option value="1">Active</option>
@@ -1486,13 +1498,6 @@
       <div class="form-grid">
         <div class="form-group"><label>Role Key <span class="label-req">*</span></label><input id="new-role-key" type="text" placeholder="e.g. store_manager" class="font-mono"><div class="form-hint">Lowercase, underscores. Used in JWT claims.</div></div>
         <div class="form-group"><label>Display Name <span class="label-req">*</span></label><input id="new-role-display" type="text" placeholder="e.g. Store Manager"></div>
-        <div class="form-group"><label>Hierarchy Level <span class="label-req">*</span></label><input id="new-role-level" type="number" placeholder="1–10" min="1" max="99"><div class="form-hint">Lower = more authority.</div></div>
-        <div class="form-group"><label>Scope</label>
-          <select id="new-role-global">
-            <option value="0">Store-scoped (own store)</option>
-            <option value="1">Global (all stores)</option>
-          </select>
-        </div>
       </div>
       <div id="new-role-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
     </div>
@@ -1514,13 +1519,6 @@
       <div class="form-grid">
         <div class="form-group"><label>Role Key</label><input id="edit-role-key" class="font-mono" readonly style="background:var(--bg2)"></div>
         <div class="form-group"><label>Display Name <span class="label-req">*</span></label><input id="edit-role-display" type="text"></div>
-        <div class="form-group"><label>Hierarchy Level <span class="label-req">*</span></label><input id="edit-role-level" type="number" min="1" max="99"></div>
-        <div class="form-group"><label>Scope</label>
-          <select id="edit-role-global">
-            <option value="0">Store-scoped (own store)</option>
-            <option value="1">Global (all stores)</option>
-          </select>
-        </div>
       </div>
       <div id="edit-role-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
     </div>

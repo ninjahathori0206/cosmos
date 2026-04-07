@@ -12,8 +12,8 @@ BEGIN
     description   VARCHAR(500) NULL,
     display_order INT          NOT NULL DEFAULT 0,
     is_active     BIT          NOT NULL DEFAULT 1,
-    created_at    DATETIME     NOT NULL DEFAULT GETDATE(),
-    updated_at    DATETIME     NOT NULL DEFAULT GETDATE(),
+    created_at    DATETIME     NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at    DATETIME     NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT UQ_foundry_lookup UNIQUE (lookup_type, lookup_key)
   );
   PRINT 'Created dbo.foundry_lookup_values';

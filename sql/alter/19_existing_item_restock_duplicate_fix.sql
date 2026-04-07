@@ -308,7 +308,7 @@ AS BEGIN
        status, created_at, updated_at, header_id, item_id, item_colour_id, image_url, video_url)
     VALUES
       (@product_master_id, @skuCode, @barcode, @quantity, @cost_price, @sale_price,
-       'LIVE', GETDATE(), GETDATE(), @header_id, @item_id, @item_colour_id, @colour_image_url, @colour_video_url);
+       'LIVE', DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()), @header_id, @item_id, @item_colour_id, @colour_image_url, @colour_video_url);
 
     SELECT
       sk.sku_id,

@@ -103,7 +103,7 @@ BEGIN
     brand_name = @brand_name,
     brand_description = @brand_description,
     brand_logo_url = @brand_logo_url,
-    updated_at = GETDATE()
+    updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
   WHERE brand_id = @brand_id;
 
   SELECT brand_id, brand_name, brand_code, brand_description, brand_logo_url, is_active, created_by, created_at, updated_at
@@ -124,7 +124,7 @@ BEGIN
   UPDATE dbo.home_brands
   SET
     is_active = 0,
-    updated_at = GETDATE()
+    updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
   WHERE brand_id = @brand_id;
 
   SELECT brand_id, brand_name, brand_code, is_active, updated_at

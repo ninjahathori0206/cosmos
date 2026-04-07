@@ -158,7 +158,7 @@ BEGIN
       bank_account_no       = @bank_account_no,
       bank_ifsc             = @bank_ifsc,
       bank_account_holder   = @bank_account_holder,
-      updated_at            = GETDATE()
+      updated_at            = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE supplier_id = @supplier_id;
 
     SELECT
@@ -188,7 +188,7 @@ BEGIN
   SET NOCOUNT ON;
 
   UPDATE dbo.suppliers
-  SET vendor_status = @status, updated_at = GETDATE()
+  SET vendor_status = @status, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
   WHERE supplier_id = @supplier_id;
 
   SELECT

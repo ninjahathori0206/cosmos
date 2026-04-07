@@ -12,8 +12,8 @@ BEGIN
     brand_logo_url    VARCHAR(500) NULL,
     is_active         BIT NOT NULL DEFAULT 1,
     created_by        INT NULL,
-    created_at        DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at        DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at        DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at        DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_home_brands_created_by
       FOREIGN KEY (created_by) REFERENCES dbo.users(user_id)
   );
@@ -30,8 +30,8 @@ BEGIN
     promoter_commission DECIMAL(10,2) NULL,
     is_active       BIT NOT NULL DEFAULT 1,
     created_by      INT NULL,
-    created_at      DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at      DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at      DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at      DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_membership_tiers_created_by
       FOREIGN KEY (created_by) REFERENCES dbo.users(user_id)
   );
@@ -49,8 +49,8 @@ BEGIN
     affects_score  BIT NOT NULL DEFAULT 1,
     is_active      BIT NOT NULL DEFAULT 1,
     created_by     INT NULL,
-    created_at     DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at     DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at     DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at     DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_leave_types_created_by
       FOREIGN KEY (created_by) REFERENCES dbo.users(user_id)
   );
@@ -67,8 +67,8 @@ BEGIN
     sgst_rate     DECIMAL(5,2) NOT NULL,
     applied_to    VARCHAR(500) NULL,
     is_active     BIT NOT NULL DEFAULT 1,
-    created_at    DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at    DATETIME NOT NULL DEFAULT GETDATE()
+    created_at    DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at    DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME())
   );
 END;
 

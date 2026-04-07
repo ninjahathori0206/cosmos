@@ -17,8 +17,10 @@ BEGIN
     u.phone,
     u.role_key,
     u.store_id,
-    u.is_active
+    u.is_active,
+    s.store_name
   FROM dbo.users u
+  LEFT JOIN dbo.stores s ON s.store_id = u.store_id
   WHERE u.username = @username
     AND u.is_active = 1;
 END;

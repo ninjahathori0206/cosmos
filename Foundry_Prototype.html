@@ -4,58 +4,58 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Foundry — Cosmos ERP</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <style>
-  .flatpickr-calendar { font-family: 'DM Sans', sans-serif; font-size: 13px; }
+  .flatpickr-calendar { font-family: 'Inter', sans-serif; font-size: 13px; }
   .flatpickr-day.selected, .flatpickr-day.selected:hover { background: var(--acc, #2e7dd1); border-color: var(--acc, #2e7dd1); }
   input.datepicker { cursor: pointer; }
 </style>
 <style>
   :root {
-    --navy:    #0F1E35;
-    --navy2:   #162640;
-    --acc:     #1A5FA8;   /* Foundry steel blue */
-    --acc2:    #2E7DD1;
-    --accL:    #DBEAFE;
-    --accD:    #0F3D6E;
-    --teal:    #0E7490;
+    --navy:    #0B1F33;
+    --navy2:   #132F4A;
+    --acc:     #1D6FD4;
+    --acc2:    #2B8CFF;
+    --accL:    #E8F4FF;
+    --accD:    #1560B5;
+    --teal:    #06B6D4;
     --tealL:   #CFFAFE;
-    --gold:    #B45309;
-    --goldL:   #FEF3C7;
+    --gold:    #D97706;
+    --goldL:   #FFFBEB;
     --green:   #059669;
-    --greenL:  #D1FAE5;
+    --greenL:  #ECFDF5;
     --red:     #DC2626;
     --redL:    #FEE2E2;
-    --orange:  #C2410C;
-    --orangeL: #FFEDD5;
-    --bg:      #F0F4F9;
+    --orange:  #E85D04;
+    --orangeL: #FFF4ED;
+    --bg:      #F4F7FB;
     --card:    #FFFFFF;
-    --border:  #E2E8F0;
-    --text1:   #0F1E35;
-    --text2:   #475569;
-    --text3:   #94A3B8;
+    --border:  #D8E4F0;
+    --text1:   #0F172A;
+    --text2:   #5C6B7A;
+    --text3:   #8B9CAE;
     --sidebar: 248px;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'DM Sans',sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; display:flex; overflow:hidden; }
+  body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; display:flex; overflow:hidden; }
 
   /* SIDEBAR */
   .sidebar { width:var(--sidebar); background:var(--navy); height:100vh; display:flex; flex-direction:column; flex-shrink:0; position:fixed; left:0; top:0; z-index:100; }
   .sidebar-logo { padding:20px 20px 16px; border-bottom:1px solid rgba(255,255,255,0.08); }
-  .cosmos-tag { font-family:'Syne',sans-serif; font-size:10px; font-weight:700; letter-spacing:3px; color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:3px; }
-  .module-name { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; }
+  .cosmos-tag { font-family:'Plus Jakarta Sans',sans-serif; font-size:10px; font-weight:700; letter-spacing:3px; color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:3px; }
+  .module-name { font-family:'Plus Jakarta Sans',sans-serif; font-size:18px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; }
   .mod-dot { width:8px; height:8px; border-radius:50%; background:var(--acc2); box-shadow:0 0 8px var(--acc2); }
   .sidebar-nav { flex:1; padding:10px 0; overflow-y:auto; }
   .nav-group { font-size:10px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,0.22); padding:14px 20px 5px; }
   .nav-item { display:flex; align-items:center; gap:10px; padding:10px 20px; cursor:pointer; color:rgba(255,255,255,0.52); font-size:13px; font-weight:400; border-left:3px solid transparent; transition:all .15s; }
   .nav-item:hover { background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.85); }
-  .nav-item.active { background:rgba(46,125,209,0.18); color:#fff; border-left-color:var(--acc2); font-weight:500; }
+  .nav-item.active { background:rgba(43,140,255,0.18); color:#fff; border-left-color:var(--acc2); font-weight:500; }
   .nav-item .ic { font-size:15px; width:20px; text-align:center; }
-  .nav-badge { margin-left:auto; background:var(--red); color:#fff; font-size:10px; font-weight:600; padding:1px 6px; border-radius:10px; font-family:'JetBrains Mono',monospace; }
+  .nav-badge { margin-left:auto; background:var(--red); color:#fff; font-size:10px; font-weight:600; padding:1px 6px; border-radius:10px; font-family:'IBM Plex Mono',monospace; }
   .nav-badge.gold { background:var(--gold); }
   .sidebar-user { padding:14px 20px; border-top:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; gap:10px; }
-  .u-av { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; font-family:'Syne',sans-serif; flex-shrink:0; }
+  .u-av { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; font-family:'Plus Jakarta Sans',sans-serif; flex-shrink:0; }
   .u-name { font-size:12.5px; font-weight:500; color:#fff; }
   .u-role { font-size:11px; color:rgba(255,255,255,0.35); }
 
@@ -67,7 +67,7 @@
   .breadcrumb { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text2); }
   .breadcrumb .cur { color:var(--text1); font-weight:500; }
   .tb-actions { display:flex; align-items:center; gap:10px; }
-  .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; border:1.5px solid var(--border); background:var(--card); font-size:13px; font-weight:500; cursor:pointer; color:var(--text1); transition:all .15s; font-family:'DM Sans',sans-serif; white-space:nowrap; }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; border:1.5px solid var(--border); background:var(--card); font-size:13px; font-weight:500; cursor:pointer; color:var(--text1); transition:all .15s; font-family:'Inter',sans-serif; white-space:nowrap; }
   .btn:hover { border-color:var(--acc2); color:var(--acc); }
   .btn.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
   .btn.primary:hover { background:var(--accD); }
@@ -79,7 +79,7 @@
   .page { display:none; padding:26px; }
   .page.active { display:block; }
   .ph { margin-bottom:22px; }
-  .pt { font-family:'Syne',sans-serif; font-size:21px; font-weight:800; color:var(--text1); margin-bottom:3px; }
+  .pt { font-family:'Plus Jakarta Sans',sans-serif; font-size:21px; font-weight:800; color:var(--text1); margin-bottom:3px; }
   .ps { font-size:13px; color:var(--text2); }
 
   /* STATS */
@@ -88,7 +88,7 @@
   .sc { background:var(--card); border:1px solid var(--border); border-radius:11px; padding:18px; position:relative; overflow:hidden; }
   .sc::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--sc-color, var(--acc)); }
   .sl { font-size:11.5px; font-weight:500; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
-  .sv { font-family:'Syne',sans-serif; font-size:26px; font-weight:800; color:var(--text1); margin-bottom:5px; }
+  .sv { font-family:'Plus Jakarta Sans',sans-serif; font-size:26px; font-weight:800; color:var(--text1); margin-bottom:5px; }
   .sm { font-size:12px; color:var(--text3); }
   .sup { color:var(--green); font-weight:500; }
   .sdn { color:var(--red); font-weight:500; }
@@ -130,7 +130,7 @@
   .pstep:last-child { border-radius:0 10px 10px 0; }
   .pstep.active { background:var(--accL); border-color:var(--acc2); }
   .pstep.done { background:var(--greenL); border-color:#6EE7B7; }
-  .pstep-num { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text3); margin-bottom:4px; }
+  .pstep-num { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); margin-bottom:4px; }
   .pstep.active .pstep-num { color:var(--acc); }
   .pstep.done .pstep-num { color:var(--green); }
   .pstep-title { font-size:12.5px; font-weight:600; color:var(--text1); }
@@ -146,7 +146,7 @@
   .fgrp.s4 { grid-column:span 4; }
   label { font-size:12px; font-weight:500; color:var(--text1); }
   .req { color:var(--red); }
-  input,select,textarea { padding:8px 11px; border:1.5px solid var(--border); border-radius:7px; font-size:13px; font-family:'DM Sans',sans-serif; color:var(--text1); background:var(--card); transition:border-color .15s; outline:none; width:100%; }
+  input,select,textarea { padding:8px 11px; border:1.5px solid var(--border); border-radius:7px; font-size:13px; font-family:'Inter',sans-serif; color:var(--text1); background:var(--card); transition:border-color .15s; outline:none; width:100%; }
   input:focus,select:focus,textarea:focus { border-color:var(--acc2); }
   textarea { resize:vertical; min-height:72px; }
   .fhint { font-size:11px; color:var(--text3); }
@@ -169,7 +169,7 @@
   .mb5 { margin-bottom:20px; }
   .mt4 { margin-top:16px; }
   .mla { margin-left:auto; }
-  .mono { font-family:'JetBrains Mono',monospace; }
+  .mono { font-family:'IBM Plex Mono',monospace; }
   .xs { font-size:11.5px; }
   .sm-txt { font-size:12.5px; }
   .fw6 { font-weight:600; }
@@ -183,7 +183,7 @@
   .rate-cell { padding:14px 16px; border-right:1px solid var(--border); }
   .rate-cell:last-child { border-right:none; }
   .rate-lbl { font-size:11px; color:var(--text2); margin-bottom:4px; }
-  .rate-val { font-family:'Syne',sans-serif; font-size:22px; font-weight:800; }
+  .rate-val { font-family:'Plus Jakarta Sans',sans-serif; font-size:22px; font-weight:800; }
   .rate-meta { font-size:11px; color:var(--text3); margin-top:3px; }
 
   /* ── SKU CATALOGUE CARDS (Lenskart-style) ─────────────────────────────── */
@@ -230,8 +230,8 @@
   .sku-swatch-count { font-size:11px; color:var(--text2); align-self:center; }
   .sku-colour-label { font-size:11.5px; color:var(--text2); margin-bottom:6px; min-height:16px; }
   .sku-price-row { display:flex; align-items:baseline; justify-content:space-between; margin-top:auto; padding-top:8px; border-top:1px solid #f0f0f0; }
-  .sku-price { font-size:18px; font-weight:800; color:var(--text1); font-family:'Syne',sans-serif; }
-  .sku-code { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text3,#bbb); margin-top:6px; }
+  .sku-price { font-size:18px; font-weight:800; color:var(--text1); font-family:'Plus Jakarta Sans',sans-serif; }
+  .sku-code { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3,#bbb); margin-top:6px; }
   .sku-view-btn { width:100%; margin-top:10px; font-size:12.5px; padding:7px; }
   /* Table group header */
   .tbl-group-hdr { background:#f8f9fc; }
@@ -243,12 +243,12 @@
   .bc-sku-row { display:flex; align-items:center; gap:8px; padding:7px 12px; border-bottom:1px solid var(--border); font-size:12.5px; }
   .bc-sku-row:last-child { border-bottom:none; }
   .bc-sku-row input[type=checkbox] { width:15px; height:15px; cursor:pointer; flex-shrink:0; }
-  .bc-sku-code { font-family:'JetBrains Mono',monospace; font-weight:600; font-size:11.5px; }
+  .bc-sku-code { font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:11.5px; }
   .bc-sku-info { font-size:11px; color:var(--text2); }
   .bc-label-row { display:flex; gap:4px; margin-bottom:4px; flex-wrap:nowrap; }
   .bc-label-cell { border:1px dashed #ccc; border-radius:3px; background:#fff; padding:3px 4px; text-align:center; width:72px; flex-shrink:0; overflow:hidden; }
   .bc-label-cell svg { display:block; margin:0 auto; }
-  .bc-label-code { font-size:5.5px; font-family:'JetBrains Mono',monospace; margin-top:2px; word-break:break-all; line-height:1.3; color:#333; text-align:center; }
+  .bc-label-code { font-size:5.5px; font-family:'IBM Plex Mono',monospace; margin-top:2px; word-break:break-all; line-height:1.3; color:#333; text-align:center; }
   .bc-empty-cell { border:1px dashed #eee; border-radius:3px; background:#fafafa; width:72px; flex-shrink:0; height:62px; }
 
   /* STOCK LOCATION BAR */
@@ -256,7 +256,7 @@
   .loc-row:last-child { border-bottom:none; }
   .loc-icon { font-size:18px; width:30px; text-align:center; }
   .loc-name { font-size:13.5px; font-weight:500; flex:1; }
-  .loc-units { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; color:var(--text1); }
+  .loc-units { font-family:'Plus Jakarta Sans',sans-serif; font-size:18px; font-weight:800; color:var(--text1); }
   .loc-sub { font-size:11.5px; color:var(--text2); }
 
   /* LENS CARD */
@@ -264,7 +264,7 @@
   .lens-name { font-size:14px; font-weight:600; color:var(--text1); margin-bottom:4px; }
   .lens-type { font-size:11.5px; color:var(--acc); font-weight:500; margin-bottom:8px; }
   .lens-tags { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px; }
-  .lens-price { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; }
+  .lens-price { font-family:'Plus Jakarta Sans',sans-serif; font-size:18px; font-weight:800; }
 
   /* ALERT */
   .alert { display:flex; align-items:flex-start; gap:10px; padding:12px 14px; border-radius:9px; font-size:13px; margin-bottom:16px; }
@@ -280,7 +280,7 @@
   .modal.wide { width:800px; }
   .modal.narrow { width:480px; }
   .mh { padding:18px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; background:var(--card); z-index:1; }
-  .mt-title { font-family:'Syne',sans-serif; font-size:16px; font-weight:700; }
+  .mt-title { font-family:'Plus Jakarta Sans',sans-serif; font-size:16px; font-weight:700; }
   .mc { cursor:pointer; font-size:20px; color:var(--text3); }
   .mc:hover { color:var(--text1); }
   .mb { padding:22px; }
@@ -313,6 +313,46 @@
 
   .empty { text-align:center; padding:40px 20px; color:var(--text3); }
   .empty-ic { font-size:36px; margin-bottom:10px; }
+
+  /* ── HAMBURGER / MOBILE SIDEBAR ────────────────────────────────────────────── */
+  .menu-toggle { display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:8px; background:var(--bg); border:1.5px solid var(--border); cursor:pointer; flex-shrink:0; flex-direction:column; padding:0; }
+  .menu-toggle span { display:block; width:16px; height:2px; border-radius:2px; background:var(--text1); transition:all .2s; }
+  .menu-toggle span:nth-child(2) { margin:3px 0; }
+  .sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:99; }
+  .sidebar-overlay.open { display:block; }
+
+  /* ── RESPONSIVE BREAKPOINTS ─────────────────────────────────────────────────── */
+  @media (max-width:768px) {
+    .sidebar { transform:translateX(-100%); transition:transform .25s ease; position:fixed; z-index:200; height:100vh; }
+    .sidebar.open { transform:translateX(0); }
+    .main { margin-left:0 !important; }
+    .menu-toggle { display:flex; }
+    .topbar { padding:0 14px; gap:10px; }
+    .page { padding:14px !important; }
+    .pt { font-size:17px; }
+    .ps { font-size:12px; }
+    /* Stat grids */
+    .sg4 { grid-template-columns:1fr 1fr !important; gap:10px; }
+    .sg3 { grid-template-columns:1fr 1fr !important; gap:10px; }
+    /* Layout grids collapse to single col */
+    .two-col, .three-col, .main-side { grid-template-columns:1fr !important; }
+    .fg2, .fg3, .fg4 { grid-template-columns:1fr !important; }
+    .fgrp.s2, .fgrp.s3, .fgrp.s4 { grid-column:span 1; }
+    /* Pipeline horizontal scroll */
+    .pipeline { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .pstep { min-width:120px; }
+    /* Table scroll */
+    .tw { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    table { min-width:520px; }
+    /* Touch targets */
+    .nav-item { min-height:48px; padding:12px 20px; }
+    .btn { min-height:40px; }
+    input, select { min-height:40px; }
+    /* Rate strip wraps */
+    .rate-strip { grid-template-columns:1fr; }
+    .rate-cell { border-right:none; border-bottom:1px solid var(--border); }
+    .rate-cell:last-child { border-bottom:none; }
+  }
 </style>
 </head>
 <body>
@@ -337,18 +377,25 @@
     <div class="nav-group">Catalogue</div>
     <div class="nav-item" onclick="nav('sku-catalogue',this)"><span class="ic">🗂️</span> SKU Catalogue</div>
     <div class="nav-item" onclick="nav('stock-view',this)"><span class="ic">📦</span> Stock View</div>
-    <div class="nav-item" onclick="nav('stock-transfer',this)"><span class="ic">🚚</span> Stock Transfer</div>
     <div class="nav-item" onclick="nav('lens-portfolio',this)"><span class="ic">👁️</span> Lens Portfolio</div>
     <div class="nav-item" onclick="nav('master-catalogue',this)"><span class="ic">📖</span> Master Catalogue</div>
+
+    <div class="nav-group">Store Connect</div>
+    <div class="nav-item" onclick="nav('transfer-requests',this)" id="nav-transfer-requests"><span class="ic">📬</span> Goods Request <span id="tr-nav-badge" class="nav-badge gold" style="display:none"></span></div>
+    <div class="nav-item" onclick="nav('stock-transfer',this)"><span class="ic">🚚</span> Goods Transfer</div>
+    <div class="nav-item" onclick="nav('movement-list',this)"><span class="ic">📋</span> Movement List</div>
 
     <div class="nav-group">Intelligence</div>
     <div class="nav-item" onclick="nav('rate-intelligence',this)"><span class="ic">💰</span> Rate Intelligence</div>
     <div class="nav-item" onclick="nav('suppliers',this)"><span class="ic">🏭</span> Suppliers</div>
     <div class="nav-item" onclick="nav('maker-master',this)"><span class="ic">🏗️</span> Maker Master</div>
 
-    <div class="nav-group">System</div>
-    <div class="nav-item" onclick="window.location.href='/finance.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
-    <div class="nav-item" onclick="window.location.href='/command-unit.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
+    <div id="fd-switch-module-wrap">
+      <div class="nav-group">System</div>
+      <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
+      <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🏬</span> StorePilot</div>
+      <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
+    </div>
     <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.3);font-size:12px"><span class="ic">🚪</span> Sign Out</div>
   </nav>
   <div class="sidebar-user" style="cursor:pointer" id="foundry-sidebar-user">
@@ -357,9 +404,15 @@
   </div>
 </aside>
 
+<!-- SIDEBAR OVERLAY -->
+<div class="sidebar-overlay" id="fy-sidebar-overlay" onclick="closeSidebar()"></div>
+
 <!-- MAIN -->
 <main class="main">
   <div class="topbar">
+    <button class="menu-toggle" id="fy-menu-toggle" onclick="openSidebar()" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
     <div class="breadcrumb">Foundry <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="bc">Dashboard</span></div>
     <div class="tb-actions" id="tba"></div>
   </div>
@@ -887,8 +940,8 @@
     </style>
 
     <div class="ph">
-      <div class="pt">Stock Transfer</div>
-      <div class="ps">Move stock from HQ Warehouse to a store — scan SKU QR codes or search manually</div>
+      <div class="pt">Goods Transfer</div>
+      <div class="ps">Immediately move stock from HQ Warehouse to a store — no request required. For store-initiated requests, use Store Connect → Goods Request.</div>
     </div>
 
     <!-- Transfer controls header -->
@@ -960,7 +1013,7 @@
       </div>
       <div class="cb" id="st-submit-row" style="display:none;padding-top:12px;border-top:1px solid var(--border)">
         <button class="btn primary w100" style="font-size:15px;padding:12px;justify-content:center" onclick="stSubmitTransfer()">
-          🚚 Transfer to Store
+          🚚 Dispatch to Store
         </button>
       </div>
     </div>
@@ -1189,6 +1242,79 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       TRANSFER REQUESTS — PRD §8.3 store-to-HQ lifecycle
+       Approve, set quantities, and dispatch requests submitted by stores.
+  ════════════════════════════════════════════════════════════════════════ -->
+  <div class="page" id="page-transfer-requests">
+    <div class="ph">
+      <div class="pt">Goods Request</div>
+      <div class="ps">Review store-initiated stock requests — approve quantities, then dispatch. Dispatching auto-creates a Goods Transfer record.</div>
+    </div>
+
+    <!-- Status filter tabs -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
+      <button class="btn sm active" id="ftr-tab-all"        onclick="setTrFilter('',this)">All</button>
+      <button class="btn sm"        id="ftr-tab-submitted"  onclick="setTrFilter('SUBMITTED',this)">⏳ Pending</button>
+      <button class="btn sm"        id="ftr-tab-approved"   onclick="setTrFilter('APPROVED',this)">✓ Approved</button>
+      <button class="btn sm"        id="ftr-tab-dispatched" onclick="setTrFilter('DISPATCHED',this)">🚚 Dispatched</button>
+      <button class="btn sm"        id="ftr-tab-received"   onclick="setTrFilter('RECEIVED',this)">📦 Received</button>
+      <button class="btn sm"        id="ftr-tab-rejected"   onclick="setTrFilter('REJECTED',this)">✕ Rejected</button>
+      <button class="btn sm mla"    onclick="loadTransferRequests()">↻ Refresh</button>
+    </div>
+
+    <div id="ftr-err" class="err-msg mb3"></div>
+
+    <div class="card">
+      <div id="ftr-list-wrap">
+        <div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Detail / action panel (shown when a row is expanded) -->
+    <div id="ftr-detail-card" class="card" style="display:none">
+      <div class="ch" style="justify-content:space-between">
+        <div class="ct" id="ftr-detail-title">Request details</div>
+        <button class="btn sm" onclick="closeTrDetail()">✕ Close</button>
+      </div>
+      <div id="ftr-detail-body"></div>
+    </div>
+  </div>
+
+  <!-- ═══ MOVEMENT LIST ═══ -->
+  <div class="page" id="page-movement-list">
+    <div class="ph">
+      <div class="pt">Movement List</div>
+      <div class="ps">All stock transfer documents dispatched to stores — track status from Dispatched through Accepted to Stocked.</div>
+    </div>
+
+    <!-- Filter row -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
+      <button class="btn sm active" id="ml-tab-all"        onclick="setMlFilter('',this)">All</button>
+      <button class="btn sm"        id="ml-tab-dispatched" onclick="setMlFilter('DISPATCHED',this)">📦 Dispatched</button>
+      <button class="btn sm"        id="ml-tab-accepted"   onclick="setMlFilter('ACCEPTED',this)">✓ Accepted</button>
+      <button class="btn sm"        id="ml-tab-stocked"    onclick="setMlFilter('STOCKED',this)">🏪 Stocked</button>
+      <button class="btn sm"        style="margin-left:auto" onclick="loadMovementList()">↻ Refresh</button>
+    </div>
+
+    <div id="ml-err" class="err-msg mb3"></div>
+
+    <div class="card">
+      <div id="ml-list">
+        <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
+      </div>
+    </div>
+
+    <!-- Detail panel -->
+    <div id="ml-detail" class="card" style="display:none;margin-top:16px">
+      <div class="ch" style="justify-content:space-between">
+        <div class="ct" id="ml-detail-title">Transfer document</div>
+        <button class="btn sm" onclick="closeMlDetail()">✕ Close</button>
+      </div>
+      <div id="ml-detail-body"></div>
+    </div>
+  </div>
+
 </main>
 
 <!-- MODALS -->
@@ -1413,9 +1539,12 @@
 const bcMap = {
   dashboard:'Dashboard', purchases:'All Purchases', 'new-purchase':'New Purchase',
   'bill-verify':'Bill Verification', branding:'Branding', digitisation:'Digitisation',
-  'sku-catalogue':'SKU Catalogue', 'stock-view':'Stock View', 'stock-transfer':'Stock Transfer', 'lens-portfolio':'Lens Portfolio',
+  'sku-catalogue':'SKU Catalogue', 'stock-view':'Stock View', 'lens-portfolio':'Lens Portfolio',
   'master-catalogue':'Master Catalogue', 'rate-intelligence':'Rate Intelligence',
-  suppliers:'Suppliers', 'maker-master':'Maker Master'
+  suppliers:'Suppliers', 'maker-master':'Maker Master',
+  'transfer-requests':'Store Connect — Goods Request',
+  'stock-transfer':   'Store Connect — Goods Transfer',
+  'movement-list':    'Store Connect — Movement List'
 };
 
 function nav(id, el) {
@@ -1424,6 +1553,11 @@ function nav(id, el) {
   document.getElementById('page-' + id).classList.add('active');
   if (el) el.classList.add('active');
   document.getElementById('bc').textContent = bcMap[id] || id;
+  if (typeof closeSidebar === 'function') closeSidebar();
+  // lazy-load Transfer Requests list when navigating to that page
+  if (id === 'transfer-requests' && typeof window.loadTransferRequests === 'function') {
+    window.loadTransferRequests();
+  }
 }
 
 function openM(id) { document.getElementById(id).classList.add('open'); }
@@ -1469,6 +1603,7 @@ function addColour() {
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="/js/cosmos-module-switch.js" defer></script>
 <script src="/js/foundry-prototype.js" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)

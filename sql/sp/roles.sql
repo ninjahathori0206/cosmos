@@ -10,9 +10,9 @@ AS
 BEGIN
   SET NOCOUNT ON;
   SELECT
-    r.role_key, r.display_name, r.hierarchy_lvl, r.is_global, r.created_at, r.updated_at
+    r.role_key, r.display_name, r.created_at, r.updated_at
   FROM dbo.roles r
-  ORDER BY r.hierarchy_lvl, r.role_key;
+  ORDER BY r.display_name, r.role_key;
 END;
 GO
 
@@ -21,10 +21,8 @@ IF OBJECT_ID('dbo.sp_Role_Create', 'P') IS NOT NULL
 GO
 
 CREATE PROCEDURE dbo.sp_Role_Create
-  @role_key      VARCHAR(50),
-  @display_name  VARCHAR(200),
-  @hierarchy_lvl INT,
-  @is_global     BIT = 0
+  @role_key     VARCHAR(50),
+  @display_name VARCHAR(200)
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -35,10 +33,11 @@ BEGIN
       RETURN;
     END;
 
+    -- hierarchy_lvl / is_global columns retained for legacy rows; new roles use fixed defaults.
     INSERT INTO dbo.roles (role_key, display_name, hierarchy_lvl, is_global, created_at, updated_at)
-    VALUES (@role_key, @display_name, @hierarchy_lvl, ISNULL(@is_global, 0), GETDATE(), GETDATE());
+    VALUES (@role_key, @display_name, 1, 0, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
 
-    SELECT role_key, display_name, hierarchy_lvl, is_global, created_at, updated_at
+    SELECT role_key, display_name, created_at, updated_at
     FROM dbo.roles WHERE role_key = @role_key;
   END TRY
   BEGIN CATCH
@@ -53,22 +52,18 @@ IF OBJECT_ID('dbo.sp_Role_Update', 'P') IS NOT NULL
 GO
 
 CREATE PROCEDURE dbo.sp_Role_Update
-  @role_key      VARCHAR(50),
-  @display_name  VARCHAR(200),
-  @hierarchy_lvl INT,
-  @is_global     BIT = 0
+  @role_key     VARCHAR(50),
+  @display_name VARCHAR(200)
 AS
 BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
     UPDATE dbo.roles
     SET display_name = @display_name,
-        hierarchy_lvl = @hierarchy_lvl,
-        is_global = ISNULL(@is_global, 0),
-        updated_at = GETDATE()
+        updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE role_key = @role_key;
 
-    SELECT role_key, display_name, hierarchy_lvl, is_global, created_at, updated_at
+    SELECT role_key, display_name, created_at, updated_at
     FROM dbo.roles WHERE role_key = @role_key;
   END TRY
   BEGIN CATCH
@@ -93,8 +88,9 @@ BEGIN
       RAISERROR('Cannot delete role — users are assigned to it.', 16, 1);
       RETURN;
     END;
-    DELETE FROM dbo.role_permissions WHERE role_key = @role_key;
-    DELETE FROM dbo.roles WHERE role_key = @role_key;
+    DELETE FROM dbo.role_permissions    WHERE role_key = @role_key;
+    DELETE FROM dbo.role_module_access  WHERE role_key = @role_key;
+    DELETE FROM dbo.roles               WHERE role_key = @role_key;
     SELECT @role_key AS deleted_role_key;
   END TRY
   BEGIN CATCH
@@ -165,7 +161,7 @@ BEGIN
     )
     BEGIN
       INSERT INTO dbo.role_permissions (role_key, permission, created_at)
-      VALUES (@role_key, @permission, GETDATE());
+      VALUES (@role_key, @permission, DATEADD(MINUTE, 330, SYSUTCDATETIME()));
     END;
     SELECT id, role_key, permission, created_at
     FROM dbo.role_permissions

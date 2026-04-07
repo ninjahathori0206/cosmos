@@ -45,6 +45,23 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
+    // Compute effective module access: role policy intersected with store policy.
+    // Returns rows with { module_key, role_allows, store_allows, is_effective }.
+    // Falls back gracefully — an empty array means "all modules allowed" on the client.
+    let modules = {};
+    try {
+      const modResult = await executeStoredProcedure('sp_User_EffectiveModules', {
+        user_id: { type: sql.Int, value: user.user_id }
+      });
+      (modResult.recordset || []).forEach((r) => {
+        modules[r.module_key] = !!r.is_effective;
+      });
+    } catch (spErr) {
+      // Non-fatal: if SP not yet deployed the login still succeeds;
+      // empty modules map = legacy “all enabled” on the client.
+      console.warn('[auth/login] sp_User_EffectiveModules failed:', spErr.message);
+    }
+
     const payload = {
       user_id: user.user_id,
       role: user.role_key,
@@ -64,7 +81,9 @@ router.post('/login', async (req, res, next) => {
           username: user.username,
           full_name: user.full_name,
           role: user.role_key,
-          store_id: user.store_id
+          store_id: user.store_id,
+          store_name: user.store_name || null,
+          modules
         }
       }
     });

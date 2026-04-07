@@ -94,7 +94,7 @@ BEGIN
       product_type      = ISNULL(NULLIF(@product_type,''), 'FRAMES'),
       branding_required = ISNULL(@branding_required, 1),
       catalogue_status  = @catalogue_status,
-      updated_at        = GETDATE()
+      updated_at        = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE product_id = @product_id;
 
     SELECT

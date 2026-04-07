@@ -16,7 +16,7 @@ AS BEGIN
   SET NOCOUNT ON;
   UPDATE dbo.suppliers
      SET credit_days = @credit_days,
-         updated_at  = GETDATE()
+         updated_at  = DATEADD(MINUTE, 330, SYSUTCDATETIME())
    WHERE supplier_id = @supplier_id;
 
   SELECT supplier_id, vendor_name, credit_days
@@ -94,7 +94,7 @@ AS BEGIN
     SUM(CASE
       WHEN bo.outstanding > 0.005
         AND bo.bill_date IS NOT NULL
-        AND DATEADD(day, ISNULL(s.credit_days, 0), bo.bill_date) < CAST(GETDATE() AS DATE)
+        AND DATEADD(day, ISNULL(s.credit_days, 0), bo.bill_date) < CAST(DATEADD(MINUTE, 330, SYSUTCDATETIME()) AS DATE)
       THEN 1 ELSE 0
     END)                                                 AS overdue_bills
   FROM dbo.suppliers s
@@ -151,7 +151,7 @@ AS BEGIN
       DATEADD(day,
         ISNULL((SELECT credit_days FROM dbo.suppliers WHERE supplier_id = @supplier_id), 0),
         ph.bill_date),
-      CAST(GETDATE() AS DATE))                       AS days_overdue
+      CAST(DATEADD(MINUTE, 330, SYSUTCDATETIME()) AS DATE))                       AS days_overdue
   FROM dbo.purchase_headers ph
   LEFT JOIN (
     SELECT pa.header_id, SUM(pa.allocated_amt) AS paid_amt
@@ -261,7 +261,7 @@ AS BEGIN
   UPDATE dbo.supplier_payments
      SET is_void    = 1,
          void_reason = @void_reason,
-         updated_at  = GETDATE()
+         updated_at  = DATEADD(MINUTE, 330, SYSUTCDATETIME())
    WHERE payment_id = @payment_id;
 
   SELECT payment_id, is_void, void_reason FROM dbo.supplier_payments WHERE payment_id = @payment_id;
@@ -317,7 +317,7 @@ AS BEGIN
       AND ph.bill_date IS NOT NULL
   ) x
   WHERE x.bill_out > 0
-    AND x.due_date < CAST(GETDATE() AS DATE);
+    AND x.due_date < CAST(DATEADD(MINUTE, 330, SYSUTCDATETIME()) AS DATE);
 
   SELECT @active_suppliers = COUNT(*) FROM dbo.suppliers WHERE vendor_status = 'active';
 
@@ -339,7 +339,7 @@ AS BEGIN
   SELECT @payments_30d = COUNT(*)
   FROM dbo.supplier_payments
   WHERE is_void = 0
-    AND payment_date >= DATEADD(day, -30, CAST(GETDATE() AS DATE));
+    AND payment_date >= DATEADD(day, -30, CAST(DATEADD(MINUTE, 330, SYSUTCDATETIME()) AS DATE));
 
   SELECT
     @total_payable                   AS total_payable,

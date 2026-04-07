@@ -15,8 +15,8 @@ BEGIN
     description VARCHAR(500) NULL,
     country     VARCHAR(100) NULL,
     is_active   BIT NOT NULL DEFAULT 1,
-    created_at  DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at  DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at  DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at  DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT UQ_maker_code UNIQUE (maker_code)
   );
   PRINT 'Created dbo.maker_master';
@@ -60,8 +60,8 @@ BEGIN
     received_at        DATETIME NULL,
     warehouse_at       DATETIME NULL,
     created_by         INT NULL,
-    created_at         DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at         DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at         DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at         DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_ph_supplier FOREIGN KEY (supplier_id) REFERENCES dbo.suppliers(supplier_id)
   );
   PRINT 'Created dbo.purchase_headers';
@@ -83,7 +83,7 @@ BEGIN
     base_value        DECIMAL(10,2) NOT NULL,
     gst_amt           DECIMAL(10,2) NOT NULL,
     item_total        DECIMAL(10,2) NOT NULL,
-    created_at        DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at        DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_pi_header  FOREIGN KEY (header_id)         REFERENCES dbo.purchase_headers(header_id),
     CONSTRAINT FK_pi_product FOREIGN KEY (product_master_id) REFERENCES dbo.product_master(product_id),
     CONSTRAINT FK_pi_maker   FOREIGN KEY (maker_master_id)   REFERENCES dbo.maker_master(maker_id)
@@ -102,7 +102,7 @@ BEGIN
     colour_name VARCHAR(100) NOT NULL,
     colour_code VARCHAR(20)  NOT NULL,
     quantity    INT NOT NULL,
-    created_at  DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at  DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_pic_item FOREIGN KEY (item_id) REFERENCES dbo.purchase_items(item_id)
   );
   PRINT 'Created dbo.purchase_item_colours';

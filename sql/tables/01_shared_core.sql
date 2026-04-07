@@ -17,8 +17,8 @@ BEGIN
     store_id     INT NULL,
     is_active    BIT NOT NULL DEFAULT 1,
     last_login   DATETIME NULL,
-    created_at   DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at   DATETIME NOT NULL DEFAULT GETDATE()
+    created_at   DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at   DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME())
   );
 END;
 GO
@@ -30,8 +30,8 @@ BEGIN
     display_name  VARCHAR(200) NOT NULL,
     hierarchy_lvl INT NOT NULL,
     is_global     BIT NOT NULL DEFAULT 0,
-    created_at    DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at    DATETIME NOT NULL DEFAULT GETDATE()
+    created_at    DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at    DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME())
   );
 END;
 GO
@@ -42,7 +42,7 @@ BEGIN
     id           INT IDENTITY(1,1) PRIMARY KEY,
     role_key     VARCHAR(50) NOT NULL,
     permission   VARCHAR(200) NOT NULL,
-    created_at   DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at   DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_role_permissions_role
       FOREIGN KEY (role_key) REFERENCES dbo.roles(role_key)
   );
@@ -66,8 +66,8 @@ BEGIN
     gps_lng       VARCHAR(20) NULL,
     status        VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
     is_active     BIT NOT NULL DEFAULT 1,
-    created_at    DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at    DATETIME NOT NULL DEFAULT GETDATE()
+    created_at    DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at    DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME())
   );
 END;
 GO
@@ -79,8 +79,8 @@ BEGIN
     store_id    INT NOT NULL,
     module_key  VARCHAR(50) NOT NULL,
     is_enabled  BIT NOT NULL DEFAULT 1,
-    created_at  DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at  DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at  DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at  DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_store_module_access_store
       FOREIGN KEY (store_id) REFERENCES dbo.stores(store_id)
   );
@@ -96,7 +96,7 @@ BEGIN
     setting_group VARCHAR(100) NULL,
     description   VARCHAR(500) NULL,
     updated_by    INT NULL,
-    updated_at    DATETIME NOT NULL DEFAULT GETDATE(),
+    updated_at    DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_app_settings_updated_by
       FOREIGN KEY (updated_by) REFERENCES dbo.users(user_id)
   );
@@ -110,7 +110,7 @@ BEGIN
     token_hash   VARCHAR(200) NOT NULL,
     user_id      INT NOT NULL,
     expires_at   DATETIME NOT NULL,
-    created_at   DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at   DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_token_blacklist_user
       FOREIGN KEY (user_id) REFERENCES dbo.users(user_id)
   );
@@ -129,7 +129,7 @@ BEGIN
     old_value   VARCHAR(500) NULL,
     new_value   VARCHAR(500) NULL,
     ip_address  VARCHAR(50) NULL,
-    created_at  DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at  DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_audit_logs_user
       FOREIGN KEY (user_id) REFERENCES dbo.users(user_id)
   );

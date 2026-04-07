@@ -9,8 +9,8 @@ BEGIN
     user_id     INT NOT NULL,
     module_key  VARCHAR(50) NOT NULL,
     is_enabled  BIT NOT NULL DEFAULT 1,
-    created_at  DATETIME NOT NULL DEFAULT GETDATE(),
-    updated_at  DATETIME NOT NULL DEFAULT GETDATE(),
+    created_at  DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+    updated_at  DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
     CONSTRAINT FK_user_module_access_user
       FOREIGN KEY (user_id) REFERENCES dbo.users(user_id),
     CONSTRAINT UQ_user_module_access

@@ -1,5 +1,19 @@
 const API_KEY = 'CHANGE_ME_API_KEY';
 
+function fmtIstDateTime(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (isNaN(d)) return String(v);
+  return d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+}
+
+function fmtIstTime(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (isNaN(d)) return String(v);
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const token = sessionStorage.getItem('cosmos_token');
   const userRaw = sessionStorage.getItem('cosmos_user');
@@ -10,6 +24,31 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const user = JSON.parse(userRaw);
+
+  /** When login returned a non-empty modules map, enforce it (missing key = allowed for backward compatibility). */
+  function cosmosModuleAllowed(modKey) {
+    const mods = user.modules;
+    if (!mods || typeof mods !== 'object' || Object.keys(mods).length === 0) return true;
+    return mods[modKey] !== false;
+  }
+
+  if (!cosmosModuleAllowed('command_unit')) {
+    if (cosmosModuleAllowed('foundry')) window.location.href = '/foundry.html';
+    else if (cosmosModuleAllowed('finance')) window.location.href = '/finance.html';
+    else if (cosmosModuleAllowed('storepilot')) window.location.href = '/storepilot.html';
+    else {
+      sessionStorage.removeItem('cosmos_token');
+      sessionStorage.removeItem('cosmos_user');
+      window.location.href = '/';
+    }
+    return;
+  }
+
+  document.querySelectorAll('[data-cosmos-module]').forEach((el) => {
+    const key = el.getAttribute('data-cosmos-module');
+    if (!key) return;
+    el.style.display = cosmosModuleAllowed(key) ? '' : 'none';
+  });
 
   const sidebarUser = document.querySelector('.sidebar-user .user-info');
   const sidebarAvatar = document.querySelector('.sidebar-user .user-avatar');
@@ -82,6 +121,69 @@ document.addEventListener('DOMContentLoaded', () => {
   function val(id) {
     const el = document.getElementById(id);
     return el ? el.value.trim() : '';
+  }
+
+  function valStoreId(selectId) {
+    const el = document.getElementById(selectId);
+    if (!el || !el.value) return null;
+    const n = Number(el.value);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  /** Fill role dropdowns from cachedRoles (after /api/roles load). */
+  function refreshRoleDropdowns() {
+    const roles = (cachedRoles || []).slice().sort((a, b) => a.display_name.localeCompare(b.display_name));
+    const buildOpts = (sel, keepValue) => {
+      if (!sel) return;
+      const prev = keepValue !== undefined ? keepValue : sel.value;
+      const firstOpt = sel.options[0];
+      sel.innerHTML = '';
+      if (firstOpt) sel.appendChild(firstOpt);
+      roles.forEach((r) => {
+        const opt = document.createElement('option');
+        opt.value = r.role_key;
+        opt.textContent = `${r.display_name} (${r.role_key})`;
+        sel.appendChild(opt);
+      });
+      if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+    };
+    buildOpts(document.getElementById('new-user-role'));
+    buildOpts(document.getElementById('edit-user-role'));
+  }
+
+  /** Fill store dropdowns from cachedStores (after /api/stores load). */
+  function refreshStoreDropdowns() {
+    const stores = (cachedStores || []).filter((s) => resolveStatus(s) === 'ACTIVE').sort((a, b) =>
+      String(a.store_name || '').localeCompare(String(b.store_name || ''))
+    );
+    const buildOptions = (sel, keepValue) => {
+      if (!sel) return;
+      const prev = keepValue !== undefined ? keepValue : sel.value;
+      const firstOpt = sel.options[0];
+      sel.innerHTML = '';
+      if (firstOpt) sel.appendChild(firstOpt);
+      stores.forEach((s) => {
+        const opt = document.createElement('option');
+        opt.value = String(s.store_id);
+        opt.textContent = `${s.store_name || 'Store'} (${s.store_code || s.store_id})`;
+        sel.appendChild(opt);
+      });
+      if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+    };
+    buildOptions(document.getElementById('new-user-store'));
+    buildOptions(document.getElementById('edit-user-store'));
+    const modStore = document.getElementById('module-store-select');
+    if (modStore) {
+      const prev = modStore.value;
+      modStore.innerHTML = '<option value="">— Select a store —</option>';
+      stores.forEach((s) => {
+        const opt = document.createElement('option');
+        opt.value = String(s.store_id);
+        opt.textContent = `${s.store_name || 'Store'} (${s.store_code || s.store_id})`;
+        modStore.appendChild(opt);
+      });
+      if (prev && [...modStore.options].some((o) => o.value === prev)) modStore.value = prev;
+    }
   }
 
   function escHtml(str) {
@@ -168,6 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       renderStoreRows();
       bindStoreFilters();
+      refreshStoreDropdowns();
     } catch (err) {
       tbody.innerHTML = `<tr><td colspan="8" class="td-muted">Error: ${err.message}</td></tr>`;
     }
@@ -289,8 +392,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const createdEl = document.getElementById('store-created-at');
     const updatedEl = document.getElementById('store-updated-at');
     const statusEl = document.getElementById('store-status-kpi');
-    if (createdEl) createdEl.textContent = s.created_at ? new Date(s.created_at).toLocaleString() : '—';
-    if (updatedEl) updatedEl.textContent = s.updated_at ? new Date(s.updated_at).toLocaleString() : '—';
+    if (createdEl) createdEl.textContent = s.created_at ? fmtIstDateTime(s.created_at) : '—';
+    if (updatedEl) updatedEl.textContent = s.updated_at ? fmtIstDateTime(s.updated_at) : '—';
     if (statusEl) {
       statusEl.textContent = statusText;
       statusEl.style.color = statusCode === 'ACTIVE' ? '#059669' : statusCode === 'COMING_SOON' ? '#D97706' : '#991B1B';
@@ -360,12 +463,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const users = await apiGet('/api/users');
       cachedUsers = users;
       if (!users.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="td-muted">No users found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="td-muted">No users found.</td></tr>';
         return;
       }
       users.forEach((u) => {
         const initials = (u.full_name || u.username || '?').split(' ').filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
         const roleBadge = u.role_key === 'super_admin' ? 'badge-purple' : 'badge-blue';
+        const storeLabel = u.store_name
+          ? `<span class="td-muted">${escHtml(u.store_name)}</span>`
+          : '<span class="badge badge-gray" style="font-size:10px">HQ / Global</span>';
         const tr = document.createElement('tr');
         tr.dataset.userId = u.user_id;
         tr.innerHTML = `
@@ -375,10 +481,11 @@ document.addEventListener('DOMContentLoaded', () => {
               <div><div class="fw-600">${u.full_name}</div><div class="td-muted">${u.username}</div></div>
             </div>
           </td>
+          <td style="max-width:160px;font-size:12.5px">${storeLabel}</td>
           <td class="font-mono text-xs">${u.phone || '—'}</td>
           <td class="td-muted">${u.email || '—'}</td>
           <td><span class="badge ${roleBadge}">${u.role_display || u.role_key}</span></td>
-          <td class="td-muted">${u.last_login ? new Date(u.last_login).toLocaleString() : 'Never'}</td>
+          <td class="td-muted">${u.last_login ? fmtIstDateTime(u.last_login) : 'Never'}</td>
           <td>${u.is_active ? '<span class="badge badge-green"><span class="badge-dot"></span>Active</span>' : '<span class="badge badge-gray">Inactive</span>'}</td>
           <td><button class="topbar-btn user-edit-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
         `;
@@ -392,21 +499,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       });
 
-      // Populate Module Access page user selector
-      const modSel = document.getElementById('module-user-select');
-      if (modSel) {
-        const prev = modSel.value;
-        modSel.innerHTML = '<option value="">— Select a user —</option>';
-        users.forEach((u) => {
-          const opt = document.createElement('option');
-          opt.value = u.user_id;
-          opt.textContent = `${u.full_name} (${u.username})`;
-          modSel.appendChild(opt);
-        });
-        if (prev) modSel.value = prev;
-      }
+      refreshStoreDropdowns();
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="7" class="td-muted">Error: ${err.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="td-muted">Error: ${err.message}</td></tr>`;
     }
   }
 
@@ -421,6 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
         email: val('new-user-email') || null,
         phone: val('new-user-phone') || null,
         role_key: val('new-user-role'),
+        store_id: valStoreId('new-user-store'),
         is_active: val('new-user-status') === '1'
       };
       if (!body.username) throw new Error('Username is required.');
@@ -445,11 +541,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const title = document.getElementById('edit-user-title');
     if (title) title.textContent = `Edit — ${u.full_name}`;
     document.getElementById('edit-user-fullname').value = u.full_name || '';
-    document.getElementById('edit-user-role').value = u.role_key || 'super_admin';
+    document.getElementById('edit-user-role').value = u.role_key || '';
     document.getElementById('edit-user-phone').value = u.phone || '';
     document.getElementById('edit-user-email').value = u.email || '';
     document.getElementById('edit-user-password').value = '';
     document.getElementById('edit-user-status').value = u.is_active ? '1' : '0';
+    const stSel = document.getElementById('edit-user-store');
+    if (stSel) {
+      refreshStoreDropdowns();
+      stSel.value = u.store_id ? String(u.store_id) : '';
+    }
     showError('edit-user-error', '');
     const modal = document.getElementById('modal-edit-user');
     if (modal) modal.dataset.userId = String(userId);
@@ -469,6 +570,7 @@ document.addEventListener('DOMContentLoaded', () => {
         email: val('edit-user-email') || null,
         phone: val('edit-user-phone') || null,
         role_key: val('edit-user-role'),
+        store_id: valStoreId('edit-user-store'),
         is_active: val('edit-user-status') === '1',
         password: val('edit-user-password') || null
       };
@@ -528,6 +630,15 @@ document.addEventListener('DOMContentLoaded', () => {
       { key: 'foundry.suppliers.view',      label: 'Suppliers — View' },
       { key: 'foundry.suppliers.manage',    label: 'Suppliers — Create / Edit' },
     ]},
+    { group: 'StorePilot (Showroom)', perms: [
+      { key: 'storepilot.dashboard.view',   label: 'Showroom — Dashboard' },
+      { key: 'storepilot.floor.view',       label: 'Floor & Displays — View' },
+      { key: 'storepilot.floor.manage',     label: 'Floor & Displays — Manage' },
+      { key: 'storepilot.appointments.manage', label: 'Appointments — Manage' },
+      { key: 'storepilot.walkins.manage',   label: 'Walk-ins — Manage' },
+      { key: 'storepilot.handoffs.create',  label: 'POS handoff — Create queue' },
+      { key: 'storepilot.reports.view',     label: 'Showroom reports — View' },
+    ]},
     { group: 'Store OS (POS)', perms: [
       { key: 'store_os.pos.view',           label: 'POS — View' },
       { key: 'store_os.pos.transact',       label: 'POS — Create Transactions' },
@@ -555,18 +666,16 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const roles = await apiGet('/api/roles');
       cachedRoles = roles;
+      refreshRoleDropdowns();
       if (!roles.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="td-muted">No roles found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" class="td-muted">No roles found.</td></tr>';
         return;
       }
       roles.forEach((r) => {
-        const levelBadge = r.hierarchy_lvl <= 2 ? 'badge-purple' : r.hierarchy_lvl <= 3 ? 'badge-blue' : 'badge-gray';
         const tr = document.createElement('tr');
         tr.dataset.roleKey = r.role_key;
         tr.innerHTML = `
           <td><div class="fw-600 font-mono">${escHtml(r.role_key)}</div><div class="td-muted">${escHtml(r.display_name)}</div></td>
-          <td><span class="badge ${levelBadge}">${r.hierarchy_lvl}</span></td>
-          <td><span class="badge ${r.is_global ? 'badge-purple' : 'badge-gold'}">${r.is_global ? 'Global' : 'Store-scoped'}</span></td>
           <td><span class="badge badge-green">Active</span></td>
           <td style="display:flex;gap:6px;padding:8px 12px">
             <button class="topbar-btn role-view-btn" style="padding:5px 10px;font-size:12px">View</button>
@@ -590,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       });
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="6" class="td-muted">Error: ${err.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="3" class="td-muted">Error: ${err.message}</td></tr>`;
     }
   }
 
@@ -614,21 +723,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const grantedPerms = await apiGet(`/api/roles/${roleKey}/permissions`);
       const grantedSet = new Set(grantedPerms);
 
-      const levelBadge = role.hierarchy_lvl <= 2 ? 'badge-purple' : role.hierarchy_lvl <= 3 ? 'badge-blue' : 'badge-gray';
-
       let html = `
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;align-items:center">
           <div style="display:flex;flex-direction:column;gap:2px">
             <span class="td-muted" style="font-size:11px">Role Key</span>
             <span class="font-mono fw-600">${escHtml(role.role_key)}</span>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:2px">
-            <span class="td-muted" style="font-size:11px">Level</span>
-            <span class="badge ${levelBadge}">${role.hierarchy_lvl}</span>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:2px">
-            <span class="td-muted" style="font-size:11px">Scope</span>
-            <span class="badge ${role.is_global ? 'badge-purple' : 'badge-gold'}">${role.is_global ? 'Global' : 'Store-scoped'}</span>
           </div>
         </div>
         <div id="perm-save-msg" style="min-height:18px;font-size:12px;margin-bottom:8px"></div>
@@ -656,6 +755,20 @@ document.addEventListener('DOMContentLoaded', () => {
           <button class="topbar-btn" id="perm-revoke-all-btn" style="font-size:12px;border-color:#DC2626;color:#DC2626">Revoke All</button>
         </div>`;
 
+      // ── Module access section ──────────────────────────────────────────────
+      html += `
+        <div class="section-divider" style="margin:24px 0 12px">Module access for this role</div>
+        <div class="td-muted text-xs" style="margin-bottom:12px">
+          Toggle which Cosmos modules users with this role may access.
+          Store-level policy (in Module Access → Per store) can further narrow access for store-scoped users.
+        </div>
+        <div id="role-module-err" style="color:#b91c1c;font-size:12px;min-height:14px;margin-bottom:6px"></div>
+        <div id="role-module-toggles"></div>
+        <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+          <button class="topbar-btn primary" id="role-modules-save-btn" style="font-size:13px">Save Modules</button>
+          <span id="role-modules-msg" style="font-size:12px;min-height:16px"></span>
+        </div>`;
+
       panel.innerHTML = html;
       panel.dataset.roleKey = roleKey;
 
@@ -666,8 +779,70 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('perm-revoke-all-btn').addEventListener('click', () => {
         panel.querySelectorAll('.perm-checkbox').forEach((cb) => { cb.checked = false; });
       });
+
+      // Load module toggles for this role
+      await renderRoleModuleToggles(roleKey);
+      document.getElementById('role-modules-save-btn').addEventListener('click', () => saveRoleModules(roleKey));
     } catch (err) {
       panel.innerHTML = `<div class="td-muted" style="padding:16px;color:#b91c1c">Error loading permissions: ${escHtml(err.message)}</div>`;
+    }
+  }
+
+  // State for currently-displayed role module toggles
+  let roleModuleState = {};
+
+  async function renderRoleModuleToggles(roleKey) {
+    const container = document.getElementById('role-module-toggles');
+    if (!container) return;
+    roleModuleState = {};
+    container.innerHTML = '<div class="td-muted text-xs">Loading modules…</div>';
+    try {
+      const rows = await apiGet(`/api/role-modules/${roleKey}`);
+      rows.forEach((r) => { roleModuleState[r.module_key] = !!r.is_enabled; });
+
+      container.innerHTML = '';
+
+      MODULE_DEFS.forEach((m) => {
+        if (!Object.prototype.hasOwnProperty.call(roleModuleState, m.key)) {
+          roleModuleState[m.key] = true;
+        }
+      });
+
+      MODULE_DEFS.forEach((m) => {
+        const enabled = !!roleModuleState[m.key];
+        const div = document.createElement('div');
+        div.className = 'toggle-row';
+        div.innerHTML = `
+          <div><div class="toggle-label">${m.label}</div><div class="toggle-desc">${m.desc}</div></div>
+          <div class="toggle ${enabled ? 'on' : ''}" data-role-module="${m.key}" onclick="toggleRoleModuleLocal(this)"></div>`;
+        container.appendChild(div);
+      });
+    } catch (err) {
+      container.innerHTML = `<div class="td-muted text-xs" style="color:#b91c1c">Failed to load modules: ${escHtml(err.message)}</div>`;
+    }
+  }
+
+  window.toggleRoleModuleLocal = function (el) {
+    el.classList.toggle('on');
+    roleModuleState[el.dataset.roleModule] = el.classList.contains('on');
+  };
+
+  async function saveRoleModules(roleKey) {
+    const saveBtn = document.getElementById('role-modules-save-btn');
+    const msgEl = document.getElementById('role-modules-msg');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+    if (msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
+    try {
+      for (const m of MODULE_DEFS) {
+        const enabled = !!roleModuleState[m.key];
+        await apiPut(`/api/role-modules/${roleKey}`, { module_key: m.key, is_enabled: enabled });
+      }
+      if (msgEl) { msgEl.style.color = 'var(--green,#16a34a)'; msgEl.textContent = '✓ Modules saved.'; }
+      setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3000);
+    } catch (err) {
+      if (msgEl) { msgEl.style.color = '#b91c1c'; msgEl.textContent = `Error: ${err.message}`; }
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Modules'; }
     }
   }
 
@@ -699,16 +874,13 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const body = {
         role_key: val('new-role-key').toLowerCase().replace(/\s+/g, '_'),
-        display_name: val('new-role-display'),
-        hierarchy_lvl: Number(val('new-role-level')),
-        is_global: val('new-role-global') === '1'
+        display_name: val('new-role-display')
       };
       if (!body.role_key) throw new Error('Role key is required.');
       if (!body.display_name) throw new Error('Display name is required.');
-      if (!body.hierarchy_lvl) throw new Error('Hierarchy level is required.');
       await apiPost('/api/roles', body);
       window.closeModal && window.closeModal('modal-new-role');
-      ['new-role-key','new-role-display','new-role-level'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+      ['new-role-key','new-role-display'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
       await loadRoles();
     } catch (err) {
       showError('new-role-error', err.message || 'Failed to create role');
@@ -724,8 +896,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (title) title.textContent = `Edit Role — ${r.display_name}`;
     document.getElementById('edit-role-key').value = r.role_key;
     document.getElementById('edit-role-display').value = r.display_name;
-    document.getElementById('edit-role-level').value = r.hierarchy_lvl;
-    document.getElementById('edit-role-global').value = r.is_global ? '1' : '0';
     showError('edit-role-error', '');
     const modal = document.getElementById('modal-edit-role');
     if (modal) modal.dataset.roleKey = r.role_key;
@@ -741,12 +911,9 @@ document.addEventListener('DOMContentLoaded', () => {
     setBtn('edit-role-save-btn', true);
     try {
       const body = {
-        display_name: val('edit-role-display'),
-        hierarchy_lvl: Number(val('edit-role-level')),
-        is_global: val('edit-role-global') === '1'
+        display_name: val('edit-role-display')
       };
       if (!body.display_name) throw new Error('Display name is required.');
-      if (!body.hierarchy_lvl) throw new Error('Hierarchy level is required.');
       await apiPut(`/api/roles/${roleKey}`, body);
       window.closeModal && window.closeModal('modal-edit-role');
       await loadRoles();
@@ -1291,63 +1458,63 @@ document.addEventListener('DOMContentLoaded', () => {
   // ─── MODULE ACCESS ────────────────────────────────────────────────────────
 
   const MODULE_DEFS = [
+    { key: 'command_unit', label: '⚙️ Command Unit', desc: 'Web admin — users, roles, module access, settings' },
     { key: 'foundry',   label: '🔩 Foundry',       desc: 'Inventory, procurement, stock management' },
     { key: 'finance',   label: '💰 Finance',        desc: 'Accounts payable, supplier payments, outstanding tracking' },
+    { key: 'storepilot',label: '🏬 StorePilot',    desc: 'Showroom ops — floor, appointments, walk-ins (not billing/POS)' },
     { key: 'pos',       label: '🧾 Store OS (POS)', desc: 'Sales, billing, patient records, prescriptions' },
     { key: 'army',      label: '🪖 Army',           desc: 'Employee HR, attendance, performance' },
     { key: 'eyewoot_go',label: '📱 Eyewoot Go',     desc: 'Consumer app — store locator, D2C orders' },
     { key: 'promoter',  label: '🤝 Promoter',       desc: 'Promoter referrals, commissions, catalogue sharing' }
   ];
 
-  let moduleAccessState = {};
+  // ─── STORE MODULE ACCESS (per location) ───────────────────────────────────
 
-  window.loadModuleAccess = async function () {
-    const userId = document.getElementById('module-user-select')?.value || '';
-    const body = document.getElementById('module-toggles-body');
-    const saveBtn = document.getElementById('save-modules-btn');
-    if (!userId) {
-      if (body) body.innerHTML = '<div class="empty"><div class="empty-icon">👤</div><div class="empty-text">Select a user to manage their module access</div></div>';
+  let storeModuleAccessState = {};
+
+  window.loadStoreModuleAccess = async function () {
+    const storeId = document.getElementById('module-store-select')?.value || '';
+    const body = document.getElementById('store-module-toggles-body');
+    const saveBtn = document.getElementById('save-store-modules-btn');
+    if (!storeId) {
+      if (body) {
+        body.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">Select a store to enable or disable modules for that location</div></div>';
+      }
       if (saveBtn) saveBtn.disabled = true;
       return;
     }
 
     if (body) body.innerHTML = '<div class="td-muted text-sm">Loading...</div>';
-    moduleAccessState = {};
+    storeModuleAccessState = {};
 
     try {
-      const rows = await apiGet(`/api/user-modules/${userId}`);
-      rows.forEach((r) => { moduleAccessState[r.module_key] = !!r.is_enabled; });
+      const rows = await apiGet(`/api/store-modules/${storeId}`);
+      rows.forEach((r) => { storeModuleAccessState[r.module_key] = !!r.is_enabled; });
 
-      const user = cachedUsers.find((u) => String(u.user_id) === String(userId));
+      const store = cachedStores.find((s) => String(s.store_id) === String(storeId));
       body.innerHTML = '';
 
-      if (user) {
-        const initials = (user.full_name || user.username || '?').split(' ').filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+      if (store) {
         body.innerHTML += `
-          <div style="display:flex;align-items:center;gap:12px;padding:12px 0 16px;border-bottom:1px solid var(--border);margin-bottom:16px">
-            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#6C3FC5,#8B5CF6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">${initials}</div>
-            <div>
-              <div class="fw-600">${escHtml(user.full_name)}</div>
-              <div class="td-muted text-xs">${escHtml(user.username)} · <span class="badge badge-blue" style="font-size:10px;padding:2px 6px">${escHtml(user.role_display || user.role_key)}</span></div>
-            </div>
+          <div style="padding:12px 0 16px;border-bottom:1px solid var(--border);margin-bottom:16px">
+            <div class="fw-600">${escHtml(store.store_name)}</div>
+            <div class="td-muted text-xs font-mono">${escHtml(store.store_code || '')} · ${escHtml(store.city || '—')}</div>
           </div>`;
       }
 
-      // Command Unit is always enabled — cannot be revoked
-      body.innerHTML += `
-        <div class="toggle-row">
-          <div><div class="toggle-label">⚙️ Command Unit</div><div class="toggle-desc">Web admin panel — always enabled for admin accounts</div></div>
-          <div class="toggle on" style="opacity:0.5;pointer-events:none"></div>
-        </div>`;
+      MODULE_DEFS.forEach((m) => {
+        if (!Object.prototype.hasOwnProperty.call(storeModuleAccessState, m.key)) {
+          storeModuleAccessState[m.key] = true;
+        }
+      });
 
       MODULE_DEFS.forEach((m) => {
-        // If no row exists for this user+module, default to enabled
-        const enabled = moduleAccessState.hasOwnProperty(m.key) ? moduleAccessState[m.key] : true;
+        const enabled = !!storeModuleAccessState[m.key];
         const div = document.createElement('div');
         div.className = 'toggle-row';
         div.innerHTML = `
           <div><div class="toggle-label">${m.label}</div><div class="toggle-desc">${m.desc}</div></div>
-          <div class="toggle ${enabled ? 'on' : ''}" data-module="${m.key}" onclick="toggleModuleLocal(this)"></div>`;
+          <div class="toggle ${enabled ? 'on' : ''}" data-store-module="${m.key}" onclick="toggleStoreModuleLocal(this)"></div>`;
         body.appendChild(div);
       });
 
@@ -1357,27 +1524,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  window.toggleModuleLocal = function (el) {
+  window.toggleStoreModuleLocal = function (el) {
     el.classList.toggle('on');
-    const modKey = el.dataset.module;
-    moduleAccessState[modKey] = el.classList.contains('on');
+    const modKey = el.dataset.storeModule;
+    storeModuleAccessState[modKey] = el.classList.contains('on');
   };
 
-  window.saveModuleChanges = async function () {
-    const userId = document.getElementById('module-user-select')?.value || '';
-    if (!userId) return;
-    const saveBtn = document.getElementById('save-modules-btn');
+  window.saveStoreModuleChanges = async function () {
+    const storeId = document.getElementById('module-store-select')?.value || '';
+    if (!storeId) return;
+    const saveBtn = document.getElementById('save-store-modules-btn');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
     try {
-      for (const [modKey, enabled] of Object.entries(moduleAccessState)) {
-        if (modKey === 'command_unit') continue;
-        await apiPut(`/api/user-modules/${userId}`, { module_key: modKey, is_enabled: enabled });
+      for (const m of MODULE_DEFS) {
+        const enabled = !!storeModuleAccessState[m.key];
+        await apiPut(`/api/store-modules/${storeId}`, { module_key: m.key, is_enabled: enabled });
       }
       if (saveBtn) saveBtn.textContent = '✓ Saved';
-      setTimeout(() => { if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Changes'; } }, 2000);
+      setTimeout(() => { if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Store Modules'; } }, 2000);
     } catch (err) {
-      alert('Error saving module access: ' + err.message);
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Changes'; }
+      alert('Error saving store module access: ' + err.message);
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Store Modules'; }
     }
   };
 
@@ -1398,7 +1565,7 @@ document.addEventListener('DOMContentLoaded', () => {
       logs.forEach((a) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td class="font-mono text-xs" style="white-space:nowrap">${new Date(a.created_at).toLocaleTimeString()}</td>
+          <td class="font-mono text-xs" style="white-space:nowrap">${fmtIstTime(a.created_at)}</td>
           <td><span class="badge badge-purple">${a.module}</span></td>
           <td><span class="badge badge-green">${a.action}</span></td>
           <td class="font-mono text-xs">${a.entity_type}</td>
