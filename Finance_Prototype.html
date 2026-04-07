@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finance — Cosmos ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy:    #0B1F35;
+    --navy2:   #13293D;
+    --acc:     #0E7E60;   /* Finance emerald green */
+    --acc2:    #14A377;
+    --accL:    #D1FAE5;
+    --accD:    #065F46;
+    --gold:    #B45309;
+    --goldL:   #FEF3C7;
+    --red:     #DC2626;
+    --redL:    #FEE2E2;
+    --orange:  #C2410C;
+    --orangeL: #FFEDD5;
+    --blue:    #1D4ED8;
+    --blueL:   #DBEAFE;
+    --bg:      #F0F6F3;
+    --card:    #FFFFFF;
+    --border:  #E2EDE8;
+    --text1:   #0B1F35;
+    --text2:   #475569;
+    --text3:   #94A3B8;
+    --sidebar: 252px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'DM Sans',sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; display:flex; overflow:hidden; }
+
+  /* SIDEBAR */
+  .sidebar { width:var(--sidebar); background:var(--navy); height:100vh; display:flex; flex-direction:column; flex-shrink:0; position:fixed; left:0; top:0; z-index:100; }
+  .sidebar-logo { padding:20px 20px 16px; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .cosmos-tag { font-family:'Syne',sans-serif; font-size:10px; font-weight:700; letter-spacing:3px; color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:3px; }
+  .module-name { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; }
+  .mod-dot { width:8px; height:8px; border-radius:50%; background:var(--acc2); box-shadow:0 0 8px var(--acc2); }
+  .sidebar-nav { flex:1; padding:10px 0; overflow-y:auto; }
+  .nav-group { font-size:10px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,0.22); padding:14px 20px 5px; }
+  .nav-item { display:flex; align-items:center; gap:10px; padding:10px 20px; cursor:pointer; color:rgba(255,255,255,0.52); font-size:13px; font-weight:400; border-left:3px solid transparent; transition:all .15s; }
+  .nav-item:hover { background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.85); }
+  .nav-item.active { background:rgba(20,163,119,0.18); color:#fff; border-left-color:var(--acc2); font-weight:500; }
+  .nav-item .ic { font-size:15px; width:20px; text-align:center; }
+  .sidebar-user { padding:14px 20px; border-top:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; gap:10px; }
+  .u-av { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; font-family:'Syne',sans-serif; flex-shrink:0; }
+  .u-name { font-size:12.5px; font-weight:500; color:#fff; }
+  .u-role { font-size:11px; color:rgba(255,255,255,0.35); }
+
+  /* MAIN */
+  .main { margin-left:var(--sidebar); flex:1; height:100vh; overflow-y:auto; display:flex; flex-direction:column; }
+
+  /* TOPBAR */
+  .topbar { background:var(--card); border-bottom:1px solid var(--border); padding:0 28px; height:54px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; position:sticky; top:0; z-index:50; }
+  .breadcrumb { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text2); }
+  .breadcrumb .cur { color:var(--text1); font-weight:500; }
+  .tb-actions { display:flex; align-items:center; gap:10px; }
+
+  /* BUTTONS */
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; border:1.5px solid var(--border); background:var(--card); font-size:13px; font-weight:500; cursor:pointer; color:var(--text1); transition:all .15s; font-family:'DM Sans',sans-serif; white-space:nowrap; }
+  .btn:hover { border-color:var(--acc2); color:var(--acc); }
+  .btn.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .btn.primary:hover { background:var(--accD); }
+  .btn.danger { background:var(--red); border-color:var(--red); color:#fff; }
+  .btn.sm { padding:5px 10px; font-size:12px; }
+  .btn.xs { padding:3px 8px; font-size:11.5px; }
+
+  /* PAGE */
+  .page { display:none; padding:26px; }
+  .page.active { display:block; }
+
+  /* PAGE HEADER */
+  .ph { margin-bottom:22px; }
+  .pt { font-family:'Syne',sans-serif; font-size:20px; font-weight:700; color:var(--text1); }
+  .ps { font-size:13px; color:var(--text2); margin-top:3px; }
+
+  /* STAT CARDS */
+  .sg4 { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px; }
+  .sg2 { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-bottom:24px; }
+  .sc { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:18px 20px; border-top:3px solid var(--sc-color,var(--acc)); }
+  .sl { font-size:11.5px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+  .sv { font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:500; color:var(--text1); }
+  .sm { font-size:11.5px; color:var(--text3); margin-top:3px; }
+
+  /* CARD */
+  .card { background:var(--card); border:1.5px solid var(--border); border-radius:12px; margin-bottom:18px; }
+  .ch { display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--border); }
+  .ct { font-size:14px; font-weight:600; color:var(--text1); }
+  .cb { padding:16px 18px; }
+
+  /* TABLE WRAPPER */
+  .tw { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; padding:9px 12px; font-size:11px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; border-bottom:2px solid var(--border); white-space:nowrap; }
+  td { padding:10px 12px; border-bottom:1px solid var(--border); color:var(--text1); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:rgba(14,126,96,0.03); }
+
+  /* BADGES */
+  .b { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap; }
+  .b-green  { background:var(--accL);   color:var(--accD); }
+  .b-red    { background:var(--redL);   color:var(--red); }
+  .b-gold   { background:var(--goldL);  color:var(--gold); }
+  .b-blue   { background:var(--blueL);  color:var(--blue); }
+  .b-gray   { background:#F1F5F9;       color:var(--text2); }
+  .b-orange { background:var(--orangeL);color:var(--orange); }
+
+  /* FORM */
+  .fg { display:flex; flex-direction:column; gap:14px; }
+  .fg2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .fg3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; }
+  .fgrp { display:flex; flex-direction:column; gap:5px; }
+  .fgrp label { font-size:12px; font-weight:600; color:var(--text2); }
+  .fgrp input, .fgrp select, .fgrp textarea {
+    padding:8px 11px; border:1.5px solid var(--border); border-radius:8px;
+    font-size:13px; font-family:'DM Sans',sans-serif; background:var(--card);
+    color:var(--text1); outline:none; transition:border-color .15s;
+  }
+  .fgrp input:focus, .fgrp select:focus, .fgrp textarea:focus { border-color:var(--acc2); }
+  .req { color:var(--red); }
+  .fhint { font-size:11px; color:var(--text3); margin-top:2px; }
+  .mb2 { margin-bottom:8px; }
+  .mb3 { margin-bottom:12px; }
+  .mb4 { margin-bottom:20px; }
+  .mt2 { margin-top:8px; }
+  .mt3 { margin-top:12px; }
+  .fw6 { font-weight:600; }
+  .xs  { font-size:11.5px; }
+  .td2 { color:var(--text2); }
+  .td3 { color:var(--text3); }
+  .mono { font-family:'JetBrains Mono',monospace; }
+  .text-right { text-align:right; }
+
+  /* ERROR */
+  .err-msg { padding:10px 14px; border-radius:8px; background:var(--redL); color:var(--red); font-size:13px; font-weight:500; display:none; margin-bottom:12px; }
+  .ok-msg  { padding:10px 14px; border-radius:8px; background:var(--accL); color:var(--accD); font-size:13px; font-weight:500; display:none; margin-bottom:12px; }
+
+  /* MODAL */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:200; display:none; align-items:center; justify-content:center; }
+  .overlay.open { display:flex; }
+  .modal { background:var(--card); border-radius:14px; padding:0; width:560px; max-width:95vw; max-height:90vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.25); }
+  .mh { padding:18px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .mt-title { font-size:15px; font-weight:600; }
+  .mclose { cursor:pointer; color:var(--text3); font-size:18px; line-height:1; padding:4px; border-radius:4px; }
+  .mclose:hover { color:var(--text1); background:var(--border); }
+  .mb-modal { padding:22px; overflow-y:auto; flex:1; }
+  .mf { padding:16px 22px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px; }
+
+  /* SECTION LABEL */
+  .section-lbl { font-size:11px; font-weight:700; color:var(--text2); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+
+  /* ALLOCATION ROW */
+  .alloc-row { display:flex; align-items:center; gap:10px; padding:8px 10px; background:#F8FBFA; border:1px solid var(--border); border-radius:8px; margin-bottom:6px; }
+  .alloc-row .alloc-desc { flex:1; font-size:12.5px; color:var(--text1); }
+  .alloc-row .alloc-amt  { font-family:'JetBrains Mono',monospace; font-size:12.5px; font-weight:500; }
+  .alloc-row .alloc-inp  { width:110px; padding:5px 8px; border:1.5px solid var(--border); border-radius:6px; font-size:12.5px; font-family:'JetBrains Mono',monospace; }
+  .alloc-row .alloc-inp:focus { outline:none; border-color:var(--acc2); }
+
+  /* EMPTY STATE */
+  .empty { text-align:center; padding:50px 20px; color:var(--text3); }
+  .empty-ic { font-size:36px; margin-bottom:10px; }
+  .empty-text { font-size:14px; }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width:4px; height:4px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+
+  /* STATEMENT HEADER CARD */
+  .stmt-header { display:flex; gap:24px; flex-wrap:wrap; padding:16px 18px; border-bottom:1px solid var(--border); background:linear-gradient(135deg,rgba(14,126,96,0.05),transparent); }
+  .stmt-kv { display:flex; flex-direction:column; gap:2px; }
+  .stmt-k { font-size:11px; color:var(--text2); font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+  .stmt-v { font-size:15px; font-weight:600; color:var(--text1); }
+
+  /* PROGRESS BAR (for per-bill payment) */
+  .pbar-wrap { height:5px; background:var(--border); border-radius:3px; overflow:hidden; margin-top:4px; }
+  .pbar { height:100%; border-radius:3px; background:var(--acc); max-width:100%; }
+
+  /* SEARCH INPUT */
+  .search-wrap { position:relative; }
+  .search-wrap input { padding-left:32px; }
+  .search-wrap::before { content:'🔍'; position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:12px; pointer-events:none; }
+
+  /* TWO-COL LAYOUT */
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+
+  @media (max-width:1100px) {
+    .sg4 { grid-template-columns:repeat(2,1fr); }
+    .two-col { grid-template-columns:1fr; }
+    .fg3 { grid-template-columns:1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="cosmos-tag">🌌 Cosmos ERP</div>
+    <div class="module-name"><span>💰</span><span>Finance</span></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-group">Overview</div>
+    <div class="nav-item active" onclick="nav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
+
+    <div class="nav-group">Master</div>
+    <div class="nav-item" onclick="nav('supplier-master',this)"><span class="ic">🏭</span> Supplier Master</div>
+
+    <div class="nav-group">Payables</div>
+    <div class="nav-item" onclick="nav('supplier-ledger',this)"><span class="ic">📊</span> Supplier Ledger</div>
+    <div class="nav-item" onclick="nav('payments',this)"><span class="ic">💸</span> Record Payment</div>
+
+    <div class="nav-group">Reports</div>
+    <div class="nav-item" onclick="nav('purchase-reports',this)"><span class="ic">📋</span> Purchase Reports</div>
+    <div class="nav-item" onclick="nav('item-finance',this)"><span class="ic">💎</span> Item Finance</div>
+
+    <div id="fin-switch-module-wrap">
+      <div class="nav-group">System</div>
+      <div class="nav-item" data-cosmos-module="foundry" onclick="window.location.href='/foundry.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🔩</span> Foundry</div>
+      <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🏬</span> StorePilot</div>
+      <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
+    </div>
+    <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.3);font-size:12px"><span class="ic">🚪</span> Sign Out</div>
+  </nav>
+  <div class="sidebar-user">
+    <div class="u-av" id="fin-user-av">AM</div>
+    <div><div class="u-name" id="fin-user-name">Loading...</div><div class="u-role">Finance</div></div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <div class="topbar">
+    <div class="breadcrumb">Finance <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="bc">Dashboard</span></div>
+    <div class="tb-actions" id="tba"></div>
+  </div>
+
+  <!-- ═══ DASHBOARD ═══ -->
+  <div class="page active" id="page-dashboard">
+    <div class="ph">
+      <div class="pt">Finance Dashboard</div>
+      <div class="ps">Foundry AP overview · supplier outstanding · payment tracking</div>
+    </div>
+
+    <div class="sg4" id="dash-stats">
+      <div class="sc" style="--sc-color:var(--acc)">
+        <div class="sl">Total Payable</div>
+        <div class="sv" id="ds-payable">—</div>
+        <div class="sm">Verified bills only</div>
+      </div>
+      <div class="sc" style="--sc-color:var(--blue)">
+        <div class="sl">Total Paid</div>
+        <div class="sv" id="ds-paid">—</div>
+        <div class="sm">All non-void payments</div>
+      </div>
+      <div class="sc" style="--sc-color:var(--gold)">
+        <div class="sl">Outstanding</div>
+        <div class="sv" id="ds-outstanding">—</div>
+        <div class="sm" id="ds-suppliers-out">— suppliers with balance</div>
+      </div>
+      <div class="sc" style="--sc-color:var(--red)">
+        <div class="sl">Overdue</div>
+        <div class="sv" id="ds-overdue">—</div>
+        <div class="sm">Past due date</div>
+      </div>
+    </div>
+
+    <div class="two-col mb4">
+      <!-- Supplier Summary -->
+      <div class="card">
+        <div class="ch">
+          <div class="ct">Supplier Outstanding</div>
+          <button class="btn sm" onclick="nav('supplier-ledger',document.querySelector('[onclick*=supplier-ledger]'))">View All →</button>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Supplier</th><th class="text-right">Outstanding</th><th>Status</th></tr></thead>
+            <tbody id="dash-supplier-list"><tr><td colspan="3" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Recent Payments -->
+      <div class="card">
+        <div class="ch">
+          <div class="ct">Recent Payments</div>
+          <button class="btn sm" onclick="nav('payments',document.querySelector('[onclick*=payments]'))">Record New →</button>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Date</th><th>Supplier</th><th class="text-right">Amount</th><th>Mode</th></tr></thead>
+            <tbody id="dash-payment-list"><tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SUPPLIER LEDGER ═══ -->
+  <div class="page" id="page-supplier-ledger">
+    <div class="ph">
+      <div class="pt">Supplier Ledger</div>
+      <div class="ps">Outstanding, credit terms, payment history per supplier</div>
+    </div>
+
+    <div class="card mb4">
+      <div class="ch">
+        <div class="search-wrap" style="flex:1;max-width:320px">
+          <input type="text" id="ledger-search" placeholder="Search supplier..." oninput="filterLedger()" style="width:100%">
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn sm" onclick="loadLedger()">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="tw">
+        <table>
+          <thead>
+            <tr>
+              <th>Supplier</th>
+              <th>City</th>
+              <th class="text-right">Total Purchase</th>
+              <th class="text-right">Total Paid</th>
+              <th class="text-right">Outstanding</th>
+              <th>Credit Days</th>
+              <th>Overdue Bills</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="ledger-body"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ RECORD PAYMENT ═══ -->
+  <div class="page" id="page-payments">
+    <div class="ph">
+      <div class="pt">Record Payment</div>
+      <div class="ps">Register a supplier payment and optionally allocate it to specific bills</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 400px;gap:22px;align-items:start">
+      <!-- Payment form -->
+      <div class="card">
+        <div class="ch"><div class="ct">New Payment Entry</div></div>
+        <div class="cb">
+          <div id="payment-error" class="err-msg"></div>
+          <div id="payment-ok" class="ok-msg"></div>
+
+          <div class="fg2 mb3">
+            <div class="fgrp">
+              <label>Supplier <span class="req">*</span></label>
+              <select id="pay-supplier" onchange="onPaySupplierChange()">
+                <option value="">— Select Supplier —</option>
+              </select>
+            </div>
+            <div class="fgrp">
+              <label>Payment Date <span class="req">*</span></label>
+              <input type="date" id="pay-date">
+            </div>
+          </div>
+
+          <div class="fg3 mb3">
+            <div class="fgrp">
+              <label>Amount (₹) <span class="req">*</span></label>
+              <input type="number" id="pay-amount" placeholder="0.00" min="0.01" step="0.01" oninput="onPayAmountChange()">
+            </div>
+            <div class="fgrp">
+              <label>Payment Mode <span class="req">*</span></label>
+              <select id="pay-mode">
+                <option value="NEFT">NEFT</option>
+                <option value="RTGS">RTGS</option>
+                <option value="CHEQUE">Cheque</option>
+                <option value="UPI">UPI</option>
+                <option value="CASH">Cash</option>
+              </select>
+            </div>
+            <div class="fgrp">
+              <label>Reference / UTR No.</label>
+              <input type="text" id="pay-ref" placeholder="UTR / Cheque No.">
+            </div>
+          </div>
+
+          <div class="fg2 mb3">
+            <div class="fgrp">
+              <label>Bank Account</label>
+              <input type="text" id="pay-bank" placeholder="Bank name / account">
+            </div>
+            <div class="fgrp">
+              <label>Notes</label>
+              <input type="text" id="pay-notes" placeholder="Optional notes">
+            </div>
+          </div>
+
+          <!-- Bill allocations -->
+          <div id="alloc-section" style="display:none">
+            <div class="section-lbl mb2">Allocate to Bills (optional)</div>
+            <div class="fhint mb3">Distribute the payment across outstanding bills. Leave empty to record without allocation.</div>
+            <div id="alloc-rows"></div>
+            <div id="alloc-remaining" style="font-size:12.5px;color:var(--text2);margin-top:8px;font-family:'JetBrains Mono',monospace"></div>
+          </div>
+
+          <div style="margin-top:16px;display:flex;justify-content:flex-end">
+            <button class="btn primary" onclick="submitPayment()">💸 Save Payment</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Outstanding sidebar -->
+      <div>
+        <div class="card" id="pay-outstanding-card" style="display:none">
+          <div class="ch"><div class="ct" id="pay-outstanding-title">Outstanding Bills</div></div>
+          <div class="cb" id="pay-outstanding-body">
+            <div class="empty td3 xs">Select a supplier to see outstanding bills</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><div class="ct">Payment Tips</div></div>
+          <div class="cb">
+            <div style="font-size:12.5px;color:var(--text2);line-height:1.6">
+              <p class="mb2">• Enter the <strong>total payment amount</strong> received/sent.</p>
+              <p class="mb2">• Optionally <strong>allocate</strong> the amount to specific bills to track outstanding per bill.</p>
+              <p class="mb2">• If no allocation is set, the payment reduces the <strong>supplier-level outstanding</strong> only.</p>
+              <p>• You can void a payment later if it was entered incorrectly.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PURCHASE REPORTS ═══ -->
+  <div class="page" id="page-purchase-reports">
+    <div class="ph">
+      <div class="pt">Purchase Reports</div>
+      <div class="ps">Analyse purchase spend by date, supplier, status and product category</div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="card mb4">
+      <div class="ch"><span class="ct">Filters</span></div>
+      <div style="padding:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted);font-weight:500">From Date</label>
+          <input type="date" id="pr-from" style="padding:7px 10px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg2);color:var(--tx1);font-size:13px">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted);font-weight:500">To Date</label>
+          <input type="date" id="pr-to" style="padding:7px 10px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg2);color:var(--tx1);font-size:13px">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted);font-weight:500">Supplier</label>
+          <select id="pr-supplier" style="padding:7px 10px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg2);color:var(--tx1);font-size:13px;min-width:180px">
+            <option value="">All Suppliers</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted);font-weight:500">Category</label>
+          <select id="pr-category" style="padding:7px 10px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg2);color:var(--tx1);font-size:13px;min-width:140px">
+            <option value="">All Categories</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;margin-left:auto">
+          <button class="btn" onclick="prClear()" style="font-size:13px">Clear</button>
+          <button class="btn primary" onclick="runPurchaseReport()" style="font-size:13px">Run Report</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary cards -->
+    <div id="pr-summary-row" style="display:none">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">
+        <div class="stat-card">
+          <div class="sv" id="pr-s-bills">-</div>
+          <div class="sl">Total Bills</div>
+        </div>
+        <div class="stat-card">
+          <div class="sv" id="pr-s-suppliers">-</div>
+          <div class="sl">Suppliers</div>
+        </div>
+        <div class="stat-card">
+          <div class="sv" id="pr-s-amount">-</div>
+          <div class="sl">Total Spend</div>
+        </div>
+        <div class="stat-card">
+          <div class="sv" id="pr-s-paid">-</div>
+          <div class="sl">Total Paid</div>
+        </div>
+        <div class="stat-card">
+          <div class="sv" id="pr-s-outstanding">-</div>
+          <div class="sl">Outstanding</div>
+        </div>
+        <div class="stat-card">
+          <div class="sv" id="pr-s-qty">-</div>
+          <div class="sl">Total Qty</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Supplier breakdown -->
+    <div class="card mb4" id="pr-breakdown-card" style="display:none">
+      <div class="ch">
+        <span class="ct">By Supplier</span>
+        <span id="pr-breakdown-count" class="badge" style="margin-left:8px"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="tbl" id="pr-breakdown-table">
+          <thead>
+            <tr>
+              <th>Supplier</th>
+              <th class="tr">Bills</th>
+              <th class="tr">Total Amount</th>
+              <th class="tr">Paid</th>
+              <th class="tr">Outstanding</th>
+              <th class="tr">Total Qty</th>
+            </tr>
+          </thead>
+          <tbody id="pr-breakdown-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Bill detail -->
+    <div class="card" id="pr-bills-card" style="display:none">
+      <div class="ch">
+        <span class="ct">Purchase Bills</span>
+        <span id="pr-bills-count" class="badge" style="margin-left:8px"></span>
+        <div class="search-wrap" style="margin-left:auto;max-width:240px">
+          <input type="text" id="pr-bill-search" placeholder="Search bills..." oninput="prFilterBills()" style="width:100%">
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="tbl" id="pr-bills-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Supplier</th>
+              <th>Bill Ref</th>
+              <th>Bill No.</th>
+              <th>Status</th>
+              <th class="tr">Amount</th>
+              <th class="tr">Paid</th>
+              <th class="tr">Outstanding</th>
+              <th class="tr">Items</th>
+              <th class="tr">Qty</th>
+            </tr>
+          </thead>
+          <tbody id="pr-bills-body"></tbody>
+        </table>
+      </div>
+      <div id="pr-bills-empty" style="display:none;text-align:center;padding:32px;color:var(--muted);font-size:13px">No bills found</div>
+    </div>
+
+    <div id="pr-initial" style="text-align:center;padding:60px;color:var(--muted)">
+      <div style="font-size:40px;margin-bottom:12px">📋</div>
+      <div style="font-size:15px;font-weight:500;margin-bottom:6px">Select filters and run report</div>
+      <div style="font-size:13px">Use the filter panel above to define the report scope, then click <strong>Run Report</strong>.</div>
+    </div>
+  </div>
+
+  <!-- ═══ ITEM FINANCE ═══ -->
+  <div class="page" id="page-item-finance">
+    <div class="ph">
+      <div class="pt">Item Finance</div>
+      <div class="ps">Per-SKU costing, margin analysis, and catalogue valuation at cost and sale price</div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="card mb4">
+      <div class="ch"><span class="ct">Filters</span></div>
+      <div style="padding:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted);font-weight:500">Brand</label>
+          <select id="if-brand" style="padding:7px 10px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg2);color:var(--tx1);font-size:13px;min-width:160px">
+            <option value="">All Brands</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted);font-weight:500">Product Type</label>
+          <select id="if-type" style="padding:7px 10px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg2);color:var(--tx1);font-size:13px;min-width:150px">
+            <option value="">All Types</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted);font-weight:500">Status</label>
+          <select id="if-status" style="padding:7px 10px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg2);color:var(--tx1);font-size:13px;min-width:130px">
+            <option value="">All Statuses</option>
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted);font-weight:500">Search SKU / Product</label>
+          <input type="text" id="if-q" placeholder="SKU code, name, colour…" style="padding:7px 10px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg2);color:var(--tx1);font-size:13px;min-width:210px">
+        </div>
+        <div style="display:flex;gap:8px;margin-left:auto">
+          <button class="btn" onclick="ifClear()" style="font-size:13px">Clear</button>
+          <button class="btn primary" onclick="runItemFinance()" style="font-size:13px">Run Report</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary cards -->
+    <div id="if-summary-row" style="display:none;margin-bottom:20px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+        <div class="stat-card">
+          <div class="sv" id="if-s-skus">-</div>
+          <div class="sl">Total SKUs</div>
+        </div>
+        <div class="stat-card">
+          <div class="sv" id="if-s-instock">-</div>
+          <div class="sl">In Stock</div>
+        </div>
+        <div class="stat-card">
+          <div class="sv" id="if-s-stock-qty">-</div>
+          <div class="sl">Stock Units</div>
+        </div>
+        <div class="stat-card">
+          <div class="sv" id="if-s-cost-val">-</div>
+          <div class="sl">Catalogue Value (Cost)</div>
+        </div>
+        <div class="stat-card">
+          <div class="sv" id="if-s-sale-val">-</div>
+          <div class="sl">Catalogue Value (Sale)</div>
+        </div>
+        <div class="stat-card">
+          <div class="sv" id="if-s-margin">-</div>
+          <div class="sl">Portfolio Margin</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Item table -->
+    <div class="card" id="if-table-card" style="display:none">
+      <div class="ch">
+        <span class="ct">SKU Costing Detail</span>
+        <span id="if-row-count" class="badge" style="margin-left:8px"></span>
+        <div class="search-wrap" style="margin-left:auto;max-width:240px">
+          <input type="text" id="if-search" placeholder="Filter results…" oninput="ifFilterItems()" style="width:100%">
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="tbl" id="if-table">
+          <thead>
+            <tr>
+              <th>SKU Code</th>
+              <th>Product</th>
+              <th>Brand</th>
+              <th>Type</th>
+              <th>Colour</th>
+              <th class="tr">Sale Price</th>
+              <th class="tr">Margin %</th>
+              <th class="tr">Stock</th>
+              <th class="tr">Value (Cost)</th>
+              <th class="tr">Value (Sale)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="if-tbody"></tbody>
+        </table>
+      </div>
+      <div id="if-empty" style="display:none;text-align:center;padding:32px;color:var(--muted);font-size:13px">No items found</div>
+    </div>
+
+    <div id="if-initial" style="text-align:center;padding:60px;color:var(--muted)">
+      <div style="font-size:40px;margin-bottom:12px">💎</div>
+      <div style="font-size:15px;font-weight:500;margin-bottom:6px">Item Finance Report</div>
+      <div style="font-size:13px">Apply filters and click <strong>Run Report</strong> to view per-SKU costing, margin, and catalogue value.</div>
+    </div>
+  </div>
+
+  <!-- ═══ SUPPLIER MASTER ═══ -->
+  <div class="page" id="page-supplier-master">
+    <div class="ph">
+      <div class="pt">Supplier Master</div>
+      <div class="ps">Manage supplier profiles, credit terms, bank details, and opening balances</div>
+    </div>
+
+    <div class="card mb4">
+      <div class="ch">
+        <div class="search-wrap" style="flex:1;max-width:320px">
+          <input type="text" id="sm-search" placeholder="Search supplier..." oninput="filterSupplierMaster()" style="width:100%">
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn sm" onclick="loadSupplierMaster()">↻ Refresh</button>
+          <button class="btn sm primary" onclick="openSupplierForm(null)">＋ New Supplier</button>
+        </div>
+      </div>
+      <div class="tw">
+        <table>
+          <thead>
+            <tr>
+              <th>Supplier</th>
+              <th>Location</th>
+              <th>Contact</th>
+              <th>Credit Terms</th>
+              <th class="text-right">Opening Balance</th>
+              <th>Bank</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="sm-body"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ═══ MODAL: Supplier Statement ═══ -->
+<div class="overlay" id="modal-statement">
+  <div class="modal" style="width:780px;max-width:97vw">
+    <div class="mh">
+      <div class="mt-title" id="stmt-modal-title">Supplier Statement</div>
+      <span class="mclose" onclick="closeM('modal-statement')">✕</span>
+    </div>
+    <div class="mb-modal" id="stmt-modal-body" style="padding:0">
+      <div class="empty"><div class="empty-ic">📄</div><div class="empty-text">Loading...</div></div>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeM('modal-statement')">Close</button>
+      <button class="btn primary" id="stmt-pay-btn" onclick="openPaymentFromStatement()" style="display:none">+ Record Payment</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: Edit Credit Days ═══ -->
+<div class="overlay" id="modal-credit">
+  <div class="modal" style="width:400px">
+    <div class="mh">
+      <div class="mt-title">Set Credit Days</div>
+      <span class="mclose" onclick="closeM('modal-credit')">✕</span>
+    </div>
+    <div class="mb-modal">
+      <div id="credit-error" class="err-msg"></div>
+      <div class="fgrp mb3">
+        <label>Supplier</label>
+        <input type="text" id="credit-supplier-name" disabled style="background:#f8f8f8">
+      </div>
+      <div class="fgrp">
+        <label>Credit Days <span class="req">*</span></label>
+        <input type="number" id="credit-days-input" min="0" max="365" placeholder="e.g. 30">
+        <div class="fhint">Number of days from bill date when payment is due. Common: 0 (immediate), 15, 30, 45, 60, 90.</div>
+      </div>
+      <input type="hidden" id="credit-supplier-id">
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeM('modal-credit')">Cancel</button>
+      <button class="btn primary" onclick="saveCreditDays()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: Create / Edit Supplier ═══ -->
+<div class="overlay" id="modal-supplier-form">
+  <div class="modal" style="width:680px;max-width:97vw">
+    <div class="mh">
+      <div class="mt-title" id="sf-modal-title">New Supplier</div>
+      <span class="mclose" onclick="closeM('modal-supplier-form')">✕</span>
+    </div>
+    <div class="mb-modal">
+      <div id="sf-error" class="err-msg"></div>
+
+      <!-- Basic Info -->
+      <div class="section-lbl mb2">Basic Information</div>
+      <div class="fg2 mb3">
+        <div class="fgrp">
+          <label>Supplier / Vendor Name <span class="req">*</span></label>
+          <input type="text" id="sf-vendor-name" placeholder="e.g. ABC Optics Pvt Ltd" oninput="sfAutoCode()">
+        </div>
+        <div class="fgrp">
+          <label>Vendor Code</label>
+          <input type="text" id="sf-vendor-code" placeholder="Auto-generated if blank">
+          <div class="fhint">Leave blank to auto-generate from name.</div>
+        </div>
+      </div>
+      <div class="fg3 mb3">
+        <div class="fgrp">
+          <label>City</label>
+          <input type="text" id="sf-city" placeholder="City">
+        </div>
+        <div class="fgrp">
+          <label>State</label>
+          <input type="text" id="sf-state" placeholder="State">
+        </div>
+        <div class="fgrp">
+          <label>GSTIN</label>
+          <input type="text" id="sf-gstin" placeholder="GST number">
+        </div>
+      </div>
+      <div class="fg2 mb3">
+        <div class="fgrp">
+          <label>Contact Person</label>
+          <input type="text" id="sf-contact-person" placeholder="Name">
+        </div>
+        <div class="fgrp">
+          <label>Contact Phone</label>
+          <input type="text" id="sf-contact-phone" placeholder="+91 ...">
+        </div>
+      </div>
+
+      <!-- Credit Terms -->
+      <div class="section-lbl mb2" style="margin-top:16px">Credit Terms</div>
+      <div class="fg3 mb3">
+        <div class="fgrp">
+          <label>Credit Days</label>
+          <input type="number" id="sf-credit-days" placeholder="e.g. 30" min="0" max="365">
+          <div class="fhint">Days from bill date until payment due.</div>
+        </div>
+        <div class="fgrp" style="grid-column:span 2">
+          <label>Payment Terms (Description)</label>
+          <input type="text" id="sf-payment-terms" placeholder="e.g. Net 30, COD, Advance">
+        </div>
+      </div>
+      <div class="fg2 mb3">
+        <div class="fgrp">
+          <label>Opening Balance (₹)</label>
+          <input type="number" id="sf-opening-balance" placeholder="0.00" min="0" step="0.01">
+          <div class="fhint">Amount already owed to this supplier at system go-live.</div>
+        </div>
+      </div>
+
+      <!-- Bank Details -->
+      <div class="section-lbl mb2" style="margin-top:16px">Bank Details</div>
+      <div class="fg2 mb3">
+        <div class="fgrp">
+          <label>Bank Name</label>
+          <input type="text" id="sf-bank-name" placeholder="e.g. HDFC Bank">
+        </div>
+        <div class="fgrp">
+          <label>Account Holder Name</label>
+          <input type="text" id="sf-bank-holder" placeholder="Name on account">
+        </div>
+      </div>
+      <div class="fg2 mb3">
+        <div class="fgrp">
+          <label>Account Number</label>
+          <input type="text" id="sf-bank-account" placeholder="Account No.">
+        </div>
+        <div class="fgrp">
+          <label>IFSC Code</label>
+          <input type="text" id="sf-bank-ifsc" placeholder="e.g. HDFC0001234" style="text-transform:uppercase">
+        </div>
+      </div>
+
+      <input type="hidden" id="sf-supplier-id">
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeM('modal-supplier-form')">Cancel</button>
+      <button class="btn danger" id="sf-deactivate-btn" style="display:none;margin-right:auto" onclick="deactivateSupplier()">Deactivate</button>
+      <button class="btn primary" onclick="saveSupplierForm()">Save Supplier</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Breadcrumb map ─────────────────────────────────────────────────────────────
+const bcMap = {
+  'dashboard':        'Dashboard',
+  'supplier-master':  'Supplier Master',
+  'supplier-ledger':  'Supplier Ledger',
+  'payments':         'Record Payment',
+  'purchase-reports': 'Purchase Reports',
+  'item-finance':     'Item Finance'
+};
+
+function nav(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if (el) el.classList.add('active');
+  document.getElementById('bc').textContent = bcMap[id] || id;
+}
+
+function openM(id) { document.getElementById(id).classList.add('open'); }
+function closeM(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => {
+  if (e.target === o) o.classList.remove('open');
+}));
+</script>
+<script src="/js/cosmos-module-switch.js"></script>
+<script src="/js/finance-prototype.js"></script>
+</body>
+</html>

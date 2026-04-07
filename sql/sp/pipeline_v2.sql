@@ -7,7 +7,7 @@ GO
 -- ══════════════════════════════════════════════════════════════════════════════
 -- sp_PurchaseHeader_Create
 -- Creates a purchase header + N items + colours in one call.
--- @items_json  = JSON: [{product_master_id,maker_master_id,purchase_rate,quantity,gst_pct,colours:[{colour_name,colour_code,quantity}]}]
+-- @items_json  = JSON: [{product_master_id,maker_master_id,category,purchase_rate,quantity,gst_pct,colours:[{colour_name,colour_code,quantity}]}]
 -- ══════════════════════════════════════════════════════════════════════════════
 IF OBJECT_ID('dbo.sp_PurchaseHeader_Create','P') IS NOT NULL DROP PROCEDURE dbo.sp_PurchaseHeader_Create;
 GO
@@ -32,6 +32,7 @@ AS BEGIN
       idx              INT,
       product_master_id INT,
       maker_master_id  INT,
+      category         VARCHAR(50) NULL,
       purchase_rate    DECIMAL(10,2),
       quantity         INT,
       gst_pct          DECIMAL(5,2),
@@ -40,11 +41,12 @@ AS BEGIN
       item_total       DECIMAL(10,2)
     );
 
-    INSERT INTO @items (idx, product_master_id, maker_master_id, purchase_rate, quantity, gst_pct, base_value, gst_amt, item_total)
+    INSERT INTO @items (idx, product_master_id, maker_master_id, category, purchase_rate, quantity, gst_pct, base_value, gst_amt, item_total)
     SELECT
       ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1,
       CAST(j.[product_master_id] AS INT),
       TRY_CAST(j.[maker_master_id] AS INT),
+      NULLIF(LTRIM(RTRIM(j.[category])), ''),
       CAST(j.[purchase_rate] AS DECIMAL(10,2)),
       CAST(j.[quantity] AS INT),
       CAST(j.[gst_pct] AS DECIMAL(5,2)),
@@ -54,6 +56,7 @@ AS BEGIN
     FROM OPENJSON(@items_json) WITH (
       product_master_id INT         '$.product_master_id',
       maker_master_id   INT         '$.maker_master_id',
+      category          VARCHAR(50) '$.category',
       purchase_rate     FLOAT       '$.purchase_rate',
       quantity          INT         '$.quantity',
       gst_pct           FLOAT       '$.gst_pct'
@@ -70,7 +73,7 @@ AS BEGIN
     ) VALUES (
       @supplier_id, @source_type, @bill_ref, @purchase_date, ISNULL(@transport_cost,0),
       @po_reference, @notes, @expected,
-      'PENDING_BILL_VERIFICATION', 'PENDING_BILL_VERIFICATION', @created_by, GETDATE(), GETDATE()
+      'PENDING_BILL_VERIFICATION', 'PENDING_BILL_VERIFICATION', @created_by, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME())
     );
     DECLARE @header_id INT = SCOPE_IDENTITY();
 
@@ -80,14 +83,14 @@ AS BEGIN
 
     WHILE @idx <= @max_idx
     BEGIN
-      DECLARE @pmid INT, @mmid INT, @rate DECIMAL(10,2), @qty INT, @gst DECIMAL(5,2),
+      DECLARE @pmid INT, @mmid INT, @cat VARCHAR(50), @rate DECIMAL(10,2), @qty INT, @gst DECIMAL(5,2),
               @bval DECIMAL(10,2), @gamt DECIMAL(10,2), @itot DECIMAL(10,2);
-      SELECT @pmid=product_master_id, @mmid=maker_master_id, @rate=purchase_rate, @qty=quantity,
+      SELECT @pmid=product_master_id, @mmid=maker_master_id, @cat=category, @rate=purchase_rate, @qty=quantity,
              @gst=gst_pct, @bval=base_value, @gamt=gst_amt, @itot=item_total
       FROM @items WHERE idx=@idx;
 
-      INSERT INTO dbo.purchase_items (header_id,product_master_id,maker_master_id,purchase_rate,quantity,gst_pct,base_value,gst_amt,item_total)
-      VALUES (@header_id,@pmid,@mmid,@rate,@qty,@gst,@bval,@gamt,@itot);
+      INSERT INTO dbo.purchase_items (header_id,product_master_id,maker_master_id,category,purchase_rate,quantity,gst_pct,base_value,gst_amt,item_total)
+      VALUES (@header_id,@pmid,@mmid,@cat,@rate,@qty,@gst,@bval,@gamt,@itot);
       DECLARE @item_id INT = SCOPE_IDENTITY();
 
       -- Insert colours for this item
@@ -116,7 +119,7 @@ AS BEGIN
 
       -- Update product_master maker_master_id if provided
       IF @mmid IS NOT NULL
-        UPDATE dbo.product_master SET maker_master_id = @mmid, updated_at = GETDATE()
+        UPDATE dbo.product_master SET maker_master_id = @mmid, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
         WHERE product_id = @pmid AND maker_master_id IS NULL;
 
       SET @idx = @idx + 1;
@@ -168,7 +171,7 @@ AS BEGIN
     s.vendor_name AS supplier_name,
     (SELECT COUNT(*) FROM dbo.purchase_items pi WHERE pi.header_id = h.header_id) AS item_count,
     (SELECT SUM(pi.quantity) FROM dbo.purchase_items pi WHERE pi.header_id = h.header_id) AS total_qty,
-    DATEDIFF(day, h.created_at, GETDATE()) AS days_open
+    DATEDIFF(day, h.created_at, DATEADD(MINUTE, 330, SYSUTCDATETIME())) AS days_open
   FROM dbo.purchase_headers h
   LEFT JOIN dbo.suppliers s ON h.supplier_id = s.supplier_id
   WHERE (@pipeline_status IS NULL OR h.pipeline_status = @pipeline_status)
@@ -244,7 +247,7 @@ AS BEGIN
       transport_cost = ISNULL(@transport_cost,  transport_cost),
       po_reference   = ISNULL(@po_reference,    po_reference),
       notes          = ISNULL(@notes,           notes),
-      updated_at     = GETDATE()
+      updated_at     = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
     SELECT h.*, s.vendor_name AS supplier_name
     FROM dbo.purchase_headers h
@@ -297,7 +300,7 @@ AS BEGIN
       discrepancy_note = @discrepancy_note,
       bill_status      = @new_bill_status,
       pipeline_status  = @next_pipeline,
-      updated_at       = GETDATE()
+      updated_at       = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
 
     SELECT header_id, pipeline_status, bill_status FROM dbo.purchase_headers WHERE header_id = @header_id;
@@ -322,8 +325,8 @@ AS BEGIN
     UPDATE dbo.purchase_headers SET
       branding_instructions = @branding_instructions,
       pipeline_status       = 'BRANDING_DISPATCHED',
-      dispatched_at         = GETDATE(),
-      updated_at            = GETDATE()
+      dispatched_at         = DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+      updated_at            = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
     SELECT header_id, pipeline_status, dispatched_at FROM dbo.purchase_headers WHERE header_id = @header_id;
   END TRY
@@ -344,8 +347,8 @@ AS BEGIN
     BEGIN RAISERROR('Can only receive at BRANDING_DISPATCHED stage.',16,1); RETURN; END;
     UPDATE dbo.purchase_headers SET
       pipeline_status = 'PENDING_DIGITISATION',
-      received_at     = GETDATE(),
-      updated_at      = GETDATE()
+      received_at     = DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+      updated_at      = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
     SELECT header_id, pipeline_status, received_at FROM dbo.purchase_headers WHERE header_id = @header_id;
   END TRY
@@ -371,7 +374,7 @@ AS BEGIN
     UPDATE dbo.purchase_headers SET
       bypass_reason   = @bypass_reason,
       pipeline_status = 'PENDING_DIGITISATION',
-      updated_at      = GETDATE()
+      updated_at      = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
     SELECT header_id, pipeline_status FROM dbo.purchase_headers WHERE header_id = @header_id;
   END TRY
@@ -480,12 +483,12 @@ AS BEGIN
     UPDATE dbo.skus SET status='LIVE' WHERE header_id=@header_id;
     UPDATE dbo.purchase_headers SET
       pipeline_status = 'WAREHOUSE_READY',
-      warehouse_at    = GETDATE(),
-      updated_at      = GETDATE()
+      warehouse_at    = DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+      updated_at      = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
     -- Add stock
     INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, qty, last_updated)
-    SELECT sk.sku_id, 'WAREHOUSE', 1, pic.quantity, GETDATE()
+    SELECT sk.sku_id, 'WAREHOUSE', 1, pic.quantity, DATEADD(MINUTE, 330, SYSUTCDATETIME())
     FROM dbo.skus sk
     JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
     WHERE sk.header_id = @header_id

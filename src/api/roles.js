@@ -6,16 +6,12 @@ const { executeStoredProcedure } = require('../config/db');
 const router = express.Router();
 
 const roleSchema = Joi.object({
-  role_key:      Joi.string().max(50).required(),
-  display_name:  Joi.string().max(200).required(),
-  hierarchy_lvl: Joi.number().integer().min(1).max(99).required(),
-  is_global:     Joi.boolean().optional()
+  role_key:     Joi.string().max(50).required(),
+  display_name: Joi.string().max(200).required()
 });
 
 const roleUpdateSchema = Joi.object({
-  display_name:  Joi.string().max(200).required(),
-  hierarchy_lvl: Joi.number().integer().min(1).max(99).required(),
-  is_global:     Joi.boolean().optional()
+  display_name: Joi.string().max(200).required()
 });
 
 router.get('/', async (req, res, next) => {
@@ -35,10 +31,8 @@ router.post('/', async (req, res, next) => {
     }
 
     const result = await executeStoredProcedure('sp_Role_Create', {
-      role_key:      { type: sql.VarChar(50),  value: value.role_key },
-      display_name:  { type: sql.VarChar(200), value: value.display_name },
-      hierarchy_lvl: { type: sql.Int,          value: value.hierarchy_lvl },
-      is_global:     { type: sql.Bit,          value: value.is_global ? 1 : 0 }
+      role_key:     { type: sql.VarChar(50),  value: value.role_key },
+      display_name: { type: sql.VarChar(200), value: value.display_name }
     });
 
     return res.status(201).json({ success: true, data: result.recordset && result.recordset[0] });
@@ -56,10 +50,8 @@ router.put('/:key', async (req, res, next) => {
     }
 
     const result = await executeStoredProcedure('sp_Role_Update', {
-      role_key:      { type: sql.VarChar(50),  value: roleKey },
-      display_name:  { type: sql.VarChar(200), value: value.display_name },
-      hierarchy_lvl: { type: sql.Int,          value: value.hierarchy_lvl },
-      is_global:     { type: sql.Bit,          value: value.is_global ? 1 : 0 }
+      role_key:     { type: sql.VarChar(50),  value: roleKey },
+      display_name: { type: sql.VarChar(200), value: value.display_name }
     });
 
     return res.json({ success: true, data: result.recordset && result.recordset[0] });

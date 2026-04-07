@@ -1,0 +1,29 @@
+-- ===========================================================================
+-- Cosmos ERP — IST timestamp convention
+-- ===========================================================================
+-- All business timestamps MUST be written as India Standard Time (IST).
+-- IST = UTC + 05:30 (no daylight saving).
+--
+-- CANONICAL "now" expression:
+--
+--   DATEADD(MINUTE, 330, SYSUTCDATETIME())
+--
+-- • SYSUTCDATETIME() → current UTC as DATETIME2(7), not affected by host OS TZ.
+-- • +330 minutes      → shifts to IST wall clock, which has no DST.
+--
+-- Usage inside stored procedures:
+--
+--   DECLARE @now DATETIME2(0) = DATEADD(MINUTE, 330, SYSUTCDATETIME());
+--   -- then use @now wherever GETDATE() was used.
+--
+-- Column DEFAULTs (new tables / ALTER scripts):
+--
+--   created_at  DATETIME2(0) NOT NULL DEFAULT (DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+--   updated_at  DATETIME2(0) NOT NULL DEFAULT (DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+--
+-- DO NOT use:
+--   GETDATE()          — reflects host OS timezone, not guaranteed IST.
+--   GETUTCDATE()       — raw UTC, callers must shift themselves.
+--   SYSDATETIMEOFFSET() AT TIME ZONE 'India Standard Time'
+--                      — equivalent but requires SQL 2016+ and timezone names.
+-- ===========================================================================

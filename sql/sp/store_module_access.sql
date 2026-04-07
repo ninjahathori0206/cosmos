@@ -32,13 +32,13 @@ BEGIN
     IF EXISTS (SELECT 1 FROM dbo.store_module_access WHERE store_id = @store_id AND module_key = @module_key)
     BEGIN
       UPDATE dbo.store_module_access
-      SET is_enabled = @is_enabled, updated_at = GETDATE()
+      SET is_enabled = @is_enabled, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
       WHERE store_id = @store_id AND module_key = @module_key;
     END
     ELSE
     BEGIN
       INSERT INTO dbo.store_module_access (store_id, module_key, is_enabled, created_at, updated_at)
-      VALUES (@store_id, @module_key, @is_enabled, GETDATE(), GETDATE());
+      VALUES (@store_id, @module_key, @is_enabled, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
     END;
 
     SELECT id, store_id, module_key, is_enabled, updated_at

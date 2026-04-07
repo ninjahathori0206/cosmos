@@ -47,13 +47,13 @@ BEGIN
     )
     BEGIN
       UPDATE dbo.user_module_access
-      SET is_enabled = @is_enabled, updated_at = GETDATE()
+      SET is_enabled = @is_enabled, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
       WHERE user_id = @user_id AND module_key = @module_key;
     END
     ELSE
     BEGIN
       INSERT INTO dbo.user_module_access (user_id, module_key, is_enabled, created_at, updated_at)
-      VALUES (@user_id, @module_key, @is_enabled, GETDATE(), GETDATE());
+      VALUES (@user_id, @module_key, @is_enabled, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
     END;
 
     SELECT id, user_id, module_key, is_enabled, created_at, updated_at

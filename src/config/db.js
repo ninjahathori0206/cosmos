@@ -22,7 +22,11 @@ let poolPromise;
 
 async function getPool() {
   if (!poolPromise) {
-    poolPromise = sql.connect(config);
+    // If the initial connect fails, allow later retries by clearing the cached promise.
+    poolPromise = sql.connect(config).catch((err) => {
+      poolPromise = undefined;
+      throw err;
+    });
   }
   return poolPromise;
 }

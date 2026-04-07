@@ -1,5 +1,17 @@
 const API_KEY = 'CHANGE_ME_API_KEY';
 
+// ── Mobile sidebar toggle ──────────────────────────────────────────────────────
+function openSidebar() {
+  document.querySelector('.sidebar').classList.add('open');
+  document.getElementById('fy-sidebar-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeSidebar() {
+  document.querySelector('.sidebar').classList.remove('open');
+  document.getElementById('fy-sidebar-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const token = sessionStorage.getItem('cosmos_token');
   const userRaw = sessionStorage.getItem('cosmos_user');
@@ -7,6 +19,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!token || !userRaw) { window.location.href = '/'; return; }
 
   const user = JSON.parse(userRaw);
+
+  const mods = user.modules;
+  const hasMap = mods && typeof mods === 'object' && Object.keys(mods).length > 0;
+  if (hasMap && mods.foundry === false) {
+    if (mods.command_unit !== false) window.location.href = '/command-unit.html';
+    else if (mods.finance !== false) window.location.href = '/finance.html';
+    else if (mods.storepilot !== false) window.location.href = '/storepilot.html';
+    else window.location.href = '/';
+    return;
+  }
+
   const nameEl = document.getElementById('foundry-user-name');
   const roleEl = document.getElementById('foundry-user-role');
   const avEl   = document.getElementById('foundry-user-av');
@@ -14,6 +37,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (roleEl) roleEl.textContent = user.role || 'Procurement';
   if (avEl && user.full_name) {
     avEl.textContent = user.full_name.split(' ').filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+  }
+
+  if (typeof window.applyCosmosModuleSwitchNav === 'function') {
+    window.applyCosmosModuleSwitchNav('fd-switch-module-wrap', user);
   }
 
   // ── HTTP helpers ──────────────────────────────────────────────────────────
@@ -54,27 +81,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const inr = (n) => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
   const inrD = (n) => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // dd/MM/yyyy
+  // ── IST date helper ───────────────────────────────────────────────────────
+  function istToday() {
+    const [d, m, y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/');
+    return `${y}-${m}-${d}`;
+  }
+
+  // dd/MM/yyyy (IST)
   function fmtDate(d) {
     if (!d) return '—';
     const dt = new Date(d);
-    const dd = String(dt.getDate()).padStart(2, '0');
-    const mm = String(dt.getMonth() + 1).padStart(2, '0');
-    const yyyy = dt.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
+    if (isNaN(dt)) return String(d);
+    return dt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' });
   }
 
-  // dd/MM/yyyy HH:mm:ss
+  // dd/MM/yyyy HH:mm:ss (IST)
   function fmtDateTime(d) {
     if (!d) return '—';
     const dt = new Date(d);
-    const dd = String(dt.getDate()).padStart(2, '0');
-    const mm = String(dt.getMonth() + 1).padStart(2, '0');
-    const yyyy = dt.getFullYear();
-    const HH = String(dt.getHours()).padStart(2, '0');
-    const min = String(dt.getMinutes()).padStart(2, '0');
-    const ss  = String(dt.getSeconds()).padStart(2, '0');
-    return `${dd}/${mm}/${yyyy} ${HH}:${min}:${ss}`;
+    if (isNaN(dt)) return String(d);
+    return dt.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
   }
 
   const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
@@ -84,6 +110,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!el) return;
     el.textContent = msg;
     el.style.display = msg ? 'block' : 'none';
+  }
+
+  /** Label for `purchase_items.category` / product master keys — same keys as Foundry Settings → Product Types. */
+  function productTypeLabel(key) {
+    if (!key) return '—';
+    const found = (_lookups.product_type || []).find((x) => x.key === key);
+    return found ? found.label : key;
   }
 
   function stageBadge(s) {
@@ -110,11 +143,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Lookup / initial data ─────────────────────────────────────────────────
   async function loadFormData() {
     try {
-      const [suppliers, makers, lookupArr, brands] = await Promise.all([
+      const [suppliers, makers, lookupArr, brands, productTypeRows] = await Promise.all([
         apiGet('/api/suppliers/search?q='),
         apiGet('/api/maker-master'),
-        apiGet('/api/foundry-lookups'),          // flat array of all lookup values
-        apiGet('/api/home-brands')
+        apiGet('/api/foundry-lookups'),
+        apiGet('/api/home-brands'),
+        apiGet('/api/foundry-lookups?type=product_type') // active-only, same as Foundry Settings → Product Types
       ]);
       _allSuppliers = suppliers;
       _allMakers    = makers;
@@ -127,24 +161,30 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!_lookups[t]) _lookups[t] = [];
         _lookups[t].push({ key: row.lookup_key, label: row.lookup_label, id: row.lookup_id });
       });
+      // Product types: always use typed endpoint so list matches Foundry Settings (active + display order)
+      _lookups.product_type = (productTypeRows || []).map((row) => ({
+        key: row.lookup_key,
+        label: row.lookup_label,
+        id: row.lookup_id
+      }));
 
       populateAllSupplierSelects();
       populateMakerSelects();
-      populateSourceTypeSelect();
+      syncPurchaseItemProductTypeSelects();
     } catch (err) { console.error('loadFormData:', err); }
   }
 
-  // Populate the Bill Header source_type dropdown from lookup data
-  function populateSourceTypeSelect() {
-    const sel = document.getElementById('bill-source-type-select');
-    if (!sel) return;
-    const cur = sel.value;
-    let html = '<option value="">— Select Source Type —</option>';
-    (_lookups.source_type || []).forEach((st) => {
-      html += `<option value="${st.key}">${st.label}</option>`;
+  /** Rebuild Product Type dropdown options on existing item rows after lookups refresh. */
+  function syncPurchaseItemProductTypeSelects() {
+    document.querySelectorAll('[id^="item-product-type-"]').forEach((sel) => {
+      const cur = sel.value;
+      let html = '<option value="">— Select Product Type —</option>';
+      (_lookups.product_type || []).forEach((pt) => {
+        html += `<option value="${pt.key}">${pt.label}</option>`;
+      });
+      sel.innerHTML = html;
+      if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
     });
-    sel.innerHTML = html;
-    if (cur) sel.value = cur;
   }
 
   function buildSupplierOptions(placeholder) {
@@ -183,6 +223,318 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function setDatalistOptions(listId, values) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    const unique = [...new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean))];
+    list.innerHTML = unique.map((v) => `<option value="${v.replace(/"/g, '&quot;')}"></option>`).join('');
+  }
+
+  function resolveMakerByName(name) {
+    const needle = String(name || '').trim().toLowerCase();
+    if (!needle) return null;
+    return (_allMakers || []).find((m) => String(m.maker_name || '').trim().toLowerCase() === needle) || null;
+  }
+
+  async function loadSourceSuggestions(field, params) {
+    const qs = new URLSearchParams({ field, limit: '25' });
+    if (params && params.q != null && String(params.q).trim() !== '') qs.set('q', String(params.q).trim());
+    if (params && params.source_brand) qs.set('source_brand', params.source_brand);
+    if (params && params.source_collection != null) qs.set('source_collection', params.source_collection);
+    if (params && params.maker_master_id != null && params.maker_master_id !== '') {
+      qs.set('maker_master_id', String(params.maker_master_id));
+    }
+    try {
+      return await apiGet(`/api/products/source-suggestions?${qs.toString()}`);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  window.onMakerInputChange = async function(idx) {
+    const makerName = val(`item-maker-name-${idx}`);
+    const matched = resolveMakerByName(makerName);
+    const hidden = document.getElementById(`item-maker-${idx}`);
+    const prevMm = hidden ? hidden.value : '';
+    const nextMm = matched ? String(matched.maker_id) : '';
+    if (hidden) hidden.value = nextMm;
+
+    if (prevMm !== nextMm) {
+      ['item-source-brand', 'item-source-coll', 'item-source-model'].forEach((prefix) => {
+        const el = document.getElementById(`${prefix}-${idx}`);
+        if (el) el.value = '';
+      });
+      setDatalistOptions(`item-source-brand-list-${idx}`, []);
+      setDatalistOptions(`item-source-coll-list-${idx}`, []);
+      setDatalistOptions(`item-source-model-list-${idx}`, []);
+    }
+
+    if (matched) {
+      const brands = await loadSourceSuggestions('source_brand', { maker_master_id: matched.maker_id, q: '' });
+      setDatalistOptions(`item-source-brand-list-${idx}`, brands);
+    }
+  };
+
+  window.onSourceBrandInputChange = async function(idx) {
+    const mmId = val(`item-maker-${idx}`);
+    const sourceBrand = val(`item-source-brand-${idx}`);
+    if (!mmId) {
+      setDatalistOptions(`item-source-brand-list-${idx}`, []);
+      setDatalistOptions(`item-source-coll-list-${idx}`, []);
+      setDatalistOptions(`item-source-model-list-${idx}`, []);
+      return;
+    }
+    const mm = Number(mmId);
+
+    // Refresh brand suggestions (partial match is fine here)
+    const brands = await loadSourceSuggestions('source_brand', { maker_master_id: mm, q: sourceBrand });
+    setDatalistOptions(`item-source-brand-list-${idx}`, brands);
+
+    if (!sourceBrand) {
+      setDatalistOptions(`item-source-coll-list-${idx}`, []);
+      setDatalistOptions(`item-source-model-list-${idx}`, []);
+      return;
+    }
+
+    // Only fetch collections/models when the typed brand exactly matches a known brand value.
+    // The SP uses an exact match on source_brand so partial text would return zero results.
+    const brandList = document.getElementById(`item-source-brand-list-${idx}`);
+    const knownBrands = brandList
+      ? [...brandList.options].map((o) => o.value.trim().toUpperCase())
+      : [];
+    const typedUpper = sourceBrand.trim().toUpperCase();
+    if (!knownBrands.includes(typedUpper)) {
+      // Partial / unrecognised brand — clear dependent lists without fetching
+      setDatalistOptions(`item-source-coll-list-${idx}`, []);
+      setDatalistOptions(`item-source-model-list-${idx}`, []);
+      return;
+    }
+
+    const [collections, models] = await Promise.all([
+      loadSourceSuggestions('source_collection', { maker_master_id: mm, source_brand: sourceBrand, q: '' }),
+      loadSourceSuggestions('source_model_number', {
+        maker_master_id: mm,
+        source_brand: sourceBrand,
+        source_collection: '',
+        q: ''
+      })
+    ]);
+    setDatalistOptions(`item-source-coll-list-${idx}`, collections);
+    setDatalistOptions(`item-source-model-list-${idx}`, models);
+  };
+
+  window.onSourceCollectionInputChange = async function(idx) {
+    const mmId = val(`item-maker-${idx}`);
+    const sourceBrand = val(`item-source-brand-${idx}`);
+    const sourceColl = val(`item-source-coll-${idx}`);
+    if (!mmId || !sourceBrand) return;
+
+    const mm = Number(mmId);
+    const collections = await loadSourceSuggestions('source_collection', {
+      maker_master_id: mm,
+      source_brand: sourceBrand,
+      q: sourceColl
+    });
+    setDatalistOptions(`item-source-coll-list-${idx}`, collections);
+
+    const models = await loadSourceSuggestions('source_model_number', {
+      maker_master_id: mm,
+      source_brand: sourceBrand,
+      source_collection: sourceColl,
+      q: ''
+    });
+    setDatalistOptions(`item-source-model-list-${idx}`, models);
+  };
+
+  window.onSourceModelInputChange = async function(idx) {
+    const mmId = val(`item-maker-${idx}`);
+    const sourceBrand = val(`item-source-brand-${idx}`);
+    const sourceColl = val(`item-source-coll-${idx}`);
+    const sourceModel = val(`item-source-model-${idx}`);
+    if (!mmId || !sourceBrand) return;
+
+    const models = await loadSourceSuggestions('source_model_number', {
+      maker_master_id: Number(mmId),
+      source_brand: sourceBrand,
+      source_collection: sourceColl,
+      q: sourceModel
+    });
+    setDatalistOptions(`item-source-model-list-${idx}`, models);
+  };
+
+  // ── Existing Product Search ───────────────────────────────────────────────
+  const _searchTimers = {};
+
+  window.setPurchaseItemMode = function(idx, mode) {
+    const searchPanel    = document.getElementById(`item-search-panel-${idx}`);
+    const sourceFields   = document.getElementById(`item-source-fields-${idx}`);
+    const newBtn         = document.getElementById(`item-mode-new-btn-${idx}`);
+    const searchBtn      = document.getElementById(`item-mode-search-btn-${idx}`);
+    const selectedBanner = document.getElementById(`item-selected-banner-${idx}`);
+
+    if (mode === 'search') {
+      if (searchPanel)  searchPanel.style.display  = 'block';
+      if (sourceFields) sourceFields.style.display = 'none';
+      if (newBtn)    { newBtn.style.background = ''; newBtn.style.color = ''; newBtn.style.borderColor = ''; }
+      if (searchBtn) { searchBtn.style.background = 'var(--acc2)'; searchBtn.style.color = '#fff'; searchBtn.style.borderColor = 'var(--acc2)'; }
+      // Keep selected banner visible when switching to search mode
+      if (!document.getElementById(`item-selected-pm-${idx}`)?.value) {
+        if (selectedBanner) selectedBanner.style.display = 'none';
+      }
+      setTimeout(() => { const q = document.getElementById(`item-search-q-${idx}`); if (q) q.focus(); }, 50);
+    } else {
+      if (searchPanel)  searchPanel.style.display  = 'none';
+      if (sourceFields) sourceFields.style.display = 'block';
+      if (searchBtn) { searchBtn.style.background = ''; searchBtn.style.color = ''; searchBtn.style.borderColor = ''; }
+      if (newBtn)    { newBtn.style.background = 'var(--acc2)'; newBtn.style.color = '#fff'; newBtn.style.borderColor = 'var(--acc2)'; }
+    }
+  };
+
+  window.onPurchaseItemSearch = function(idx) {
+    clearTimeout(_searchTimers[idx]);
+    const q = val(`item-search-q-${idx}`);
+    const resultsEl = document.getElementById(`item-search-results-${idx}`);
+    const spinner   = document.getElementById(`item-search-spinner-${idx}`);
+
+    if (!q || q.length < 2) {
+      if (resultsEl) resultsEl.style.display = 'none';
+      return;
+    }
+
+    if (spinner) spinner.style.display = 'inline';
+    _searchTimers[idx] = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q, limit: 15 });
+        const mmId = val(`item-maker-${idx}`);
+        if (mmId) params.set('maker_master_id', mmId);
+        const data = await apiGet(`/api/products/search?${params}`);
+        renderProductSearchResults(idx, Array.isArray(data) ? data : []);
+      } catch (err) {
+        if (resultsEl) { resultsEl.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12.5px">Search error: ${err.message}</div>`; resultsEl.style.display = 'block'; }
+      } finally {
+        if (spinner) spinner.style.display = 'none';
+      }
+    }, 350);
+  };
+
+  function renderProductSearchResults(idx, rows) {
+    const el = document.getElementById(`item-search-results-${idx}`);
+    if (!el) return;
+    if (!rows.length) {
+      el.innerHTML = '<div style="padding:12px;color:var(--text3);font-size:12.5px;text-align:center">No matching products found</div>';
+      el.style.display = 'block';
+      return;
+    }
+    el.innerHTML = rows.map((r) => {
+      const liveBadge = r.live_sku_count > 0
+        ? `<span style="background:#c8e6c9;color:#1b5e20;padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">${r.live_sku_count} live SKU${r.live_sku_count !== 1 ? 's' : ''}</span>`
+        : '';
+      const purchaseBadge = r.total_purchases > 0
+        ? `<span style="background:#e3f2fd;color:#1565c0;padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:4px">${r.total_purchases} purchase${r.total_purchases !== 1 ? 's' : ''}</span>`
+        : '';
+      const lastDate = r.last_purchase_date
+        ? `<span style="color:var(--text3);font-size:11px;margin-left:4px">· last ${new Date(r.last_purchase_date).toLocaleDateString('en-GB', { month:'short', year:'numeric', timeZone: 'Asia/Kolkata' })}</span>`
+        : '';
+      const rateBadge = r.last_purchase_rate != null
+        ? `<span style="background:#f3e5f5;color:#6a1b9a;padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:4px">₹${Number(r.last_purchase_rate).toLocaleString('en-IN')}/unit</span>`
+        : '';
+      const makerLine = [r.maker_name, r.source_brand, r.source_collection].filter(Boolean).join(' · ');
+      return `<div class="search-result-row" onclick="selectExistingProduct(${idx}, ${JSON.stringify(r).replace(/"/g, '&quot;')})"
+          style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s"
+          onmouseenter="this.style.background='var(--bg)'" onmouseleave="this.style.background=''">
+          <div style="font-weight:600;font-size:13px">${r.source_model_number || r.style_model || '—'}${liveBadge}${purchaseBadge}${rateBadge}${lastDate}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">${makerLine || '—'} &nbsp;·&nbsp; <span style="color:var(--text3)">${r.product_type || ''}</span></div>
+        </div>`;
+    }).join('');
+    el.style.display = 'block';
+  }
+
+  window.selectExistingProduct = function(idx, product) {
+    if (typeof product === 'string') { try { product = JSON.parse(product); } catch(_) { return; } }
+
+    // Store the selected product_master_id
+    const pmEl = document.getElementById(`item-selected-pm-${idx}`);
+    if (pmEl) pmEl.value = product.product_id;
+
+    // Populate source fields in the background for downstream compatibility
+    const makerNameEl = document.getElementById(`item-maker-name-${idx}`);
+    const makerEl     = document.getElementById(`item-maker-${idx}`);
+    const brandEl     = document.getElementById(`item-source-brand-${idx}`);
+    const collEl      = document.getElementById(`item-source-coll-${idx}`);
+    const modelEl     = document.getElementById(`item-source-model-${idx}`);
+    const ptEl        = document.getElementById(`item-product-type-${idx}`);
+
+    if (product.maker_name && makerNameEl) makerNameEl.value = product.maker_name;
+    if (product.maker_master_id && makerEl) makerEl.value = String(product.maker_master_id);
+    if (product.source_brand  && brandEl)  brandEl.value  = product.source_brand;
+    if (product.source_collection && collEl) collEl.value  = product.source_collection || '';
+    if (product.source_model_number && modelEl) modelEl.value = product.source_model_number;
+    if (product.product_type && ptEl) {
+      const opt = [...ptEl.options].find((o) => o.value === product.product_type);
+      if (opt) ptEl.value = product.product_type;
+    }
+
+    // Show selected banner
+    const banner  = document.getElementById(`item-selected-banner-${idx}`);
+    const descEl  = document.getElementById(`item-selected-desc-${idx}`);
+    const badgeEl = document.getElementById(`item-selected-badge-${idx}`);
+    if (descEl) {
+      const parts = [
+        product.maker_name && `<strong>${product.maker_name}</strong>`,
+        product.source_brand && `Brand: ${product.source_brand}`,
+        product.source_collection && `Collection: ${product.source_collection}`,
+        product.source_model_number && `Model: <strong class="mono">${product.source_model_number}</strong>`,
+        product.product_type && `Type: ${product.product_type}`,
+        product.last_purchase_rate != null && `Last Rate: <strong>₹${Number(product.last_purchase_rate).toLocaleString('en-IN')}/unit</strong>`
+      ].filter(Boolean);
+      descEl.innerHTML = parts.join(' &nbsp;·&nbsp; ');
+    }
+    if (badgeEl) {
+      badgeEl.textContent = product.live_sku_count > 0 ? `${product.live_sku_count} Live SKU${product.live_sku_count !== 1 ? 's' : ''} · Restock Candidate` : 'New Colours Only';
+      badgeEl.style.background = product.live_sku_count > 0 ? '#c8e6c9' : '#fff9c4';
+      badgeEl.style.color      = product.live_sku_count > 0 ? '#1b5e20' : '#f57f17';
+    }
+    if (banner) banner.style.display = 'block';
+
+    // Switch to "new product" mode so source fields (now populated) are visible and locked-ish
+    setPurchaseItemMode(idx, 'new');
+
+    // Hide search results
+    const resultsEl = document.getElementById(`item-search-results-${idx}`);
+    if (resultsEl) resultsEl.style.display = 'none';
+
+    // Make source fields read-only to show they came from search
+    [brandEl, collEl, modelEl, makerNameEl].forEach((el) => {
+      if (el) { el.readOnly = true; el.style.background = 'var(--bg)'; el.style.color = 'var(--text2)'; }
+    });
+    if (ptEl) { ptEl.disabled = true; ptEl.style.opacity = '0.75'; }
+  };
+
+  window.clearExistingProductSelection = function(idx) {
+    const pmEl = document.getElementById(`item-selected-pm-${idx}`);
+    if (pmEl) pmEl.value = '';
+
+    const banner = document.getElementById(`item-selected-banner-${idx}`);
+    if (banner) banner.style.display = 'none';
+
+    // Re-enable source fields
+    ['item-source-brand', 'item-source-coll', 'item-source-model', 'item-maker-name'].forEach((prefix) => {
+      const el = document.getElementById(`${prefix}-${idx}`);
+      if (el) { el.readOnly = false; el.style.background = ''; el.style.color = ''; el.value = ''; }
+    });
+    const ptEl = document.getElementById(`item-product-type-${idx}`);
+    if (ptEl) { ptEl.disabled = false; ptEl.style.opacity = ''; ptEl.value = ''; }
+    const makerEl = document.getElementById(`item-maker-${idx}`);
+    if (makerEl) makerEl.value = '';
+
+    // Reset to "new product" mode
+    setPurchaseItemMode(idx, 'new');
+
+    // Clear search input
+    const qEl = document.getElementById(`item-search-q-${idx}`);
+    if (qEl) qEl.value = '';
+  };
+
   // ── Supplier auto-code ────────────────────────────────────────────────────
   let _autoCodeTimer = null;
   window.autoFillVendorCode = function(name) {
@@ -211,69 +563,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const vcEl = document.getElementById('sup-vendor-code');
   if (vcEl) vcEl.addEventListener('input', () => { vcEl.dataset.manuallySet = vcEl.value ? '1' : ''; });
 
-  // Maps supplier label values (stored as comma-separated) to lookup keys
-  function supplierSourceTypesToKeys(supplierTypesStr) {
-    if (!supplierTypesStr) return [];
-    // Build label→key map from loaded lookups
-    const labelMap = {};
-    (_lookups.source_type || []).forEach((st) => {
-      labelMap[st.label.toLowerCase()] = st.key;
-      labelMap[st.key.toLowerCase()]   = st.key;   // also match if key already stored
-    });
-    return supplierTypesStr.split(',').map((s) => s.trim()).map((s) => labelMap[s.toLowerCase()] || null).filter(Boolean);
-  }
-
   window.onBillSupplierChange = function(sel) {
-    const supplierHint   = document.getElementById('bill-supplier-hint');
-    const sourceTypeSel  = document.getElementById('bill-source-type-select');
-    const sourceTypeHint = document.getElementById('bill-source-type-hint');
-
+    const supplierHint = document.getElementById('bill-supplier-hint');
     const s = (_allSuppliers || []).find((x) => String(x.supplier_id) === String(sel.value));
-
     if (s) {
-      // Show supplier location hint
       if (supplierHint) {
         supplierHint.textContent = [s.city, s.state].filter(Boolean).join(', ') + (s.contact_phone ? ' · ' + s.contact_phone : '');
         supplierHint.style.display = 'block';
       }
-
-      // Auto-fill source type from supplier's stored source_types_supplied
-      if (s.source_types_supplied && sourceTypeSel) {
-        const keys = supplierSourceTypesToKeys(s.source_types_supplied);
-        if (keys.length === 1) {
-          // Single source type — auto-select it
-          sourceTypeSel.value = keys[0];
-          if (sourceTypeHint) sourceTypeHint.style.display = 'block';
-        } else if (keys.length > 1) {
-          // Multiple source types — filter the dropdown to only show matching ones
-          Array.from(sourceTypeSel.options).forEach((opt) => {
-            if (opt.value === '') return;                       // keep placeholder
-            opt.hidden = !keys.includes(opt.value);
-          });
-          // Auto-select first match
-          sourceTypeSel.value = keys[0];
-          if (sourceTypeHint) {
-            sourceTypeHint.textContent = `⚡ ${keys.length} source types available for this supplier`;
-            sourceTypeHint.style.display = 'block';
-          }
-        } else {
-          // No match — show all options
-          Array.from(sourceTypeSel.options).forEach((opt) => { opt.hidden = false; });
-          if (sourceTypeHint) sourceTypeHint.style.display = 'none';
-        }
-      } else if (sourceTypeSel) {
-        // Supplier has no source types set — show all
-        Array.from(sourceTypeSel.options).forEach((opt) => { opt.hidden = false; });
-        if (sourceTypeHint) sourceTypeHint.style.display = 'none';
-      }
-    } else {
-      if (supplierHint)   supplierHint.style.display   = 'none';
-      if (sourceTypeHint) sourceTypeHint.style.display = 'none';
-      // Reset source type dropdown to show all
-      if (sourceTypeSel) {
-        Array.from(sourceTypeSel.options).forEach((opt) => { opt.hidden = false; });
-        sourceTypeSel.value = '';
-      }
+    } else if (supplierHint) {
+      supplierHint.style.display = 'none';
     }
   };
 
@@ -304,7 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _itemCount = 0;
     const container = document.getElementById('purchase-items-container');
     if (container) container.innerHTML = '';
-    const today = new Date().toISOString().split('T')[0];
+    const today = istToday();
     // Set today as default in flatpickr if not already set
     const fpEl = document.getElementById('bill-purchase-date-input');
     if (fpEl && !fpEl.value && fpEl._flatpickr) fpEl._flatpickr.setDate(new Date(), true);
@@ -317,70 +616,88 @@ document.addEventListener('DOMContentLoaded', () => {
     const container = document.getElementById('purchase-items-container');
     if (!container) return;
 
-    // Build home brand options
-    let hbOpts = '<option value="">— Select Brand —</option>';
-    (_homeBrands || []).forEach((b) => { hbOpts += `<option value="${b.brand_id}">${b.brand_name}</option>`; });
-
-    // Build product type options from lookups (or fallback)
-    let ptOpts = '<option value="">— Type —</option>';
-    const ptLookups = _lookups.product_type || [];
-    if (ptLookups.length) {
-      ptLookups.forEach((pt) => { ptOpts += `<option value="${pt.key}">${pt.label}</option>`; });
-    } else {
-      ['FRAMES|Eyeglasses/Frames','SUNGLASSES|Sunglasses','READERS|Readers','SPORTS|Sports'].forEach((x) => {
-        const [v, l] = x.split('|');
-        ptOpts += `<option value="${v}">${l}</option>`;
-      });
-    }
-
     const card = document.createElement('div');
     card.className = 'card mb4 purchase-item-card';
     card.id = `item-card-${idx}`;
     card.dataset.idx = idx;
+    let ptOpts = '<option value="">— Select Product Type —</option>';
+    (_lookups.product_type || []).forEach((pt) => {
+      ptOpts += `<option value="${pt.key}">${pt.label}</option>`;
+    });
     card.innerHTML = `
       <div class="ch">
         <div class="ct">Item #${idx}</div>
         ${_itemCount > 1 ? `<button type="button" class="btn sm" style="margin-left:auto;color:var(--red)" onclick="removePurchaseItem(${idx})">✕ Remove</button>` : ''}
       </div>
       <div class="cb">
-        <div class="fg3 mb3">
-          <div class="fgrp" id="item-homebrand-grp-${idx}">
-            <label>Home Brand (public)</label>
-            <select id="item-home-brand-${idx}">${hbOpts}</select>
-            <div class="fhint">Required when Source Type is Home Brand</div>
+        <input type="hidden" id="item-selected-pm-${idx}">
+
+        <!-- Mode toggle -->
+        <div style="display:flex;gap:8px;margin-bottom:14px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;align-items:center">
+          <span style="font-size:12px;color:var(--text3);margin-right:4px">Product entry mode:</span>
+          <button type="button" id="item-mode-new-btn-${idx}" class="btn sm" style="background:var(--acc2);color:#fff;border-color:var(--acc2)" onclick="setPurchaseItemMode(${idx},'new')">✚ New Product</button>
+          <button type="button" id="item-mode-search-btn-${idx}" class="btn sm" onclick="setPurchaseItemMode(${idx},'search')">🔍 Search Existing</button>
+        </div>
+
+        <!-- Search panel (hidden by default) -->
+        <div id="item-search-panel-${idx}" style="display:none;margin-bottom:14px">
+          <div style="position:relative">
+            <input id="item-search-q-${idx}" placeholder="Search by brand, model, manufacturer…" style="width:100%;padding-right:32px"
+              oninput="onPurchaseItemSearch(${idx})" autocomplete="off">
+            <span id="item-search-spinner-${idx}" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text3)">…</span>
           </div>
-          <div class="fgrp">
-            <label>Source Brand</label>
-            <input id="item-source-brand-${idx}" placeholder="Original manufacturer brand (optional)">
-          </div>
-          <div class="fgrp">
-            <label>Maker (Manufacturer)</label>
-            <select id="item-maker-${idx}" class="maker-select">
-              ${buildMakerOptions('— No Maker —')}
-            </select>
-          </div>
-          <div class="fgrp">
-            <label>Source Collection</label>
-            <input id="item-source-coll-${idx}" placeholder="Supplier's collection name (optional)">
-          </div>
-          <div class="fgrp">
-            <label>EW Collection <span class="req">*</span></label>
-            <input id="item-ew-coll-${idx}" placeholder="e.g. Botanica">
-          </div>
-          <div class="fgrp">
-            <label>Style / Model <span class="req">*</span></label>
-            <input id="item-style-${idx}" placeholder="e.g. VR-01">
-          </div>
-          <div class="fgrp">
-            <label>Product Type</label>
-            <select id="item-product-type-${idx}">
-              ${ptOpts}
-            </select>
+          <div id="item-search-results-${idx}" style="display:none;border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:280px;overflow-y:auto;background:var(--card)"></div>
+        </div>
+
+        <!-- Selected product banner -->
+        <div id="item-selected-banner-${idx}" style="display:none;background:#e8f5e9;border:1px solid #66bb6a;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12.5px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <span style="font-weight:700;color:#2e7d32">✓ Existing Product Selected</span>
+              <span style="margin-left:8px;background:#c8e6c9;color:#1b5e20;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600" id="item-selected-badge-${idx}">Restock Candidate</span>
+              <div id="item-selected-desc-${idx}" style="margin-top:5px;color:var(--text2);line-height:1.5"></div>
+            </div>
+            <button type="button" class="btn xs" style="color:var(--red);flex-shrink:0;margin-left:12px" onclick="clearExistingProductSelection(${idx})">✕ Clear</button>
           </div>
         </div>
 
-        <div id="item-repeat-banner-${idx}" style="display:none;background:var(--goldL);border:1px solid var(--gold);border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:12px">
-          🔁 This product exists. Details will be pre-filled.
+        <!-- Source fields (shown by default) -->
+        <div id="item-source-fields-${idx}">
+          <div class="fg3 mb3">
+            <div class="fgrp">
+              <label>Product Type <span class="req">*</span></label>
+              <select id="item-product-type-${idx}">${ptOpts}</select>
+              <div class="fhint">Same list as Foundry Settings → Product Types (active values).</div>
+            </div>
+            <div class="fgrp">
+              <label>Manufacturer <span class="req">*</span></label>
+              <input id="item-maker-name-${idx}" list="item-maker-list-${idx}" placeholder="e.g. Gandhi" oninput="onMakerInputChange(${idx})">
+              <datalist id="item-maker-list-${idx}">
+                ${(_allMakers || []).map((m) => `<option value="${String(m.maker_name || '').replace(/"/g, '&quot;')}"></option>`).join('')}
+              </datalist>
+              <input type="hidden" id="item-maker-${idx}">
+              <div class="fhint">Source brands are filtered by manufacturer.</div>
+            </div>
+            <div class="fgrp">
+              <label>Source Brand <span class="req">*</span></label>
+              <input id="item-source-brand-${idx}" list="item-source-brand-list-${idx}" placeholder="e.g. IKON" onfocus="onSourceBrandInputChange(${idx})" oninput="onSourceBrandInputChange(${idx})">
+              <datalist id="item-source-brand-list-${idx}"></datalist>
+            </div>
+            <div class="fgrp">
+              <label>Source Collection</label>
+              <input id="item-source-coll-${idx}" list="item-source-coll-list-${idx}" placeholder="Optional — filtered by brand" onfocus="onSourceCollectionInputChange(${idx})" oninput="onSourceCollectionInputChange(${idx})">
+              <datalist id="item-source-coll-list-${idx}"></datalist>
+            </div>
+            <div class="fgrp">
+              <label>Source Model Number <span class="req">*</span></label>
+              <input id="item-source-model-${idx}" list="item-source-model-list-${idx}" placeholder="e.g. VR-01" onfocus="onSourceModelInputChange(${idx})" oninput="onSourceModelInputChange(${idx})">
+              <datalist id="item-source-model-list-${idx}"></datalist>
+            </div>
+          </div>
+
+          <div id="item-repeat-banner-${idx}" style="display:none;background:var(--goldL);border:1px solid var(--gold);border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:12px">
+            🔁 This product exists. Details will be pre-filled.
+          </div>
         </div>
 
         <div class="fg3 mb3" style="border-top:1px solid var(--border);padding-top:12px">
@@ -396,16 +713,14 @@ document.addEventListener('DOMContentLoaded', () => {
             <label>GST % <span class="req">*</span></label>
             <input type="number" id="item-gst-${idx}" placeholder="e.g. 12 for 12%" step="0.01" min="0" max="100" oninput="calcItemBill(${idx})">
           </div>
-          <div class="fgrp">
-            <label>Branding Required</label>
-            <select id="item-branding-${idx}">
-              <option value="1">Yes</option>
-              <option value="0">No</option>
-            </select>
-          </div>
-          <div class="fgrp">
-            <label>PO Reference</label>
-            <input id="item-po-${idx}" placeholder="Optional item-level PO">
+        </div>
+
+        <!-- Branding toggle -->
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="item-branding-${idx}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--acc2)">
+          <div>
+            <label for="item-branding-${idx}" style="font-size:13px;font-weight:600;cursor:pointer">Branding Required</label>
+            <div style="font-size:11.5px;color:var(--text3);margin-top:1px">Check if this item needs to be re-branded under an Eyewoot home brand. Leave unchecked to use Source Brand directly.</div>
           </div>
         </div>
 
@@ -418,7 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         <!-- Colour Variants -->
         <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="section-lbl mb2">Colour Variants <span class="req">*</span></div>
+          <div class="section-lbl mb2">Colour Variants</div>
           <div id="colours-container-${idx}"></div>
           <div id="colour-qty-warn-${idx}" style="display:none;color:var(--red);font-size:12px;margin:4px 0 8px"></div>
           <button type="button" class="btn sm mt1" onclick="addColourToItem(${idx})">+ Add Colour</button>
@@ -440,29 +755,53 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hint) hint.textContent = remaining === 1 ? '1 item' : `${remaining} items`;
   };
 
-  window.duplicatePurchaseItem = function() {
+  window.duplicatePurchaseItem = async function() {
     const cards = document.querySelectorAll('.purchase-item-card');
     if (!cards.length) { alert('Add an item first before duplicating.'); return; }
     // Source is the last card
     const srcCard = cards[cards.length - 1];
     const srcIdx  = parseInt(srcCard.dataset.idx, 10);
 
+    // Snapshot source values before adding a new card (DOM won't change for srcIdx)
+    const snapshot = {};
+    ['source-brand', 'source-coll', 'source-model', 'rate', 'qty', 'gst'].forEach((f) => {
+      const el = document.getElementById(`item-${f}-${srcIdx}`);
+      snapshot[f] = el ? el.value : '';
+    });
+    const srcMakerNameVal = document.getElementById(`item-maker-name-${srcIdx}`)?.value || '';
+    const srcPtVal        = document.getElementById(`item-product-type-${srcIdx}`)?.value || '';
+    const srcBrandingVal  = document.getElementById(`item-branding-${srcIdx}`)?.checked || false;
+
     // Add a new blank item card
     window.addPurchaseItem();
     const newIdx = _itemCount;
 
-    // Copy simple text/number/select fields
-    const textFields = ['home-brand','source-brand','source-coll','ew-coll','style','product-type','rate','qty','gst','branding','po'];
-    textFields.forEach((f) => {
-      const srcEl = document.getElementById(`item-${f}-${srcIdx}`);
+    // Set maker FIRST and await so onMakerInputChange can set the hidden ID.
+    // onMakerInputChange clears source-brand/coll/model when the maker changes,
+    // so we must restore those values only after it resolves.
+    const dstMakerName = document.getElementById(`item-maker-name-${newIdx}`);
+    if (dstMakerName) {
+      dstMakerName.value = srcMakerNameVal;
+      await window.onMakerInputChange(newIdx);
+    }
+
+    // Now restore source fields (safe — onMakerInputChange has already run)
+    ['source-brand', 'source-coll', 'source-model', 'rate', 'qty', 'gst'].forEach((f) => {
       const dstEl = document.getElementById(`item-${f}-${newIdx}`);
-      if (srcEl && dstEl) dstEl.value = srcEl.value;
+      if (dstEl) dstEl.value = snapshot[f];
     });
 
-    // Copy maker select
-    const srcMaker = document.getElementById(`item-maker-${srcIdx}`);
-    const dstMaker = document.getElementById(`item-maker-${newIdx}`);
-    if (srcMaker && dstMaker) dstMaker.value = srcMaker.value;
+    // Reload dependent datalists without clearing values
+    window.onSourceBrandInputChange(newIdx);
+    window.onSourceCollectionInputChange(newIdx);
+    window.onSourceModelInputChange(newIdx);
+
+    const dstPt = document.getElementById(`item-product-type-${newIdx}`);
+    if (dstPt) dstPt.value = srcPtVal;
+
+    // Copy branding checkbox
+    const dstBranding = document.getElementById(`item-branding-${newIdx}`);
+    if (dstBranding) dstBranding.checked = srcBrandingVal;
 
     // Copy colour rows — remove the auto-added blank colour first
     const dstColourContainer = document.getElementById(`colours-container-${newIdx}`);
@@ -515,13 +854,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.validateColourQty = function(idx) {
     const totalQty = Number(val(`item-qty-${idx}`)) || 0;
-    const rows = document.querySelectorAll(`[id^="clr-qty-${idx}-"]`);
-    let sum = 0;
-    rows.forEach((r) => { sum += Number(r.value) || 0; });
+    const qtyInputs  = document.querySelectorAll(`[id^="clr-qty-${idx}-"]`);
+    const nameInputs = document.querySelectorAll(`[id^="clr-name-${idx}-"]`);
     const warn = document.getElementById(`colour-qty-warn-${idx}`);
     if (!warn) return true;
-    if (sum > totalQty) {
-      warn.textContent = `Colour qty total (${sum}) exceeds item qty (${totalQty})`;
+
+    let sum = 0;
+    let hasAnyColourData = false;
+    qtyInputs.forEach((r) => { sum += Number(r.value) || 0; });
+    nameInputs.forEach((n) => { if (n.value.trim()) hasAnyColourData = true; });
+    qtyInputs.forEach((r)  => { if (Number(r.value) > 0) hasAnyColourData = true; });
+
+    if (!hasAnyColourData) {
+      warn.style.display = 'none';
+      return true;
+    }
+    if (sum !== totalQty) {
+      warn.textContent = `Colour qty total (${sum}) must equal item qty (${totalQty})`;
       warn.style.display = 'block';
       return false;
     }
@@ -563,14 +912,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setT('grand-total', grand);
   };
 
-  // Source type is now at bill header level — this handler is kept for any legacy calls
-  window.onSourceTypeChange = function() {};
-
   // ── Save Purchase ─────────────────────────────────────────────────────────
   window.handleSavePurchase = async function() {
     showErr('new-purchase-error', '');
     const supplierId = val('bill-supplier-select');
-    const sourceType = val('bill-source-type-select');   // source_type is at header level
     const billRef    = val('bill-ref-input');
     const purchDate  = (typeof getFpIso === 'function' ? getFpIso('bill-purchase-date-input') : null) || val('bill-purchase-date-input');
     const transport  = parseFloat(val('bill-transport-input')) || 0;
@@ -578,7 +923,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const notes      = val('bill-notes-input');
 
     if (!supplierId)  return showErr('new-purchase-error', 'Please select a Supplier.');
-    if (!sourceType)  return showErr('new-purchase-error', 'Please select a Source Type.');
     if (!purchDate)   return showErr('new-purchase-error', 'Please enter a Purchase Date.');
 
     const itemCards = document.querySelectorAll('.purchase-item-card');
@@ -587,20 +931,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const itemsPayload = [];
     for (const card of itemCards) {
       const i = card.dataset.idx;
-      const ewColl     = val(`item-ew-coll-${i}`);
-      const style      = val(`item-style-${i}`);
+      const sourceBrand = val(`item-source-brand-${i}`);
+      const sourceColl = val(`item-source-coll-${i}`) || null;
+      const sourceModel = val(`item-source-model-${i}`);
       const rate       = parseFloat(val(`item-rate-${i}`));
       const qty        = parseInt(val(`item-qty-${i}`));
       const gstPct     = parseFloat(val(`item-gst-${i}`));
-      const makerId    = val(`item-maker-${i}`) || null;
-      const brandingReq = val(`item-branding-${i}`) === '1';
+      const makerMasterId = val(`item-maker-${i}`) || null;
+      const category = val(`item-product-type-${i}`);
+      const brandingRequired = document.getElementById(`item-branding-${i}`)?.checked ?? false;
 
-      if (!ewColl)     return showErr('new-purchase-error', `Item #${i}: Enter EW Collection.`);
-      if (!style)      return showErr('new-purchase-error', `Item #${i}: Enter Style/Model.`);
+      if (!makerMasterId) {
+        return showErr('new-purchase-error', `Item #${i}: Select Manufacturer from the list (type name and pick a match).`);
+      }
+      if (!sourceBrand) return showErr('new-purchase-error', `Item #${i}: Enter Source Brand.`);
+      if (!sourceModel) return showErr('new-purchase-error', `Item #${i}: Enter Source Model Number.`);
+      if (!category) return showErr('new-purchase-error', `Item #${i}: Select Product Type.`);
       if (!rate || rate <= 0)  return showErr('new-purchase-error', `Item #${i}: Enter a valid Rate.`);
       if (!qty  || qty  <= 0)  return showErr('new-purchase-error', `Item #${i}: Enter a valid Quantity.`);
       if (gstPct == null || isNaN(gstPct) || gstPct < 0) return showErr('new-purchase-error', `Item #${i}: Enter GST% (e.g. 12 for 12%).`);
-      if (!validateColourQty(i)) return showErr('new-purchase-error', `Item #${i}: Colour quantities exceed item total.`);
+      if (!validateColourQty(i)) return showErr('new-purchase-error', `Item #${i}: Colour quantities must match item total.`);
 
       // Collect colours
       const colours = [];
@@ -612,33 +962,36 @@ document.addEventListener('DOMContentLoaded', () => {
         const cQty  = parseInt(cqEl.value) || 0;
         if (cName && cQty > 0) colours.push({ colour_name: cName, colour_code: cCode || cName.replace(/\s+/g,'').toUpperCase().slice(0,8), quantity: cQty });
       });
-      if (!colours.length) return showErr('new-purchase-error', `Item #${i}: Add at least one colour variant with quantity.`);
-
-      // Get or create product master
-      const homeBrandId  = val(`item-home-brand-${i}`) || null;
-      const sourceBrand  = val(`item-source-brand-${i}`) || null;
-      const sourceColl   = val(`item-source-coll-${i}`) || null;
-
-      // Check for existing product
-      let productMasterId;
-      try {
-        const chk = await apiGet(`/api/products/check-repeat?ew_collection=${encodeURIComponent(ewColl)}&style_model=${encodeURIComponent(style)}`);
-        productMasterId = chk && chk.product_id;
-      } catch (_) { productMasterId = null; }
+      // If no colour variants were filled in, insert a generic "Standard" variant
+      // so that SKU generation is always possible in the digitisation stage.
+      if (colours.length === 0) {
+        colours.push({ colour_name: 'Standard', colour_code: 'STD', quantity: qty });
+      }
+      // Use explicitly selected product (from search picker) or resolve via repeat-check / create
+      let productMasterId = val(`item-selected-pm-${i}`) || null;
 
       if (!productMasterId) {
-        const productType = val(`item-product-type-${i}`) || 'FRAMES';
+        try {
+          const chk = await apiGet(
+            `/api/products/check-repeat?source_brand=${encodeURIComponent(sourceBrand)}&source_model_number=${encodeURIComponent(sourceModel)}&maker_master_id=${encodeURIComponent(makerMasterId)}`
+          );
+          productMasterId = chk && (chk.product_master_id || (chk.data && chk.data.product_id));
+        } catch (_) { productMasterId = null; }
+      }
+
+      if (!productMasterId) {
+        // Keep legacy fields populated to remain compatible with existing reports.
+        const ewCollection = sourceColl || sourceBrand;
         try {
           const pm = await apiPost('/api/products', {
-            source_type: sourceType,
-            home_brand_id: homeBrandId ? Number(homeBrandId) : null,
             source_brand: sourceBrand,
             source_collection: sourceColl,
-            ew_collection: ewColl,
-            style_model: style,
-            product_type: productType,
-            branding_required: brandingReq,
-            maker_id: makerId ? Number(makerId) : null
+            source_model_number: sourceModel,
+            ew_collection: ewCollection,
+            style_model: sourceModel,
+            product_type: category,
+            branding_required: brandingRequired,
+            maker_master_id: Number(makerMasterId)
           });
           productMasterId = pm && pm.product_id;
         } catch (err) { return showErr('new-purchase-error', `Item #${i}: Could not save product — ${err.message}`); }
@@ -648,7 +1001,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       itemsPayload.push({
         product_master_id: productMasterId,
-        maker_master_id:   makerId ? Number(makerId) : null,
+        maker_master_id:   Number(makerMasterId),
+        category,
         purchase_rate:     rate,
         quantity:          qty,
         gst_pct:           gstPct / 100,   // convert % to fraction for DB (12 → 0.12)
@@ -661,7 +1015,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const result = await apiPost('/api/purchases', {
         supplier_id: Number(supplierId),
-        source_type: sourceType || null,
+        source_type: null,
         bill_ref: billRef || null,
         purchase_date: purchDate,
         transport_cost: transport,
@@ -676,7 +1030,6 @@ document.addEventListener('DOMContentLoaded', () => {
       _itemCount = 0;
       _colourCounters = {};
       document.getElementById('bill-supplier-select').value   = '';
-      document.getElementById('bill-source-type-select').value = '';
       document.getElementById('bill-ref-input').value          = '';
       document.getElementById('bill-transport-input').value    = '';
       const pdEl = document.getElementById('bill-purchase-date-input');
@@ -827,18 +1180,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function _pvRenderStage1(h, items) {
     const el = document.getElementById('pv-stage-1');
     if (!el) return;
-    const stLabel = (() => {
-      if (!h.source_type) return '—';
-      const found = (_lookups.source_type || []).find((x) => x.key === h.source_type);
-      return found ? found.label : h.source_type;
-    })();
     const rows = items.map((it) => `<tr>
       <td class="fw6">${it.ew_collection || ''} · ${it.style_model || ''}</td>
       <td>${it.brand_name || it.source_brand || '—'}</td>
+      <td class="tc">${productTypeLabel(it.category)}</td>
       <td class="tc">${it.quantity}</td>
-      <td class="mono xs">${inrD(it.purchase_rate)}</td>
-      <td class="tc mono xs">${(Number(it.gst_pct) * 100).toFixed(1)}%</td>
-      <td class="mono xs">${inrD(it.item_total)}</td>
     </tr>`).join('');
     el.innerHTML = `<div class="main-side">
       <div class="col-stack">
@@ -847,26 +1193,15 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="cb">
             <div class="fg3 mb4">
               <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-              <div><div class="xs td2">Source Type</div><div class="fw6">${stLabel}</div></div>
               <div><div class="xs td2">Bill Reference</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
               <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>
               <div><div class="xs td2">Registered</div><div class="fw6">${fmtDateTime(h.created_at)}</div></div>
             </div>
             <div class="section-lbl mb2">Items Purchased</div>
             <div class="tw"><table>
-              <thead><tr><th>Product</th><th>Brand</th><th>Qty</th><th>Rate</th><th>GST%</th><th>Item Total</th></tr></thead>
-              <tbody>${rows || '<tr><td colspan="6" class="tc td2">No items</td></tr>'}</tbody>
+              <thead><tr><th>Product</th><th>Brand</th><th>Product Type</th><th>Qty</th></tr></thead>
+              <tbody>${rows || '<tr><td colspan="4" class="tc td2">No items</td></tr>'}</tbody>
             </table></div>
-          </div>
-        </div>
-      </div>
-      <div class="col-stack">
-        <div class="card">
-          <div class="ch"><div class="ct">Bill Summary</div></div>
-          <div class="cb" style="display:flex;flex-direction:column;gap:8px">
-            <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Transport</span><span class="mono xs">${inrD(h.transport_cost)}</span></div>
-            <hr class="sep" style="margin:4px 0">
-            <div class="flex ic" style="justify-content:space-between"><span class="fw6">Expected Total</span><span class="mono fw6" style="color:var(--acc)">${inrD(h.expected_bill_amt)}</span></div>
           </div>
         </div>
       </div>
@@ -878,7 +1213,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('pv-stage-2');
     if (!el) return;
     const verified = h.bill_status === 'VERIFIED';
-    const diff = verified ? (Number(h.actual_bill_amt) - Number(h.expected_bill_amt)) : 0;
     el.innerHTML = `<div class="main-side">
       <div class="col-stack">
         <div class="card">
@@ -889,13 +1223,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="fg3 mb4">
               <div><div class="xs td2">Bill Number</div><div class="fw6 mono">${h.bill_number || '—'}</div></div>
               <div><div class="xs td2">Bill Date</div><div class="fw6">${fmtDate(h.bill_date)}</div></div>
-              <div><div class="xs td2">Actual Bill Amount</div><div class="fw6 mono" style="color:var(--acc)">${inrD(h.actual_bill_amt)}</div></div>
-              <div><div class="xs td2">Expected Amount</div><div class="fw6 mono">${inrD(h.expected_bill_amt)}</div></div>
             </div>
-            ${verified ? `<div class="alert ${Math.abs(diff) <= 50 ? 'alert-green' : 'alert-gold'} mt2">
-              <span>${Math.abs(diff) <= 50 ? '✅' : '⚠️'}</span>
-              <div>Variance: <strong>${diff > 0 ? '+' : ''}${inrD(diff)}</strong> · ${Math.abs(diff) <= 50 ? 'Within threshold' : 'Flagged for review'}</div>
-            </div>` : ''}
             ${h.discrepancy_note ? `<div class="xs td2 mt3">Note: ${h.discrepancy_note}</div>` : ''}
           </div>
         </div>
@@ -1069,17 +1397,8 @@ document.addEventListener('DOMContentLoaded', () => {
       badge.className = 'b b-gold';
       badge.textContent = 'Pending Bill Verification';
 
-      // Meta row
-      // Resolve source_type label for display
-      const stLabel = (() => {
-        if (!h.source_type) return '—';
-        const found = (_lookups.source_type || []).find((x) => x.key === h.source_type);
-        return found ? found.label : h.source_type;
-      })();
-
       document.getElementById('bv-meta').innerHTML = `
         <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-        <div><div class="xs td2">Source Type</div><div class="fw6">${stLabel}</div></div>
         <div><div class="xs td2">Bill Reference</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
         <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>`;
 
@@ -1089,7 +1408,7 @@ document.addEventListener('DOMContentLoaded', () => {
         itemRows += `<tr>
           <td class="fw6">${it.ew_collection || ''} · ${it.style_model || ''}</td>
           <td>${it.brand_name || it.source_brand || '—'}</td>
-          <td><span class="b b-gray xs">${it.source_type || '—'}</span></td>
+          <td><span class="b b-gray xs">${productTypeLabel(it.category)}</span></td>
           <td class="mono xs">${inrD(it.purchase_rate)}</td>
           <td class="tc">${it.quantity}</td>
           <td class="tc mono xs">${(it.gst_pct * 100).toFixed(1)}%</td>
@@ -1110,7 +1429,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('bv-expected').textContent   = inrD(expected);
 
       // Pre-fill date
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = istToday();
       const billDateEl = document.getElementById('bill-date-input');
       if (billDateEl && !billDateEl.value && billDateEl._flatpickr) billDateEl._flatpickr.setDate(new Date(), true);
 
@@ -1222,10 +1541,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Build all-items colour table
       let allItemsHtml = '';
+      const isPendingDispatch = h.pipeline_status === 'PENDING_BRANDING';
       items.forEach((it) => {
+        const needsBranding = it.branding_required;
+        // Brand selector — shown for items needing branding in PENDING_BRANDING state;
+        // read-only display when already dispatched/received.
+        let brandRowHtml = '';
+        const collDefault = (it.ew_collection || it.source_collection || '').replace(/"/g, '&quot;');
+        if (needsBranding) {
+          if (isPendingDispatch) {
+            const brandOpts = (_homeBrands || []).map((b) =>
+              `<option value="${b.brand_id}" ${Number(b.brand_id) === Number(it.home_brand_id) ? 'selected' : ''}>${b.brand_name}</option>`
+            ).join('');
+            const srcCollHint = it.source_collection || '—';
+            brandRowHtml = `
+              <div class="fgrp mt2" style="margin-bottom:10px">
+                <label style="font-size:12px;font-weight:600">Brand Name <span class="req">*</span></label>
+                <div class="xs td2" style="margin-top:2px;margin-bottom:2px">Source brand: <span class="fw6">${it.source_brand || '—'}</span></div>
+                <select id="brand-sel-${it.item_id}" data-item-id="${it.item_id}" style="margin-top:4px">
+                  <option value="">— Select Brand —</option>
+                  ${brandOpts}
+                </select>
+              </div>
+              <div class="fgrp mt2" style="margin-bottom:10px">
+                <label style="font-size:12px;font-weight:600">Collection Name <span class="req">*</span></label>
+                <div class="xs td2" style="margin-top:2px;margin-bottom:2px">Source collection: <span class="fw6">${srcCollHint}</span></div>
+                <input type="text" id="coll-inp-${it.item_id}" data-item-id="${it.item_id}" placeholder="Eyewoot / home collection name" value="${collDefault}" style="margin-top:4px;width:100%;max-width:420px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+              </div>`;
+          } else {
+            const brandDisplay = it.brand_name || '—';
+            const collDisplay = it.ew_collection || '—';
+            brandRowHtml = `
+              <div style="font-size:12px;margin-top:6px;margin-bottom:8px">
+                <span class="xs td2">Brand:</span> <span class="fw6">${brandDisplay}</span>
+                <span class="xs td2" style="margin-left:12px">Collection:</span> <span class="fw6">${collDisplay}</span>
+                ${it.source_collection ? `<span class="xs td2" style="margin-left:8px">(source: ${it.source_collection})</span>` : ''}
+              </div>`;
+          }
+        } else {
+          const srcBrandLabel = it.source_brand || '—';
+          const srcCollLabel = it.source_collection || '—';
+          brandRowHtml = `
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap">
+                <span style="font-size:11px;color:var(--text3)">Brand Name</span>
+                <span style="font-size:13px;font-weight:600">${srcBrandLabel}</span>
+                <span style="font-size:11px;padding:2px 7px;border-radius:10px;background:var(--goldL);color:var(--gold);font-weight:500;white-space:nowrap">= Source Brand · No branding needed</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap">
+                <span style="font-size:11px;color:var(--text3)">Collection Name</span>
+                <span style="font-size:13px;font-weight:600">${srcCollLabel}</span>
+                <span style="font-size:11px;padding:2px 7px;border-radius:10px;background:var(--goldL);color:var(--gold);font-weight:500;white-space:nowrap">= Source Collection · No branding needed</span>
+              </div>
+            </div>`;
+        }
+
         allItemsHtml += `
           <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
-            <div class="fw6 mb2">${it.ew_collection || ''} · ${it.style_model || ''} <span class="xs td2">(${it.quantity} units)</span></div>
+            <div class="fw6 mb1">${it.ew_collection || ''} · ${it.style_model || ''} <span class="xs td2">(${it.quantity} units)</span></div>
+            ${brandRowHtml}
             <table style="width:100%;font-size:13px">
               <thead><tr>
                 <th style="padding:6px 8px;font-size:11px;text-transform:uppercase">Colour</th>
@@ -1269,10 +1643,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const headerId = window._currentHeaderId;
     if (!headerId) return;
     const instructions = val('branding-instructions-input');
+
+    // Collect brand + collection for items that require branding
+    const itemBrands = [];
+    const missingBrand = [];
+    const missingColl = [];
+    document.querySelectorAll('[id^="brand-sel-"]').forEach((sel) => {
+      const itemId = Number(sel.dataset.itemId);
+      const collInp = document.getElementById(`coll-inp-${itemId}`);
+      const collVal = collInp ? collInp.value.trim() : '';
+      if (sel.value) {
+        if (!collVal) missingColl.push(itemId);
+        else itemBrands.push({ item_id: itemId, home_brand_id: Number(sel.value), ew_collection: collVal });
+      } else {
+        missingBrand.push(itemId);
+      }
+    });
+
+    if (missingBrand.length > 0) {
+      alert(`Please select a Brand Name for all items that require branding (${missingBrand.length} item(s) missing).`);
+      return;
+    }
+    if (missingColl.length > 0) {
+      alert(`Please enter a Collection Name for all items that require branding (${missingColl.length} item(s) missing).`);
+      return;
+    }
+
     const btn = document.getElementById('branding-dispatch-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
     try {
-      await apiPut(`/api/purchases/${headerId}/branding-dispatch`, { branding_instructions: instructions || null });
+      await apiPut(`/api/purchases/${headerId}/branding-dispatch`, {
+        branding_instructions: instructions || null,
+        item_brands: itemBrands
+      });
       await openBrandingPage(headerId);
     } catch (err) { alert(err.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Confirm Dispatch → DISPATCHED TO BRANDING'; } }
@@ -1358,7 +1761,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td style="padding:7px 12px;text-align:center;font-weight:700">${info.qty}</td>
       </tr>`).join('');
 
-    const today = new Date().toLocaleDateString('en-GB');
+    const today = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' });
 
     openPrintWindow(`Branding Dispatch Order — Purchase #${h.header_id}`, `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
@@ -1546,7 +1949,6 @@ document.addEventListener('DOMContentLoaded', () => {
                       <div><div class="xs td2">Style</div><div class="fw6">${item.style_model || '—'}</div></div>
                       <div><div class="xs td2">Brand</div><div class="fw6">${item.brand_name || item.source_brand || '—'}</div></div>
                       <div><div class="xs td2">Quantity</div><div class="fw6">${item.quantity} units</div></div>
-                      <div><div class="xs td2">Rate</div><div class="fw6 mono">${inrD(item.purchase_rate)}</div></div>
                     </div>
                   </div>
                 </div>
@@ -1855,20 +2257,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const q  = val('suppliers-search');
     const tb = document.getElementById('suppliers-tbody');
     if (!tb) return;
-    tb.innerHTML = '<tr><td colspan="7" class="tc td2 p12">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="6" class="tc td2 p12">Loading…</td></tr>';
     try {
       const rows = await apiGet(`/api/suppliers/search?q=${encodeURIComponent(q)}`);
-      if (!rows.length) { tb.innerHTML = '<tr><td colspan="7" class="tc td2 p12">No suppliers found</td></tr>'; return; }
+      if (!rows.length) { tb.innerHTML = '<tr><td colspan="6" class="tc td2 p12">No suppliers found</td></tr>'; return; }
       tb.innerHTML = rows.map((s) => `<tr>
         <td class="fw6">${s.vendor_name}</td>
         <td class="mono xs">${s.vendor_code || '—'}</td>
         <td class="td2">${s.city || '—'}${s.state ? ', ' + s.state : ''}</td>
         <td class="mono xs td2">${s.gstin || '—'}</td>
-        <td class="xs td2">${s.source_types_supplied || '—'}</td>
         <td><span class="b ${s.vendor_status === 'active' ? 'b-green' : 'b-gray'} xs">${s.vendor_status || 'active'}</span></td>
         <td class="tc"><button class="btn xs" onclick="openEditSupplier(${s.supplier_id})">✎</button></td>
       </tr>`).join('');
-    } catch (err) { tb.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`; }
+    } catch (err) { tb.innerHTML = `<tr><td colspan="6" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`; }
   }
 
   window.openNewSupplierModal = function() {
@@ -2337,7 +2738,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const specs = [g.frame_material, g.frame_width ? `${g.frame_width}mm` : null, g.lens_height ? `${g.lens_height}mm` : null]
             .filter(Boolean).join(' / ');
           const hdr = `<tr class="tbl-group-hdr">
-            <td colspan="11">
+            <td colspan="9">
               📦 <strong>${name}</strong>&emsp;
               <span>${g.brand_name || ''}</span>
               ${specs ? `<span class="xs td2"> · ${specs}</span>` : ''}
@@ -2346,17 +2747,13 @@ document.addEventListener('DOMContentLoaded', () => {
             </td>
           </tr>`;
           const colRows = g.colours.map((c) => {
-            const margin = c.cost_price && c.sale_price
-              ? (((c.sale_price - c.cost_price) / c.sale_price) * 100).toFixed(1) + '%' : '—';
             const dot = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${swatchBg(c.colour_name,c.colour_code)};margin-right:5px;vertical-align:middle;border:1px solid rgba(0,0,0,.15)"></span>`;
             return `<tr class="tbl-colour-row">
               <td class="mono xs fw6">${c.sku_code}</td>
               <td>${dot}${c.colour_name || '—'} ${c.colour_code ? `<span class="xs td2">(${c.colour_code})</span>` : ''}</td>
               <td class="td2">${g.brand_name || '—'}</td>
               <td><span class="b b-gray xs">${g.pm_product_type || '—'}</span></td>
-              <td class="mono xs">${inrD(c.cost_price)}</td>
               <td class="mono xs">${inrD(c.sale_price)}</td>
-              <td class="fw6" style="color:var(--green)">${margin}</td>
               <td class="tc"><span class="b ${stockClr(c.stock_qty)} xs">${c.stock_qty}</span></td>
               <td>${c.total_qty || '—'}</td>
               <td><span class="b b-green xs">${c.status}</span></td>
@@ -2372,7 +2769,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } catch (err) {
       if (grid)  grid.innerHTML  = `<div class="empty" style="color:var(--red);grid-column:1/-1">${err.message}</div>`;
-      if (tbody) tbody.innerHTML = `<tr><td colspan="11" class="tc td2" style="color:var(--red)">${err.message}</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="tc td2" style="color:var(--red)">${err.message}</td></tr>`;
     }
   };
 
@@ -2481,9 +2878,6 @@ document.addEventListener('DOMContentLoaded', () => {
       ['Lens Height',   r.lens_height   ? `${r.lens_height} mm`   : null],
       ['Temple Length', r.temple_length ? `${r.temple_length} mm` : null],
     ].filter(([,v]) => v).map(([k,v]) => `<div><div class="label-sm td2">${k}</div><div class="fw6">${v}</div></div>`).join('');
-    const margin = r.cost_price && r.sale_price
-      ? (((r.sale_price - r.cost_price) / r.sale_price) * 100).toFixed(1) + '%' : '—';
-
     // Colour swatches row (all siblings of same product)
     const swatchRow = siblings.length > 1 ? `
       <div style="margin-bottom:12px">
@@ -2521,10 +2915,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div><div class="label-sm td2">Barcode</div><div class="mono xs">${r.barcode || '—'}</div></div>
           </div>
           <hr style="border:none;border-top:1px solid #eee;margin:8px 0">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
-            <div><div class="label-sm td2">Cost</div><div class="mono fw6">${inrD(r.cost_price)}</div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
             <div><div class="label-sm td2">Sale Price</div><div class="mono fw6" style="color:var(--primary)">${inrD(r.sale_price)}</div></div>
-            <div><div class="label-sm td2">Margin</div><div class="fw6" style="color:var(--green)">${margin}</div></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
             <div><div class="label-sm td2">Warehouse Stock</div><div class="fw6" style="font-size:16px;color:${r.stock_qty > 0 ? 'var(--green)' : 'var(--red)'}">${r.stock_qty} units</div></div>
@@ -2549,6 +2941,209 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
+  // SKU STOCK DISTRIBUTION VIEW
+  // ─────────────────────────────────────────────────────────────────────────
+  let _svSearchTimer = null;
+
+  function svShow(id) {
+    ['sv-empty-state','sv-distribution-panel','sv-error-state'].forEach((x) => {
+      const el = document.getElementById(x);
+      if (el) el.style.display = x === id ? 'block' : 'none';
+    });
+    if (id === 'sv-distribution-panel') {
+      const d = document.getElementById('sv-distribution-panel');
+      if (d) d.style.display = 'block';
+    }
+  }
+
+  window.onStockViewSearch = function() {
+    clearTimeout(_svSearchTimer);
+    const q = (document.getElementById('sv-search-q')?.value || '').trim();
+    const resEl = document.getElementById('sv-search-results');
+    const spinner = document.getElementById('sv-search-spinner');
+    if (!q || q.length < 2) { if (resEl) resEl.style.display = 'none'; return; }
+    if (spinner) spinner.style.display = 'inline';
+    _svSearchTimer = setTimeout(async () => {
+      try {
+        const data = await apiGet(`/api/stock-transfers/distribution/search?q=${encodeURIComponent(q)}&limit=15`);
+        svRenderSearchDropdown(Array.isArray(data) ? data : []);
+      } catch (err) {
+        if (resEl) { resEl.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12.5px">Search error: ${err.message}</div>`; resEl.style.display = 'block'; }
+      } finally {
+        if (spinner) spinner.style.display = 'none';
+      }
+    }, 350);
+  };
+
+  window.doStockViewSearch = async function() {
+    const q = (document.getElementById('sv-search-q')?.value || '').trim();
+    if (!q) return;
+    const spinner = document.getElementById('sv-search-spinner');
+    if (spinner) spinner.style.display = 'inline';
+    try {
+      const data = await apiGet(`/api/stock-transfers/distribution/search?q=${encodeURIComponent(q)}&limit=15`);
+      const rows = Array.isArray(data) ? data : [];
+      if (rows.length === 1) {
+        // Single match — load distribution directly
+        svHideDropdown();
+        await svLoadDistribution(rows[0].sku_id);
+      } else {
+        svRenderSearchDropdown(rows);
+      }
+    } catch (err) {
+      svShowError(err.message);
+    } finally {
+      if (spinner) spinner.style.display = 'none';
+    }
+  };
+
+  function svHideDropdown() {
+    const el = document.getElementById('sv-search-results');
+    if (el) el.style.display = 'none';
+  }
+
+  function svRenderSearchDropdown(rows) {
+    const el = document.getElementById('sv-search-results');
+    if (!el) return;
+    if (!rows.length) {
+      el.innerHTML = '<div style="padding:12px;color:var(--text3);font-size:12.5px;text-align:center">No SKUs found</div>';
+      el.style.display = 'block';
+      return;
+    }
+    el.innerHTML = rows.map((r) => {
+      const stockBadge = r.total_stock > 0
+        ? `<span style="background:var(--greenL);color:var(--green);padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">${r.total_stock} in stock</span>`
+        : `<span style="background:var(--redL);color:var(--red);padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">Out of stock</span>`;
+      const whBadge = r.warehouse_qty > 0
+        ? `<span style="background:var(--accL);color:var(--acc);padding:1px 6px;border-radius:10px;font-size:10.5px;margin-left:4px">${r.warehouse_qty} WH</span>`
+        : '';
+      return `<div onclick="svSelectSku(${r.sku_id})"
+          style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s"
+          onmouseenter="this.style.background='var(--bg)'" onmouseleave="this.style.background=''">
+          <div style="font-weight:600;font-size:13px" class="mono">${r.sku_code}${stockBadge}${whBadge}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">${r.product_name || '—'} &nbsp;·&nbsp; ${r.colour_name || '—'} &nbsp;·&nbsp; <span style="color:var(--text3)">₹${Number(r.sale_price||0).toLocaleString('en-IN')}</span></div>
+        </div>`;
+    }).join('');
+    el.style.display = 'block';
+  }
+
+  window.svSelectSku = async function(skuId) {
+    svHideDropdown();
+    await svLoadDistribution(skuId);
+  };
+
+  async function svLoadDistribution(skuId) {
+    svShow('sv-empty-state');
+    const errorEl = document.getElementById('sv-error-state');
+    if (errorEl) errorEl.style.display = 'none';
+    try {
+      const data = await apiGet(`/api/stock-transfers/distribution/${skuId}`);
+      svRenderDistribution(data);
+    } catch (err) {
+      svShowError(err.message);
+    }
+  }
+
+  function svShowError(msg) {
+    svShow('sv-empty-state');
+    const el = document.getElementById('sv-error-state');
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+  }
+
+  function svRenderDistribution(data) {
+    const sku = data.sku;
+    const locs = data.locations || [];
+
+    // SKU header
+    const headerEl = document.getElementById('sv-sku-header');
+    if (headerEl) {
+      headerEl.innerHTML = `
+        <div>
+          <div class="mono" style="font-size:13px;color:var(--acc);margin-bottom:2px">${sku.sku_code}</div>
+          <div class="fw6" style="font-size:15px">${sku.product_name || '—'} · ${sku.colour_name || '—'}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px">${[sku.brand_name, sku.product_type].filter(Boolean).join(' · ')} &nbsp;·&nbsp; <span class="mono">₹${Number(sku.sale_price||0).toLocaleString('en-IN')}</span></div>
+        </div>
+        <div style="text-align:right">
+          <div class="xs td2">Total Stock</div>
+          <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:28px;font-weight:800;color:var(--acc)">${sku.total_stock}</div>
+          <div class="xs td2">units across all locations</div>
+        </div>`;
+    }
+
+    // Location rows
+    const locsEl = document.getElementById('sv-locations-list');
+    if (locsEl) {
+      if (!locs.length) {
+        locsEl.innerHTML = '<div style="padding:16px;color:var(--text3);font-size:13px;text-align:center">No stock in any location</div>';
+      } else {
+        const maxQty = Math.max(...locs.map((l) => l.qty), 1);
+        const pct = (q) => Math.round((q / maxQty) * 100);
+        const locIcon = (t) => t === 'WAREHOUSE' ? '🏭' : t === 'STORE' || t === 'AT_STORE' ? '🏪' : t === 'IN_TRANSIT' ? '🚚' : '📦';
+        const locBadge = (t) => {
+          if (t === 'WAREHOUSE') return `<span class="b b-green xs">Warehouse</span>`;
+          if (t === 'STORE' || t === 'AT_STORE') return `<span class="b b-gray xs">At Store</span>`;
+          if (t === 'IN_TRANSIT') return `<span class="b b-orange xs">In Transit</span>`;
+          return `<span class="b b-teal xs">${t}</span>`;
+        };
+
+        const barPct = pct(locs.reduce((s,l) => s + l.qty, 0) > 0 ? locs[0].qty : 0);
+        locsEl.innerHTML = `
+          <div class="pbar-wrap" style="height:8px;margin-bottom:20px">
+            <div class="pbar" style="width:${barPct}%;background:linear-gradient(90deg,var(--acc),var(--teal))"></div>
+          </div>
+          ${locs.map((l) => `
+            <div class="loc-row">
+              <div class="loc-icon">${locIcon(l.location_type)}</div>
+              <div style="flex:1">
+                <div class="loc-name">${l.location_name}</div>
+                <div class="loc-sub">Updated: ${l.last_updated || '—'}</div>
+              </div>
+              <div style="text-align:right">
+                <div class="loc-units">${l.qty}</div>
+                ${locBadge(l.location_type)}
+              </div>
+              ${l.location_type === 'WAREHOUSE' ? `<button class="btn xs primary" onclick="nav('stock-transfer',document.querySelector('.nav-item[onclick*=\\'stock-transfer\\']'))">Transfer</button>` : ''}
+            </div>`).join('')}`;
+      }
+    }
+
+    // Stock accounting summary — always show Warehouse + Stores rows
+    const accEl = document.getElementById('sv-accounting');
+    if (accEl) {
+      // Prefer explicit fields from RS1 header (warehouse_qty / store_qty added in SP update)
+      const wqty = sku.warehouse_qty != null ? Number(sku.warehouse_qty) : locs.filter(l => l.location_type === 'WAREHOUSE').reduce((s, l) => s + l.qty, 0);
+      const sqty = sku.store_qty    != null ? Number(sku.store_qty)    : locs.filter(l => l.location_type === 'STORE' || l.location_type === 'AT_STORE').reduce((s, l) => s + l.qty, 0);
+      const tqty = sku.store_qty    != null ? (wqty + sqty)            : sku.total_stock;
+
+      const warehouseRow = `
+        <div class="flex ic" style="justify-content:space-between;padding:4px 0">
+          <span class="xs td2" style="display:flex;align-items:center;gap:4px">🏭 <span>HQ Warehouse</span></span>
+          <span class="mono fw6" style="color:${wqty > 0 ? 'var(--green)' : 'var(--text3)'}">${wqty}</span>
+        </div>`;
+      const storeRow = `
+        <div class="flex ic" style="justify-content:space-between;padding:4px 0">
+          <span class="xs td2" style="display:flex;align-items:center;gap:4px">🏪 <span>At Stores</span></span>
+          <span class="mono fw6">${sqty}</span>
+        </div>`;
+
+      accEl.innerHTML = warehouseRow + storeRow + `
+        <hr class="sep" style="margin:4px 0">
+        <div class="flex ic" style="justify-content:space-between"><span class="sm-txt fw6">Total</span><span class="mono fw6" style="color:var(--acc)">${tqty}</span></div>
+        <hr class="sep" style="margin:4px 0">
+        <div class="flex ic" style="justify-content:space-between"><span class="xs td2">Sale Price</span><span class="mono xs">₹${Number(sku.sale_price||0).toLocaleString('en-IN')}</span></div>
+        <div class="flex ic" style="justify-content:space-between"><span class="xs td2">Barcode</span><span class="mono xs">${sku.barcode || '—'}</span></div>`;
+    }
+
+    svShow('sv-distribution-panel');
+  }
+
+  window.loadStockView = function() {
+    svShow('sv-empty-state');
+    const qEl = document.getElementById('sv-search-q');
+    if (qEl) qEl.focus();
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
   // NAV PAGE CHANGE EVENTS
   // ─────────────────────────────────────────────────────────────────────────
   const origNav = window.nav;
@@ -2556,10 +3151,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof origNav === 'function') origNav(id, el);
     if (id === 'dashboard')    loadDashboard();
     if (id === 'purchases')    loadPurchases();
-    if (id === 'new-purchase') { loadFormData(); initNewPurchaseForm(); }
+    if (id === 'new-purchase') {
+      void (async () => {
+        await loadFormData();
+        initNewPurchaseForm();
+      })();
+    }
     if (id === 'suppliers')    loadSuppliers();
     if (id === 'maker-master') loadMakers();
-    if (id === 'sku-catalogue') loadSkuCatalogue();
+    if (id === 'sku-catalogue')    loadSkuCatalogue();
+    if (id === 'stock-view')       loadStockView();
+    if (id === 'stock-transfer')   stInit();
+    if (id === 'transfer-requests') loadTransferRequests();
+    if (id === 'movement-list')     loadMovementList();
     // Only load the list when navigating from sidebar (not when opening a detail directly)
     if (!skipList) {
       if (id === 'bill-verify')  loadBillVerifyList();
@@ -2938,6 +3542,875 @@ ${initScript}
 </body></html>`);
     win.document.close();
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STOCK TRANSFER MODULE
+  // Mobile-first, QR-scan-or-search driven HQ → Store stock transfer.
+  // Lives inside DOMContentLoaded so apiGet / apiPost / token are in scope.
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    let _cart        = [];
+    let _scanner     = null;
+    let _scanRunning = false;
+    let _searchTimer = null;
+    let _stInited    = false;
+
+    // ── Toast feedback ────────────────────────────────────────────────────────
+    function stToast(msg, color) {
+      const el = document.getElementById('st-toast');
+      if (!el) return;
+      el.textContent = msg;
+      el.style.background = color || '#111';
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 2800);
+    }
+
+    function stEsc(s) {
+      return String(s || '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function stFmtDate(v) {
+      if (!v) return '—';
+      const d = new Date(v);
+      if (isNaN(d)) return String(v);
+      return d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+    }
+
+    // ── Init (called once on first nav) ───────────────────────────────────────
+    window.stInit = async function stInit() {
+      if (_stInited) { window.stLoadHistory(); return; }
+      _stInited = true;
+      await stLoadStores();
+      window.stLoadHistory();
+      stRenderCart();
+    };
+
+    // ── Load stores dropdown ──────────────────────────────────────────────────
+    async function stLoadStores() {
+      try {
+        const stores = await apiGet('/api/stores');
+        const sel = document.getElementById('st-store-sel');
+        if (!sel) return;
+        (stores || [])
+          .filter((s) => s.status === 'ACTIVE')
+          .forEach((s) => {
+            const o = document.createElement('option');
+            o.value = s.store_id;
+            o.textContent = `${s.store_name} (${s.store_code})`;
+            sel.appendChild(o);
+          });
+      } catch (_) {}
+    }
+
+    // ── Cart management ───────────────────────────────────────────────────────
+    function stAddToCart(sku) {
+      const existing = _cart.find((r) => r.sku_id === sku.sku_id);
+      if (existing) {
+        if (existing.qty < existing.warehouse_qty) {
+          existing.qty += 1;
+          stToast(`+1 · ${sku.sku_code}`, '#1A5FA8');
+        } else {
+          stToast('Max warehouse stock reached', '#e53e3e');
+          return;
+        }
+      } else {
+        _cart.push({
+          sku_id:        sku.sku_id,
+          sku_code:      sku.sku_code,
+          product_name:  sku.product_name,
+          brand_name:    sku.brand_name  || '—',
+          colour_name:   sku.colour_name || '—',
+          warehouse_qty: Number(sku.warehouse_qty) || 0,
+          qty:           1
+        });
+        stToast(`Added · ${sku.sku_code}`, '#16a34a');
+      }
+      stRenderCart();
+    }
+
+    window.stChangeQty = function stChangeQty(skuId, delta) {
+      const item = _cart.find((r) => r.sku_id === skuId);
+      if (!item) return;
+      const next = item.qty + delta;
+      if (next <= 0) {
+        _cart = _cart.filter((r) => r.sku_id !== skuId);
+      } else if (next > item.warehouse_qty) {
+        stToast('Cannot exceed warehouse stock', '#e53e3e');
+        return;
+      } else {
+        item.qty = next;
+      }
+      stRenderCart();
+    };
+
+    window.stRemoveFromCart = function stRemoveFromCart(skuId) {
+      _cart = _cart.filter((r) => r.sku_id !== skuId);
+      stRenderCart();
+    };
+
+    window.stClearCart = function stClearCart() {
+      _cart = [];
+      stRenderCart();
+    };
+
+    function stRenderCart() {
+      const body    = document.getElementById('st-cart-body');
+      const countEl = document.getElementById('st-cart-count');
+      const submitR = document.getElementById('st-submit-row');
+      const clearB  = document.getElementById('st-clear-cart-btn');
+      if (!body) return;
+      const total = _cart.reduce((s, r) => s + r.qty, 0);
+      if (countEl) countEl.textContent = _cart.length + ' item' + (_cart.length !== 1 ? 's' : '') + ' · ' + total + ' units';
+      if (submitR) submitR.style.display = _cart.length ? '' : 'none';
+      if (clearB)  clearB.style.display  = _cart.length ? '' : 'none';
+      if (_cart.length === 0) {
+        body.innerHTML = `<div class="st-empty-cart"><div style="font-size:36px;margin-bottom:8px">🛒</div><div>No items added yet — scan or search SKUs to start</div></div>`;
+        return;
+      }
+      body.innerHTML = _cart.map((r) => `
+        <div class="st-cart-row">
+          <div style="flex:1;min-width:0">
+            <div class="mono" style="font-size:12px;font-weight:700;color:var(--acc2)">${stEsc(r.sku_code)}</div>
+            <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stEsc(r.product_name)}</div>
+            <div style="font-size:11.5px;color:var(--text3)">${stEsc(r.brand_name)} · ${stEsc(r.colour_name)}</div>
+            <div style="font-size:11px;color:var(--text3)">HQ stock: <strong>${r.warehouse_qty}</strong></div>
+          </div>
+          <div class="st-cart-qty">
+            <button class="st-qty-btn" onclick="stChangeQty(${r.sku_id}, -1)">−</button>
+            <span class="st-qty-val">${r.qty}</span>
+            <button class="st-qty-btn" onclick="stChangeQty(${r.sku_id}, 1)">+</button>
+          </div>
+          <button class="st-remove-btn" onclick="stRemoveFromCart(${r.sku_id})" title="Remove">✕</button>
+        </div>`).join('');
+    }
+
+    // ── Camera scanner ────────────────────────────────────────────────────────
+    window.stToggleCamera = function stToggleCamera() {
+      const container = document.getElementById('st-scan-container');
+      if (!container) return;
+      if (_scanRunning) { window.stStopCamera(); return; }
+      container.style.display = '';
+      const overlay = document.getElementById('st-scan-overlay');
+      if (overlay) overlay.style.display = 'none';
+      if (!window.Html5Qrcode) {
+        stToast('QR scanner library not loaded', '#e53e3e');
+        return;
+      }
+      _scanner = new Html5Qrcode('st-reader');
+      _scanRunning = true;
+      document.getElementById('st-cam-btn').textContent = '⏹ Stop Camera';
+      Html5Qrcode.getCameras()
+        .then((devices) => {
+          const cam = devices.find((d) => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
+          const camId = cam ? cam.id : { facingMode: 'environment' };
+          return _scanner.start(
+            camId,
+            { fps: 10, qrbox: { width: 220, height: 220 } },
+            (decodedText) => stOnScanSuccess(decodedText),
+            () => {}
+          );
+        })
+        .catch((err) => {
+          stToast('Camera error: ' + err, '#e53e3e');
+          window.stStopCamera();
+        });
+    };
+
+    window.stStopCamera = function stStopCamera() {
+      if (_scanner && _scanRunning) {
+        _scanner.stop().catch(() => {}).finally(() => {
+          _scanner = null;
+          _scanRunning = false;
+          const btn = document.getElementById('st-cam-btn');
+          if (btn) btn.textContent = '📷 Scan QR';
+          const container = document.getElementById('st-scan-container');
+          if (container) container.style.display = 'none';
+          const overlay = document.getElementById('st-scan-overlay');
+          if (overlay) overlay.style.display = '';
+        });
+      } else {
+        _scanRunning = false;
+        const container = document.getElementById('st-scan-container');
+        if (container) container.style.display = 'none';
+      }
+    };
+
+    let _lastScan = '';
+    let _lastScanTs = 0;
+    async function stOnScanSuccess(code) {
+      const now = Date.now();
+      if (code === _lastScan && now - _lastScanTs < 2000) return;
+      _lastScan = code;
+      _lastScanTs = now;
+      await stLookupAndAdd(code.trim());
+    }
+
+    // ── Manual / wedge-scanner search ─────────────────────────────────────────
+    window.stSearchDebounce = function stSearchDebounce() {
+      clearTimeout(_searchTimer);
+      _searchTimer = setTimeout(stDoSearch, 350);
+    };
+
+    window.stSearchKeydown = function stSearchKeydown(e) {
+      if (e.key === 'Enter') {
+        clearTimeout(_searchTimer);
+        const q = (document.getElementById('st-search-input').value || '').trim();
+        if (q) stLookupAndAdd(q);
+      }
+    };
+
+    async function stDoSearch() {
+      const q = (document.getElementById('st-search-input').value || '').trim();
+      const resultsEl = document.getElementById('st-search-results');
+      if (!resultsEl) return;
+      if (!q) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; return; }
+      try {
+        const rows = await apiGet(`/api/stock-transfers/available?q=${encodeURIComponent(q)}`);
+        if (!rows || !rows.length) {
+          resultsEl.style.display = '';
+          resultsEl.innerHTML = `<div style="padding:12px 14px;color:var(--text3);font-size:13px">No SKUs found for "${stEsc(q)}"</div>`;
+          return;
+        }
+        resultsEl.style.display = '';
+        resultsEl.innerHTML = rows.slice(0, 10).map((r) => `
+          <div onclick='stPickSearchResult(${JSON.stringify(r).replace(/'/g,'&#39;')})'
+               style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px"
+               onmouseenter="this.style.background='var(--bg2)'" onmouseleave="this.style.background=''">
+            <div style="flex:1;min-width:0">
+              <div class="mono" style="font-size:12px;font-weight:700;color:var(--acc2)">${stEsc(r.sku_code)}</div>
+              <div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${stEsc(r.product_name)}</div>
+              <div style="font-size:11px;color:var(--text3)">${stEsc(r.brand_name || '')} · ${stEsc(r.colour_name || '')}</div>
+            </div>
+            <span style="font-size:13px;font-weight:700;color:#16a34a;white-space:nowrap">${r.warehouse_qty} avail.</span>
+            <button class="btn xs primary" style="white-space:nowrap">+ Add</button>
+          </div>`).join('');
+      } catch (err) {
+        resultsEl.style.display = '';
+        resultsEl.innerHTML = `<div style="padding:12px 14px;color:var(--red);font-size:13px">Search error: ${stEsc(err.message)}</div>`;
+      }
+    }
+
+    window.stPickSearchResult = function stPickSearchResult(sku) {
+      stAddToCart(sku);
+      const resultsEl = document.getElementById('st-search-results');
+      const inp = document.getElementById('st-search-input');
+      if (resultsEl) { resultsEl.innerHTML = ''; resultsEl.style.display = 'none'; }
+      if (inp) inp.value = '';
+    };
+
+    // ── Lookup by code (scan / Enter) ─────────────────────────────────────────
+    async function stLookupAndAdd(code) {
+      try {
+        const sku = await apiGet(`/api/stock-transfers/lookup?q=${encodeURIComponent(code)}`);
+        if (sku) stAddToCart(sku);
+      } catch (err) {
+        stToast('Not found: ' + code, '#e53e3e');
+      }
+    }
+
+    // ── Submit transfer ────────────────────────────────────────────────────────
+    window.stSubmitTransfer = async function stSubmitTransfer() {
+      const storeId = document.getElementById('st-store-sel').value;
+      const notes   = (document.getElementById('st-notes').value || '').trim();
+      if (!storeId) { stToast('Please select a destination store', '#e53e3e'); return; }
+      if (!_cart.length) { stToast('Cart is empty', '#e53e3e'); return; }
+      const btn = document.querySelector('#st-submit-row button');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Transferring…'; }
+      try {
+        const resp = await apiPost('/api/stock-transfer-docs', {
+          to_store_id: Number(storeId),
+          lines: _cart.map((r) => ({ sku_id: r.sku_id, qty: r.qty })),
+          notes: notes || null
+        });
+        const storeName = document.getElementById('st-store-sel').selectedOptions[0]?.text || 'store';
+        const docId     = resp?.data?.doc_id;
+        stToast(`✓ Transfer Doc #${docId} dispatched to ${storeName} — awaiting store acceptance`, '#16a34a');
+        _cart = [];
+        stRenderCart();
+        document.getElementById('st-notes').value = '';
+        window.stLoadHistory();
+      } catch (err) {
+        stToast('Transfer failed: ' + err.message, '#e53e3e');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🚚 Dispatch to Store'; }
+      }
+    };
+
+    // ── History ────────────────────────────────────────────────────────────────
+    window.stLoadHistory = async function stLoadHistory() {
+      const tbody = document.getElementById('st-history-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = `<tr><td colspan="8" class="tc td2 p12">Loading…</td></tr>`;
+      try {
+        const rows = await apiGet('/api/stock-transfers/history?top_n=50');
+        if (!rows || !rows.length) {
+          tbody.innerHTML = `<tr><td colspan="8" class="tc td2 p12">No transfers yet</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = rows.map((r) => `<tr>
+          <td class="xs td2" style="white-space:nowrap">${stFmtDate(r.created_at)}</td>
+          <td class="mono xs fw6">${stEsc(r.sku_code)}</td>
+          <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stEsc(r.product_name)}</td>
+          <td>${stEsc(r.brand_name || '—')}</td>
+          <td>${stEsc(r.colour_name || '—')}</td>
+          <td class="tc fw6" style="color:var(--acc2)">${r.qty}</td>
+          <td style="white-space:nowrap">${stEsc(r.to_store_name || '—')}</td>
+          <td class="xs td2">${stEsc(r.transferred_by || '—')}</td>
+        </tr>`).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" class="tc td2 p12" style="color:var(--red)">${stEsc(err.message)}</td></tr>`;
+      }
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TRANSFER REQUESTS  (PRD §8.3 — store-to-HQ lifecycle)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const TR_STATUS_BADGE = {
+    SUBMITTED:  'b-gold',
+    APPROVED:   'b-blue',
+    DISPATCHED: 'b-orange',
+    RECEIVED:   'b-green',
+    REJECTED:   'b-red'
+  };
+
+  function trEsc(s) {
+    return String(s == null ? '—' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  let _trFilter    = '';
+  let _trExpanded  = null;
+  let _ftrDispatchSearchResults = [];
+
+  window.setTrFilter = function (status, btn) {
+    _trFilter = status;
+    document.querySelectorAll('#page-transfer-requests .btn.sm[id^="ftr-tab-"]').forEach((b) => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    loadTransferRequests();
+  };
+
+  window.loadTransferRequests = async function () {
+    const wrap  = document.getElementById('ftr-list-wrap');
+    const errEl = document.getElementById('ftr-err');
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+    if (wrap)  wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>';
+
+    try {
+      const qs = new URLSearchParams({ top_n: 100 });
+      if (_trFilter) qs.set('status', _trFilter);
+      const rows = await apiGet('/api/transfer-requests?' + qs.toString());
+
+      // Update nav badge with pending count
+      const pending = rows.filter((r) => r.status === 'SUBMITTED').length;
+      const badge   = document.getElementById('tr-nav-badge');
+      if (badge) {
+        badge.textContent = pending || '';
+        badge.style.display = pending ? '' : 'none';
+      }
+
+      if (!rows.length) {
+        wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">No transfer requests</div>';
+        return;
+      }
+
+      wrap.innerHTML = `
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>Store</th><th>Requested by</th>
+                <th>Date</th><th>Items</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((r) => `
+                <tr style="cursor:pointer" onclick="expandTrRequest(${r.request_id})">
+                  <td class="mono fw6" style="color:var(--acc)">#${r.request_id}</td>
+                  <td>${trEsc(r.store_name || r.store_id)}</td>
+                  <td>${trEsc(r.requested_by_fullname || r.requested_by_name)}</td>
+                  <td class="xs">${fmtDate(r.created_at)}</td>
+                  <td><span class="b b-gray">${r.line_count} SKU${r.line_count !== 1 ? 's' : ''}</span></td>
+                  <td><span class="b ${TR_STATUS_BADGE[r.status] || 'b-gray'}">${r.status}</span></td>
+                  <td>
+                    ${r.status === 'SUBMITTED' ? `
+                      <button class="btn sm primary" onclick="event.stopPropagation();trQuickApprove(${r.request_id})">✓ Approve</button>
+                      <button class="btn sm" style="color:var(--red);border-color:var(--red);margin-left:4px" onclick="event.stopPropagation();trReject(${r.request_id})">✕ Reject</button>
+                    ` : ''}
+                    ${r.status === 'APPROVED' ? `
+                      <button class="btn sm primary" onclick="event.stopPropagation();expandTrRequest(${r.request_id})">🚚 Preview &amp; Dispatch</button>
+                    ` : ''}
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    } catch (err) {
+      if (errEl) { errEl.textContent = 'Failed to load: ' + err.message; errEl.style.display = 'block'; }
+      if (wrap)  wrap.innerHTML = '';
+    }
+  };
+
+  window.expandTrRequest = async function (requestId) {
+    const card  = document.getElementById('ftr-detail-card');
+    const body  = document.getElementById('ftr-detail-body');
+    const title = document.getElementById('ftr-detail-title');
+    if (!card) return;
+    if (title) title.textContent = `Request #${requestId}`;
+    if (body)  body.innerHTML = '<div style="padding:16px;color:var(--text3)">Loading…</div>';
+    card.style.display = '';
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    try {
+      const req  = await apiGet(`/api/transfer-requests/${requestId}`);
+      _trExpanded = req;
+
+      const canApprove  = req.status === 'SUBMITTED';
+      const canDispatch = req.status === 'APPROVED';
+
+      const inpStyle = 'width:64px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center;outline:none';
+
+      const linesHtmlReadonly = (req.lines || []).map((l) => `
+        <tr>
+          <td class="mono xs">${trEsc(l.sku_code)}</td>
+          <td>${trEsc(l.description || '')}</td>
+          <td>${trEsc(l.brand_name  || '')}</td>
+          <td style="text-align:right"><span class="b b-gray">${l.requested_qty}</span></td>
+          <td style="text-align:right">${l.approved_qty   != null ? `<span class="b b-blue">${l.approved_qty}</span>`    : '<span style="color:var(--text3)">—</span>'}</td>
+          <td style="text-align:right">${l.dispatched_qty != null ? `<span class="b b-orange">${l.dispatched_qty}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+          <td style="text-align:right">${l.received_qty   != null ? `<span class="b b-green">${l.received_qty}</span>`   : '<span style="color:var(--text3)">—</span>'}</td>
+        </tr>`).join('');
+
+      const linesHtmlApprove = (req.lines || []).map((l) => `
+        <tr>
+          <td class="mono xs">${trEsc(l.sku_code)}</td>
+          <td>${trEsc(l.description || '')}</td>
+          <td>${trEsc(l.brand_name  || '')}</td>
+          <td style="text-align:right"><span class="b b-gray">${l.requested_qty}</span></td>
+          <td style="text-align:right">${l.approved_qty   != null ? `<span class="b b-blue">${l.approved_qty}</span>`    : '<span style="color:var(--text3)">—</span>'}</td>
+          <td style="text-align:right">${l.dispatched_qty != null ? `<span class="b b-orange">${l.dispatched_qty}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+          <td style="text-align:right">${l.received_qty   != null ? `<span class="b b-green">${l.received_qty}</span>`   : '<span style="color:var(--text3)">—</span>'}</td>
+          <td>
+            <input type="number" class="ftr-approve-qty" data-line-id="${l.line_id}"
+              value="${l.requested_qty}" min="0" max="${l.requested_qty}"
+              style="${inpStyle}"
+              onclick="event.stopPropagation()">
+          </td>
+        </tr>`).join('');
+
+      const linesHtmlDispatch = (req.lines || []).map((l) => {
+        const defDisp = (l.approved_qty != null && l.approved_qty > 0) ? l.approved_qty : l.requested_qty;
+        return `
+        <tr class="ftr-dispatch-req-row" data-line-id="${l.line_id}">
+          <td class="mono xs">${trEsc(l.sku_code)}</td>
+          <td>${trEsc(l.description || '')}</td>
+          <td>${trEsc(l.brand_name  || '')}</td>
+          <td style="text-align:right"><span class="b b-gray">${l.requested_qty}</span></td>
+          <td style="text-align:right">${l.approved_qty != null ? `<span class="b b-blue">${l.approved_qty}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+          <td style="text-align:right">
+            <input type="number" class="ftr-dispatch-qty" min="0" value="${defDisp}" style="${inpStyle}" onclick="event.stopPropagation()">
+          </td>
+          <td>
+            <button type="button" class="btn sm" onclick="event.stopPropagation();this.closest('tr').remove()">Remove</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      let tableBlock;
+      if (canApprove) {
+        tableBlock = `
+          <div class="tw mb4">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th><th>Description</th><th>Brand</th>
+                  <th style="text-align:right">Requested</th>
+                  <th style="text-align:right">Approved</th>
+                  <th style="text-align:right">Dispatched</th>
+                  <th style="text-align:right">Received</th>
+                  <th style="min-width:80px">Set approved qty</th>
+                </tr>
+              </thead>
+              <tbody>${linesHtmlApprove}</tbody>
+            </table>
+          </div>`;
+      } else if (canDispatch) {
+        tableBlock = `
+          <div class="hint" style="margin-bottom:14px">
+            <strong>Goods Transfer preview:</strong> Adjust dispatch quantities, remove lines, or add warehouse SKUs. Confirming creates a transfer document (warehouse decremented now; store accepts then verifies under Incoming Goods).
+          </div>
+          <div class="tw mb3">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th><th>Description</th><th>Brand</th>
+                  <th style="text-align:right">Requested</th>
+                  <th style="text-align:right">Approved</th>
+                  <th style="text-align:right">Dispatch qty</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>${linesHtmlDispatch}</tbody>
+              <tbody id="ftr-dispatch-extra-tbody"></tbody>
+            </table>
+          </div>
+          <div style="margin-bottom:16px;padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border)">
+            <div style="font-weight:600;margin-bottom:8px;font-size:13px">Add item from HQ Warehouse</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input type="text" id="ftr-dispatch-search" placeholder="SKU code or keyword…"
+                style="flex:1;min-width:180px;max-width:320px;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
+                onclick="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();ftrDispatchSearch();}">
+              <button type="button" class="btn sm" onclick="event.stopPropagation();ftrDispatchSearch()">Search</button>
+            </div>
+            <div id="ftr-dispatch-search-results" style="display:none;margin-top:10px;border:1px solid var(--border);border-radius:6px;max-height:220px;overflow:auto;background:var(--bg)"></div>
+          </div>`;
+      } else {
+        tableBlock = `
+          <div class="tw mb4">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th><th>Description</th><th>Brand</th>
+                  <th style="text-align:right">Requested</th>
+                  <th style="text-align:right">Approved</th>
+                  <th style="text-align:right">Dispatched</th>
+                  <th style="text-align:right">Received</th>
+                </tr>
+              </thead>
+              <tbody>${linesHtmlReadonly}</tbody>
+            </table>
+          </div>`;
+      }
+
+      body.innerHTML = `
+        <div style="padding:16px 20px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+            <span class="b ${TR_STATUS_BADGE[req.status] || 'b-gray'}">${req.status}</span>
+            <span class="xs" style="color:var(--text2)">Store: <strong>${trEsc(req.store_name || req.store_id)}</strong></span>
+            <span class="xs" style="color:var(--text2)">By: <strong>${trEsc(req.requested_by_fullname || req.requested_by_name)}</strong></span>
+            <span class="xs" style="color:var(--text2)">Submitted: ${fmtDate(req.created_at)}</span>
+            ${req.notes ? `<span class="xs" style="color:var(--text2)">Notes: <em>${trEsc(req.notes)}</em></span>` : ''}
+            ${req.review_notes ? `<span class="xs" style="color:var(--text2)">Review note: <em>${trEsc(req.review_notes)}</em></span>` : ''}
+          </div>
+
+          ${tableBlock}
+
+          ${canApprove ? `
+            <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+              <div>
+                <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">Review note (optional)</label>
+                <input type="text" id="ftr-review-note" placeholder="Note to store manager…"
+                  style="width:260px;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
+                  onclick="event.stopPropagation()">
+              </div>
+              <button class="btn primary" onclick="trApproveFromDetail(${req.request_id})">✓ Approve request</button>
+              <button class="btn sm" style="color:var(--red);border-color:var(--red)" onclick="trReject(${req.request_id})">✕ Reject</button>
+              <span id="ftr-detail-msg" style="font-size:12px;min-height:16px"></span>
+            </div>
+          ` : ''}
+          ${canDispatch ? `
+            <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+              <div>
+                <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">Note on transfer document (optional)</label>
+                <input type="text" id="ftr-dispatch-note" placeholder="Shown on Goods Transfer…"
+                  style="width:min(100%,400px);padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
+                  onclick="event.stopPropagation()">
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <button type="button" class="btn primary" id="ftr-dispatch-confirm-btn" onclick="trDispatchConfirm(${req.request_id})">✓ Confirm dispatch (create Goods Transfer)</button>
+                <span id="ftr-detail-msg" style="font-size:12px;min-height:16px"></span>
+              </div>
+            </div>
+          ` : ''}
+        </div>`;
+    } catch (err) {
+      if (body) body.innerHTML = `<div style="padding:16px;color:var(--red)">Error: ${trEsc(err.message)}</div>`;
+    }
+  };
+
+  window.closeTrDetail = function () {
+    const card = document.getElementById('ftr-detail-card');
+    if (card) card.style.display = 'none';
+    _trExpanded = null;
+  };
+
+  // Quick approve from the list row (no qty adjustment)
+  window.trQuickApprove = async function (requestId) {
+    if (!confirm(`Approve transfer request #${requestId} with the requested quantities?`)) return;
+    try {
+      await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'APPROVED' });
+      loadTransferRequests();
+      closeTrDetail();
+    } catch (err) { alert('Error: ' + err.message); }
+  };
+
+  // Approve from the detail panel (with per-line qty editing)
+  window.trApproveFromDetail = async function (requestId) {
+    const lines = [];
+    document.querySelectorAll('.ftr-approve-qty').forEach((inp) => {
+      lines.push({ line_id: Number(inp.dataset.lineId), approved_qty: Math.max(0, Number(inp.value) || 0) });
+    });
+    const note  = (document.getElementById('ftr-review-note') || {}).value || null;
+    const msgEl = document.getElementById('ftr-detail-msg');
+    try {
+      await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'APPROVED', lines, notes: note || null });
+      if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Approved.'; }
+      setTimeout(() => { loadTransferRequests(); closeTrDetail(); }, 900);
+    } catch (err) {
+      if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
+    }
+  };
+
+  window.trReject = async function (requestId) {
+    const note = prompt(`Reason for rejecting request #${requestId} (shown to store manager):`);
+    if (note === null) return; // cancelled
+    try {
+      await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'REJECTED', notes: note || null });
+      loadTransferRequests();
+      closeTrDetail();
+    } catch (err) { alert('Error: ' + err.message); }
+  };
+
+  window.ftrDispatchSearch = async function () {
+    const inp   = document.getElementById('ftr-dispatch-search');
+    const resEl = document.getElementById('ftr-dispatch-search-results');
+    const q     = (inp && inp.value || '').trim();
+    _ftrDispatchSearchResults = [];
+    if (!resEl) return;
+    if (!q) { resEl.style.display = 'none'; resEl.innerHTML = ''; return; }
+    try {
+      const rows = await apiGet(`/api/stock-transfers/available?q=${encodeURIComponent(q)}`);
+      _ftrDispatchSearchResults = rows || [];
+      if (!rows || !rows.length) {
+        resEl.style.display = '';
+        resEl.innerHTML = `<div style="padding:12px 14px;color:var(--text3);font-size:13px">No SKUs found for "${trEsc(q)}"</div>`;
+        return;
+      }
+      resEl.style.display = '';
+      resEl.innerHTML = rows.slice(0, 12).map((r, i) => `
+        <div onclick="ftrPickDispatchSku(${i})"
+             style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px"
+             onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''">
+          <div style="flex:1;min-width:0">
+            <div class="mono" style="font-size:12px;font-weight:700;color:var(--acc2)">${trEsc(r.sku_code)}</div>
+            <div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${trEsc(r.product_name || '')}</div>
+            <div style="font-size:11px;color:var(--text3)">${trEsc(r.brand_name || '')} · ${trEsc(r.colour_name || '')}</div>
+          </div>
+          <span style="font-size:13px;font-weight:700;color:#16a34a;white-space:nowrap">${Number(r.warehouse_qty) || 0} WH</span>
+          <button type="button" class="btn xs primary" style="white-space:nowrap">+ Add</button>
+        </div>`).join('');
+    } catch (err) {
+      resEl.style.display = '';
+      resEl.innerHTML = `<div style="padding:12px 14px;color:var(--red);font-size:13px">${trEsc(err.message)}</div>`;
+    }
+  };
+
+  window.ftrPickDispatchSku = function (index) {
+    const r = _ftrDispatchSearchResults[index];
+    if (!r || !r.sku_id) return;
+    const tbody = document.getElementById('ftr-dispatch-extra-tbody');
+    const resEl = document.getElementById('ftr-dispatch-search-results');
+    const inpS  = document.getElementById('ftr-dispatch-search');
+    if (resEl) { resEl.innerHTML = ''; resEl.style.display = 'none'; }
+    if (inpS) inpS.value = '';
+    if (!tbody) return;
+    const wh = Math.max(0, Number(r.warehouse_qty) || 0);
+    const existing = tbody.querySelector(`tr.ftr-dispatch-extra-row[data-sku-id="${r.sku_id}"]`);
+    if (existing) {
+      const qInp = existing.querySelector('.ftr-dispatch-extra-qty');
+      if (qInp) {
+        const cap = wh || 999999;
+        const n   = Math.min(cap, Math.max(1, Number(qInp.value) + 1));
+        qInp.value = n;
+      }
+      return;
+    }
+    const tr = document.createElement('tr');
+    tr.className = 'ftr-dispatch-extra-row';
+    tr.dataset.skuId = String(r.sku_id);
+    const cap = wh || 999999;
+    tr.innerHTML = `
+      <td class="mono xs">${trEsc(r.sku_code)}</td>
+      <td colspan="2" style="font-size:12.5px">${trEsc(r.product_name || '')} · ${trEsc(r.colour_name || '')} <span style="font-size:10px;color:var(--text3)">(added)</span></td>
+      <td style="text-align:center;color:var(--text3)">—</td>
+      <td style="text-align:center;color:var(--text3)">—</td>
+      <td style="text-align:right">
+        <input type="number" class="ftr-dispatch-extra-qty" min="1" max="${cap}" value="1" style="width:64px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center;outline:none" onclick="event.stopPropagation()">
+      </td>
+      <td><button type="button" class="btn sm" onclick="event.stopPropagation();this.closest('tr').remove()">Remove</button></td>`;
+    tbody.appendChild(tr);
+  };
+
+  window.ftrAfterDispatchNav = function () {
+    const navEl = document.querySelector('.sidebar-nav .nav-item[onclick*="movement-list"]');
+    if (typeof nav === 'function') nav('movement-list', navEl || null);
+    if (typeof loadMovementList === 'function') loadMovementList();
+    closeTrDetail();
+  };
+
+  window.trDispatchConfirm = async function (requestId) {
+    const msgEl = document.getElementById('ftr-detail-msg');
+    const btn   = document.getElementById('ftr-dispatch-confirm-btn');
+    if (msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
+
+    const lines = [];
+    document.querySelectorAll('#ftr-detail-body .ftr-dispatch-req-row').forEach((tr) => {
+      const lid = tr.dataset.lineId;
+      const inp = tr.querySelector('.ftr-dispatch-qty');
+      const q   = Math.max(0, Number(inp && inp.value) || 0);
+      lines.push({ line_id: Number(lid), dispatched_qty: q });
+    });
+
+    const extra_lines = [];
+    document.querySelectorAll('#ftr-detail-body .ftr-dispatch-extra-row').forEach((tr) => {
+      const skuId = Number(tr.dataset.skuId);
+      const inp   = tr.querySelector('.ftr-dispatch-extra-qty');
+      const q     = Math.max(0, Number(inp && inp.value) || 0);
+      if (q > 0 && skuId) extra_lines.push({ sku_id: skuId, qty: q });
+    });
+
+    const hasReqLine = lines.some((l) => l.dispatched_qty > 0);
+    if (!hasReqLine && !extra_lines.length) {
+      if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Set a dispatch quantity on at least one request line, or add an item from warehouse.'; }
+      return;
+    }
+
+    const notes = ((document.getElementById('ftr-dispatch-note') || {}).value || '').trim() || null;
+    const payload = { status: 'DISPATCHED', lines, notes };
+    if (extra_lines.length) payload.extra_lines = extra_lines;
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
+    try {
+      const data  = await apiPut(`/api/transfer-requests/${requestId}/status`, payload);
+      const docId = data.doc_id;
+      loadTransferRequests();
+      const body = document.getElementById('ftr-detail-body');
+      if (body) {
+        body.innerHTML = `
+          <div style="padding:20px 22px">
+            <div style="color:var(--green);font-weight:700;font-size:15px;margin-bottom:10px">Goods Transfer created</div>
+            <p style="margin:0 0 8px;font-size:13px;color:var(--text2)">Transfer document <strong class="mono">#${docId != null ? docId : '—'}</strong> is <strong>Dispatched</strong>. HQ Warehouse stock has been decremented.</p>
+            <p style="margin:0 0 16px;font-size:13px;color:var(--text2)">The store will see it under <strong>Incoming Goods</strong>, then <strong>Accept</strong> and <strong>Verify &amp; Stock</strong> to credit store balance.</p>
+            <button type="button" class="btn primary" onclick="ftrAfterDispatchNav()">Open Movement List</button>
+          </div>`;
+      }
+    } catch (err) {
+      if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = err.message; }
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Confirm dispatch (create Goods Transfer)'; }
+    }
+  };
+
+  /** @deprecated Use expandTrRequest — opens dispatch preview */
+  window.trDispatch = function (requestId) {
+    expandTrRequest(requestId);
+  };
+
+  // Auto-load pending count for nav badge on startup
+  (async () => {
+    try {
+      const rows   = await apiGet('/api/transfer-requests?status=SUBMITTED&top_n=50');
+      const badge  = document.getElementById('tr-nav-badge');
+      if (badge && rows.length) { badge.textContent = rows.length; badge.style.display = ''; }
+    } catch (_) {}
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MOVEMENT LIST  (Store Connect › Movement List)
+  // ─────────────────────────────────────────────────────────────────────────
+  let _mlFilter = '';
+
+  window.setMlFilter = function (status, btn) {
+    _mlFilter = status;
+    document.querySelectorAll('#page-movement-list .btn.sm[id^="ml-tab-"]').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    loadMovementList();
+  };
+
+  window.closeMlDetail = function () {
+    const d = document.getElementById('ml-detail');
+    if (d) d.style.display = 'none';
+  };
+
+  window.loadMovementList = async function () {
+    const wrap  = document.getElementById('ml-list');
+    const errEl = document.getElementById('ml-err');
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+    if (wrap)  wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>';
+    closeMlDetail();
+    try {
+      const qs   = _mlFilter ? `?status=${_mlFilter}` : '';
+      const docs = await apiGet('/api/stock-transfer-docs' + qs);
+      if (!docs.length) {
+        wrap.innerHTML = '<div class="empty-state"><div class="ei">📋</div><div class="et">No transfer documents found</div><div class="es">Dispatch a Goods Transfer to see records here.</div></div>';
+        return;
+      }
+      const statusBadge = s => {
+        const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
+        return map[s] || `<span class="badge">${s}</span>`;
+      };
+      wrap.innerHTML = docs.map(d => `
+        <div class="list-row" onclick="expandMlDoc(${d.doc_id})" style="cursor:pointer">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;margin-bottom:2px">Doc #${d.doc_id} — ${d.doc_type === 'DIRECT' ? '📦 Goods Transfer' : '📬 From Request #' + d.source_request_id}</div>
+            <div style="font-size:12px;color:var(--text3)">→ ${d.store_name || 'Store #' + d.to_store_id} &nbsp;·&nbsp; ${fmtDateTime(d.dispatched_at)}</div>
+          </div>
+          <div>${statusBadge(d.status)}</div>
+        </div>`).join('');
+    } catch (e) {
+      if (errEl) { errEl.textContent = 'Failed to load: ' + e.message; errEl.style.display = ''; }
+      if (wrap)  wrap.innerHTML = '';
+    }
+  };
+
+  window.expandMlDoc = async function (docId) {
+    const titleEl = document.getElementById('ml-detail-title');
+    const bodyEl  = document.getElementById('ml-detail-body');
+    const panEl   = document.getElementById('ml-detail');
+    if (!panEl) return;
+    panEl.style.display = '';
+    titleEl.textContent = `Transfer Document #${docId}`;
+    bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>';
+    panEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    try {
+      const doc = await apiGet(`/api/stock-transfer-docs/${docId}`);
+      const fmtDt = dt => dt ? fmtDateTime(dt) : '—';
+      const statusBadge = s => {
+        const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
+        return map[s] || `<span class="badge">${s}</span>`;
+      };
+      const lines = (doc.lines || []).map(l => `
+        <tr>
+          <td>${l.sku_code || l.sku_id}</td>
+          <td>${[l.product_name, l.colour_name].filter(Boolean).join(' · ')}</td>
+          <td style="text-align:center">${l.qty_sent}</td>
+          <td style="text-align:center">${l.qty_received != null ? l.qty_received : '—'}</td>
+        </tr>`).join('');
+      bodyEl.innerHTML = `
+        <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px">
+          <div><span style="color:var(--text3);font-size:12px">Type</span><br>${doc.doc_type === 'DIRECT' ? 'Goods Transfer (Direct)' : 'From Request #' + doc.source_request_id}</div>
+          <div><span style="color:var(--text3);font-size:12px">Status</span><br>${statusBadge(doc.status)}</div>
+          <div><span style="color:var(--text3);font-size:12px">To Store</span><br>${doc.store_name || 'Store #' + doc.to_store_id}</div>
+          <div><span style="color:var(--text3);font-size:12px">Dispatched</span><br>${fmtDt(doc.dispatched_at)}</div>
+          ${doc.accepted_at ? `<div><span style="color:var(--text3);font-size:12px">Accepted</span><br>${fmtDt(doc.accepted_at)}</div>` : ''}
+          ${doc.stocked_at  ? `<div><span style="color:var(--text3);font-size:12px">Stocked</span><br>${fmtDt(doc.stocked_at)}</div>` : ''}
+        </div>
+        ${doc.notes ? `<div style="margin-bottom:14px;color:var(--text2);font-size:13px">📝 ${doc.notes}</div>` : ''}
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="border-bottom:1px solid var(--border)">
+            <th style="text-align:left;padding:6px 8px;color:var(--text3)">SKU</th>
+            <th style="text-align:left;padding:6px 8px;color:var(--text3)">Description</th>
+            <th style="text-align:center;padding:6px 8px;color:var(--text3)">Sent</th>
+            <th style="text-align:center;padding:6px 8px;color:var(--text3)">Received</th>
+          </tr></thead>
+          <tbody>${lines}</tbody>
+        </table>`;
+    } catch (e) {
+      bodyEl.innerHTML = `<div class="err-msg">Failed to load document: ${e.message}</div>`;
+    }
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // INIT

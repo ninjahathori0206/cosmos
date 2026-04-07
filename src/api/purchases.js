@@ -1,7 +1,7 @@
 const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
-const { executeStoredProcedure } = require('../config/db');
+const { getPool, executeStoredProcedure } = require('../config/db');
 
 const router = express.Router();
 
@@ -16,10 +16,11 @@ const colourSchema = Joi.object({
 const itemSchema = Joi.object({
   product_master_id: Joi.number().integer().required(),
   maker_master_id:   Joi.number().integer().allow(null),
+  category:          Joi.string().max(50).required(),
   purchase_rate:     Joi.number().precision(2).positive().required(),
   quantity:          Joi.number().integer().positive().required(),
   gst_pct:           Joi.number().precision(4).min(0).required(),
-  colours:           Joi.array().items(colourSchema).min(1).required()
+  colours:           Joi.array().items(colourSchema).default([])
 });
 
 const createSchema = Joi.object({
@@ -50,8 +51,15 @@ const billVerifySchema = Joi.object({
   discrepancy_note: Joi.string().max(500).allow('', null)
 });
 
+const itemBrandSchema = Joi.object({
+  item_id:         Joi.number().integer().required(),
+  home_brand_id:   Joi.number().integer().required(),
+  ew_collection:   Joi.string().max(200).trim().required()
+});
+
 const brandingDispatchSchema = Joi.object({
-  branding_instructions: Joi.string().max(500).allow('', null)
+  branding_instructions: Joi.string().max(500).allow('', null),
+  item_brands:           Joi.array().items(itemBrandSchema).default([])
 });
 
 const brandingBypassSchema = Joi.object({
@@ -134,6 +142,7 @@ router.post('/', async (req, res, next) => {
     const itemsJson = JSON.stringify(value.items.map((it) => ({
       product_master_id: it.product_master_id,
       maker_master_id:   it.maker_master_id || null,
+      category:          it.category,
       purchase_rate:     it.purchase_rate,
       quantity:          it.quantity,
       gst_pct:           it.gst_pct,
@@ -211,12 +220,39 @@ router.put('/:id/verify-bill', async (req, res, next) => {
 // ── PUT Stage 3: Branding Dispatch ───────────────────────────────────────────
 router.put('/:id/branding-dispatch', async (req, res, next) => {
   try {
+    const headerId = Number(req.params.id);
     const { error, value } = brandingDispatchSchema.validate(req.body, { abortEarly: false });
     if (error) return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });
+
     const result = await executeStoredProcedure('sp_PurchaseHeader_BrandingDispatch', {
-      header_id:             { type: sql.Int,         value: Number(req.params.id) },
+      header_id:             { type: sql.Int,         value: headerId },
       branding_instructions: { type: sql.VarChar(500), value: value.branding_instructions || null }
     });
+
+    // Update home_brand_id on product_master for each item brand assignment
+    if (value.item_brands && value.item_brands.length > 0) {
+      const pool = await getPool();
+      for (const ib of value.item_brands) {
+        // Resolve product_master_id from item_id (scoped to this header for security)
+        const pmRow = await pool.request()
+          .input('iid', sql.Int, ib.item_id)
+          .input('hid', sql.Int, headerId)
+          .query('SELECT product_master_id FROM dbo.purchase_items WHERE item_id=@iid AND header_id=@hid');
+        if (!pmRow.recordset || !pmRow.recordset[0]) continue;
+        const pmId = pmRow.recordset[0].product_master_id;
+        const ewColl = (ib.ew_collection && String(ib.ew_collection).trim()) || null;
+        await pool.request()
+          .input('pmId',    sql.Int, pmId)
+          .input('brandId', sql.Int, ib.home_brand_id)
+          .input('ewColl',  sql.VarChar(200), ewColl)
+          .query(`UPDATE dbo.product_master
+            SET home_brand_id = @brandId,
+                ew_collection = @ewColl,
+                updated_at = GETDATE()
+            WHERE product_id = @pmId`);
+      }
+    }
+
     return res.json({ success: true, data: result.recordset && result.recordset[0] });
   } catch (err) {
     if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });

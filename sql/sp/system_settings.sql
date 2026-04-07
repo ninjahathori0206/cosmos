@@ -35,7 +35,7 @@ BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
     INSERT INTO dbo.gst_rates (hsn_sac, category, gst_rate, cgst_rate, sgst_rate, applied_to, is_active, created_at, updated_at)
-    VALUES (@hsn_sac, @category, @gst_rate, @cgst_rate, @sgst_rate, @applied_to, 1, GETDATE(), GETDATE());
+    VALUES (@hsn_sac, @category, @gst_rate, @cgst_rate, @sgst_rate, @applied_to, 1, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
 
     SELECT gst_id, hsn_sac, category, gst_rate, cgst_rate, sgst_rate, applied_to, is_active, created_at, updated_at
     FROM dbo.gst_rates WHERE gst_id = SCOPE_IDENTITY();
@@ -67,7 +67,7 @@ BEGIN
     UPDATE dbo.gst_rates
     SET hsn_sac = @hsn_sac, category = @category, gst_rate = @gst_rate,
         cgst_rate = @cgst_rate, sgst_rate = @sgst_rate, applied_to = @applied_to,
-        is_active = ISNULL(@is_active, 1), updated_at = GETDATE()
+        is_active = ISNULL(@is_active, 1), updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE gst_id = @gst_id;
 
     SELECT gst_id, hsn_sac, category, gst_rate, cgst_rate, sgst_rate, applied_to, is_active, created_at, updated_at
@@ -90,7 +90,7 @@ AS
 BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
-    UPDATE dbo.gst_rates SET is_active = 0, updated_at = GETDATE() WHERE gst_id = @gst_id;
+    UPDATE dbo.gst_rates SET is_active = 0, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME()) WHERE gst_id = @gst_id;
     SELECT gst_id, is_active, updated_at FROM dbo.gst_rates WHERE gst_id = @gst_id;
   END TRY
   BEGIN CATCH
@@ -134,7 +134,7 @@ BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
     INSERT INTO dbo.membership_tiers (tier_name, annual_fee, benefits, loyalty_tier, promoter_commission, is_active, created_by, created_at, updated_at)
-    VALUES (@tier_name, @annual_fee, @benefits, @loyalty_tier, @promoter_commission, 1, @created_by, GETDATE(), GETDATE());
+    VALUES (@tier_name, @annual_fee, @benefits, @loyalty_tier, @promoter_commission, 1, @created_by, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
 
     SELECT membership_id, tier_name, annual_fee, benefits, loyalty_tier, promoter_commission, is_active, created_at, updated_at
     FROM dbo.membership_tiers WHERE membership_id = SCOPE_IDENTITY();
@@ -165,7 +165,7 @@ BEGIN
     UPDATE dbo.membership_tiers
     SET tier_name = @tier_name, annual_fee = @annual_fee, benefits = @benefits,
         loyalty_tier = @loyalty_tier, promoter_commission = @promoter_commission,
-        is_active = ISNULL(@is_active, 1), updated_at = GETDATE()
+        is_active = ISNULL(@is_active, 1), updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE membership_id = @membership_id;
 
     SELECT membership_id, tier_name, annual_fee, benefits, loyalty_tier, promoter_commission, is_active, created_at, updated_at
@@ -188,7 +188,7 @@ AS
 BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
-    UPDATE dbo.membership_tiers SET is_active = 0, updated_at = GETDATE() WHERE membership_id = @membership_id;
+    UPDATE dbo.membership_tiers SET is_active = 0, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME()) WHERE membership_id = @membership_id;
     SELECT membership_id, tier_name, is_active, updated_at FROM dbo.membership_tiers WHERE membership_id = @membership_id;
   END TRY
   BEGIN CATCH
@@ -233,7 +233,7 @@ BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
     INSERT INTO dbo.leave_types (leave_name, annual_quota, max_carry_fwd, requires_approval, is_paid, affects_score, is_active, created_by, created_at, updated_at)
-    VALUES (@leave_name, @annual_quota, @max_carry_fwd, ISNULL(@requires_approval,1), ISNULL(@is_paid,1), ISNULL(@affects_score,1), 1, @created_by, GETDATE(), GETDATE());
+    VALUES (@leave_name, @annual_quota, @max_carry_fwd, ISNULL(@requires_approval,1), ISNULL(@is_paid,1), ISNULL(@affects_score,1), 1, @created_by, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
 
     SELECT leave_type_id, leave_name, annual_quota, max_carry_fwd, requires_approval, is_paid, affects_score, is_active, created_at, updated_at
     FROM dbo.leave_types WHERE leave_type_id = SCOPE_IDENTITY();
@@ -266,7 +266,7 @@ BEGIN
     SET leave_name = @leave_name, annual_quota = @annual_quota, max_carry_fwd = @max_carry_fwd,
         requires_approval = ISNULL(@requires_approval,1), is_paid = ISNULL(@is_paid,1),
         affects_score = ISNULL(@affects_score,1), is_active = ISNULL(@is_active,1),
-        updated_at = GETDATE()
+        updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE leave_type_id = @leave_type_id;
 
     SELECT leave_type_id, leave_name, annual_quota, max_carry_fwd, requires_approval, is_paid, affects_score, is_active, created_at, updated_at
@@ -289,7 +289,7 @@ AS
 BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
-    UPDATE dbo.leave_types SET is_active = 0, updated_at = GETDATE() WHERE leave_type_id = @leave_type_id;
+    UPDATE dbo.leave_types SET is_active = 0, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME()) WHERE leave_type_id = @leave_type_id;
     SELECT leave_type_id, leave_name, is_active, updated_at FROM dbo.leave_types WHERE leave_type_id = @leave_type_id;
   END TRY
   BEGIN CATCH

@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmos ERP — Minimal Mobile UI 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0A0E1A;
+    --surface: #111827;
+    --surface2: #1C2333;
+    --border: rgba(255,255,255,0.08);
+    --text: #F1F5F9;
+    --muted: #64748B;
+    --orange: #F97316;
+    --orangeL: rgba(249,115,22,0.12);
+    --blue: #3B82F6;
+    --blueL: rgba(59,130,246,0.12);
+    --green: #22C55E;
+    --greenL: rgba(34,197,94,0.12);
+    --gold: #EAB308;
+    --goldL: rgba(234,179,8,0.12);
+    --red: #EF4444;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Space Grotesk', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ─── HEADER ─── */
+  .header {
+    padding: 40px 60px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .header-tag { font-size: 11px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--orange); margin-bottom: 8px; }
+  .header-title { font-family: 'Syne', sans-serif; font-size: 36px; font-weight: 800; line-height: 1.1; }
+  .header-title span { color: var(--orange); }
+  .header-sub { font-size: 14px; color: var(--muted); margin-top: 8px; }
+  .year-badge { background: var(--orangeL); border: 1px solid rgba(249,115,22,0.3); color: var(--orange); padding: 6px 16px; border-radius: 100px; font-size: 13px; font-weight: 600; }
+
+  /* ─── PRINCIPLES ─── */
+  .principles { padding: 36px 60px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+  .principle { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; transition: border-color .2s; }
+  .principle:hover { border-color: rgba(249,115,22,0.4); }
+  .principle-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .principle-ico { font-size: 22px; margin-bottom: 8px; display: block; }
+  .principle-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .principle-desc { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+
+  /* ─── PHONES SECTION ─── */
+  .phones-section { padding: 40px 60px; display: flex; gap: 28px; align-items: flex-start; overflow-x: auto; border-bottom: 1px solid var(--border); }
+  .phone-wrap { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .phone-label { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+  .phone {
+    width: 215px; height: 430px;
+    background: var(--surface);
+    border-radius: 34px;
+    border: 2px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 32px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
+    transition: transform .3s, box-shadow .3s;
+  }
+  .phone:hover { transform: translateY(-8px); box-shadow: 0 48px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(249,115,22,0.15); }
+
+  .sb { height: 34px; background: #080C17; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; flex-shrink: 0; }
+  .sb-time { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; color: #fff; }
+  .sb-icons { font-size: 9px; color: rgba(255,255,255,0.5); }
+
+  .tb { height: 42px; background: var(--surface); display: flex; align-items: center; padding: 0 12px; gap: 9px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .tb-hmb { width: 26px; height: 26px; background: var(--surface2); border-radius: 7px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; flex-shrink: 0; }
+  .tb-hmb span { display: block; height: 1.5px; border-radius: 2px; background: var(--text); }
+  .tb-hmb span:nth-child(1) { width: 12px; }
+  .tb-hmb span:nth-child(2) { width: 9px; }
+  .tb-hmb span:nth-child(3) { width: 12px; }
+  .tb-title { font-size: 12px; font-weight: 700; color: var(--text); flex: 1; text-align: center; }
+  .tb-av { width: 25px; height: 25px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; flex-shrink: 0; }
+
+  .phone-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 10px 10px 0; }
+  .stat-card { background: var(--surface2); border-radius: 9px; padding: 9px; border-top: 2px solid var(--sc-color, var(--orange)); }
+  .sc-lbl { font-size: 7.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+  .sc-val { font-family: 'JetBrains Mono', monospace; font-size: 17px; font-weight: 600; color: var(--text); margin: 2px 0 1px; }
+  .sc-sub { font-size: 7.5px; color: var(--muted); }
+
+  .list-section { padding: 10px 10px 0; }
+  .list-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+  .list-title { font-size: 10px; font-weight: 600; }
+  .list-link { font-size: 8.5px; color: var(--orange); }
+  .list-card { background: var(--surface2); border-radius: 9px; overflow: hidden; }
+  .list-row { display: flex; align-items: center; padding: 7px 9px; gap: 7px; border-bottom: 1px solid var(--border); }
+  .list-row:last-child { border-bottom: none; }
+  .lr-left { flex: 1; }
+  .lr-code { font-family: 'JetBrains Mono', monospace; font-size: 8.5px; font-weight: 600; }
+  .lr-sub { font-size: 7.5px; color: var(--muted); margin-top: 1px; }
+  .lr-badge { padding: 2px 6px; border-radius: 20px; font-size: 7.5px; font-weight: 600; }
+
+  .btb { height: 54px; background: var(--surface); border-top: 1px solid var(--border); padding: 5px 7px; flex-shrink: 0; }
+  .btb-pill { height: 100%; background: var(--surface2); border-radius: 26px; display: flex; padding: 3px; }
+  .btb-tab { flex: 1; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 6.5px; font-weight: 600; letter-spacing: .5px; color: var(--muted); }
+  .btb-tab.active { background: var(--accent, var(--orange)); color: #fff; }
+  .btb-tab .ti { font-size: 11px; }
+
+  .sku-card { margin: 7px 10px 0; background: var(--surface2); border-radius: 9px; overflow: hidden; }
+  .sku-card-head { padding: 9px 9px 5px; border-bottom: 1px solid var(--border); }
+  .sku-code { font-family: 'JetBrains Mono', monospace; font-size: 8.5px; font-weight: 600; color: var(--orange); }
+  .sku-brand { font-size: 7.5px; color: var(--muted); margin-top: 1px; }
+  .sku-name { font-size: 10px; font-weight: 600; color: var(--text); margin-top: 3px; }
+  .sku-badges { display: flex; gap: 5px; padding: 6px 9px; }
+  .sku-badge { padding: 2px 7px; border-radius: 20px; font-size: 7.5px; font-weight: 600; }
+  .sku-actions { display: flex; gap: 5px; padding: 0 9px 9px; }
+  .sku-btn-req { flex: 1; background: var(--orange); color: #fff; border: none; border-radius: 6px; padding: 6px; font-size: 8.5px; font-weight: 600; font-family: 'Space Grotesk', sans-serif; cursor: pointer; }
+  .sku-btn-loc { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 8.5px; font-weight: 500; color: var(--muted); font-family: 'Space Grotesk', sans-serif; cursor: pointer; }
+
+  .cart-bar { margin: 7px 10px 0; background: #120A00; border: 1px solid rgba(249,115,22,0.3); border-radius: 9px; padding: 8px 10px; display: flex; align-items: center; gap: 7px; }
+  .cart-bar-txt { flex: 1; font-size: 8.5px; font-weight: 500; }
+  .cart-bar-btn { background: var(--orange); color: #fff; border: none; border-radius: 6px; padding: 5px 9px; font-size: 8.5px; font-weight: 600; font-family: 'Space Grotesk', sans-serif; cursor: pointer; }
+
+  .req-card { margin: 7px 10px 0; background: var(--surface2); border-radius: 9px; overflow: hidden; }
+  .req-row { display: flex; align-items: flex-start; padding: 8px 9px; gap: 7px; border-bottom: 1px solid var(--border); }
+  .req-row:last-child { border-bottom: none; }
+  .req-left { flex: 1; }
+  .req-id { font-family: 'JetBrains Mono', monospace; font-size: 8.5px; font-weight: 700; }
+  .req-store { font-size: 8px; color: var(--muted); margin: 1px 0; }
+  .req-meta { font-size: 7.5px; color: var(--muted); }
+  .req-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .req-badge { padding: 2px 6px; border-radius: 20px; font-size: 7.5px; font-weight: 600; }
+  .req-btn { background: var(--blue); color: #fff; border: none; border-radius: 5px; padding: 4px 7px; font-size: 7.5px; font-weight: 600; font-family: 'Space Grotesk', sans-serif; cursor: pointer; }
+
+  .filter-chips { display: flex; gap: 5px; padding: 7px 10px 0; overflow-x: auto; }
+  .chip { padding: 3px 9px; border-radius: 20px; font-size: 8.5px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+  .chip.active { background: var(--blue); color: #fff; }
+  .chip.inactive { background: var(--surface2); color: var(--muted); }
+
+  /* ─── TREND CARDS ─── */
+  .trends-row { padding: 40px 60px; border-bottom: 1px solid var(--border); }
+  .trends-title { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--orange); margin-bottom: 22px; }
+  .trends-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .trend-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 22px; position: relative; overflow: hidden; transition: border-color .2s, transform .2s; }
+  .trend-card:hover { border-color: rgba(249,115,22,0.3); transform: translateY(-2px); }
+  .trend-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--tc-color, var(--orange)); }
+  .trend-tag { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .trend-heading { font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800; margin-bottom: 8px; line-height: 1.2; }
+  .trend-body { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .trend-pill { display: inline-block; margin-top: 14px; padding: 4px 12px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--tp-bg, var(--orangeL)); color: var(--tp-color, var(--orange)); }
+
+  /* ─── DEMO SECTION ─── */
+  .demo-section { padding: 40px 60px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; border-bottom: 1px solid var(--border); }
+  .demo-title { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 18px; }
+  .color-palette { display: flex; gap: 10px; flex-wrap: wrap; }
+  .color-swatch { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .swatch { width: 48px; height: 48px; border-radius: 12px; border: 1px solid var(--border); }
+  .swatch-name { font-size: 9.5px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+  .type-scale { display: flex; flex-direction: column; gap: 14px; }
+  .type-row { display: flex; align-items: baseline; gap: 14px; }
+  .type-label { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; width: 80px; flex-shrink: 0; }
+
+  /* ─── CHECKLIST ─── */
+  .checklist-section { padding: 40px 60px; border-bottom: 1px solid var(--border); }
+  .checklist-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 20px; }
+  .checklist-title { font-size: 13px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .check-item { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; font-size: 13px; line-height: 1.5; }
+  .check-ico { width: 20px; height: 20px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; margin-top: 1px; }
+
+  /* ─── FOOTER ─── */
+  .footer { padding: 24px 60px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .footer-left { font-size: 12px; color: var(--muted); }
+  .footer-left strong { color: var(--text); }
+  .implemented { display: flex; gap: 8px; flex-wrap: wrap; }
+  .impl-tag { padding: 4px 12px; border-radius: 100px; font-size: 11px; font-weight: 500; background: var(--greenL); color: var(--green); border: 1px solid rgba(34,197,94,0.2); }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .pulse-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; margin-right: 6px; vertical-align: middle; }
+
+  @keyframes slideUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+  .phone-wrap { animation: slideUp .5s ease both; }
+  .phone-wrap:nth-child(1) { animation-delay: .1s; }
+  .phone-wrap:nth-child(2) { animation-delay: .2s; }
+  .phone-wrap:nth-child(3) { animation-delay: .3s; }
+  .phone-wrap:nth-child(4) { animation-delay: .4s; }
+  .phone-wrap:nth-child(5) { animation-delay: .5s; }
+  .principle { animation: slideUp .4s ease both; }
+  .principle:nth-child(1) { animation-delay:.05s }
+  .principle:nth-child(2) { animation-delay:.1s }
+  .principle:nth-child(3) { animation-delay:.15s }
+  .principle:nth-child(4) { animation-delay:.2s }
+  .principle:nth-child(5) { animation-delay:.25s }
+  .principle:nth-child(6) { animation-delay:.3s }
+
+  @media (max-width:900px) {
+    .header, .principles, .phones-section, .trends-row, .demo-section, .checklist-section, .footer { padding: 24px 20px; }
+    .principles { grid-template-columns: 1fr 1fr; }
+    .trends-grid { grid-template-columns: 1fr 1fr; }
+    .demo-section, .checklist-grid { grid-template-columns: 1fr; }
+    .header-title { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div>
+    <div class="header-tag">🌌 Cosmos ERP · Mobile UI Reference</div>
+    <div class="header-title">Minimal Design<br><span>for Mobile-First</span> ERP</div>
+    <div class="header-sub">2026 design trends applied to StorePilot &amp; Foundry · Responsive redesign reference guide</div>
+  </div>
+  <div class="year-badge">✦ 2026 Trends</div>
+</div>
+
+<!-- 6 PRINCIPLES -->
+<div class="principles">
+  <div class="principle">
+    <div class="principle-num">01</div>
+    <span class="principle-ico">👆</span>
+    <div class="principle-title">Thumb-First Layout</div>
+    <div class="principle-desc">Primary actions in the bottom 40%. Bottom tab bar navigation. One-hand reachable.</div>
+  </div>
+  <div class="principle">
+    <div class="principle-num">02</div>
+    <span class="principle-ico">🎯</span>
+    <div class="principle-title">One Accent Colour</div>
+    <div class="principle-desc">Orange for StorePilot, Blue for Foundry. One CTA per screen. All else neutral.</div>
+  </div>
+  <div class="principle">
+    <div class="principle-num">03</div>
+    <span class="principle-ico">☰</span>
+    <div class="principle-title">Off-Canvas Sidebar</div>
+    <div class="principle-desc">Hamburger → slide-in overlay. Auto-closes on navigation. Dark 40% backdrop.</div>
+  </div>
+  <div class="principle">
+    <div class="principle-num">04</div>
+    <span class="principle-ico">📐</span>
+    <div class="principle-title">3-Size Type Scale</div>
+    <div class="principle-desc">Display 20px · Body 13–14px · Caption 11px. Mono for codes &amp; numbers.</div>
+  </div>
+  <div class="principle">
+    <div class="principle-num">05</div>
+    <span class="principle-ico">◼</span>
+    <div class="principle-title">Dark-First Design</div>
+    <div class="principle-desc">Navy dark base (#0F172A). High-contrast accents. Reduces eye strain.</div>
+  </div>
+  <div class="principle">
+    <div class="principle-num">06</div>
+    <span class="principle-ico">💊</span>
+    <div class="principle-title">Pill Tab Bar</div>
+    <div class="principle-desc">Floating capsule at bottom. 4 tabs max. Active = solid fill. Inactive = ghost.</div>
+  </div>
+</div>
+
+<!-- PHONE MOCKUPS -->
+<div class="phones-section">
+
+  <!-- SP Dashboard -->
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="sb"><span class="sb-time">9:41</span><span class="sb-icons">▲ WiFi ▓</span></div>
+      <div class="tb">
+        <div class="tb-hmb"><span></span><span></span><span></span></div>
+        <div class="tb-title">Store Pilot</div>
+        <div class="tb-av" style="background:rgba(249,115,22,0.15);color:var(--orange)">TK</div>
+      </div>
+      <div class="phone-content">
+        <div style="padding:10px 10px 4px">
+          <div style="font-size:8.5px;color:var(--muted)">Good morning, Talha</div>
+          <div style="font-size:13px;font-weight:700">Eyewoot GIDC Ankleshwar</div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-card" style="--sc-color:var(--orange)"><div class="sc-lbl">Transfers</div><div class="sc-val">24</div><div class="sc-sub">This month</div></div>
+          <div class="stat-card" style="--sc-color:#6366F1"><div class="sc-lbl">Live SKUs</div><div class="sc-val">138</div><div class="sc-sub">In catalogue</div></div>
+          <div class="stat-card" style="--sc-color:var(--gold)"><div class="sc-lbl">Incoming</div><div class="sc-val">3</div><div class="sc-sub" style="color:var(--gold)">Action needed</div></div>
+          <div class="stat-card" style="--sc-color:var(--green)"><div class="sc-lbl">In Stock</div><div class="sc-val">1,240</div><div class="sc-sub" style="color:var(--green)">Units</div></div>
+        </div>
+        <div class="list-section">
+          <div class="list-hdr"><span class="list-title">Recent Transfers</span><span class="list-link">See all →</span></div>
+          <div class="list-card">
+            <div class="list-row"><div class="lr-left"><div class="lr-code" style="color:var(--orange)">DOC-0041</div><div class="lr-sub">HQ → Eyewoot · 6 SKUs</div></div><div class="lr-badge" style="background:var(--goldL);color:var(--gold)">DISPATCHED</div></div>
+            <div class="list-row"><div class="lr-left"><div class="lr-code" style="color:var(--orange)">DOC-0038</div><div class="lr-sub">HQ → Eyewoot · 4 SKUs</div></div><div class="lr-badge" style="background:var(--greenL);color:var(--green)">STOCKED</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="btb">
+        <div class="btb-pill">
+          <div class="btb-tab active" style="--accent:var(--orange)"><span class="ti">⊞</span>HOME</div>
+          <div class="btb-tab"><span class="ti">📦</span>REQUEST</div>
+          <div class="btb-tab"><span class="ti">📥</span>INCOMING</div>
+          <div class="btb-tab"><span class="ti">📊</span>REPORTS</div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-label">SP · Dashboard</div>
+  </div>
+
+  <!-- SP Browse Catalogue -->
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="sb"><span class="sb-time">9:41</span><span class="sb-icons">▲ WiFi ▓</span></div>
+      <div class="tb">
+        <div class="tb-hmb"><span></span><span></span><span></span></div>
+        <div class="tb-title">Browse Catalogue</div>
+        <div class="tb-av" style="background:rgba(249,115,22,0.15);color:var(--orange);font-size:14px">🛒</div>
+      </div>
+      <div class="phone-content">
+        <div style="padding:6px 10px 7px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border)">
+          <span style="font-size:10px">🔍</span>
+          <span style="font-size:8.5px;color:var(--muted)">Brand, type, SKU code…</span>
+        </div>
+        <div class="sku-card">
+          <div class="sku-card-head">
+            <div class="sku-code">BLN-SLIM-STD-0028</div>
+            <div class="sku-brand">Eyewoot · Black</div>
+            <div class="sku-name">Slimline Standard</div>
+          </div>
+          <div class="sku-badges">
+            <span class="sku-badge" style="background:rgba(100,116,139,0.15);color:var(--muted)">Optical</span>
+            <span class="sku-badge" style="background:var(--greenL);color:var(--green)">12 WH ✓</span>
+          </div>
+          <div class="sku-actions">
+            <button class="sku-btn-req">+ Request</button>
+            <button class="sku-btn-loc">📍 Locations</button>
+          </div>
+        </div>
+        <div class="sku-card" style="margin-top:7px">
+          <div class="sku-card-head">
+            <div class="sku-code">RND-FULL-BLK-0015</div>
+            <div class="sku-brand">Eyewoot · Tortoise</div>
+            <div class="sku-name">Round Full Rim</div>
+          </div>
+          <div class="sku-badges">
+            <span class="sku-badge" style="background:rgba(100,116,139,0.15);color:var(--muted)">Sun</span>
+            <span class="sku-badge" style="background:rgba(239,68,68,0.12);color:var(--red)">0 WH ✗</span>
+          </div>
+          <div class="sku-actions">
+            <button class="sku-btn-req" style="background:var(--surface2);color:var(--muted);cursor:not-allowed">Out of Stock</button>
+            <button class="sku-btn-loc">📍 Locations</button>
+          </div>
+        </div>
+        <div class="cart-bar">
+          <div class="cart-bar-txt">2 items in request cart</div>
+          <button class="cart-bar-btn">Review →</button>
+        </div>
+      </div>
+    </div>
+    <div class="phone-label">SP · Browse Catalogue</div>
+  </div>
+
+  <!-- SP Request Goods -->
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="sb"><span class="sb-time">9:41</span><span class="sb-icons">▲ WiFi ▓</span></div>
+      <div class="tb">
+        <div class="tb-hmb" style="background:transparent"><span style="font-size:13px">←</span></div>
+        <div class="tb-title">Request Goods</div>
+        <div class="tb-av" style="background:var(--orangeL);color:var(--orange);font-size:8.5px;font-weight:700">2 items</div>
+      </div>
+      <div class="phone-content" style="padding:10px;gap:9px;display:flex;flex-direction:column">
+        <div style="background:var(--surface2);border-radius:9px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 9px;border-bottom:1px solid var(--border)">
+            <span style="font-size:10px;font-weight:600">Request Cart</span>
+            <span style="background:var(--orangeL);color:var(--orange);padding:2px 7px;border-radius:20px;font-size:7.5px;font-weight:600">2 items</span>
+          </div>
+          <div style="display:flex;align-items:center;padding:7px 9px;gap:7px;border-bottom:1px solid var(--border)">
+            <div style="flex:1"><div style="font-family:monospace;font-size:8.5px;font-weight:600;color:var(--orange)">BLN-SLIM-STD</div><div style="font-size:7.5px;color:var(--muted)">Standard</div></div>
+            <div style="display:flex;align-items:center;gap:3px">
+              <div style="width:32px;height:24px;background:var(--surface);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;border:1px solid var(--border)">1</div>
+              <span style="font-size:7.5px;color:var(--muted)">/12 WH</span>
+            </div>
+            <div style="width:20px;height:20px;background:rgba(239,68,68,0.1);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--red)">✕</div>
+          </div>
+          <div style="display:flex;align-items:center;padding:7px 9px;gap:7px">
+            <div style="flex:1"><div style="font-family:monospace;font-size:8.5px;font-weight:600;color:var(--orange)">CAT-RND-TRT</div><div style="font-size:7.5px;color:var(--muted)">Tortoise Shell</div></div>
+            <div style="display:flex;align-items:center;gap:3px">
+              <div style="width:32px;height:24px;background:var(--surface);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;border:1px solid var(--border)">2</div>
+              <span style="font-size:7.5px;color:var(--muted)">/8 WH</span>
+            </div>
+            <div style="width:20px;height:20px;background:rgba(239,68,68,0.1);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--red)">✕</div>
+          </div>
+        </div>
+        <div style="background:var(--surface2);border-radius:9px;padding:9px">
+          <div style="font-size:7.5px;font-weight:600;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:5px">Destination Store</div>
+          <div style="background:var(--surface);border-radius:6px;padding:7px 9px;font-size:10px;border:1px solid var(--border)">Eyewoot GIDC Ankleshwar</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:9px;padding:9px">
+          <div style="font-size:7.5px;font-weight:600;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:5px">Notes (Optional)</div>
+          <div style="background:var(--surface);border-radius:6px;padding:7px 9px;font-size:8.5px;color:var(--muted);border:1px solid var(--border)">Reason, urgency or deadline…</div>
+        </div>
+        <button style="width:100%;background:var(--orange);color:#fff;border:none;border-radius:9px;padding:11px;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer">Submit Request to HQ</button>
+      </div>
+    </div>
+    <div class="phone-label">SP · Request Goods</div>
+  </div>
+
+  <!-- FY Dashboard -->
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="sb"><span class="sb-time">9:41</span><span class="sb-icons">▲ WiFi ▓</span></div>
+      <div class="tb">
+        <div class="tb-hmb" style="background:rgba(59,130,246,0.1)"><span style="background:var(--blue)"></span><span style="background:rgba(59,130,246,0.4)"></span><span style="background:var(--blue)"></span></div>
+        <div class="tb-title">Foundry</div>
+        <div class="tb-av" style="background:rgba(59,130,246,0.15);color:var(--blue)">AD</div>
+      </div>
+      <div class="phone-content">
+        <div style="padding:9px 10px 3px">
+          <div style="font-size:8.5px;color:var(--muted)">HQ Warehouse Dashboard</div>
+          <div style="font-size:13px;font-weight:700">Foundry</div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-card" style="--sc-color:var(--blue)"><div class="sc-lbl">Pending</div><div class="sc-val">7</div><div class="sc-sub">Awaiting review</div></div>
+          <div class="stat-card" style="--sc-color:var(--gold)"><div class="sc-lbl">Dispatched</div><div class="sc-val">12</div><div class="sc-sub">In transit</div></div>
+          <div class="stat-card" style="--sc-color:var(--green)"><div class="sc-lbl">Warehouse</div><div class="sc-val">3,841</div><div class="sc-sub" style="color:var(--green)">Total units</div></div>
+          <div class="stat-card"><div class="sc-lbl">Live SKUs</div><div class="sc-val">138</div><div class="sc-sub">In catalogue</div></div>
+        </div>
+        <div class="list-section">
+          <div class="list-hdr"><span class="list-title">Goods Requests</span><span class="list-link" style="color:var(--blue)">See all →</span></div>
+          <div class="list-card">
+            <div class="list-row"><div class="lr-left"><div class="lr-code" style="color:var(--blue)">REQ-0023</div><div class="lr-sub">Eyewoot GIDC · 3 SKUs</div></div><div class="lr-badge" style="background:var(--goldL);color:var(--gold)">SUBMITTED</div></div>
+            <div class="list-row"><div class="lr-left"><div class="lr-code" style="color:var(--blue)">REQ-0022</div><div class="lr-sub">City Mall · 5 SKUs</div></div><div class="lr-badge" style="background:var(--blueL);color:var(--blue)">APPROVED</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="btb">
+        <div class="btb-pill">
+          <div class="btb-tab active" style="--accent:var(--blue)"><span class="ti">⊞</span>HOME</div>
+          <div class="btb-tab"><span class="ti">📋</span>REQUESTS</div>
+          <div class="btb-tab"><span class="ti">🚛</span>TRANSFERS</div>
+          <div class="btb-tab"><span class="ti">📦</span>CATALOGUE</div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-label">FY · Dashboard</div>
+  </div>
+
+  <!-- FY Goods Requests -->
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="sb"><span class="sb-time">9:41</span><span class="sb-icons">▲ WiFi ▓</span></div>
+      <div class="tb">
+        <div class="tb-hmb" style="background:rgba(59,130,246,0.1)"><span style="background:var(--blue)"></span><span style="background:rgba(59,130,246,0.4)"></span><span style="background:var(--blue)"></span></div>
+        <div class="tb-title">Goods Requests</div>
+        <div class="tb-av" style="background:var(--goldL);color:var(--gold);font-size:8.5px;font-weight:700">7 pending</div>
+      </div>
+      <div class="phone-content">
+        <div class="filter-chips">
+          <div class="chip active">All</div>
+          <div class="chip inactive">Pending</div>
+          <div class="chip inactive">Approved</div>
+          <div class="chip inactive">Dispatched</div>
+        </div>
+        <div class="req-card">
+          <div class="req-row">
+            <div class="req-left"><div class="req-id" style="color:var(--blue)">REQ-0023</div><div class="req-store">Eyewoot GIDC Ankleshwar</div><div class="req-meta">3 SKUs · 2 hours ago</div></div>
+            <div class="req-right"><div class="req-badge" style="background:var(--goldL);color:var(--gold)">SUBMITTED</div><button class="req-btn">Review</button></div>
+          </div>
+          <div class="req-row">
+            <div class="req-left"><div class="req-id" style="color:var(--blue)">REQ-0022</div><div class="req-store">City Mall Store</div><div class="req-meta">5 SKUs · 1 day ago</div></div>
+            <div class="req-right"><div class="req-badge" style="background:var(--blueL);color:var(--blue)">APPROVED</div><button class="req-btn">Dispatch</button></div>
+          </div>
+          <div class="req-row">
+            <div class="req-left"><div class="req-id" style="color:var(--blue)">REQ-0021</div><div class="req-store">South Wing Store</div><div class="req-meta">2 SKUs · 2 days ago</div></div>
+            <div class="req-right"><div class="req-badge" style="background:var(--greenL);color:var(--green)">STOCKED</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="btb">
+        <div class="btb-pill">
+          <div class="btb-tab"><span class="ti">⊞</span>HOME</div>
+          <div class="btb-tab active" style="--accent:var(--blue)"><span class="ti">📋</span>REQUESTS</div>
+          <div class="btb-tab"><span class="ti">🚛</span>TRANSFERS</div>
+          <div class="btb-tab"><span class="ti">📦</span>CATALOGUE</div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-label">FY · Goods Requests</div>
+  </div>
+
+</div>
+
+<!-- TREND CARDS -->
+<div class="trends-row">
+  <div class="trends-title">▸ Key Design Decisions Implemented</div>
+  <div class="trends-grid">
+    <div class="trend-card" style="--tc-color:var(--orange)">
+      <div class="trend-tag">Navigation</div>
+      <div class="trend-heading">Off-Canvas Sidebar</div>
+      <div class="trend-body">Hamburger in topbar → slide-in nav panel with dark backdrop. Auto-closes when a nav item is tapped. No manual close needed.</div>
+      <div class="trend-pill" style="--tp-bg:var(--orangeL);--tp-color:var(--orange)">✓ Live in both apps</div>
+    </div>
+    <div class="trend-card" style="--tc-color:var(--blue)">
+      <div class="trend-tag">Grid Layout</div>
+      <div class="trend-heading">Fluid Grid Collapse</div>
+      <div class="trend-body">4-col stat grids → 2-col on mobile. fg2/fg3/fg4 form grids, two-col, three-col, main-side all collapse to single column at 768px breakpoint.</div>
+      <div class="trend-pill" style="--tp-bg:var(--blueL);--tp-color:var(--blue)">✓ Live in both apps</div>
+    </div>
+    <div class="trend-card" style="--tc-color:var(--green)">
+      <div class="trend-tag">Touch UX</div>
+      <div class="trend-heading">44pt+ Tap Targets</div>
+      <div class="trend-body">Nav items min-height 48px. Buttons 40px. Qty inputs 72px wide. Pipeline bar horizontally scrollable. Inputs 40px min-height.</div>
+      <div class="trend-pill" style="--tp-bg:var(--greenL);--tp-color:var(--green)">✓ Live in both apps</div>
+    </div>
+    <div class="trend-card" style="--tc-color:var(--gold)">
+      <div class="trend-tag">Data &amp; Cards</div>
+      <div class="trend-heading">Smart Scroll + Cards</div>
+      <div class="trend-body">Tables wrapped in horizontal scroll. SKU cards auto-fill 1fr on mobile. Sticky cart bar full-width. Rate strip stacks vertically.</div>
+      <div class="trend-pill" style="--tp-bg:var(--goldL);--tp-color:var(--gold)">✓ Live in both apps</div>
+    </div>
+  </div>
+</div>
+
+<!-- TYPE + COLOUR -->
+<div class="demo-section">
+  <div>
+    <div class="demo-title">Colour Palettes</div>
+    <div style="margin-bottom:22px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">Store Pilot — Orange</div>
+      <div class="color-palette">
+        <div class="color-swatch"><div class="swatch" style="background:#0F172A"></div><div class="swatch-name">#0F172A</div></div>
+        <div class="color-swatch"><div class="swatch" style="background:#C2410C"></div><div class="swatch-name">#C2410C</div></div>
+        <div class="color-swatch"><div class="swatch" style="background:#EA580C"></div><div class="swatch-name">#EA580C</div></div>
+        <div class="color-swatch"><div class="swatch" style="background:#FFEDD5"></div><div class="swatch-name">#FFEDD5</div></div>
+        <div class="color-swatch"><div class="swatch" style="background:#16A34A"></div><div class="swatch-name">#16A34A</div></div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">Foundry — Blue</div>
+      <div class="color-palette">
+        <div class="color-swatch"><div class="swatch" style="background:#0F172A"></div><div class="swatch-name">#0F172A</div></div>
+        <div class="color-swatch"><div class="swatch" style="background:#1D4ED8"></div><div class="swatch-name">#1D4ED8</div></div>
+        <div class="color-swatch"><div class="swatch" style="background:#3B82F6"></div><div class="swatch-name">#3B82F6</div></div>
+        <div class="color-swatch"><div class="swatch" style="background:#DBEAFE"></div><div class="swatch-name">#DBEAFE</div></div>
+        <div class="color-swatch"><div class="swatch" style="background:#EAB308"></div><div class="swatch-name">#EAB308</div></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="demo-title">Type Scale (max 3 sizes)</div>
+    <div class="type-scale">
+      <div class="type-row">
+        <div class="type-label">Display · 20px</div>
+        <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800">Store Pilot</div>
+      </div>
+      <div class="type-row">
+        <div class="type-label">Heading · 17px</div>
+        <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:700">Browse Catalogue</div>
+      </div>
+      <div class="type-row">
+        <div class="type-label">Body · 13px</div>
+        <div style="font-size:13px">Eyewoot GIDC Ankleshwar</div>
+      </div>
+      <div class="type-row">
+        <div class="type-label">Label · 11px</div>
+        <div style="font-size:11px;color:var(--muted)">TRANSFERS · THIS MONTH</div>
+      </div>
+      <div class="type-row">
+        <div class="type-label">Mono · 12px</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--orange)">BLN-SLIM-STD-0028</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CHECKLIST -->
+<div class="checklist-section">
+  <div class="trends-title">▸ 2026 Checklist — Status</div>
+  <div class="checklist-grid">
+    <div>
+      <div class="checklist-title"><span>🟠</span> StorePilot</div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>Off-canvas hamburger sidebar at 768px</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>sg4/sg3 → 2-col on mobile</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>two-col/three-col/main-side → 1-col</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>Nav items 48px touch target</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>Table horizontal scroll</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>SKU card grid 1-col on mobile</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>Sticky cart bar full-width</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>openSidebar/closeSidebar JS</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>Sidebar closes on nav-item tap</span></div>
+    </div>
+    <div>
+      <div class="checklist-title"><span>🔵</span> Foundry</div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>Off-canvas hamburger sidebar at 768px</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>sg4/sg3 → 2-col on mobile</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>fg2/fg3/fg4 form grids → 1-col</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>two-col/three-col/main-side → 1-col</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>Pipeline bar horizontal scroll</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>Table horizontal scroll</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>Rate strip stacks vertically</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>openSidebar/closeSidebar JS</span></div>
+      <div class="check-item"><div class="check-ico" style="background:var(--greenL);color:var(--green)">✓</div><span>Sidebar closes on nav() call</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <div class="footer-left">
+    <span class="pulse-dot"></span>
+    <strong>Cosmos ERP</strong> · Mobile-First Redesign · Responsive breakpoint: 768px
+  </div>
+  <div class="implemented">
+    <span class="impl-tag">✓ StorePilot HTML</span>
+    <span class="impl-tag">✓ Foundry HTML</span>
+    <span class="impl-tag">✓ storepilot-prototype.js</span>
+    <span class="impl-tag">✓ foundry-prototype.js</span>
+    <span class="impl-tag">✓ Pencil Mockups</span>
+  </div>
+</div>
+
+</body>
+</html>

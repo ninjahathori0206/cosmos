@@ -72,8 +72,8 @@ BEGIN
         WHEN @status = 'INACTIVE' THEN 0
         ELSE 1
       END,
-      GETDATE(),
-      GETDATE()
+      DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+      DATEADD(MINUTE, 330, SYSUTCDATETIME())
     );
 
     SELECT
@@ -136,7 +136,7 @@ BEGIN
           WHEN @status = 'INACTIVE' THEN 0
           ELSE 1
         END,
-      updated_at = GETDATE()
+      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE store_id = @store_id;
 
     SELECT
@@ -177,7 +177,7 @@ BEGIN
     UPDATE dbo.stores
     SET
       is_active = 0,
-      updated_at = GETDATE()
+      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE store_id = @store_id;
 
     SELECT

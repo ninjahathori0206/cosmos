@@ -10,6 +10,7 @@ const productSchema = Joi.object({
   maker_id:          Joi.number().integer().allow(null),
   maker_master_id:   Joi.number().integer().allow(null),
   source_brand:      Joi.string().max(200).allow('', null),
+  source_model_number: Joi.string().max(200).allow('', null),
   home_brand_id:     Joi.number().integer().allow(null),
   source_collection: Joi.string().max(200).allow('', null),
   ew_collection:     Joi.string().max(200).required(),
@@ -30,18 +31,86 @@ router.get('/', async (req, res, next) => {
 
 router.get('/check-repeat', async (req, res, next) => {
   try {
-    const { ew_collection, style_model, home_brand_id, source_brand } = req.query;
-    if (!ew_collection || !style_model) {
-      return res.status(400).json({ success: false, message: 'ew_collection and style_model required' });
+    const {
+      ew_collection,
+      style_model,
+      home_brand_id,
+      source_brand,
+      source_model_number,
+      maker_master_id
+    } = req.query;
+
+    const hasSourceLookup = Boolean(source_brand && source_model_number);
+    const hasLegacyLookup = Boolean(ew_collection && style_model);
+    if (!hasSourceLookup && !hasLegacyLookup) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide source_brand + source_model_number or ew_collection + style_model'
+      });
     }
+
+    const mmCheck = maker_master_id != null && maker_master_id !== '' ? Number(maker_master_id) : null;
     const result = await executeStoredProcedure('sp_ProductMaster_CheckRepeat', {
-      ew_collection: { type: sql.VarChar(200), value: ew_collection },
-      style_model: { type: sql.VarChar(200), value: style_model },
+      ew_collection: { type: sql.VarChar(200), value: ew_collection || null },
+      style_model: { type: sql.VarChar(200), value: style_model || null },
       home_brand_id: { type: sql.Int, value: home_brand_id ? Number(home_brand_id) : null },
-      source_brand: { type: sql.VarChar(200), value: source_brand || null }
+      source_brand: { type: sql.VarChar(200), value: source_brand || null },
+      source_model_number: { type: sql.VarChar(200), value: source_model_number || null },
+      maker_master_id: { type: sql.Int, value: Number.isFinite(mmCheck) ? mmCheck : null }
     });
     const row = result.recordset && result.recordset[0];
-    return res.json({ success: true, data: row || null });
+    return res.json({
+      success: true,
+      exists: Boolean(row),
+      product_master_id: row ? row.product_id : null,
+      data: row || null
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/source-suggestions', async (req, res, next) => {
+  try {
+    const { field, q, source_brand, source_collection, limit, maker_master_id } = req.query;
+    const allowed = new Set(['source_brand', 'source_collection', 'source_model_number']);
+    if (!allowed.has(field)) {
+      return res.status(400).json({
+        success: false,
+        message: 'field must be one of source_brand, source_collection, source_model_number'
+      });
+    }
+
+    const maxLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+    const mmId = maker_master_id != null && maker_master_id !== '' ? Number(maker_master_id) : null;
+    const result = await executeStoredProcedure('sp_ProductMaster_SourceSuggestions', {
+      field_name: { type: sql.VarChar(40), value: field },
+      q: { type: sql.VarChar(200), value: q || null },
+      maker_master_id: { type: sql.Int, value: Number.isFinite(mmId) ? mmId : null },
+      source_brand: { type: sql.VarChar(200), value: source_brand || null },
+      source_collection: { type: sql.VarChar(200), value: source_collection || null },
+      top_n: { type: sql.Int, value: maxLimit }
+    });
+    const suggestions = (result.recordset || [])
+      .map((r) => r.suggestion)
+      .filter((v) => typeof v === 'string' && v.trim());
+    return res.json({ success: true, data: suggestions });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/search', async (req, res, next) => {
+  try {
+    const { q, maker_master_id, limit } = req.query;
+    const maxLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+    const mmId = maker_master_id != null && maker_master_id !== '' ? Number(maker_master_id) : null;
+    const result = await executeStoredProcedure('sp_ProductMaster_Search', {
+      q:               { type: sql.VarChar(200), value: q || null },
+      maker_master_id: { type: sql.Int,          value: Number.isFinite(mmId) ? mmId : null },
+      top_n:           { type: sql.Int,          value: maxLimit }
+    });
+    return res.json({ success: true, data: result.recordset || [] });
   } catch (err) {
     return next(err);
   }
@@ -73,14 +142,23 @@ router.post('/', async (req, res, next) => {
         errors: error.details.map((d) => d.message)
       });
     }
+    if (value.source_model_number && !value.source_brand) {
+      return res.status(400).json({
+        success: false,
+        message: 'source_brand is required when source_model_number is provided'
+      });
+    }
 
     const userId = req.user && req.user.user_id ? Number(req.user.user_id) : null;
 
-    const resolvedMakerId = value.maker_id || value.maker_master_id || null;
+    const resolvedMakerSupplierId = value.maker_id != null ? Number(value.maker_id) : null;
+    const resolvedMakerMasterId = value.maker_master_id != null ? Number(value.maker_master_id) : null;
     const result = await executeStoredProcedure('sp_ProductMaster_Create', {
       source_type:       { type: sql.VarChar(50),  value: value.source_type || null },
-      maker_id:          { type: sql.Int,           value: resolvedMakerId },
+      maker_id:          { type: sql.Int,           value: resolvedMakerSupplierId },
+      maker_master_id:   { type: sql.Int,           value: resolvedMakerMasterId },
       source_brand:      { type: sql.VarChar(200),  value: value.source_brand || null },
+      source_model_number: { type: sql.VarChar(200), value: value.source_model_number || null },
       home_brand_id:     { type: sql.Int,           value: value.home_brand_id || null },
       source_collection: { type: sql.VarChar(200),  value: value.source_collection || null },
       ew_collection:     { type: sql.VarChar(200),  value: value.ew_collection },
@@ -110,13 +188,22 @@ router.put('/:id', async (req, res, next) => {
         errors: error.details.map((d) => d.message)
       });
     }
+    if (value.source_model_number && !value.source_brand) {
+      return res.status(400).json({
+        success: false,
+        message: 'source_brand is required when source_model_number is provided'
+      });
+    }
 
-    const resolvedMakerId = value.maker_id || value.maker_master_id || null;
+    const resolvedMakerSupplierId = value.maker_id != null ? Number(value.maker_id) : null;
+    const resolvedMakerMasterId = value.maker_master_id != null ? Number(value.maker_master_id) : null;
     const result = await executeStoredProcedure('sp_ProductMaster_Update', {
       product_id: { type: sql.Int, value: id },
       source_type: { type: sql.VarChar(50), value: value.source_type || null },
-      maker_id: { type: sql.Int, value: resolvedMakerId },
+      maker_id: { type: sql.Int, value: resolvedMakerSupplierId },
+      maker_master_id: { type: sql.Int, value: resolvedMakerMasterId },
       source_brand: { type: sql.VarChar(200), value: value.source_brand || null },
+      source_model_number: { type: sql.VarChar(200), value: value.source_model_number || null },
       home_brand_id: { type: sql.Int, value: value.home_brand_id || null },
       source_collection: { type: sql.VarChar(200), value: value.source_collection || null },
       ew_collection: { type: sql.VarChar(200), value: value.ew_collection },

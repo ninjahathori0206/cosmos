@@ -84,7 +84,7 @@ BEGIN
     END;
 
     INSERT INTO dbo.users (username, password, full_name, email, phone, role_key, store_id, is_active, created_at, updated_at)
-    VALUES (@username, @password, @full_name, @email, @phone, @role_key, @store_id, ISNULL(@is_active, 1), GETDATE(), GETDATE());
+    VALUES (@username, @password, @full_name, @email, @phone, @role_key, @store_id, ISNULL(@is_active, 1), DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
 
     DECLARE @new_id INT = SCOPE_IDENTITY();
 
@@ -130,7 +130,7 @@ BEGIN
       store_id   = @store_id,
       is_active  = ISNULL(@is_active, 1),
       password   = CASE WHEN @password IS NOT NULL AND LEN(@password) > 0 THEN @password ELSE password END,
-      updated_at = GETDATE()
+      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE user_id = @user_id;
 
     SELECT
@@ -160,7 +160,7 @@ BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
     UPDATE dbo.users
-    SET is_active = 0, updated_at = GETDATE()
+    SET is_active = 0, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE user_id = @user_id;
 
     SELECT

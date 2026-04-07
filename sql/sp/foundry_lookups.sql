@@ -60,7 +60,7 @@ BEGIN
       RETURN;
     END;
     INSERT INTO dbo.foundry_lookup_values (lookup_type, lookup_key, lookup_label, description, display_order, is_active, created_at, updated_at)
-    VALUES (@lookup_type, @lookup_key, @lookup_label, @description, ISNULL(@display_order,0), 1, GETDATE(), GETDATE());
+    VALUES (@lookup_type, @lookup_key, @lookup_label, @description, ISNULL(@display_order,0), 1, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
 
     SELECT lookup_id, lookup_type, lookup_key, lookup_label, description, display_order, is_active, created_at, updated_at
     FROM dbo.foundry_lookup_values WHERE lookup_id = SCOPE_IDENTITY();
@@ -99,7 +99,7 @@ BEGIN
         description   = @description,
         display_order = ISNULL(@display_order, 0),
         is_active     = ISNULL(@is_active, 1),
-        updated_at    = GETDATE()
+        updated_at    = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE lookup_id = @lookup_id;
 
     SELECT lookup_id, lookup_type, lookup_key, lookup_label, description, display_order, is_active, created_at, updated_at
@@ -131,7 +131,7 @@ BEGIN
       RETURN;
     END;
     UPDATE dbo.foundry_lookup_values
-    SET is_active = 0, updated_at = GETDATE()
+    SET is_active = 0, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE lookup_id = @lookup_id;
     SELECT lookup_id, is_active, updated_at FROM dbo.foundry_lookup_values WHERE lookup_id = @lookup_id;
   END TRY

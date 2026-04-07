@@ -43,7 +43,7 @@ AS BEGIN
       temple_length  = @temple_length,
       frame_material = @frame_material,
       image_url      = ISNULL(@image_url, image_url),
-      updated_at     = GETDATE()
+      updated_at     = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE product_id = @product_id;
     SELECT product_id, description, frame_width, lens_height, temple_length, frame_material, image_url
     FROM dbo.product_master WHERE product_id = @product_id;

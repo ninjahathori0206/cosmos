@@ -6,15 +6,20 @@ const { executeStoredProcedure } = require('../config/db');
 const router = express.Router();
 
 const supplierSchema = Joi.object({
-  vendor_name: Joi.string().max(200).required(),
-  vendor_code: Joi.string().max(20).allow('', null),  // optional — auto-generated if blank
-  city: Joi.string().max(100).allow('', null),
-  state: Joi.string().max(100).allow('', null),
-  gstin: Joi.string().max(20).allow('', null),
-  contact_person: Joi.string().max(200).allow('', null),
-  contact_phone: Joi.string().max(20).allow('', null),
-  payment_terms: Joi.string().max(200).allow('', null),
-  source_types_supplied: Joi.string().max(200).allow('', null)
+  vendor_name:           Joi.string().max(200).required(),
+  vendor_code:           Joi.string().max(20).allow('', null),
+  city:                  Joi.string().max(100).allow('', null),
+  state:                 Joi.string().max(100).allow('', null),
+  gstin:                 Joi.string().max(20).allow('', null),
+  contact_person:        Joi.string().max(200).allow('', null),
+  contact_phone:         Joi.string().max(20).allow('', null),
+  payment_terms:         Joi.string().max(200).allow('', null),
+  credit_days:           Joi.number().integer().min(0).max(365).allow(null),
+  opening_balance:       Joi.number().min(0).default(0),
+  bank_name:             Joi.string().max(100).allow('', null),
+  bank_account_no:       Joi.string().max(50).allow('', null),
+  bank_ifsc:             Joi.string().max(20).allow('', null),
+  bank_account_holder:   Joi.string().max(200).allow('', null)
 });
 
 const updateSchema = Joi.object({
@@ -26,7 +31,12 @@ const updateSchema = Joi.object({
   contact_person:        Joi.string().max(200).allow('', null),
   contact_phone:         Joi.string().max(20).allow('', null),
   payment_terms:         Joi.string().max(200).allow('', null),
-  source_types_supplied: Joi.string().max(200).allow('', null)
+  credit_days:           Joi.number().integer().min(0).max(365).allow(null),
+  opening_balance:       Joi.number().min(0).allow(null),
+  bank_name:             Joi.string().max(100).allow('', null),
+  bank_account_no:       Joi.string().max(50).allow('', null),
+  bank_ifsc:             Joi.string().max(20).allow('', null),
+  bank_account_holder:   Joi.string().max(200).allow('', null)
 });
 
 router.get('/', async (req, res, next) => {
@@ -106,16 +116,21 @@ router.post('/', async (req, res, next) => {
     }
 
     const result = await executeStoredProcedure('sp_Supplier_Create', {
-      vendor_name: { type: sql.VarChar(200), value: value.vendor_name },
-      vendor_code: { type: sql.VarChar(20), value: vendorCode },
-      city: { type: sql.VarChar(100), value: value.city || null },
-      state: { type: sql.VarChar(100), value: value.state || null },
-      gstin: { type: sql.VarChar(20), value: value.gstin || null },
-      contact_person: { type: sql.VarChar(200), value: value.contact_person || null },
-      contact_phone: { type: sql.VarChar(20), value: value.contact_phone || null },
-      payment_terms: { type: sql.VarChar(200), value: value.payment_terms || null },
-      source_types_supplied: { type: sql.VarChar(200), value: value.source_types_supplied || null },
-      created_by: { type: sql.Int, value: userId }
+      vendor_name:           { type: sql.VarChar(200),   value: value.vendor_name },
+      vendor_code:           { type: sql.VarChar(20),    value: vendorCode },
+      city:                  { type: sql.VarChar(100),   value: value.city || null },
+      state:                 { type: sql.VarChar(100),   value: value.state || null },
+      gstin:                 { type: sql.VarChar(20),    value: value.gstin || null },
+      contact_person:        { type: sql.VarChar(200),   value: value.contact_person || null },
+      contact_phone:         { type: sql.VarChar(20),    value: value.contact_phone || null },
+      payment_terms:         { type: sql.VarChar(200),   value: value.payment_terms || null },
+      credit_days:           { type: sql.Int,            value: value.credit_days != null ? value.credit_days : null },
+      opening_balance:       { type: sql.Decimal(12,2),  value: value.opening_balance || 0 },
+      bank_name:             { type: sql.VarChar(100),   value: value.bank_name || null },
+      bank_account_no:       { type: sql.VarChar(50),    value: value.bank_account_no || null },
+      bank_ifsc:             { type: sql.VarChar(20),    value: value.bank_ifsc || null },
+      bank_account_holder:   { type: sql.VarChar(200),   value: value.bank_account_holder || null },
+      created_by:            { type: sql.Int,            value: userId }
     });
 
     return res.status(201).json({
@@ -143,15 +158,20 @@ router.put('/:id', async (req, res, next) => {
     }
 
     const result = await executeStoredProcedure('sp_Supplier_Update', {
-      supplier_id: { type: sql.Int, value: id },
-      vendor_name: { type: sql.VarChar(200), value: value.vendor_name },
-      city: { type: sql.VarChar(100), value: value.city || null },
-      state: { type: sql.VarChar(100), value: value.state || null },
-      gstin: { type: sql.VarChar(20), value: value.gstin || null },
-      contact_person: { type: sql.VarChar(200), value: value.contact_person || null },
-      contact_phone: { type: sql.VarChar(20), value: value.contact_phone || null },
-      payment_terms: { type: sql.VarChar(200), value: value.payment_terms || null },
-      source_types_supplied: { type: sql.VarChar(200), value: value.source_types_supplied || null }
+      supplier_id:           { type: sql.Int,            value: id },
+      vendor_name:           { type: sql.VarChar(200),   value: value.vendor_name },
+      city:                  { type: sql.VarChar(100),   value: value.city || null },
+      state:                 { type: sql.VarChar(100),   value: value.state || null },
+      gstin:                 { type: sql.VarChar(20),    value: value.gstin || null },
+      contact_person:        { type: sql.VarChar(200),   value: value.contact_person || null },
+      contact_phone:         { type: sql.VarChar(20),    value: value.contact_phone || null },
+      payment_terms:         { type: sql.VarChar(200),   value: value.payment_terms || null },
+      credit_days:           { type: sql.Int,            value: value.credit_days != null ? value.credit_days : null },
+      opening_balance:       { type: sql.Decimal(12,2),  value: value.opening_balance != null ? value.opening_balance : null },
+      bank_name:             { type: sql.VarChar(100),   value: value.bank_name || null },
+      bank_account_no:       { type: sql.VarChar(50),    value: value.bank_account_no || null },
+      bank_ifsc:             { type: sql.VarChar(20),    value: value.bank_ifsc || null },
+      bank_account_holder:   { type: sql.VarChar(200),   value: value.bank_account_holder || null }
     });
 
     const row = result.recordset && result.recordset[0];

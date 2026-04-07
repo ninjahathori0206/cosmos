@@ -22,11 +22,16 @@ const settingsRouter = require('./src/api/settings');
 const auditLogsRouter = require('./src/api/auditLogs');
 const moduleAccessRouter = require('./src/api/moduleAccess');
 const userModuleAccessRouter = require('./src/api/userModuleAccess');
+const roleModuleAccessRouter = require('./src/api/roleModuleAccess');
 const foundryLookupsRouter = require('./src/api/foundryLookups');
 const makerMasterRouter    = require('./src/api/makerMaster');
 const skusRouter           = require('./src/api/skus');
 const uploadsRouter        = require('./src/api/uploads');
 const qrRouter             = require('./src/api/qr');
+const financeRouter        = require('./src/api/finance');
+const stockTransfersRouter     = require('./src/api/stockTransfers');
+const transferRequestsRouter   = require('./src/api/transferRequests');
+const stockTransferDocsRouter  = require('./src/api/stockTransferDocs');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 
 const app = express();
@@ -88,6 +93,16 @@ app.get('/foundry.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'Foundry_Prototype.html'));
 });
 
+// Serve Finance prototype UI
+app.get('/finance.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'Finance_Prototype.html'));
+});
+
+// StorePilot — showroom / store management (separate from POS)
+app.get('/storepilot.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'StorePilot_Prototype.html'));
+});
+
 // Static assets (images, JS, CSS for login + any new pages)
 app.use(express.static(path.join(__dirname, 'src', 'public')));
 
@@ -136,11 +151,16 @@ app.use('/api/settings', apiKeyAuth, authJwt, settingsRouter);
 app.use('/api/audit-logs', apiKeyAuth, authJwt, auditLogsRouter);
 app.use('/api/store-modules', apiKeyAuth, authJwt, moduleAccessRouter);
 app.use('/api/user-modules', apiKeyAuth, authJwt, userModuleAccessRouter);
+app.use('/api/role-modules', apiKeyAuth, authJwt, roleModuleAccessRouter);
 app.use('/api/foundry-lookups', apiKeyAuth, authJwt, foundryLookupsRouter);
 app.use('/api/maker-master',   apiKeyAuth, authJwt, makerMasterRouter);
 app.use('/api/skus',          apiKeyAuth, authJwt, skusRouter);
 app.use('/api/uploads',      apiKeyAuth, authJwt, uploadsRouter);
 app.use('/api/qr',           qrRouter); // public — <img> tags cannot send auth headers; QR data is non-sensitive
+app.use('/api/finance',          apiKeyAuth, authJwt, financeRouter);
+app.use('/api/stock-transfers',     apiKeyAuth, authJwt, stockTransfersRouter);
+app.use('/api/transfer-requests',  apiKeyAuth, authJwt, transferRequestsRouter);
+app.use('/api/stock-transfer-docs', apiKeyAuth, authJwt, stockTransferDocsRouter);
 
 // 404 + error handling
 app.use(notFoundHandler);

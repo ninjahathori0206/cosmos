@@ -61,7 +61,7 @@ AS BEGIN
     ) VALUES (
       @supplier_id, @source_type, @bill_ref, @purchase_date, ISNULL(@transport_cost,0),
       @po_reference, @notes, @expected,
-      'PENDING_BILL_VERIFICATION', 'PENDING_BILL_VERIFICATION', @created_by, GETDATE(), GETDATE()
+      'PENDING_BILL_VERIFICATION', 'PENDING_BILL_VERIFICATION', @created_by, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME())
     );
     DECLARE @header_id INT = SCOPE_IDENTITY();
 
@@ -98,7 +98,7 @@ AS BEGIN
       END;
 
       IF @mmid IS NOT NULL
-        UPDATE dbo.product_master SET maker_master_id = @mmid, updated_at = GETDATE()
+        UPDATE dbo.product_master SET maker_master_id = @mmid, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
         WHERE product_id = @pmid AND maker_master_id IS NULL;
 
       SET @idx = @idx + 1;
@@ -147,7 +147,7 @@ AS BEGIN
     s.vendor_name AS supplier_name,
     (SELECT COUNT(*) FROM dbo.purchase_items pi WHERE pi.header_id = h.header_id) AS item_count,
     (SELECT SUM(pi.quantity) FROM dbo.purchase_items pi WHERE pi.header_id = h.header_id) AS total_qty,
-    DATEDIFF(day, h.created_at, GETDATE()) AS days_open
+    DATEDIFF(day, h.created_at, DATEADD(MINUTE, 330, SYSUTCDATETIME())) AS days_open
   FROM dbo.purchase_headers h
   LEFT JOIN dbo.suppliers s ON h.supplier_id = s.supplier_id
   WHERE (@pipeline_status IS NULL OR h.pipeline_status = @pipeline_status)
@@ -220,7 +220,7 @@ AS BEGIN
       transport_cost = ISNULL(@transport_cost,  transport_cost),
       po_reference   = ISNULL(@po_reference,    po_reference),
       notes          = ISNULL(@notes,           notes),
-      updated_at     = GETDATE()
+      updated_at     = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
     SELECT h.*, s.vendor_name AS supplier_name
     FROM dbo.purchase_headers h

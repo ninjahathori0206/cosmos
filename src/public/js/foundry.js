@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('pf-submit');
 
   if (form) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = (() => { const [d,m,y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/'); return `${y}-${m}-${d}`; })();
     const dateInput = document.getElementById('pf-date');
     if (dateInput) dateInput.value = today;
 
@@ -116,7 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const body = {
           product_master_id: Number(document.getElementById('pf-product').value),
-          purchase_date: new Date(document.getElementById('pf-date').value).toISOString(),
+          purchase_date: document.getElementById('pf-date').value,
           purchase_rate: Number(document.getElementById('pf-rate').value),
           quantity: Number(document.getElementById('pf-qty').value),
           transport_cost: Number(document.getElementById('pf-transport').value || 0),

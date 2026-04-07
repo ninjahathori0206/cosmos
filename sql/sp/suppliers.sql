@@ -14,20 +14,14 @@ BEGIN
   SET NOCOUNT ON;
 
   SELECT
-    supplier_id,
-    vendor_name,
-    vendor_code,
-    city,
-    state,
-    gstin,
-    contact_person,
-    contact_phone,
-    payment_terms,
-    source_types_supplied,
+    supplier_id, vendor_name, vendor_code,
+    city, state, gstin,
+    contact_person, contact_phone,
+    payment_terms, credit_days,
     vendor_status,
-    created_by,
-    created_at,
-    updated_at
+    opening_balance,
+    bank_name, bank_account_no, bank_ifsc, bank_account_holder,
+    created_by, created_at, updated_at
   FROM dbo.suppliers
   WHERE (@status_filter IS NULL OR vendor_status = @status_filter)
     AND (
@@ -51,20 +45,14 @@ BEGIN
   SET NOCOUNT ON;
 
   SELECT
-    supplier_id,
-    vendor_name,
-    vendor_code,
-    city,
-    state,
-    gstin,
-    contact_person,
-    contact_phone,
-    payment_terms,
-    source_types_supplied,
+    supplier_id, vendor_name, vendor_code,
+    city, state, gstin,
+    contact_person, contact_phone,
+    payment_terms, credit_days,
     vendor_status,
-    created_by,
-    created_at,
-    updated_at
+    opening_balance,
+    bank_name, bank_account_no, bank_ifsc, bank_account_holder,
+    created_by, created_at, updated_at
   FROM dbo.suppliers
   WHERE supplier_id = @supplier_id;
 END;
@@ -83,7 +71,12 @@ CREATE PROCEDURE dbo.sp_Supplier_Create
   @contact_person        VARCHAR(200) = NULL,
   @contact_phone         VARCHAR(20)  = NULL,
   @payment_terms         VARCHAR(200) = NULL,
-  @source_types_supplied VARCHAR(200) = NULL,
+  @credit_days           INT          = NULL,
+  @opening_balance       DECIMAL(12,2) = 0,
+  @bank_name             VARCHAR(100) = NULL,
+  @bank_account_no       VARCHAR(50)  = NULL,
+  @bank_ifsc             VARCHAR(20)  = NULL,
+  @bank_account_holder   VARCHAR(200) = NULL,
   @created_by            INT          = NULL
 AS
 BEGIN
@@ -98,19 +91,25 @@ BEGIN
 
     INSERT INTO dbo.suppliers (
       vendor_name, vendor_code, city, state, gstin,
-      contact_person, contact_phone, payment_terms,
-      source_types_supplied, vendor_status, created_by
+      contact_person, contact_phone, payment_terms, credit_days,
+      vendor_status,
+      opening_balance, bank_name, bank_account_no, bank_ifsc, bank_account_holder,
+      created_by
     )
     VALUES (
       @vendor_name, @vendor_code, @city, @state, @gstin,
-      @contact_person, @contact_phone, @payment_terms,
-      @source_types_supplied, 'active', @created_by
+      @contact_person, @contact_phone, @payment_terms, @credit_days,
+      'active',
+      ISNULL(@opening_balance, 0), @bank_name, @bank_account_no, @bank_ifsc, @bank_account_holder,
+      @created_by
     );
 
     SELECT
       supplier_id, vendor_name, vendor_code, city, state,
-      gstin, contact_person, contact_phone, payment_terms,
-      source_types_supplied, vendor_status, created_at
+      gstin, contact_person, contact_phone, payment_terms, credit_days,
+      vendor_status,
+      opening_balance, bank_name, bank_account_no, bank_ifsc, bank_account_holder,
+      created_at
     FROM dbo.suppliers
     WHERE supplier_id = SCOPE_IDENTITY();
   END TRY
@@ -133,7 +132,12 @@ CREATE PROCEDURE dbo.sp_Supplier_Update
   @contact_person        VARCHAR(200) = NULL,
   @contact_phone         VARCHAR(20)  = NULL,
   @payment_terms         VARCHAR(200) = NULL,
-  @source_types_supplied VARCHAR(200) = NULL
+  @credit_days           INT          = NULL,
+  @opening_balance       DECIMAL(12,2) = NULL,
+  @bank_name             VARCHAR(100) = NULL,
+  @bank_account_no       VARCHAR(50)  = NULL,
+  @bank_ifsc             VARCHAR(20)  = NULL,
+  @bank_account_holder   VARCHAR(200) = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -148,14 +152,21 @@ BEGIN
       contact_person        = @contact_person,
       contact_phone         = @contact_phone,
       payment_terms         = @payment_terms,
-      source_types_supplied = @source_types_supplied,
-      updated_at            = GETDATE()
+      credit_days           = @credit_days,
+      opening_balance       = ISNULL(@opening_balance, opening_balance),
+      bank_name             = @bank_name,
+      bank_account_no       = @bank_account_no,
+      bank_ifsc             = @bank_ifsc,
+      bank_account_holder   = @bank_account_holder,
+      updated_at            = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE supplier_id = @supplier_id;
 
     SELECT
       supplier_id, vendor_name, vendor_code, city, state,
-      gstin, contact_person, contact_phone, payment_terms,
-      source_types_supplied, vendor_status, created_at, updated_at
+      gstin, contact_person, contact_phone, payment_terms, credit_days,
+      vendor_status,
+      opening_balance, bank_name, bank_account_no, bank_ifsc, bank_account_holder,
+      created_at, updated_at
     FROM dbo.suppliers
     WHERE supplier_id = @supplier_id;
   END TRY
@@ -177,7 +188,7 @@ BEGIN
   SET NOCOUNT ON;
 
   UPDATE dbo.suppliers
-  SET vendor_status = @status, updated_at = GETDATE()
+  SET vendor_status = @status, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
   WHERE supplier_id = @supplier_id;
 
   SELECT
@@ -198,16 +209,41 @@ BEGIN
   SET NOCOUNT ON;
 
   SELECT TOP 20
-    supplier_id,
-    vendor_name,
-    vendor_code,
-    city,
-    state
+    supplier_id, vendor_name, vendor_code, city, state
   FROM dbo.suppliers
   WHERE (vendor_name LIKE '%' + @search_term + '%'
       OR vendor_code LIKE '%' + @search_term + '%'
       OR city        LIKE '%' + @search_term + '%')
     AND vendor_status = 'active'
   ORDER BY vendor_name;
+END;
+GO
+
+IF OBJECT_ID('dbo.sp_Supplier_AutoCode', 'P') IS NOT NULL
+  DROP PROCEDURE dbo.sp_Supplier_AutoCode;
+GO
+
+CREATE PROCEDURE dbo.sp_Supplier_AutoCode
+  @vendor_name VARCHAR(200)
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  DECLARE @base   VARCHAR(10);
+  DECLARE @suffix INT = 1;
+  DECLARE @code   VARCHAR(20);
+
+  SET @base = UPPER(LEFT(REPLACE(@vendor_name, ' ', ''), 4));
+  IF LEN(@base) < 2 SET @base = 'SUPP';
+
+  SET @code = @base + '-001';
+
+  WHILE EXISTS (SELECT 1 FROM dbo.suppliers WHERE vendor_code = @code)
+  BEGIN
+    SET @suffix = @suffix + 1;
+    SET @code = @base + '-' + RIGHT('000' + CAST(@suffix AS VARCHAR(3)), 3);
+  END;
+
+  SELECT @code AS vendor_code;
 END;
 GO
