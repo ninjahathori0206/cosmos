@@ -2,8 +2,14 @@ const express = require('express');
 const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
+const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
+
+const digitisationUpload = [
+  requireModule('foundry'),
+  requirePermission('foundry.digitisation.edit')
+];
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'public', 'uploads', 'products');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -51,7 +57,7 @@ router.post('/product-image', imageUpload.single('image'), (req, res, next) => {
 });
 
 // POST /api/uploads/product-video
-router.post('/product-video', videoUpload.single('video'), (req, res, next) => {
+router.post('/product-video', ...digitisationUpload, videoUpload.single('video'), (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No video file uploaded.' });
     const url = `/uploads/products/${req.file.filename}`;

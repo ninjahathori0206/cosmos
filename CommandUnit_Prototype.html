@@ -503,6 +503,15 @@
     <div class="nav-item" onclick="showPage('foundry-settings', this)">
       <span class="icon">🔩</span> Foundry Settings
     </div>
+    <div class="nav-item" onclick="showPage('cu-suppliers', this)">
+      <span class="icon">🏭</span> Suppliers
+    </div>
+    <div class="nav-item" onclick="showPage('cu-maker-master', this)">
+      <span class="icon">🏗️</span> Maker Master
+    </div>
+    <div class="nav-item" onclick="showPage('cu-branding-agents', this)">
+      <span class="icon">🎨</span> Branding Agents
+    </div>
 
     <div class="nav-section-label">Monitoring</div>
     <div class="nav-item" onclick="showPage('audit', this)">
@@ -1273,6 +1282,72 @@
     </div>
   </div>
 
+  <!-- ═══ PAGE: SUPPLIERS ═══ -->
+  <div class="page" id="page-cu-suppliers">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Suppliers</div>
+        <div class="page-subtitle">Vendors who supply products to Eyewoot — used across Foundry procurement</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" onclick="openCuSupplierModal()">+ Add Supplier</button>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="search-wrap" style="flex:1;max-width:320px"><span class="search-icon">🔍</span><input id="cu-suppliers-search" placeholder="Search suppliers..." oninput="loadCuSuppliers()"></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Vendor Name</th><th>Code</th><th>City / State</th><th>GSTIN</th><th>Contact</th><th>Status</th><th></th></tr></thead>
+          <tbody id="cu-suppliers-tbody"><tr><td colspan="7" class="td-muted" style="text-align:center;padding:24px">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: MAKER MASTER ═══ -->
+  <div class="page" id="page-cu-maker-master">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Maker Master</div>
+        <div class="page-subtitle">Manufacturers and factories that produce eyewear for Eyewoot brands</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" onclick="openCuMakerModal()">+ Add Maker</button>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="search-wrap" style="flex:1;max-width:320px"><span class="search-icon">🔍</span><input id="cu-makers-search" placeholder="Search makers..." oninput="loadCuMakers()"></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Maker Name</th><th>Code</th><th>Country</th><th>Description</th><th>Status</th><th></th></tr></thead>
+          <tbody id="cu-makers-tbody"><tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: BRANDING AGENTS ═══ -->
+  <div class="page" id="page-cu-branding-agents">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Branding Agents</div>
+        <div class="page-subtitle">External vendors who handle branding (screen printing, label application) for dispatched goods</div>
+      </div>
+      <button class="topbar-btn primary ml-auto" onclick="openCuBrandingAgentModal()">+ Add Branding Agent</button>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="search-wrap" style="flex:1;max-width:320px"><span class="search-icon">🔍</span><input id="cu-branding-agents-search" placeholder="Search branding agents..." oninput="loadCuBrandingAgents()"></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Agent Name</th><th>Code</th><th>City</th><th>Contact</th><th>Phone</th><th>Status</th><th></th></tr></thead>
+          <tbody id="cu-branding-agents-tbody"><tr><td colspan="7" class="td-muted" style="text-align:center;padding:24px">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══ PAGE: AUDIT LOGS ═══ -->
   <div class="page" id="page-audit">
     <div class="page-header flex items-center">
@@ -1838,6 +1913,82 @@
   </div>
 </div>
 
+<!-- ═══ MODAL: SUPPLIER ═══ -->
+<div class="modal-overlay" id="modal-cu-supplier">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="cu-supplier-modal-title">Add Supplier</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-supplier')">×</div>
+    </div>
+    <div class="modal-body">
+      <div id="cu-supplier-error" style="color:#b91c1c;font-size:12px;margin-bottom:8px;min-height:16px"></div>
+      <input type="hidden" id="cu-supplier-editing-id">
+      <div class="form-grid">
+        <div class="form-group"><label>Vendor Name <span class="label-req">*</span></label><input id="cu-sup-vendor-name" placeholder="Full business name..."></div>
+        <div class="form-group"><label>Vendor Code</label><input id="cu-sup-vendor-code" placeholder="e.g. HIND-001" class="font-mono"></div>
+        <div class="form-group"><label>City</label><input id="cu-sup-city" placeholder="e.g. Moradabad"></div>
+        <div class="form-group"><label>State</label><input id="cu-sup-state" placeholder="e.g. Uttar Pradesh"></div>
+        <div class="form-group"><label>GSTIN</label><input id="cu-sup-gstin" placeholder="15-char GST number" class="font-mono"></div>
+        <div class="form-group"><label>Contact Person</label><input id="cu-sup-contact-person" placeholder="Contact name"></div>
+        <div class="form-group"><label>Contact Phone</label><input id="cu-sup-contact-phone" placeholder="+91 XXXXX XXXXX"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-cu-supplier')">Cancel</button>
+      <button class="topbar-btn primary" id="cu-save-supplier-btn" onclick="handleSaveCuSupplier()">Add Supplier</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: MAKER ═══ -->
+<div class="modal-overlay" id="modal-cu-maker">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="cu-maker-modal-title">Add Maker</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-maker')">×</div>
+    </div>
+    <div class="modal-body">
+      <div id="cu-maker-error" style="color:#b91c1c;font-size:12px;margin-bottom:8px;min-height:16px"></div>
+      <input type="hidden" id="cu-maker-editing-id">
+      <div class="form-grid">
+        <div class="form-group"><label>Maker / Factory Name <span class="label-req">*</span></label><input id="cu-maker-name" placeholder="e.g. Zhejiang Optics Co."></div>
+        <div class="form-group"><label>Maker Code <span class="label-req">*</span></label><input id="cu-maker-code" placeholder="e.g. ZHEJ-001" class="font-mono"></div>
+        <div class="form-group"><label>Country</label><input id="cu-maker-country" placeholder="e.g. China, India, Italy"></div>
+        <div class="form-group span2"><label>Description</label><textarea id="cu-maker-description" rows="2" placeholder="Brief description..."></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-cu-maker')">Cancel</button>
+      <button class="topbar-btn primary" id="cu-save-maker-btn" onclick="handleSaveCuMaker()">Add Maker</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: BRANDING AGENT ═══ -->
+<div class="modal-overlay" id="modal-cu-branding-agent">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="cu-branding-agent-modal-title">Add Branding Agent</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-branding-agent')">×</div>
+    </div>
+    <div class="modal-body">
+      <div id="cu-branding-agent-error" style="color:#b91c1c;font-size:12px;margin-bottom:8px;min-height:16px"></div>
+      <input type="hidden" id="cu-ba-editing-id">
+      <div class="form-grid">
+        <div class="form-group"><label>Agent Name <span class="label-req">*</span></label><input id="cu-ba-agent-name" placeholder="e.g. Shree Branding Works"></div>
+        <div class="form-group"><label>Agent Code <span class="label-req">*</span></label><input id="cu-ba-agent-code" placeholder="e.g. SBW-01" class="font-mono"></div>
+        <div class="form-group"><label>City</label><input id="cu-ba-city" placeholder="e.g. Moradabad"></div>
+        <div class="form-group"><label>Contact Person</label><input id="cu-ba-contact-name" placeholder="Name of contact person"></div>
+        <div class="form-group"><label>Contact Phone</label><input id="cu-ba-contact-phone" placeholder="+91 XXXXX XXXXX"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="topbar-btn" onclick="closeModal('modal-cu-branding-agent')">Cancel</button>
+      <button class="topbar-btn primary" id="cu-save-branding-agent-btn" onclick="handleSaveCuBrandingAgent()">Add Branding Agent</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════ SCRIPTS ════════════ -->
 <script>
 function showPage(id, el) {
@@ -1850,7 +2001,8 @@ function showPage(id, el) {
     roles: 'Roles & Permissions', modules: 'Module Access Control',
     homebrands: 'Home Brand Management', locations: 'Location Type Config',
     settings: 'System Settings', membership: 'Membership Tiers',
-    leavetypes: 'Leave Types', 'foundry-settings': 'Foundry Settings', audit: 'Audit Logs'
+    leavetypes: 'Leave Types', 'foundry-settings': 'Foundry Settings', audit: 'Audit Logs',
+    'cu-suppliers': 'Suppliers', 'cu-maker-master': 'Maker Master', 'cu-branding-agents': 'Branding Agents'
   };
   document.getElementById('breadcrumb-current').textContent = labels[id] || id;
 }

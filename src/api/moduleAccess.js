@@ -2,10 +2,16 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
 
-router.get('/:storeId', async (req, res, next) => {
+const modulesManage = [
+  requireModule('command_unit'),
+  requirePermission('command_unit.modules.edit')
+];
+
+router.get('/:storeId', ...modulesManage, async (req, res, next) => {
   try {
     const storeId = Number(req.params.storeId);
     const result = await executeStoredProcedure('sp_StoreModuleAccess_GetByStore', {
@@ -17,7 +23,7 @@ router.get('/:storeId', async (req, res, next) => {
   }
 });
 
-router.put('/:storeId', async (req, res, next) => {
+router.put('/:storeId', ...modulesManage, async (req, res, next) => {
   try {
     const storeId = Number(req.params.storeId);
     const { error, value } = Joi.object({

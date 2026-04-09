@@ -43,6 +43,40 @@ document.addEventListener('DOMContentLoaded', () => {
     window.applyCosmosModuleSwitchNav('fd-switch-module-wrap', user);
   }
 
+  // ── Foundry sidebar permission gating ─────────────────────────────────────
+  // Hide nav items the current user lacks permission for, then collapse any
+  // nav-group heading that has no visible items beneath it.
+  (function applyFoundryPermissionNav() {
+    const perms = Array.isArray(user.permissions) ? user.permissions : [];
+    // super_admin (empty permissions array with role super_admin) sees everything
+    if (user.role === 'super_admin') return;
+
+    const nav = document.querySelector('.sidebar-nav');
+    if (!nav) return;
+
+    document.querySelectorAll('[data-foundry-permission]').forEach((el) => {
+      const required = el.getAttribute('data-foundry-permission');
+      if (required && !perms.includes(required)) {
+        el.style.display = 'none';
+      }
+    });
+
+    // Hide nav-group headings whose subsequent permission-gated items are all hidden
+    nav.querySelectorAll('.nav-group[data-foundry-nav-group]').forEach((group) => {
+      // Collect all nav-items between this group and the next sibling group (or end)
+      const items = [];
+      let sibling = group.nextElementSibling;
+      while (sibling && !sibling.classList.contains('nav-group') && sibling.id !== 'fd-switch-module-wrap') {
+        if (sibling.classList.contains('nav-item') && sibling.hasAttribute('data-foundry-permission')) {
+          items.push(sibling);
+        }
+        sibling = sibling.nextElementSibling;
+      }
+      const allHidden = items.length > 0 && items.every((el) => el.style.display === 'none');
+      if (allHidden) group.style.display = 'none';
+    });
+  })();
+
   // ── HTTP helpers ──────────────────────────────────────────────────────────
   function authHeaders(extra) {
     return Object.assign({ 'X-API-Key': API_KEY, Authorization: `Bearer ${token}` }, extra || {});
@@ -133,45 +167,67 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let _allSuppliers = [];
-  let _allMakers    = [];
-  let _lookups      = {};
-  let _homeBrands   = [];
-  let _itemCount    = 0;
+  let _allSuppliers      = [];
+  let _allMakers         = [];
+  let _lookups           = {};
+  let _homeBrands        = [];
+  let _allBrandingAgents = [];
+  let _itemCount         = 0;
   window._currentHeaderId = null;
 
   // ── Lookup / initial data ─────────────────────────────────────────────────
   async function loadFormData() {
-    try {
-      const [suppliers, makers, lookupArr, brands, productTypeRows] = await Promise.all([
-        apiGet('/api/suppliers/search?q='),
-        apiGet('/api/maker-master'),
-        apiGet('/api/foundry-lookups'),
-        apiGet('/api/home-brands'),
-        apiGet('/api/foundry-lookups?type=product_type') // active-only, same as Foundry Settings → Product Types
-      ]);
-      _allSuppliers = suppliers;
-      _allMakers    = makers;
-      _homeBrands   = brands;
+    // Use allSettled so one failing endpoint (e.g. branding-agents) does not block suppliers.
+    // Use GET /api/suppliers?status=active (full list) — search?q= uses sp_Supplier_Search TOP 20 only.
+    showErr('new-purchase-error', '');
+    const [supR, makersR, lookupsR, brandsR, ptR, agentsR] = await Promise.allSettled([
+      apiGet('/api/suppliers?status=active'),
+      apiGet('/api/maker-master'),
+      apiGet('/api/foundry-lookups'),
+      apiGet('/api/home-brands'),
+      apiGet('/api/foundry-lookups?type=product_type'),
+      apiGet('/api/branding-agents')
+    ]);
 
-      // Group flat lookup array into { lookup_type: [{key, label}, ...] }
-      _lookups = {};
-      (lookupArr || []).forEach((row) => {
-        const t = row.lookup_type;
-        if (!_lookups[t]) _lookups[t] = [];
-        _lookups[t].push({ key: row.lookup_key, label: row.lookup_label, id: row.lookup_id });
-      });
-      // Product types: always use typed endpoint so list matches Foundry Settings (active + display order)
-      _lookups.product_type = (productTypeRows || []).map((row) => ({
-        key: row.lookup_key,
-        label: row.lookup_label,
-        id: row.lookup_id
-      }));
+    if (supR.status === 'fulfilled') {
+      _allSuppliers = supR.value || [];
+    } else {
+      console.error('loadFormData: suppliers', supR.reason);
+      _allSuppliers = [];
+      const msg = supR.reason && supR.reason.message ? supR.reason.message : String(supR.reason);
+      showErr('new-purchase-error', 'Could not load suppliers: ' + msg);
+    }
 
-      populateAllSupplierSelects();
-      populateMakerSelects();
-      syncPurchaseItemProductTypeSelects();
-    } catch (err) { console.error('loadFormData:', err); }
+    if (makersR.status === 'fulfilled') _allMakers = makersR.value || [];
+    else console.error('loadFormData: maker-master', makersR.reason);
+
+    if (brandsR.status === 'fulfilled') _homeBrands = brandsR.value || [];
+    else console.error('loadFormData: home-brands', brandsR.reason);
+
+    if (agentsR.status === 'fulfilled') _allBrandingAgents = agentsR.value || [];
+    else console.error('loadFormData: branding-agents', agentsR.reason);
+
+    const lookupArr = lookupsR.status === 'fulfilled' ? (lookupsR.value || []) : [];
+    if (lookupsR.status === 'rejected') console.error('loadFormData: foundry-lookups', lookupsR.reason);
+
+    _lookups = {};
+    lookupArr.forEach((row) => {
+      const t = row.lookup_type;
+      if (!_lookups[t]) _lookups[t] = [];
+      _lookups[t].push({ key: row.lookup_key, label: row.lookup_label, id: row.lookup_id });
+    });
+
+    const productTypeRows = ptR.status === 'fulfilled' ? (ptR.value || []) : [];
+    if (ptR.status === 'rejected') console.error('loadFormData: product_type lookups', ptR.reason);
+    _lookups.product_type = (productTypeRows || []).map((row) => ({
+      key: row.lookup_key,
+      label: row.lookup_label,
+      id: row.lookup_id
+    }));
+
+    populateAllSupplierSelects();
+    populateMakerSelects();
+    syncPurchaseItemProductTypeSelects();
   }
 
   /** Rebuild Product Type dropdown options on existing item rows after lookups refresh. */
@@ -187,10 +243,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function supplierIdOf(s) {
+    if (!s) return '';
+    const id = s.supplier_id != null ? s.supplier_id : s.Supplier_Id;
+    return id != null ? id : '';
+  }
+
   function buildSupplierOptions(placeholder) {
     let html = `<option value="">${placeholder || '— Select Supplier —'}</option>`;
     (_allSuppliers || []).forEach((s) => {
-      html += `<option value="${s.supplier_id}">${s.vendor_name}${s.vendor_code ? ' (' + s.vendor_code + ')' : ''}</option>`;
+      const id = supplierIdOf(s);
+      const name = s.vendor_name || s.Vendor_Name || '—';
+      const code = s.vendor_code || s.Vendor_Code || '';
+      html += `<option value="${id}">${name}${code ? ' (' + code + ')' : ''}</option>`;
     });
     return html;
   }
@@ -536,36 +601,9 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ── Supplier auto-code ────────────────────────────────────────────────────
-  let _autoCodeTimer = null;
-  window.autoFillVendorCode = function(name) {
-    if (!name || name.length < 2) return;
-    clearTimeout(_autoCodeTimer);
-    _autoCodeTimer = setTimeout(async () => {
-      try {
-        const res = await apiGet(`/api/suppliers/auto-code?name=${encodeURIComponent(name)}`);
-        const el = document.getElementById('sup-vendor-code');
-        if (el && !el.dataset.manuallySet) el.value = res.vendor_code || '';
-      } catch (_) {}
-    }, 500);
-  };
-
-  window.refreshVendorCode = async function() {
-    const name = val('sup-vendor-name');
-    if (!name) return;
-    try {
-      const res = await apiGet(`/api/suppliers/auto-code?name=${encodeURIComponent(name)}`);
-      const el = document.getElementById('sup-vendor-code');
-      if (el) el.value = res.vendor_code || '';
-    } catch (_) {}
-  };
-
-  // Mark code as manually set when user types in it
-  const vcEl = document.getElementById('sup-vendor-code');
-  if (vcEl) vcEl.addEventListener('input', () => { vcEl.dataset.manuallySet = vcEl.value ? '1' : ''; });
-
   window.onBillSupplierChange = function(sel) {
     const supplierHint = document.getElementById('bill-supplier-hint');
-    const s = (_allSuppliers || []).find((x) => String(x.supplier_id) === String(sel.value));
+    const s = (_allSuppliers || []).find((x) => String(supplierIdOf(x)) === String(sel.value));
     if (s) {
       if (supplierHint) {
         supplierHint.textContent = [s.city, s.state].filter(Boolean).join(', ') + (s.contact_phone ? ' · ' + s.contact_phone : '');
@@ -1129,6 +1167,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const h     = purchData.header;
       const items = purchData.items || [];
       const skus  = skuData || [];
+      window._pvCurrentSkus = skus;
 
       const titleEl = document.getElementById('pv-title');
       const subEl   = document.getElementById('pv-subtitle');
@@ -1271,8 +1310,17 @@ document.addEventListener('DOMContentLoaded', () => {
       <td class="tc">${sk.quantity}</td>
       <td><span class="b b-green xs">${sk.status}</span></td>
     </tr>`).join('');
+    const printBtn4 = skus.length
+      ? `<button type="button" class="btn btn-sm" onclick="openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print Barcodes</button>`
+      : '';
     el.innerHTML = `<div class="card">
-      <div class="ch"><div class="ct">Generated SKUs</div><span class="b b-teal xs">${skus.length} SKUs</span></div>
+      <div class="ch" style="gap:12px">
+        <div class="ct" style="min-width:0">Generated SKUs</div>
+        <div class="flex ic g2" style="flex-shrink:0;margin-left:auto">
+          <span class="b b-teal xs">${skus.length} SKUs</span>
+          ${printBtn4}
+        </div>
+      </div>
       <div class="cb">
         <div class="tw"><table>
           <thead><tr><th>SKU Code</th><th>Barcode</th><th>Product</th><th>Colour</th><th>Sale Price</th><th>Qty</th><th>Status</th></tr></thead>
@@ -1339,16 +1387,13 @@ document.addEventListener('DOMContentLoaded', () => {
       <td class="mono xs">${inrD(Number(sk.sale_price || 0) * Number(sk.quantity || 0))}</td>
     </tr>`).join('');
 
-    // Store skus on window for barcode modal
-    window._pvCurrentSkus = skus;
-
     el.innerHTML = `<div class="main-side">
       <div class="col-stack">
         <div class="card">
-          <div class="ch">
-            <div class="ct">Warehouse Stock Added</div>
-            <div class="flex ic g2">
-              <button class="btn btn-sm" onclick="openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px">🏷️ Print Barcodes</button>
+          <div class="ch" style="gap:12px">
+            <div class="ct" style="min-width:0">Warehouse Stock Added</div>
+            <div class="flex ic g2" style="flex-shrink:0;margin-left:auto">
+              <button type="button" class="btn btn-sm" onclick="openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print Barcodes</button>
               <span class="b b-green">✓ LIVE</span>
             </div>
           </div>
@@ -1620,7 +1665,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Store for print function
       window._currentBrandingData = { header: h, items };
 
-      // Show/hide dispatch vs receipt panel
+      // Show/hide dispatch vs receipt panel; inject Branding Agent dropdown for dispatch
       const dispatchBtn = document.getElementById('branding-dispatch-btn');
       const receiptCard = document.getElementById('branding-receipt-card');
       const bypassCard  = document.getElementById('branding-bypass-card');
@@ -1628,12 +1673,33 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dispatchBtn) dispatchBtn.style.display = '';
         if (receiptCard) receiptCard.style.display = 'none';
         if (bypassCard)  bypassCard.style.display  = 'none';
+
+        // Inject Branding Agent selector before the instructions textarea
+        const instrEl = document.getElementById('branding-instructions-input');
+        if (instrEl && !document.getElementById('branding-agent-sel')) {
+          const agentOpts = (_allBrandingAgents || [])
+            .map((a) => `<option value="${a.agent_id}">${a.agent_name}${a.city ? ' · ' + a.city : ''}</option>`)
+            .join('');
+          const agentWrap = document.createElement('div');
+          agentWrap.id = 'branding-agent-field';
+          agentWrap.style.cssText = 'margin-bottom:12px';
+          agentWrap.innerHTML = `
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Branding Agent <span class="req">*</span></label>
+            <select id="branding-agent-sel" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);color:var(--text)">
+              <option value="">— Select Branding Agent —</option>
+              ${agentOpts}
+            </select>`;
+          instrEl.parentNode.insertBefore(agentWrap, instrEl);
+        }
       } else if (h.pipeline_status === 'BRANDING_DISPATCHED') {
         if (dispatchBtn) dispatchBtn.style.display = 'none';
         if (receiptCard) receiptCard.style.display = '';
         if (bypassCard)  bypassCard.style.display  = 'none';
         const dispDate = document.getElementById('branding-dispatched-date');
         if (dispDate) dispDate.textContent = fmtDateTime(h.dispatched_at);
+        // Show assigned branding agent name
+        const agentInfo = document.getElementById('branding-dispatched-agent');
+        if (agentInfo) agentInfo.textContent = h.branding_agent_name || '—';
       }
 
     } catch (err) { console.error('openBrandingPage:', err); }
@@ -1643,6 +1709,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const headerId = window._currentHeaderId;
     if (!headerId) return;
     const instructions = val('branding-instructions-input');
+
+    // Validate Branding Agent selection
+    const agentSel = document.getElementById('branding-agent-sel');
+    const agentId  = agentSel ? (agentSel.value ? Number(agentSel.value) : null) : null;
+    if (!agentId) {
+      alert('Please select a Branding Agent before dispatching.');
+      return;
+    }
 
     // Collect brand + collection for items that require branding
     const itemBrands = [];
@@ -1674,9 +1748,12 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       await apiPut(`/api/purchases/${headerId}/branding-dispatch`, {
         branding_instructions: instructions || null,
-        item_brands: itemBrands
+        branding_agent_id:     agentId,
+        item_brands:           itemBrands
       });
       await openBrandingPage(headerId);
+      // Auto-pop Dispatch Order print after successful dispatch
+      printBrandingDispatch();
     } catch (err) { alert(err.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Confirm Dispatch → DISPATCHED TO BRANDING'; } }
   };
@@ -2243,173 +2320,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) { btn.disabled = true; btn.textContent = 'Publishing…'; }
     try {
       await apiPut(`/api/purchases/${headerId}/warehouse-ready`, {});
-      alert('All SKUs are now LIVE and stock has been updated!');
+      const skus = await apiGet(`/api/purchases/${headerId}/skus`);
+      openBarcodeModal(skus, { defaultType: 'QR' });
       loadPurchases();
       nav('purchases', document.querySelector('.nav-item[onclick*="nav(\'purchases\'"]'));
     } catch (err) { alert(err.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Publish All to Warehouse ✓'; } }
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // SUPPLIERS
-  // ─────────────────────────────────────────────────────────────────────────
-  async function loadSuppliers() {
-    const q  = val('suppliers-search');
-    const tb = document.getElementById('suppliers-tbody');
-    if (!tb) return;
-    tb.innerHTML = '<tr><td colspan="6" class="tc td2 p12">Loading…</td></tr>';
-    try {
-      const rows = await apiGet(`/api/suppliers/search?q=${encodeURIComponent(q)}`);
-      if (!rows.length) { tb.innerHTML = '<tr><td colspan="6" class="tc td2 p12">No suppliers found</td></tr>'; return; }
-      tb.innerHTML = rows.map((s) => `<tr>
-        <td class="fw6">${s.vendor_name}</td>
-        <td class="mono xs">${s.vendor_code || '—'}</td>
-        <td class="td2">${s.city || '—'}${s.state ? ', ' + s.state : ''}</td>
-        <td class="mono xs td2">${s.gstin || '—'}</td>
-        <td><span class="b ${s.vendor_status === 'active' ? 'b-green' : 'b-gray'} xs">${s.vendor_status || 'active'}</span></td>
-        <td class="tc"><button class="btn xs" onclick="openEditSupplier(${s.supplier_id})">✎</button></td>
-      </tr>`).join('');
-    } catch (err) { tb.innerHTML = `<tr><td colspan="6" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`; }
-  }
-
-  window.openNewSupplierModal = function() {
-    document.getElementById('supplier-editing-id').value = '';
-    document.getElementById('supplier-modal-title').textContent = 'Add Supplier';
-    document.getElementById('save-supplier-btn').textContent = 'Add Supplier';
-    document.getElementById('supplier-modal-error').style.display = 'none';
-    ['sup-vendor-name','sup-vendor-code','sup-city','sup-state','sup-gstin','sup-contact-person','sup-contact-phone'].forEach((id) => {
-      const el = document.getElementById(id); if (el) el.value = '';
-    });
-    document.getElementById('sup-vendor-code').dataset.manuallySet = '';
-    document.getElementById('modal-new-supplier').style.display = 'flex';
-  };
-
-  window.openEditSupplier = async function(id) {
-    try {
-      const s = await apiGet(`/api/suppliers/${id}`);
-      document.getElementById('supplier-editing-id').value = id;
-      document.getElementById('supplier-modal-title').textContent = 'Edit Supplier';
-      document.getElementById('save-supplier-btn').textContent = 'Save Changes';
-      document.getElementById('sup-vendor-name').value  = s.vendor_name || '';
-      document.getElementById('sup-vendor-code').value  = s.vendor_code || '';
-      document.getElementById('sup-city').value         = s.city || '';
-      document.getElementById('sup-state').value        = s.state || '';
-      document.getElementById('sup-gstin').value        = s.gstin || '';
-      document.getElementById('sup-contact-person').value = s.contact_person || '';
-      document.getElementById('sup-contact-phone').value  = s.contact_phone || '';
-      document.getElementById('supplier-modal-error').style.display = 'none';
-      document.getElementById('modal-new-supplier').style.display = 'flex';
-    } catch (err) { alert(err.message); }
-  };
-
-  window.handleSaveSupplier = async function() {
-    const editingId = val('supplier-editing-id');
-    const payload = {
-      vendor_name: val('sup-vendor-name'),
-      vendor_code: val('sup-vendor-code') || null,
-      city: val('sup-city') || null,
-      state: val('sup-state') || null,
-      gstin: val('sup-gstin') || null,
-      contact_person: val('sup-contact-person') || null,
-      contact_phone: val('sup-contact-phone') || null
-    };
-    if (!payload.vendor_name) return showErr('supplier-modal-error', 'Vendor Name is required.');
-    try {
-      if (editingId) {
-        await apiPut(`/api/suppliers/${editingId}`, { vendor_name: payload.vendor_name, ...payload });
-      } else {
-        await apiPost('/api/suppliers', payload);
-      }
-      document.getElementById('modal-new-supplier').style.display = 'none';
-      await loadSuppliers();
-      // Refresh supplier lists in forms
-      _allSuppliers = await apiGet('/api/suppliers/search?q=');
-      populateAllSupplierSelects();
-    } catch (err) { showErr('supplier-modal-error', err.message); }
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // MAKER MASTER
-  // ─────────────────────────────────────────────────────────────────────────
-  async function loadMakers() {
-    const q  = val('makers-search') || '';
-    const tb = document.getElementById('makers-tbody');
-    if (!tb) return;
-    tb.innerHTML = '<tr><td colspan="6" class="tc td2 p12">Loading…</td></tr>';
-    try {
-      const rows = await apiGet('/api/maker-master');
-      const filtered = q ? rows.filter((m) => m.maker_name.toLowerCase().includes(q.toLowerCase()) || (m.maker_code || '').toLowerCase().includes(q.toLowerCase())) : rows;
-      if (!filtered.length) { tb.innerHTML = '<tr><td colspan="6" class="tc td2 p12">No makers found</td></tr>'; return; }
-      tb.innerHTML = filtered.map((m) => `<tr>
-        <td class="fw6">${m.maker_name}</td>
-        <td class="mono xs">${m.maker_code}</td>
-        <td class="td2">${m.country || '—'}</td>
-        <td class="td2 xs">${m.description || '—'}</td>
-        <td><span class="b ${m.is_active ? 'b-green' : 'b-gray'} xs">${m.is_active ? 'Active' : 'Inactive'}</span></td>
-        <td class="tc">
-          <button class="btn xs" onclick="openEditMaker(${m.maker_id})">✎</button>
-          <button class="btn xs" style="margin-left:4px;color:${m.is_active?'var(--red)':'var(--green)'}" onclick="toggleMakerStatus(${m.maker_id},${m.is_active?0:1})">${m.is_active?'Deactivate':'Activate'}</button>
-        </td>
-      </tr>`).join('');
-    } catch (err) { tb.innerHTML = `<tr><td colspan="6" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`; }
-  }
-
-  window.openNewMakerModal = function() {
-    document.getElementById('maker-editing-id').value = '';
-    document.getElementById('maker-modal-title').textContent = 'Add Maker';
-    document.getElementById('save-maker-btn').textContent = 'Add Maker';
-    document.getElementById('maker-modal-error').style.display = 'none';
-    ['maker-name','maker-code','maker-country','maker-description'].forEach((id) => {
-      const el = document.getElementById(id); if (el) el.value = '';
-    });
-    document.getElementById('modal-maker').style.display = 'flex';
-  };
-
-  window.openEditMaker = async function(id) {
-    try {
-      const m = await apiGet(`/api/maker-master/${id}`);
-      document.getElementById('maker-editing-id').value = id;
-      document.getElementById('maker-modal-title').textContent = 'Edit Maker';
-      document.getElementById('save-maker-btn').textContent = 'Save Changes';
-      document.getElementById('maker-name').value        = m.maker_name || '';
-      document.getElementById('maker-code').value        = m.maker_code || '';
-      document.getElementById('maker-country').value     = m.country || '';
-      document.getElementById('maker-description').value = m.description || '';
-      document.getElementById('maker-modal-error').style.display = 'none';
-      document.getElementById('modal-maker').style.display = 'flex';
-    } catch (err) { alert(err.message); }
-  };
-
-  window.handleSaveMaker = async function() {
-    const editingId = val('maker-editing-id');
-    const payload = {
-      maker_name: val('maker-name'),
-      maker_code: val('maker-code'),
-      country:    val('maker-country') || null,
-      description: val('maker-description') || null
-    };
-    if (!payload.maker_name) return showErr('maker-modal-error', 'Maker Name is required.');
-    if (!payload.maker_code) return showErr('maker-modal-error', 'Maker Code is required.');
-    try {
-      if (editingId) {
-        await apiPut(`/api/maker-master/${editingId}`, payload);
-      } else {
-        await apiPost('/api/maker-master', payload);
-      }
-      document.getElementById('modal-maker').style.display = 'none';
-      _allMakers = await apiGet('/api/maker-master');
-      populateMakerSelects();
-      loadMakers();
-    } catch (err) { showErr('maker-modal-error', err.message); }
-  };
-
-  window.toggleMakerStatus = async function(id, newStatus) {
-    try {
-      await apiPut(`/api/maker-master/${id}`, { is_active: !!newStatus });
-      _allMakers = await apiGet('/api/maker-master');
-      populateMakerSelects();
-      loadMakers();
-    } catch (err) { alert(err.message); }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2446,14 +2362,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // MODAL CLOSE HELPERS
+  // MODAL HELPERS (override Foundry_Prototype.html globals — class `open`, not inline display)
+  // Inline display:none would beat `.overlay.open { display:flex }` and block reopening.
   // ─────────────────────────────────────────────────────────────────────────
-  window.closeM = function(id) { const el = document.getElementById(id); if (el) el.style.display = 'none'; };
-
-  // Close overlay on backdrop click
-  document.querySelectorAll('.overlay').forEach((ov) => {
-    ov.addEventListener('click', (e) => { if (e.target === ov) ov.style.display = 'none'; });
-  });
+  window.openM = function(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.removeProperty('display');
+    el.classList.add('open');
+  };
+  window.closeM = function(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('open');
+    el.style.removeProperty('display');
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // STAGE LIST VIEWS (Bill Verify / Branding / Digitisation)
@@ -3157,8 +3080,6 @@ document.addEventListener('DOMContentLoaded', () => {
         initNewPurchaseForm();
       })();
     }
-    if (id === 'suppliers')    loadSuppliers();
-    if (id === 'maker-master') loadMakers();
     if (id === 'sku-catalogue')    loadSkuCatalogue();
     if (id === 'stock-view')       loadStockView();
     if (id === 'stock-transfer')   stInit();
@@ -3182,7 +3103,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // TSC P210 USB vendor/product IDs (TSC Auto ID)
   const TSC_VENDOR_ID = 0x0EB8;
 
-  window.openBarcodeModal = function(skus) {
+  function _bcEsc(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** PID (or barcode when pid omitted) for QR; never use SKU alone when barcode carries PID. */
+  function _bcQrPayload(sk) {
+    const sku = sk.sku_code || '';
+    const p = sk.pid != null && String(sk.pid).trim() !== '' ? String(sk.pid) : '';
+    const b = sk.barcode != null && String(sk.barcode).trim() !== '' ? String(sk.barcode) : '';
+    if (p) return p;
+    if (b && b !== sku) return b;
+    return sku;
+  }
+
+  window.openBarcodeModal = function(skus, opts) {
+    opts = opts || {};
     if (!skus || !skus.length) { alert('No SKUs available to print.'); return; }
     _bcSkus = skus;
     _bcUsbDevice = null;
@@ -3191,12 +3132,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // Build SKU list rows — each row has its own qty input defaulting to unit quantity
     const listEl = document.getElementById('bc-sku-list');
     if (listEl) {
-      listEl.innerHTML = skus.map((sk, i) => `
+      listEl.innerHTML = skus.map((sk, i) => {
+        const sku = sk.sku_code || '—';
+        const qrVal = _bcQrPayload(sk);
+        const legacy = !sk.pid && sk.barcode === sk.sku_code && sk.sku_code;
+        const qrLine = qrVal !== sku
+          ? `<div class="bc-sku-qr mono" style="font-size:9px;color:var(--text2);margin-top:2px">QR: ${_bcEsc(qrVal)}</div>`
+          : '';
+        const legacyLine = legacy
+          ? `<div style="font-size:9px;color:var(--gold);margin-top:2px">Legacy row: QR may match SKU only.</div>`
+          : '';
+        return `
         <div class="bc-sku-row">
           <input type="checkbox" id="bc-chk-${i}" checked onchange="bcRenderPreview()">
           <div style="flex:1;min-width:0">
-            <div class="bc-sku-code">${sk.sku_code || '—'}</div>
-            <div class="bc-sku-info">${sk.ew_collection || ''} · ${sk.colour_name || ''}</div>
+            <div class="bc-sku-code">${_bcEsc(sku)}</div>
+            ${qrLine}${legacyLine}
+            <div class="bc-sku-info">${_bcEsc(sk.ew_collection || '')} · ${_bcEsc(sk.colour_name || '')}</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0">
             <span style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">Qty</span>
@@ -3205,14 +3157,15 @@ document.addEventListener('DOMContentLoaded', () => {
               oninput="bcRenderPreview()">
             <span style="font-size:9px;color:var(--text2)">${sk.quantity || 0} stk</span>
           </div>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     }
 
     // Reset controls
     const copiesEl = document.getElementById('bc-copies');
     if (copiesEl) copiesEl.value = '';
     const typeEl = document.getElementById('bc-type');
-    if (typeEl) typeEl.value = 'QR';
+    if (typeEl) typeEl.value = opts.defaultType || 'QR';
 
     openM('modal-barcode-print');
     setTimeout(bcRenderPreview, 100); // wait for modal to render
@@ -3247,14 +3200,16 @@ document.addEventListener('DOMContentLoaded', () => {
     bcRenderPreview();
   };
 
-  // Build list of {sku_code, copies} reading per-row qty inputs
+  // Build list of {code (pid for QR), label (sku_code for text), copies}
   function _bcSelectedItems() {
     const items = [];
     _bcSkus.forEach((sk, i) => {
       const chk = document.getElementById(`bc-chk-${i}`);
       if (!chk || !chk.checked) return;
       const copies = Math.max(1, parseInt(document.getElementById(`bc-qty-${i}`)?.value || '1', 10));
-      items.push({ code: sk.sku_code, copies });
+      const code = _bcQrPayload(sk);
+      const label = sk.sku_code || '';
+      items.push({ code, label, copies });
     });
     return items;
   }
@@ -3270,6 +3225,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const summaryEl = document.getElementById('bc-summary');
     if (!previewEl) return;
 
+    const mm = _bcReadMarginsMm();
+    const gp = _bcReadGapMm();
+    previewEl.style.padding = `${mm.top}mm ${mm.right}mm ${mm.bottom}mm ${mm.left}mm`;
+    previewEl.style.boxSizing = 'border-box';
+
     const items = _bcSelectedItems();
     const type  = document.getElementById('bc-type')?.value || 'QR';
 
@@ -3279,36 +3239,38 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Expand by copies
+    // Expand by copies — each entry is {code: pid, label: sku_code}
     const expanded = [];
-    items.forEach(({ code, copies }) => { for (let c = 0; c < copies; c++) expanded.push(code); });
+    items.forEach(({ code, label, copies }) => { for (let c = 0; c < copies; c++) expanded.push({ code, label }); });
 
     // Group into rows of 6
     const rows = [];
     for (let i = 0; i < expanded.length; i += 6) rows.push(expanded.slice(i, i + 6));
 
-    // Build HTML — QR images served directly from /api/qr
-    let html = '';
+    // Build HTML — QR encodes pid (code), text below shows sku_code (label)
+    const rowGapCss = `${gp.rowGap}mm`;
+    const colGapCss = `${gp.colGap}mm`;
+    let inner = '';
     rows.forEach((row) => {
-      html += '<div class="bc-label-row">';
+      inner += `<div class="bc-label-row" style="display:flex;flex-wrap:nowrap;gap:${colGapCss};align-items:flex-start">`;
       for (let col = 0; col < 6; col++) {
-        const code = row[col];
-        if (!code) { html += '<div class="bc-empty-cell"></div>'; continue; }
+        const item = row[col];
+        if (!item) { inner += '<div class="bc-empty-cell"></div>'; continue; }
 
         if (type === 'QR') {
-          html += `<div class="bc-label-cell" style="height:72px">
-            <img src="${_bcQRSrc(code, 56)}" style="width:52px;height:52px;display:block;margin:0 auto"
+          inner += `<div class="bc-label-cell" style="height:72px">
+            <img src="${_bcQRSrc(item.code, 56)}" style="width:52px;height:52px;display:block;margin:0 auto"
                  onerror="this.outerHTML='<div style=\\'width:52px;height:52px;background:#fef2f2;display:flex;align-items:center;justify-content:center;font-size:6px;color:#ef4444\\'>QR ERR</div>'">
-            <div class="bc-label-code">${code}</div>
+            <div class="bc-label-code">${_bcEsc(item.label)}</div>
           </div>`;
         } else {
           const uid = `bc-svg-${Math.random().toString(36).slice(2)}`;
-          html += `<div class="bc-label-cell"><svg id="${uid}" data-code="${code}" xmlns="http://www.w3.org/2000/svg"></svg><div class="bc-label-code">${code}</div></div>`;
+          inner += `<div class="bc-label-cell"><svg id="${uid}" data-code="${_bcEsc(item.code)}" xmlns="http://www.w3.org/2000/svg"></svg><div class="bc-label-code">${_bcEsc(item.label)}</div></div>`;
         }
       }
-      html += '</div>';
+      inner += '</div>';
     });
-    previewEl.innerHTML = html;
+    previewEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:${rowGapCss}">${inner}</div>`;
 
     // Render Code128 barcodes after DOM is updated
     if (type === 'CODE128' && typeof JsBarcode !== 'undefined') {
@@ -3379,31 +3341,76 @@ document.addEventListener('DOMContentLoaded', () => {
   const BC_MM_TO_DOT   = 8;
   const BC_LABEL_H_DOT = 15 * BC_MM_TO_DOT; // 120 dots
 
+  function _bcReadMarginsMm() {
+    const clip = (v) => Math.max(0, Math.min(20, v));
+    const g = (id) => clip(parseFloat(document.getElementById(id)?.value || '0') || 0);
+    return {
+      top: g('bc-margin-top'),
+      bottom: g('bc-margin-bottom'),
+      left: g('bc-margin-left'),
+      right: g('bc-margin-right'),
+    };
+  }
+
+  /** Row gap = TSPL feed GAP (mm). Column gap = extra space between adjacent labels in one row (mm). */
+  function _bcReadGapMm() {
+    const elRow = document.getElementById('bc-gap-row');
+    const elCol = document.getElementById('bc-gap-col');
+    const rowRaw = parseFloat(elRow?.value ?? '2');
+    const colRaw = parseFloat(elCol?.value ?? '0');
+    const rowGap = Math.max(0, Math.min(10, Number.isFinite(rowRaw) ? rowRaw : 2));
+    const colGap = Math.max(0, Math.min(5, Number.isFinite(colRaw) ? colRaw : 0));
+    return { rowGap, colGap };
+  }
+
+  function _bcMarginsToDots() {
+    const m = _bcReadMarginsMm();
+    return {
+      top: Math.round(m.top * BC_MM_TO_DOT),
+      bottom: Math.round(m.bottom * BC_MM_TO_DOT),
+      left: Math.round(m.left * BC_MM_TO_DOT),
+      right: Math.round(m.right * BC_MM_TO_DOT),
+    };
+  }
+
+  function _bcTsplQuote(s) {
+    return String(s == null ? '' : s).replace(/"/g, "'");
+  }
+
   function _bcGenerateTSPL2(labelBatches, labelType) {
     /*
-      labelBatches: array of rows, each row = array of up to 6 sku_code strings
+      labelBatches: array of rows, each row = array of up to 6 {code, label} objects
+        code  = PID (unique purchase identifier, encoded in QR for scanning)
+        label = SKU (stable product identifier, printed as text below QR for search)
       Returns: Uint8Array of TSPL2 command bytes
     */
+    const d = _bcMarginsToDots();
+    const { rowGap, colGap } = _bcReadGapMm();
+    const colGapDots = Math.round(colGap * BC_MM_TO_DOT);
+    const maxXDots = Math.round(106 * BC_MM_TO_DOT);
     let cmds = '';
 
     labelBatches.forEach((row) => {
-      cmds += 'SIZE 110 mm, 15 mm\r\n';
-      cmds += 'GAP 2 mm, 0 mm\r\n';
+      cmds += 'SIZE 108 mm, 15 mm\r\n';
+      cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
       cmds += 'DIRECTION 0\r\n';
       cmds += 'CLS\r\n';
 
-      row.forEach((code, col) => {
-        if (!code) return;
-        const x = BC_X_POSITIONS[col];
-        const y = 5; // 5 dots top margin inside label
+      row.forEach((item, col) => {
+        if (!item) return;
+        let x = BC_X_POSITIONS[col] + d.left - d.right + col * colGapDots;
+        x = Math.min(x, maxXDots);
+        const yQr = Math.max(2, 5 + d.top - d.bottom);
+        const yTx = Math.max(12, 90 + d.top - d.bottom);
+        const code = _bcTsplQuote(item.code);
+        const label = _bcTsplQuote(item.label);
 
         if (labelType === 'QR') {
-          // QR code: QRCODE x, y, ECC level, cell width, mode, rotation, "data"
-          cmds += `QRCODE ${x},${y},L,3,A,0,"${code}"\r\n`;
+          cmds += `QRCODE ${x},${yQr},L,3,A,0,"${code}"\r\n`;
+          cmds += `TEXT ${x},${yTx},"1",0,1,1,"${label}"\r\n`;
         } else {
-          // CODE128: BARCODE x, y, type, height, readable, rotation, narrow, wide, "data"
-          // height = 60 dots (~7.5mm), readable=1 (human readable below), narrow=2, wide=2
-          cmds += `BARCODE ${x},${y},"128",60,1,0,2,2,"${code}"\r\n`;
+          cmds += `BARCODE ${x},${yQr},"128",60,1,0,2,2,"${code}"\r\n`;
+          cmds += `TEXT ${x},${yTx},"1",0,1,1,"${label}"\r\n`;
         }
       });
 
@@ -3416,14 +3423,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Print via WebUSB ──────────────────────────────────────────────────
   window.bcPrint = async function() {
     const items    = _bcSelectedItems();
-    const type     = document.getElementById('bc-type')?.value || 'CODE128';
+    const type     = document.getElementById('bc-type')?.value || 'QR';
     const printBtn = document.getElementById('bc-print-btn');
 
     if (!items.length) { alert('Please select at least one SKU to print.'); return; }
 
-    // Expand by copies
+    // Expand by copies — each entry is {code: pid, label: sku_code}
     const expanded = [];
-    items.forEach(({ code, copies }) => { for (let c = 0; c < copies; c++) expanded.push(code); });
+    items.forEach(({ code, label, copies }) => { for (let c = 0; c < copies; c++) expanded.push({ code, label }); });
 
     // Batch into rows of 6
     const batches = [];
@@ -3473,6 +3480,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
 
+    const pad = _bcReadMarginsMm();
+    const gp = _bcReadGapMm();
+    const sheetPad = `${pad.top}mm ${pad.right}mm ${pad.bottom}mm ${pad.left}mm`;
+    const tableSpacing = `${gp.colGap}mm ${gp.rowGap}mm`;
+
     const isQR = labelType === 'QR';
     const totalLabels = batches.reduce((s, r) => s + r.filter(Boolean).length, 0);
     // Use absolute URL so the print window (different origin) can reach our server
@@ -3482,13 +3494,15 @@ document.addEventListener('DOMContentLoaded', () => {
     batches.forEach((row) => {
       const cells = [];
       for (let col = 0; col < 6; col++) {
-        const code = row[col] || '';
-        if (!code) { cells.push('<td class="empty"></td>'); continue; }
+        const item = row[col];
+        if (!item || !item.code) { cells.push('<td class="empty"></td>'); continue; }
         if (isQR) {
-          const src = `${origin}/api/qr?data=${encodeURIComponent(code)}&size=120`;
-          cells.push(`<td class="label-cell"><img src="${src}" class="qr-img"><div class="bc-txt">${code}</div></td>`);
+          // QR encodes pid (code); SKU (label) shown as human-readable text below
+          const src = `${origin}/api/qr?data=${encodeURIComponent(item.code)}&size=120`;
+          cells.push(`<td class="label-cell"><img src="${src}" class="qr-img"><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);
         } else {
-          cells.push(`<td class="label-cell"><svg data-code="${code}" class="bc-svg"></svg><div class="bc-txt">${code}</div></td>`);
+          const ac = String(item.code || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+          cells.push(`<td class="label-cell"><svg data-code="${ac}" class="bc-svg"></svg><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);
         }
       }
       labelRows += `<tr>${cells.join('')}</tr>`;
@@ -3517,8 +3531,8 @@ ${libScript}
   .controls button { padding:6px 16px; border:1px solid #888; border-radius:4px; cursor:pointer; background:#fff; font-size:13px; }
   .controls button.primary { background:#2563eb; color:#fff; border-color:#2563eb; }
   @media print { .controls { display:none; } }
-  .label-sheet { padding:6mm; }
-  table { border-collapse:separate; border-spacing:2mm; }
+  .label-sheet { padding:${sheetPad}; }
+  table { border-collapse:separate; border-spacing:${tableSpacing}; }
   td.label-cell {
     width:15mm; height:18mm; border:0.3pt solid #bbb; border-radius:1mm;
     text-align:center; vertical-align:middle; padding:1mm; overflow:hidden;

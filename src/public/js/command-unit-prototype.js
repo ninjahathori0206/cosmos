@@ -607,55 +607,99 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Permission definitions displayed in the matrix ──────────────
   const PERMISSION_MATRIX = [
     { group: 'Command Unit', perms: [
-      { key: 'command_unit.stores.view',    label: 'Stores — View' },
-      { key: 'command_unit.stores.manage',  label: 'Stores — Create / Edit' },
-      { key: 'command_unit.users.view',     label: 'Users — View' },
-      { key: 'command_unit.users.manage',   label: 'Users — Create / Edit' },
-      { key: 'command_unit.roles.view',     label: 'Roles — View' },
-      { key: 'command_unit.roles.manage',   label: 'Roles — Create / Edit / Permissions' },
-      { key: 'command_unit.modules.manage', label: 'Module Access Control' },
-      { key: 'command_unit.settings.view',  label: 'Settings — View' },
-      { key: 'command_unit.settings.manage',label: 'Settings — Edit' },
-      { key: 'command_unit.audit.view',     label: 'Audit Logs — View & Export' },
+      { key: 'command_unit.stores.view',        label: 'Stores — View' },
+      { key: 'command_unit.stores.create',      label: 'Stores — Create' },
+      { key: 'command_unit.stores.edit',        label: 'Stores — Edit' },
+      { key: 'command_unit.users.view',         label: 'Users — View' },
+      { key: 'command_unit.users.create',       label: 'Users — Create' },
+      { key: 'command_unit.users.edit',         label: 'Users — Edit' },
+      { key: 'command_unit.roles.view',         label: 'Roles — View' },
+      { key: 'command_unit.roles.create',       label: 'Roles — Create' },
+      { key: 'command_unit.roles.edit',         label: 'Roles — Edit / Permissions' },
+      { key: 'command_unit.modules.edit',       label: 'Module Access — Edit' },
+      { key: 'command_unit.settings.view',      label: 'Settings — View' },
+      { key: 'command_unit.settings.edit',      label: 'Settings — Edit' },
+      { key: 'command_unit.audit.view',         label: 'Audit Logs — View' },
     ]},
-    { group: 'Foundry (Procurement)', perms: [
-      { key: 'foundry.purchases.view',      label: 'Purchases — View' },
-      { key: 'foundry.purchases.create',    label: 'Purchases — Create' },
-      { key: 'foundry.purchases.manage',    label: 'Purchases — Edit / Cancel' },
-      { key: 'foundry.bill.verify',         label: 'Bill Verification' },
-      { key: 'foundry.bill.approve_discrepancy', label: 'Approve Bill Discrepancy' },
-      { key: 'foundry.branding.manage',     label: 'Branding — Dispatch / Receive / Bypass' },
-      { key: 'foundry.sku.generate',        label: 'SKU Generation' },
-      { key: 'foundry.warehouse.approve',   label: 'Warehouse Ready Approval' },
-      { key: 'foundry.suppliers.view',      label: 'Suppliers — View' },
-      { key: 'foundry.suppliers.manage',    label: 'Suppliers — Create / Edit' },
+    { group: 'Foundry — Procurement', perms: [
+      { key: 'foundry.purchases.view',              label: 'Purchases — View' },
+      { key: 'foundry.purchases.create',            label: 'Purchases — Create' },
+      { key: 'foundry.purchases.edit',              label: 'Purchases — Edit' },
+      { key: 'foundry.bill_verification.view',      label: 'Bill Verify — View' },
+      { key: 'foundry.bill_verification.create',    label: 'Bill Verify — Submit' },
+      { key: 'foundry.bill_verification.edit',      label: 'Bill Verify — Approve Discrepancy' },
+      { key: 'foundry.branding.view',               label: 'Branding — View' },
+      { key: 'foundry.branding.create',             label: 'Branding — Dispatch' },
+      { key: 'foundry.branding.edit',               label: 'Branding — Receive / Bypass' },
+      { key: 'foundry.digitisation.view',           label: 'Digitisation — View' },
+      { key: 'foundry.digitisation.create',         label: 'Digitisation — Generate SKU' },
+      { key: 'foundry.digitisation.edit',           label: 'Digitisation — Edit Media' },
+      { key: 'foundry.warehouse.view',              label: 'Warehouse — View' },
+      { key: 'foundry.warehouse.create',            label: 'Warehouse — Approve Ready' },
+    ]},
+    { group: 'Foundry — Catalogue & Inventory', perms: [
+      { key: 'foundry.catalogue.view',              label: 'SKU Catalogue — View' },
+      { key: 'foundry.catalogue.edit',              label: 'SKU Catalogue — Edit' },
+      { key: 'foundry.stock.view',                  label: 'Stock Transfers — View' },
+      { key: 'foundry.stock.create',                label: 'Stock Transfers — Create' },
+    ]},
+    { group: 'Foundry — Store Connect', perms: [
+      { key: 'foundry.transfers.view',              label: 'Transfer Requests — View' },
+      { key: 'foundry.transfers.create',            label: 'Transfer Requests — Create' },
+      { key: 'foundry.transfers.edit',              label: 'Transfer Requests — Approve / Reject' },
+    ]},
+    { group: 'Foundry — Intelligence', perms: [
+      { key: 'foundry.suppliers.view',              label: 'Suppliers — View' },
+      { key: 'foundry.suppliers.create',            label: 'Suppliers — Create' },
+      { key: 'foundry.suppliers.edit',              label: 'Suppliers — Edit' },
+      { key: 'foundry.makers.view',                 label: 'Makers — View' },
+      { key: 'foundry.makers.create',               label: 'Makers — Create' },
+      { key: 'foundry.makers.edit',                 label: 'Makers — Edit' },
+    ]},
+    { group: 'Finance', perms: [
+      { key: 'finance.dashboard.view',              label: 'Dashboard — View' },
+      { key: 'finance.payments.view',               label: 'Payments — View' },
+      { key: 'finance.payments.create',             label: 'Payments — Create' },
+      { key: 'finance.payments.edit',               label: 'Payments — Edit / Void' },
+      { key: 'finance.reports.view',                label: 'Reports — View' },
     ]},
     { group: 'StorePilot (Showroom)', perms: [
-      { key: 'storepilot.dashboard.view',   label: 'Showroom — Dashboard' },
-      { key: 'storepilot.floor.view',       label: 'Floor & Displays — View' },
-      { key: 'storepilot.floor.manage',     label: 'Floor & Displays — Manage' },
-      { key: 'storepilot.appointments.manage', label: 'Appointments — Manage' },
-      { key: 'storepilot.walkins.manage',   label: 'Walk-ins — Manage' },
-      { key: 'storepilot.handoffs.create',  label: 'POS handoff — Create queue' },
-      { key: 'storepilot.reports.view',     label: 'Showroom reports — View' },
+      { key: 'storepilot.dashboard.view',           label: 'Dashboard — View' },
+      { key: 'storepilot.floor.view',               label: 'Floor & Displays — View' },
+      { key: 'storepilot.floor.create',             label: 'Floor & Displays — Create' },
+      { key: 'storepilot.floor.edit',               label: 'Floor & Displays — Edit' },
+      { key: 'storepilot.appointments.view',        label: 'Appointments — View' },
+      { key: 'storepilot.appointments.create',      label: 'Appointments — Create' },
+      { key: 'storepilot.appointments.edit',        label: 'Appointments — Edit' },
+      { key: 'storepilot.walkins.view',             label: 'Walk-ins — View' },
+      { key: 'storepilot.walkins.create',           label: 'Walk-ins — Create' },
+      { key: 'storepilot.walkins.edit',             label: 'Walk-ins — Edit' },
+      { key: 'storepilot.handoffs.create',          label: 'POS Handoffs — Create' },
+      { key: 'storepilot.reports.view',             label: 'Reports — View' },
+      { key: 'storepilot.transfers.view',           label: 'Transfers — View' },
+      { key: 'storepilot.transfers.edit',           label: 'Transfers — Accept / Stock' },
     ]},
     { group: 'Store OS (POS)', perms: [
-      { key: 'store_os.pos.view',           label: 'POS — View' },
-      { key: 'store_os.pos.transact',       label: 'POS — Create Transactions' },
-      { key: 'store_os.inventory.view',     label: 'Inventory — View' },
-      { key: 'store_os.inventory.manage',   label: 'Inventory — Manage' },
-      { key: 'store_os.reports.view',       label: 'Reports — View' },
-      { key: 'store_os.reports.export',     label: 'Reports — Export' },
+      { key: 'store_os.pos.view',                   label: 'POS — View' },
+      { key: 'store_os.pos.create',                 label: 'POS — Transact' },
+      { key: 'store_os.inventory.view',             label: 'Inventory — View' },
+      { key: 'store_os.inventory.create',           label: 'Inventory — Create' },
+      { key: 'store_os.inventory.edit',             label: 'Inventory — Edit' },
+      { key: 'store_os.reports.view',               label: 'Reports — View' },
+      { key: 'store_os.reports.create',             label: 'Reports — Export' },
     ]},
     { group: 'Army (HR & Attendance)', perms: [
-      { key: 'army.staff.view',             label: 'Staff — View' },
-      { key: 'army.staff.manage',           label: 'Staff — Create / Edit' },
-      { key: 'army.attendance.view',        label: 'Attendance — View' },
-      { key: 'army.attendance.manage',      label: 'Attendance — Manage' },
-      { key: 'army.leaves.view',            label: 'Leaves — View' },
-      { key: 'army.leaves.approve',         label: 'Leaves — Approve / Reject' },
-      { key: 'army.payroll.view',           label: 'Payroll — View' },
-      { key: 'army.payroll.manage',         label: 'Payroll — Manage' },
+      { key: 'army.staff.view',                     label: 'Staff — View' },
+      { key: 'army.staff.create',                   label: 'Staff — Create' },
+      { key: 'army.staff.edit',                     label: 'Staff — Edit' },
+      { key: 'army.attendance.view',                label: 'Attendance — View' },
+      { key: 'army.attendance.create',              label: 'Attendance — Create' },
+      { key: 'army.attendance.edit',                label: 'Attendance — Edit' },
+      { key: 'army.leaves.view',                    label: 'Leaves — View' },
+      { key: 'army.leaves.edit',                    label: 'Leaves — Approve / Reject' },
+      { key: 'army.payroll.view',                   label: 'Payroll — View' },
+      { key: 'army.payroll.create',                 label: 'Payroll — Create' },
+      { key: 'army.payroll.edit',                   label: 'Payroll — Edit' },
     ]},
   ];
 
@@ -735,7 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       PERMISSION_MATRIX.forEach((group) => {
         html += `<div class="section-divider" style="margin:14px 0 8px">${escHtml(group.group)}</div>`;
-        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px">';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 16px">';
         group.perms.forEach((p) => {
           const checked = grantedSet.has(p.key) ? 'checked' : '';
           html += `
@@ -1823,6 +1867,249 @@ document.addEventListener('DOMContentLoaded', () => {
 
   bind('foundry-lookup-save-btn', handleSaveLookupValue);
   document.getElementById('foundry-add-value-btn')?.addEventListener('click', openNewLookupModal);
+
+  // ─── FOUNDRY MASTERS: SUPPLIERS ───────────────────────────────────────────
+
+  async function loadCuSuppliers() {
+    const q  = (document.getElementById('cu-suppliers-search') || {}).value || '';
+    const tb = document.getElementById('cu-suppliers-tbody');
+    if (!tb) return;
+    tb.innerHTML = '<tr><td colspan="7" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>';
+    try {
+      const rows = await apiGet(`/api/suppliers/search?q=${encodeURIComponent(q)}`);
+      if (!rows.length) { tb.innerHTML = '<tr><td colspan="7" class="td-muted" style="text-align:center;padding:24px">No suppliers found</td></tr>'; return; }
+      tb.innerHTML = rows.map((s) => `<tr>
+        <td class="fw-600">${s.vendor_name}</td>
+        <td class="font-mono text-xs">${s.vendor_code || '—'}</td>
+        <td class="td-muted">${[s.city, s.state].filter(Boolean).join(', ') || '—'}</td>
+        <td class="font-mono text-xs td-muted">${s.gstin || '—'}</td>
+        <td class="td-muted">${s.contact_person || '—'}${s.contact_phone ? ' · ' + s.contact_phone : ''}</td>
+        <td><span class="badge ${s.vendor_status === 'active' || !s.vendor_status ? 'badge-green' : 'badge-gray'}">${s.vendor_status || 'active'}</span></td>
+        <td><button class="topbar-btn" style="padding:4px 10px;font-size:12px" onclick="openCuSupplierEdit(${s.supplier_id})">✎ Edit</button></td>
+      </tr>`).join('');
+    } catch (err) { tb.innerHTML = `<tr><td colspan="7" class="td-muted" style="text-align:center;padding:24px;color:#b91c1c">${err.message}</td></tr>`; }
+  }
+
+  window.openCuSupplierModal = function() {
+    document.getElementById('cu-supplier-editing-id').value = '';
+    document.getElementById('cu-supplier-modal-title').textContent = 'Add Supplier';
+    document.getElementById('cu-save-supplier-btn').textContent = 'Add Supplier';
+    document.getElementById('cu-supplier-error').textContent = '';
+    ['cu-sup-vendor-name','cu-sup-vendor-code','cu-sup-city','cu-sup-state','cu-sup-gstin','cu-sup-contact-person','cu-sup-contact-phone'].forEach((id) => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    openModal('modal-cu-supplier');
+  };
+
+  window.openCuSupplierEdit = async function(id) {
+    try {
+      const s = await apiGet(`/api/suppliers/${id}`);
+      document.getElementById('cu-supplier-editing-id').value = id;
+      document.getElementById('cu-supplier-modal-title').textContent = 'Edit Supplier';
+      document.getElementById('cu-save-supplier-btn').textContent = 'Save Changes';
+      document.getElementById('cu-sup-vendor-name').value      = s.vendor_name     || '';
+      document.getElementById('cu-sup-vendor-code').value      = s.vendor_code     || '';
+      document.getElementById('cu-sup-city').value             = s.city            || '';
+      document.getElementById('cu-sup-state').value            = s.state           || '';
+      document.getElementById('cu-sup-gstin').value            = s.gstin           || '';
+      document.getElementById('cu-sup-contact-person').value   = s.contact_person  || '';
+      document.getElementById('cu-sup-contact-phone').value    = s.contact_phone   || '';
+      document.getElementById('cu-supplier-error').textContent = '';
+      openModal('modal-cu-supplier');
+    } catch (err) { alert(err.message); }
+  };
+
+  window.handleSaveCuSupplier = async function() {
+    const editingId = document.getElementById('cu-supplier-editing-id').value;
+    const errEl = document.getElementById('cu-supplier-error');
+    const payload = {
+      vendor_name:    (document.getElementById('cu-sup-vendor-name').value || '').trim(),
+      vendor_code:    (document.getElementById('cu-sup-vendor-code').value || '').trim() || null,
+      city:           (document.getElementById('cu-sup-city').value || '').trim() || null,
+      state:          (document.getElementById('cu-sup-state').value || '').trim() || null,
+      gstin:          (document.getElementById('cu-sup-gstin').value || '').trim() || null,
+      contact_person: (document.getElementById('cu-sup-contact-person').value || '').trim() || null,
+      contact_phone:  (document.getElementById('cu-sup-contact-phone').value || '').trim() || null
+    };
+    if (!payload.vendor_name) { errEl.textContent = 'Vendor Name is required.'; return; }
+    try {
+      errEl.textContent = '';
+      if (editingId) { await apiPut(`/api/suppliers/${editingId}`, payload); }
+      else { await apiPost('/api/suppliers', payload); }
+      closeModal('modal-cu-supplier');
+      loadCuSuppliers();
+    } catch (err) { errEl.textContent = err.message; }
+  };
+
+  // ─── FOUNDRY MASTERS: MAKER MASTER ────────────────────────────────────────
+
+  async function loadCuMakers() {
+    const q  = (document.getElementById('cu-makers-search') || {}).value || '';
+    const tb = document.getElementById('cu-makers-tbody');
+    if (!tb) return;
+    tb.innerHTML = '<tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>';
+    try {
+      const rows = await apiGet('/api/maker-master?all=1');
+      const filtered = q ? rows.filter((m) => m.maker_name.toLowerCase().includes(q.toLowerCase()) || (m.maker_code || '').toLowerCase().includes(q.toLowerCase())) : rows;
+      if (!filtered.length) { tb.innerHTML = '<tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px">No makers found</td></tr>'; return; }
+      tb.innerHTML = filtered.map((m) => `<tr>
+        <td class="fw-600">${m.maker_name}</td>
+        <td class="font-mono text-xs">${m.maker_code}</td>
+        <td class="td-muted">${m.country || '—'}</td>
+        <td class="td-muted text-xs">${m.description || '—'}</td>
+        <td><span class="badge ${m.is_active ? 'badge-green' : 'badge-gray'}">${m.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td>
+          <button class="topbar-btn" style="padding:4px 10px;font-size:12px" onclick="openCuMakerEdit(${m.maker_id})">✎ Edit</button>
+          <button class="topbar-btn" style="padding:4px 10px;font-size:12px;margin-left:4px;color:${m.is_active ? '#b91c1c' : '#059669'}" onclick="toggleCuMaker(${m.maker_id},${m.is_active ? 0 : 1})">${m.is_active ? 'Deactivate' : 'Activate'}</button>
+        </td>
+      </tr>`).join('');
+    } catch (err) { tb.innerHTML = `<tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px;color:#b91c1c">${err.message}</td></tr>`; }
+  }
+
+  window.openCuMakerModal = function() {
+    document.getElementById('cu-maker-editing-id').value = '';
+    document.getElementById('cu-maker-modal-title').textContent = 'Add Maker';
+    document.getElementById('cu-save-maker-btn').textContent = 'Add Maker';
+    document.getElementById('cu-maker-error').textContent = '';
+    ['cu-maker-name','cu-maker-code','cu-maker-country','cu-maker-description'].forEach((id) => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    openModal('modal-cu-maker');
+  };
+
+  window.openCuMakerEdit = async function(id) {
+    try {
+      const m = await apiGet(`/api/maker-master/${id}`);
+      document.getElementById('cu-maker-editing-id').value = id;
+      document.getElementById('cu-maker-modal-title').textContent = 'Edit Maker';
+      document.getElementById('cu-save-maker-btn').textContent = 'Save Changes';
+      document.getElementById('cu-maker-name').value        = m.maker_name   || '';
+      document.getElementById('cu-maker-code').value        = m.maker_code   || '';
+      document.getElementById('cu-maker-country').value     = m.country      || '';
+      document.getElementById('cu-maker-description').value = m.description  || '';
+      document.getElementById('cu-maker-error').textContent = '';
+      openModal('modal-cu-maker');
+    } catch (err) { alert(err.message); }
+  };
+
+  window.handleSaveCuMaker = async function() {
+    const editingId = document.getElementById('cu-maker-editing-id').value;
+    const errEl = document.getElementById('cu-maker-error');
+    const payload = {
+      maker_name:  (document.getElementById('cu-maker-name').value || '').trim(),
+      maker_code:  (document.getElementById('cu-maker-code').value || '').trim(),
+      country:     (document.getElementById('cu-maker-country').value || '').trim() || null,
+      description: (document.getElementById('cu-maker-description').value || '').trim() || null
+    };
+    if (!payload.maker_name) { errEl.textContent = 'Maker Name is required.'; return; }
+    if (!payload.maker_code) { errEl.textContent = 'Maker Code is required.'; return; }
+    try {
+      errEl.textContent = '';
+      if (editingId) { await apiPut(`/api/maker-master/${editingId}`, payload); }
+      else { await apiPost('/api/maker-master', payload); }
+      closeModal('modal-cu-maker');
+      loadCuMakers();
+    } catch (err) { errEl.textContent = err.message; }
+  };
+
+  window.toggleCuMaker = async function(id, newStatus) {
+    try {
+      await apiPut(`/api/maker-master/${id}`, { is_active: !!newStatus });
+      loadCuMakers();
+    } catch (err) { alert(err.message); }
+  };
+
+  // ─── FOUNDRY MASTERS: BRANDING AGENTS ─────────────────────────────────────
+
+  async function loadCuBrandingAgents() {
+    const q  = (document.getElementById('cu-branding-agents-search') || {}).value || '';
+    const tb = document.getElementById('cu-branding-agents-tbody');
+    if (!tb) return;
+    tb.innerHTML = '<tr><td colspan="7" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>';
+    try {
+      const rows = await apiGet('/api/branding-agents?all=1');
+      const filtered = q ? rows.filter((a) => a.agent_name.toLowerCase().includes(q.toLowerCase()) || (a.agent_code || '').toLowerCase().includes(q.toLowerCase())) : rows;
+      if (!filtered.length) { tb.innerHTML = '<tr><td colspan="7" class="td-muted" style="text-align:center;padding:24px">No branding agents found</td></tr>'; return; }
+      tb.innerHTML = filtered.map((a) => `<tr>
+        <td class="fw-600">${a.agent_name}</td>
+        <td class="font-mono text-xs">${a.agent_code}</td>
+        <td class="td-muted">${a.city || '—'}</td>
+        <td class="td-muted">${a.contact_name || '—'}</td>
+        <td class="td-muted text-xs">${a.contact_phone || '—'}</td>
+        <td><span class="badge ${a.is_active ? 'badge-green' : 'badge-gray'}">${a.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td>
+          <button class="topbar-btn" style="padding:4px 10px;font-size:12px" onclick="openCuBrandingAgentEdit(${a.agent_id})">✎ Edit</button>
+          <button class="topbar-btn" style="padding:4px 10px;font-size:12px;margin-left:4px;color:${a.is_active ? '#b91c1c' : '#059669'}" onclick="toggleCuBrandingAgent(${a.agent_id},${a.is_active ? 0 : 1})">${a.is_active ? 'Deactivate' : 'Activate'}</button>
+        </td>
+      </tr>`).join('');
+    } catch (err) { tb.innerHTML = `<tr><td colspan="7" class="td-muted" style="text-align:center;padding:24px;color:#b91c1c">${err.message}</td></tr>`; }
+  }
+
+  window.openCuBrandingAgentModal = function() {
+    document.getElementById('cu-ba-editing-id').value = '';
+    document.getElementById('cu-branding-agent-modal-title').textContent = 'Add Branding Agent';
+    document.getElementById('cu-save-branding-agent-btn').textContent = 'Add Branding Agent';
+    document.getElementById('cu-branding-agent-error').textContent = '';
+    ['cu-ba-agent-name','cu-ba-agent-code','cu-ba-city','cu-ba-contact-name','cu-ba-contact-phone'].forEach((id) => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    openModal('modal-cu-branding-agent');
+  };
+
+  window.openCuBrandingAgentEdit = async function(id) {
+    try {
+      const a = await apiGet(`/api/branding-agents/${id}`);
+      document.getElementById('cu-ba-editing-id').value = id;
+      document.getElementById('cu-branding-agent-modal-title').textContent = 'Edit Branding Agent';
+      document.getElementById('cu-save-branding-agent-btn').textContent = 'Save Changes';
+      document.getElementById('cu-ba-agent-name').value    = a.agent_name    || '';
+      document.getElementById('cu-ba-agent-code').value    = a.agent_code    || '';
+      document.getElementById('cu-ba-city').value          = a.city          || '';
+      document.getElementById('cu-ba-contact-name').value  = a.contact_name  || '';
+      document.getElementById('cu-ba-contact-phone').value = a.contact_phone || '';
+      document.getElementById('cu-branding-agent-error').textContent = '';
+      openModal('modal-cu-branding-agent');
+    } catch (err) { alert(err.message); }
+  };
+
+  window.handleSaveCuBrandingAgent = async function() {
+    const editingId = document.getElementById('cu-ba-editing-id').value;
+    const errEl = document.getElementById('cu-branding-agent-error');
+    const payload = {
+      agent_name:    (document.getElementById('cu-ba-agent-name').value || '').trim(),
+      agent_code:    (document.getElementById('cu-ba-agent-code').value || '').trim(),
+      city:          (document.getElementById('cu-ba-city').value || '').trim() || null,
+      contact_name:  (document.getElementById('cu-ba-contact-name').value || '').trim() || null,
+      contact_phone: (document.getElementById('cu-ba-contact-phone').value || '').trim() || null
+    };
+    if (!payload.agent_name) { errEl.textContent = 'Agent Name is required.'; return; }
+    if (!payload.agent_code) { errEl.textContent = 'Agent Code is required.'; return; }
+    try {
+      errEl.textContent = '';
+      if (editingId) { await apiPut(`/api/branding-agents/${editingId}`, payload); }
+      else { await apiPost('/api/branding-agents', payload); }
+      closeModal('modal-cu-branding-agent');
+      loadCuBrandingAgents();
+    } catch (err) { errEl.textContent = err.message; }
+  };
+
+  window.toggleCuBrandingAgent = async function(id, newStatus) {
+    try {
+      await apiPut(`/api/branding-agents/${id}`, { is_active: !!newStatus });
+      loadCuBrandingAgents();
+    } catch (err) { alert(err.message); }
+  };
+
+  // Wire showPage nav triggers for new masters
+  const _origShowPage = window.showPage;
+  if (typeof _origShowPage === 'function') {
+    window.showPage = function(id, el) {
+      _origShowPage(id, el);
+      if (id === 'cu-suppliers')       loadCuSuppliers();
+      if (id === 'cu-maker-master')    loadCuMakers();
+      if (id === 'cu-branding-agents') loadCuBrandingAgents();
+    };
+  }
 
   // ─── INITIAL LOAD ─────────────────────────────────────────────────────────
 

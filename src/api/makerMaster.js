@@ -2,8 +2,22 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
+
+const foundryMakersView = [
+  requireModule('foundry'),
+  requirePermission('foundry.makers.view')
+];
+const foundryMakersCreate = [
+  requireModule('foundry'),
+  requirePermission('foundry.makers.create')
+];
+const foundryMakersEdit = [
+  requireModule('foundry'),
+  requirePermission('foundry.makers.edit')
+];
 
 const createSchema = Joi.object({
   maker_name:  Joi.string().max(200).required(),
@@ -20,7 +34,7 @@ const updateSchema = Joi.object({
   is_active:   Joi.boolean()
 });
 
-router.get('/', async (req, res, next) => {
+router.get('/', ...foundryMakersView, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_MakerMaster_GetAll', {
       include_inactive: { type: sql.Bit, value: req.query.all === '1' ? 1 : 0 }
@@ -40,7 +54,7 @@ router.get('/:id', async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', ...foundryMakersCreate, async (req, res, next) => {
   try {
     const { error, value } = createSchema.validate(req.body, { abortEarly: false });
     if (error) return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });
@@ -57,7 +71,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', ...foundryMakersEdit, async (req, res, next) => {
   try {
     const { error, value } = updateSchema.validate(req.body, { abortEarly: false });
     if (error) return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });

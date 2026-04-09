@@ -2,8 +2,33 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const {
+  isSuperAdmin,
+  hasModuleAccess,
+  hasPermission,
+  requireModule,
+  requirePermission,
+  requireAnyModule
+} = require('../middleware/authorize');
 
 const router = express.Router();
+
+/** List/read brands for Command Unit settings, or Foundry branding / purchase flows without CU access. */
+function homeBrandReadAuth(req, res, next) {
+  if (isSuperAdmin(req)) return next();
+  if (hasModuleAccess(req, 'command_unit') && hasPermission(req, 'command_unit.settings.view')) {
+    return next();
+  }
+  if (
+    hasModuleAccess(req, 'foundry')
+    && (hasPermission(req, 'foundry.branding.view') || hasPermission(req, 'foundry.purchases.view'))
+  ) {
+    return next();
+  }
+  return res.status(403).json({ success: false, message: 'Permission denied.' });
+}
+
+const settingsManage = [requireModule('command_unit'), requirePermission('command_unit.settings.edit')];
 
 const createSchema = Joi.object({
   brand_name: Joi.string().max(200).required(),
@@ -18,7 +43,7 @@ const updateSchema = Joi.object({
   brand_logo_url: Joi.string().max(500).allow('', null)
 });
 
-router.get('/', async (req, res, next) => {
+router.get('/', requireAnyModule(['command_unit', 'foundry']), homeBrandReadAuth, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_HomeBrand_GetAll', {});
     return res.json({ success: true, data: result.recordset || [] });
@@ -27,7 +52,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requireAnyModule(['command_unit', 'foundry']), homeBrandReadAuth, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const result = await executeStoredProcedure('sp_HomeBrand_GetById', {
@@ -73,7 +98,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', ...settingsManage, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { error, value } = updateSchema.validate(req.body);
@@ -101,7 +126,7 @@ router.put('/:id', async (req, res, next) => {
   }
 });
 
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', ...settingsManage, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const result = await executeStoredProcedure('sp_HomeBrand_Deactivate', {

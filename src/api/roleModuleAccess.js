@@ -2,11 +2,17 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
 
+const modulesManage = [
+  requireModule('command_unit'),
+  requirePermission('command_unit.modules.edit')
+];
+
 // GET /api/role-modules/:roleKey
-router.get('/:roleKey', async (req, res, next) => {
+router.get('/:roleKey', ...modulesManage, async (req, res, next) => {
   try {
     const roleKey = req.params.roleKey;
     const result = await executeStoredProcedure('sp_RoleModuleAccess_GetByRole', {
@@ -19,7 +25,7 @@ router.get('/:roleKey', async (req, res, next) => {
 });
 
 // PUT /api/role-modules/:roleKey  — body: { module_key, is_enabled }
-router.put('/:roleKey', async (req, res, next) => {
+router.put('/:roleKey', ...modulesManage, async (req, res, next) => {
   try {
     const roleKey = req.params.roleKey;
     const { error, value } = Joi.object({

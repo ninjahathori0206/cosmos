@@ -186,6 +186,44 @@ pm2 startup
 
 The server runs on **http://localhost:4000** by default.
 
+### 6. Flush existing CosmosERP data (destructive)
+
+Use this only when you want to wipe an existing database and start fresh on the same schema.
+
+```bash
+# 0. Take full backup first (mandatory)
+# 1) Flush all rows from all user tables (keeps schema/SPs/constraints)
+sqlcmd -S <host>,<port> -U <admin_user> -P <password> -d CosmosERP -i sql/maintenance/flush_all_data.sql
+
+# 2) Re-seed reference lookups
+sqlcmd -S <host>,<port> -U <admin_user> -P <password> -d CosmosERP -i sql/alter/05_foundry_lookup_values.sql
+
+# 3) Re-seed minimal core login data (super_admin + HQ + admin)
+sqlcmd -S <host>,<port> -U <admin_user> -P <password> -d CosmosERP -i sql/seed/01_seed_core.sql
+```
+
+Then update `.env` for your actual SQL Server values and restart app/PM2:
+
+```env
+DB_HOST=<actual_server_or_ip>
+DB_PORT=<actual_port>
+DB_NAME=CosmosERP
+DB_USER=<app_sql_user>
+DB_PASSWORD=<app_sql_password>
+
+JWT_SECRET=<strong_random_secret>
+API_KEY=<strong_random_api_key>
+ENCRYPTION_KEY=<32_byte_random_key>
+```
+
+Optional cleanup (recommended): clear orphan uploads after DB flush.
+
+```powershell
+Remove-Item -Path ".\src\public\uploads\products\*" -Force
+```
+
+`sql/maintenance/flush_all_data.sql` requires elevated SQL privileges (`sa` or migration admin). Do not run it with the limited app DB user.
+
 ---
 
 ## API Authentication
@@ -211,6 +249,30 @@ X-API-Key: your_api_key
 ```
 
 Returns a JWT token to use in subsequent requests.
+
+### Authorization (RBAC)
+
+After login, the JWT includes:
+
+- **`modules`** — effective module flags from `sp_User_EffectiveModules` (lowercase keys, e.g. `foundry`, `command_unit`, `finance`, `storepilot`). An **empty** module object keeps legacy behaviour (all modules allowed for routing checks only when the map is empty).
+- **`permissions`** — permission strings for the user’s role from `role_permissions` (lowercase). The role **`super_admin`** bypasses all permission and module checks on the API.
+
+Protected routes combine **module access** and **permission** checks (see `src/middleware/authorize.js`). Examples:
+
+| Action | Module | Permission |
+|--------|--------|------------|
+| List / view purchases | `foundry` | `foundry.purchases.view` |
+| Create purchase | `foundry` | `foundry.purchases.create` |
+| Finance reports / dashboard | `finance` | `finance.view` |
+| Record payments | `finance` | `finance.manage` |
+
+Assign permissions in **Command Unit → Roles** (matrix includes `finance.view` / `finance.manage`). Optional SQL seed for **`hq_manager`**: grants `foundry.purchases.view`, `foundry.suppliers.view`, `foundry.branding.manage`, `foundry.sku.generate`, and `foundry.warehouse.approve` — not `foundry.purchases.create` (use the Roles UI if HQ should register new purchases). The seed does not modify `role_module_access` (see `sql/maintenance/verify_hq_manager_foundry_access.sql` for diagnostics).
+
+```bash
+sqlcmd -S <host>,<port> -U <admin_user> -P <password> -d CosmosERP -i sql/seed/02_hq_manager_foundry_view.sql
+```
+
+**Important:** Changing a role’s permissions in the database does not update existing JWTs until the user **logs in again**.
 
 ---
 

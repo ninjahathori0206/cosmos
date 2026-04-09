@@ -2,6 +2,12 @@ const express = require('express');
 const sql     = require('mssql');
 const Joi     = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const {
+  requireAnyModule,
+  requirePermission,
+  hasPermission,
+  isSuperAdmin
+} = require('../middleware/authorize');
 
 const router = express.Router();
 
@@ -9,10 +15,19 @@ const router = express.Router();
 const STORE_ROLES = new Set(['store_incharge', 'store_manager']);
 function isStoreRole(role) { return STORE_ROLES.has(role); }
 
+const transferModAndView = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('foundry.transfers.view', 'storepilot.transfers.view')
+];
+const transferModAndRaise = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('foundry.transfers.create', 'storepilot.transfers.create')
+];
+
 // ── GET /api/transfer-requests ────────────────────────────────────────────────
 // Store roles → see only their own store's requests.
 // HQ / admin  → see all. Optional ?status= and ?top_n= filters.
-router.get('/', async (req, res, next) => {
+router.get('/', ...transferModAndView, async (req, res, next) => {
   try {
     const user    = req.user;
     const storeId = isStoreRole(user.role) ? Number(user.store_id) : null;
@@ -33,7 +48,7 @@ router.get('/', async (req, res, next) => {
 // ── POST /api/transfer-requests ───────────────────────────────────────────────
 // Creates a new transfer request (header + lines).
 // store_id defaults to the caller's own store when not provided.
-router.post('/', async (req, res, next) => {
+router.post('/', ...transferModAndRaise, async (req, res, next) => {
   try {
     const { error, value } = Joi.object({
       store_id: Joi.number().integer().min(1).optional(),
@@ -85,7 +100,7 @@ router.post('/', async (req, res, next) => {
 
 // ── GET /api/transfer-requests/:id ───────────────────────────────────────────
 // Returns header + lines for one request (two recordsets from the SP).
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', ...transferModAndView, async (req, res, next) => {
   try {
     const requestId = Number(req.params.id);
     if (!Number.isFinite(requestId) || requestId <= 0) {
@@ -119,7 +134,7 @@ router.get('/:id', async (req, res, next) => {
 //   lines         — array of { line_id, approved_qty? / dispatched_qty? / received_qty? }
 //   extra_lines   — on DISPATCHED only: [{ sku_id, qty }] SKUs not on the request (HQ adds)
 //   notes         — reviewer / dispatch note
-router.put('/:id/status', async (req, res, next) => {
+router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), async (req, res, next) => {
   try {
     const VALID_STATUSES = ['APPROVED', 'REJECTED', 'DISPATCHED', 'RECEIVED'];
 
@@ -159,10 +174,27 @@ router.put('/:id/status', async (req, res, next) => {
         message: `Only HQ staff can set status to ${value.status}.`
       });
     }
+    if (hqAction && !isSuperAdmin(req) && !hasPermission(req, 'foundry.transfers.edit')) {
+      return res.status(403).json({
+        success: false,
+        message: 'Permission denied for this transfer action.'
+      });
+    }
     if (storeAction && !isStoreRole(user.role) && user.role !== 'super_admin') {
       return res.status(403).json({
         success: false,
         message: 'Only store staff can confirm receipt.'
+      });
+    }
+    if (
+      storeAction
+      && isStoreRole(user.role)
+      && !isSuperAdmin(req)
+      && !hasPermission(req, 'storepilot.transfers.edit')
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Permission denied for confirming receipt.'
       });
     }
 

@@ -367,28 +367,26 @@
     <div class="nav-group">Overview</div>
     <div class="nav-item active" onclick="nav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
 
-    <div class="nav-group">Procurement</div>
-    <div class="nav-item" onclick="nav('purchases',this)"><span class="ic">📋</span> Purchases <span id="purchases-nav-badge" class="nav-badge" style="display:none"></span></div>
-    <div class="nav-item" onclick="nav('new-purchase',this)"><span class="ic">＋</span> New Purchase</div>
-    <div class="nav-item" onclick="nav('bill-verify',this)"><span class="ic">🧾</span> Bill Verification <span id="bv-nav-badge" class="nav-badge gold" style="display:none"></span></div>
-    <div class="nav-item" onclick="nav('branding',this)"><span class="ic">🏷️</span> Branding <span id="branding-nav-badge" class="nav-badge gold" style="display:none"></span></div>
-    <div class="nav-item" onclick="nav('digitisation',this)"><span class="ic">📸</span> Digitisation <span id="digi-nav-badge" class="nav-badge gold" style="display:none"></span></div>
+    <div class="nav-group" data-foundry-nav-group="procurement">Procurement</div>
+    <div class="nav-item" data-foundry-permission="foundry.purchases.view" onclick="nav('purchases',this)"><span class="ic">📋</span> Purchases <span id="purchases-nav-badge" class="nav-badge" style="display:none"></span></div>
+    <div class="nav-item" data-foundry-permission="foundry.purchases.create" onclick="nav('new-purchase',this)"><span class="ic">＋</span> New Purchase</div>
+    <div class="nav-item" data-foundry-permission="foundry.bill_verification.view" onclick="nav('bill-verify',this)"><span class="ic">🧾</span> Bill Verification <span id="bv-nav-badge" class="nav-badge gold" style="display:none"></span></div>
+    <div class="nav-item" data-foundry-permission="foundry.branding.view" onclick="nav('branding',this)"><span class="ic">🏷️</span> Branding <span id="branding-nav-badge" class="nav-badge gold" style="display:none"></span></div>
+    <div class="nav-item" data-foundry-permission="foundry.digitisation.view" onclick="nav('digitisation',this)"><span class="ic">📸</span> Digitisation <span id="digi-nav-badge" class="nav-badge gold" style="display:none"></span></div>
 
-    <div class="nav-group">Catalogue</div>
-    <div class="nav-item" onclick="nav('sku-catalogue',this)"><span class="ic">🗂️</span> SKU Catalogue</div>
-    <div class="nav-item" onclick="nav('stock-view',this)"><span class="ic">📦</span> Stock View</div>
-    <div class="nav-item" onclick="nav('lens-portfolio',this)"><span class="ic">👁️</span> Lens Portfolio</div>
-    <div class="nav-item" onclick="nav('master-catalogue',this)"><span class="ic">📖</span> Master Catalogue</div>
+    <div class="nav-group" data-foundry-nav-group="catalogue">Catalogue</div>
+    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('sku-catalogue',this)"><span class="ic">🗂️</span> SKU Catalogue</div>
+    <div class="nav-item" data-foundry-permission="foundry.stock.view" onclick="nav('stock-view',this)"><span class="ic">📦</span> Stock View</div>
+    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('lens-portfolio',this)"><span class="ic">👁️</span> Lens Portfolio</div>
+    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('master-catalogue',this)"><span class="ic">📖</span> Master Catalogue</div>
 
-    <div class="nav-group">Store Connect</div>
-    <div class="nav-item" onclick="nav('transfer-requests',this)" id="nav-transfer-requests"><span class="ic">📬</span> Goods Request <span id="tr-nav-badge" class="nav-badge gold" style="display:none"></span></div>
-    <div class="nav-item" onclick="nav('stock-transfer',this)"><span class="ic">🚚</span> Goods Transfer</div>
-    <div class="nav-item" onclick="nav('movement-list',this)"><span class="ic">📋</span> Movement List</div>
+    <div class="nav-group" data-foundry-nav-group="store-connect">Store Connect</div>
+    <div class="nav-item" data-foundry-permission="foundry.transfers.view" onclick="nav('transfer-requests',this)" id="nav-transfer-requests"><span class="ic">📬</span> Goods Request <span id="tr-nav-badge" class="nav-badge gold" style="display:none"></span></div>
+    <div class="nav-item" data-foundry-permission="foundry.stock.view" onclick="nav('stock-transfer',this)"><span class="ic">🚚</span> Goods Transfer</div>
+    <div class="nav-item" data-foundry-permission="foundry.transfers.view" onclick="nav('movement-list',this)"><span class="ic">📋</span> Movement List</div>
 
-    <div class="nav-group">Intelligence</div>
-    <div class="nav-item" onclick="nav('rate-intelligence',this)"><span class="ic">💰</span> Rate Intelligence</div>
-    <div class="nav-item" onclick="nav('suppliers',this)"><span class="ic">🏭</span> Suppliers</div>
-    <div class="nav-item" onclick="nav('maker-master',this)"><span class="ic">🏗️</span> Maker Master</div>
+    <div class="nav-group" data-foundry-nav-group="intelligence">Intelligence</div>
+    <div class="nav-item" data-foundry-permission="foundry.purchases.view" onclick="nav('rate-intelligence',this)"><span class="ic">💰</span> Rate Intelligence</div>
 
     <div id="fd-switch-module-wrap">
       <div class="nav-group">System</div>
@@ -533,7 +531,7 @@
 
   <!-- ═══ PURCHASES LIST ═══ -->
   <div class="page" id="page-purchases">
-    <div class="ph flex ic"><div><div class="pt">All Purchases</div><div class="ps">Full procurement history across all pipeline stages</div></div><button class="btn primary mla" onclick="nav('new-purchase',document.querySelector('[onclick*=new-purchase]'))">+ New Purchase</button></div>
+    <div class="ph flex ic"><div><div class="pt">All Purchases</div><div class="ps">Full procurement history across all pipeline stages</div></div><button class="btn primary mla" data-foundry-permission="foundry.purchases.create" onclick="nav('new-purchase',document.querySelector('[onclick*=new-purchase]'))">+ New Purchase</button></div>
     <div class="sg4">
       <div class="sc" style="--sc-color:var(--gold)"><div class="sl">Bill Verification</div><div class="sv" id="pstat-bill">—</div></div>
       <div class="sc" style="--sc-color:var(--acc)"><div class="sl">Branding</div><div class="sv" id="pstat-brand">—</div></div>
@@ -696,7 +694,7 @@
         <div class="card" id="branding-receipt-card" style="display:none">
           <div class="ch"><div class="ct">Branding Receipt &amp; Verification</div><span class="b b-blue">Awaiting Return</span></div>
           <div class="cb">
-            <div class="alert alert-gold" id="branding-dispatch-info"><span>⚠️</span><div>Dispatched on <span id="branding-dispatched-date">—</span>. Confirm receipt when all items are returned.</div></div>
+            <div class="alert alert-gold" id="branding-dispatch-info"><span>⚠️</span><div>Dispatched on <span id="branding-dispatched-date">—</span> to <strong id="branding-dispatched-agent">—</strong>. Confirm receipt when all items are returned.</div></div>
             <button class="btn primary w100 mt4" id="branding-receive-btn" style="justify-content:center" onclick="handleBrandingReceive()">Confirm Receipt → Digitisation</button>
             <div style="margin-top:10px"><button class="btn sm w100" id="branding-bypass-btn" style="justify-content:center;color:var(--text3)" onclick="showBrandingBypassModal()">Bypass Branding (skip to Digitisation)</button></div>
           </div>
@@ -1215,33 +1213,6 @@
   </div>
 
   <!-- ═══ SUPPLIERS ═══ -->
-  <div class="page" id="page-suppliers">
-    <div class="ph flex ic"><div><div class="pt">Supplier Management</div><div class="ps">All vendors who supply products to Eyewoot</div></div><button class="btn primary mla" onclick="openNewSupplierModal()">+ Add Supplier</button></div>
-    <div class="card">
-      <div class="ch"><div class="sw" style="flex:1;max-width:300px"><span class="si">🔍</span><input id="suppliers-search" placeholder="Search suppliers..." oninput="loadSuppliers()"></div></div>
-      <div class="tw">
-        <table>
-          <thead><tr><th>Supplier</th><th>Code</th><th>City</th><th>GSTIN</th><th>Status</th><th></th></tr></thead>
-          <tbody id="suppliers-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">Loading...</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══ MAKER MASTER ═══ -->
-  <div class="page" id="page-maker-master">
-    <div class="ph flex ic"><div><div class="pt">Maker Master</div><div class="ps">Manufacturers / factories that produce eyewear for Eyewoot brands</div></div><button class="btn primary mla" onclick="openNewMakerModal()">+ Add Maker</button></div>
-    <div class="card">
-      <div class="ch"><div class="sw" style="flex:1;max-width:300px"><span class="si">🔍</span><input id="makers-search" placeholder="Search makers..." oninput="loadMakers()"></div></div>
-      <div class="tw">
-        <table>
-          <thead><tr><th>Maker Name</th><th>Code</th><th>Country</th><th>Description</th><th>Status</th><th></th></tr></thead>
-          <tbody id="makers-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">Loading...</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
   <!-- ═══════════════════════════════════════════════════════════════════════
        TRANSFER REQUESTS — PRD §8.3 store-to-HQ lifecycle
        Approve, set quantities, and dispatch requests submitted by stores.
@@ -1423,45 +1394,6 @@
   </div>
 </div>
 
-<div class="overlay" id="modal-new-supplier">
-  <div class="modal">
-    <div class="mh"><div class="mt-title" id="supplier-modal-title">Add Supplier</div><div class="mc" onclick="closeM('modal-new-supplier')">×</div></div>
-    <div class="mb">
-      <div id="supplier-modal-error" style="display:none;color:var(--red);background:var(--redL);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
-      <input type="hidden" id="supplier-editing-id">
-      <div class="fg2 mb4">
-        <div class="fgrp"><label>Vendor Name <span class="req">*</span></label><input id="sup-vendor-name" placeholder="Full business name..." oninput="autoFillVendorCode(this.value)"></div>
-        <div class="fgrp"><label>Vendor Code <span class="fhint" style="display:inline">(auto-generated)</span></label><div class="flex ic g2"><input id="sup-vendor-code" placeholder="Auto..." class="mono" style="flex:1"><button type="button" class="btn sm" onclick="refreshVendorCode()" title="Regenerate code">↺</button></div></div>
-        <div class="fgrp"><label>City</label><input id="sup-city" placeholder="e.g. Moradabad"></div>
-        <div class="fgrp"><label>State</label><input id="sup-state" placeholder="e.g. Gujarat"></div>
-        <div class="fgrp"><label>GSTIN</label><input id="sup-gstin" placeholder="15-char GST number" class="mono"></div>
-        <div class="fgrp"><label>Contact Person · Phone</label><input id="sup-contact-person" placeholder="Name · Phone"></div>
-        <div class="fgrp"><label>Contact Phone</label><input id="sup-contact-phone" placeholder="+91 XXXXX XXXXX"></div>
-        <div class="fgrp"><label>Payment Terms</label><select id="sup-payment-terms"><option value="">Select payment terms...</option></select></div>
-      </div>
-    </div>
-    <div class="mf"><button class="btn" onclick="closeM('modal-new-supplier')">Cancel</button><button class="btn primary" id="save-supplier-btn" onclick="handleSaveSupplier()">Add Supplier</button></div>
-  </div>
-</div>
-
-<!-- ── Maker Master Modal ── -->
-<div class="overlay" id="modal-maker">
-  <div class="modal">
-    <div class="mh"><div class="mt-title" id="maker-modal-title">Add Maker</div><div class="mc" onclick="closeM('modal-maker')">×</div></div>
-    <div class="mb">
-      <div id="maker-modal-error" style="display:none;color:var(--red);background:var(--redL);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
-      <input type="hidden" id="maker-editing-id">
-      <div class="fg2 mb4">
-        <div class="fgrp"><label>Maker / Factory Name <span class="req">*</span></label><input id="maker-name" placeholder="e.g. Zhejiang Optics Co."></div>
-        <div class="fgrp"><label>Maker Code <span class="req">*</span></label><input id="maker-code" placeholder="e.g. ZHEJ-001" class="mono"></div>
-        <div class="fgrp"><label>Country</label><input id="maker-country" placeholder="e.g. China, India, Italy"></div>
-        <div class="fgrp s2"><label>Description</label><textarea id="maker-description" rows="2" placeholder="Brief description of what they manufacture..."></textarea></div>
-      </div>
-    </div>
-    <div class="mf"><button class="btn" onclick="closeM('modal-maker')">Cancel</button><button class="btn primary" id="save-maker-btn" onclick="handleSaveMaker()">Add Maker</button></div>
-  </div>
-</div>
-
 <!-- SKU / Product Detail Modal -->
 <div class="overlay" id="modal-sku-detail">
   <div class="modal" style="max-width:680px">
@@ -1512,6 +1444,30 @@
             <option value="CODE128">Code 128 (barcode)</option>
           </select>
         </div>
+        <div class="mt3" style="border:1px solid var(--border);border-radius:8px;padding:10px">
+          <div class="section-lbl mb2">Print margins (mm)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;align-items:end">
+            <label style="display:flex;flex-direction:column;gap:4px">Top
+              <input id="bc-margin-top" type="number" min="0" max="20" step="0.5" value="0" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px">Bottom
+              <input id="bc-margin-bottom" type="number" min="0" max="20" step="0.5" value="0" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px">Left
+              <input id="bc-margin-left" type="number" min="0" max="20" step="0.5" value="0" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px">Right
+              <input id="bc-margin-right" type="number" min="0" max="20" step="0.5" value="0" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px">Row gap
+              <input id="bc-gap-row" type="number" min="0" max="10" step="0.5" value="2" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()" title="Between rows on the roll (TSPL GAP)">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px">Column gap
+              <input id="bc-gap-col" type="number" min="0" max="5" step="0.5" value="0" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()" title="Between adjacent labels in one row">
+            </label>
+          </div>
+          <div style="font-size:10px;color:var(--text2);margin-top:6px">Margins: inset inside each label. Row gap = feed direction between rows (TSPL GAP). Column gap = extra space between QR codes side-by-side. Applied to preview, TSPL, and browser print.</div>
+        </div>
         <div id="bc-printer-status" class="mt3" style="font-size:12px;padding:8px 10px;border-radius:6px;background:#f8f8f8;border:1px solid var(--border)">
           <span id="bc-status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ccc;margin-right:6px"></span>
           <span id="bc-status-text">Printer not connected</span>
@@ -1541,7 +1497,6 @@ const bcMap = {
   'bill-verify':'Bill Verification', branding:'Branding', digitisation:'Digitisation',
   'sku-catalogue':'SKU Catalogue', 'stock-view':'Stock View', 'lens-portfolio':'Lens Portfolio',
   'master-catalogue':'Master Catalogue', 'rate-intelligence':'Rate Intelligence',
-  suppliers:'Suppliers', 'maker-master':'Maker Master',
   'transfer-requests':'Store Connect — Goods Request',
   'stock-transfer':   'Store Connect — Goods Transfer',
   'movement-list':    'Store Connect — Movement List'

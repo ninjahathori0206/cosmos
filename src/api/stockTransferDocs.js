@@ -13,61 +13,78 @@ const express = require('express');
 const sql     = require('mssql');
 const Joi     = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const {
+  requireModule,
+  requirePermission,
+  requireAnyModule,
+  isSuperAdmin,
+  hasPermission
+} = require('../middleware/authorize');
 
 const router = express.Router();
 
 const STORE_ROLES = new Set(['store_incharge', 'store_manager']);
 const isStoreRole = (role) => STORE_ROLES.has(role);
 
+const docListAccess = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('foundry.transfers.view', 'storepilot.transfers.view')
+];
+
 // ── POST /api/stock-transfer-docs ─────────────────────────────────────────────
 // HQ dispatches a direct transfer.  Decrements WAREHOUSE balance immediately.
 // Body: { to_store_id, lines: [{ sku_id, qty }], notes? }
-router.post('/', async (req, res, next) => {
-  try {
-    const { error, value } = Joi.object({
-      to_store_id: Joi.number().integer().min(1).required(),
-      lines: Joi.array().items(
-        Joi.object({
-          sku_id: Joi.number().integer().min(1).required(),
-          qty:    Joi.number().integer().min(1).required()
-        })
-      ).min(1).required(),
-      notes: Joi.string().max(500).allow('', null).optional()
-    }).validate(req.body, { abortEarly: false });
+router.post(
+  '/',
+  requireModule('foundry'),
+  requirePermission('foundry.transfers.create'),
+  async (req, res, next) => {
+    try {
+      const { error, value } = Joi.object({
+        to_store_id: Joi.number().integer().min(1).required(),
+        lines: Joi.array().items(
+          Joi.object({
+            sku_id: Joi.number().integer().min(1).required(),
+            qty:    Joi.number().integer().min(1).required()
+          })
+        ).min(1).required(),
+        notes: Joi.string().max(500).allow('', null).optional()
+      }).validate(req.body, { abortEarly: false });
 
-    if (error) {
-      return res.status(400).json({ success: false, message: error.details.map(d => d.message).join('; ') });
+      if (error) {
+        return res.status(400).json({ success: false, message: error.details.map(d => d.message).join('; ') });
+      }
+
+      if (isStoreRole(req.user.role)) {
+        return res.status(403).json({ success: false, message: 'Only HQ staff can dispatch transfers.' });
+      }
+
+      const linesJson = JSON.stringify(value.lines.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
+
+      const result = await executeStoredProcedure('sp_StockTransferDoc_Dispatch', {
+        lines_json:        { type: sql.NVarChar(sql.MAX), value: linesJson },
+        to_store_id:       { type: sql.Int,               value: value.to_store_id },
+        doc_type:          { type: sql.VarChar(10),        value: 'DIRECT' },
+        source_request_id: { type: sql.Int,               value: null },
+        notes:             { type: sql.NVarChar(500),      value: value.notes || null },
+        dispatched_by:     { type: sql.Int,               value: req.user.user_id }
+      });
+
+      const docId = result.recordset?.[0]?.doc_id;
+      return res.status(201).json({ success: true, data: { doc_id: docId } });
+    } catch (err) {
+      if (err.code === 'EREQUEST') {
+        return res.status(422).json({ success: false, message: err.message });
+      }
+      return next(err);
     }
-
-    if (isStoreRole(req.user.role)) {
-      return res.status(403).json({ success: false, message: 'Only HQ staff can dispatch transfers.' });
-    }
-
-    const linesJson = JSON.stringify(value.lines.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
-
-    const result = await executeStoredProcedure('sp_StockTransferDoc_Dispatch', {
-      lines_json:        { type: sql.NVarChar(sql.MAX), value: linesJson },
-      to_store_id:       { type: sql.Int,               value: value.to_store_id },
-      doc_type:          { type: sql.VarChar(10),        value: 'DIRECT' },
-      source_request_id: { type: sql.Int,               value: null },
-      notes:             { type: sql.NVarChar(500),      value: value.notes || null },
-      dispatched_by:     { type: sql.Int,               value: req.user.user_id }
-    });
-
-    const docId = result.recordset?.[0]?.doc_id;
-    return res.status(201).json({ success: true, data: { doc_id: docId } });
-  } catch (err) {
-    if (err.code === 'EREQUEST') {
-      return res.status(422).json({ success: false, message: err.message });
-    }
-    return next(err);
   }
-});
+);
 
 // ── GET /api/stock-transfer-docs ──────────────────────────────────────────────
 // Store roles → their store only.  HQ → all (or ?to_store_id= filter).
 // Optional: ?status=DISPATCHED|ACCEPTED|STOCKED  ?top_n=50
-router.get('/', async (req, res, next) => {
+router.get('/', ...docListAccess, async (req, res, next) => {
   try {
     const user    = req.user;
     const storeId = isStoreRole(user.role) ? Number(user.store_id) : (req.query.to_store_id ? Number(req.query.to_store_id) : null);
@@ -86,7 +103,7 @@ router.get('/', async (req, res, next) => {
 });
 
 // ── GET /api/stock-transfer-docs/:id ─────────────────────────────────────────
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', ...docListAccess, async (req, res, next) => {
   try {
     const docId = Number(req.params.id);
     if (!Number.isFinite(docId) || docId <= 0) {
@@ -116,7 +133,7 @@ router.get('/:id', async (req, res, next) => {
 
 // ── PUT /api/stock-transfer-docs/:id/accept ───────────────────────────────────
 // Store accepts the incoming transfer.  DISPATCHED → ACCEPTED.
-router.put('/:id/accept', async (req, res, next) => {
+router.put('/:id/accept', requireModule('storepilot'), async (req, res, next) => {
   try {
     const docId = Number(req.params.id);
     if (!Number.isFinite(docId) || docId <= 0) {
@@ -126,6 +143,14 @@ router.put('/:id/accept', async (req, res, next) => {
     // Only store roles or super_admin can accept
     if (!isStoreRole(req.user.role) && req.user.role !== 'super_admin') {
       return res.status(403).json({ success: false, message: 'Only store staff can accept transfers.' });
+    }
+
+    if (
+      isStoreRole(req.user.role)
+      && !isSuperAdmin(req)
+      && !hasPermission(req, 'storepilot.transfers.edit')
+    ) {
+      return res.status(403).json({ success: false, message: 'Permission denied.' });
     }
 
     const result = await executeStoredProcedure('sp_StockTransferDoc_Accept', {
@@ -146,7 +171,7 @@ router.put('/:id/accept', async (req, res, next) => {
 // Store verifies quantities received.  ACCEPTED → STOCKED.
 // Increments STORE balance per verified line.
 // Body: { lines: [{ line_id, qty_received }] }
-router.put('/:id/stock', async (req, res, next) => {
+router.put('/:id/stock', requireModule('storepilot'), async (req, res, next) => {
   try {
     const docId = Number(req.params.id);
     if (!Number.isFinite(docId) || docId <= 0) {
@@ -168,6 +193,14 @@ router.put('/:id/stock', async (req, res, next) => {
 
     if (!isStoreRole(req.user.role) && req.user.role !== 'super_admin') {
       return res.status(403).json({ success: false, message: 'Only store staff can verify and stock transfers.' });
+    }
+
+    if (
+      isStoreRole(req.user.role)
+      && !isSuperAdmin(req)
+      && !hasPermission(req, 'storepilot.transfers.edit')
+    ) {
+      return res.status(403).json({ success: false, message: 'Permission denied.' });
     }
 
     const linesJson = JSON.stringify(value.lines);

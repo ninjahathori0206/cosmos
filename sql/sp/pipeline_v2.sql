@@ -197,10 +197,11 @@ GO
 CREATE PROCEDURE dbo.sp_PurchaseHeader_GetById @header_id INT
 AS BEGIN
   SET NOCOUNT ON;
-  -- RS0: header
-  SELECT h.*, s.vendor_name AS supplier_name
+  -- RS0: header (includes branding agent name when assigned)
+  SELECT h.*, s.vendor_name AS supplier_name, ba.agent_name AS branding_agent_name
   FROM dbo.purchase_headers h
-  LEFT JOIN dbo.suppliers s ON h.supplier_id = s.supplier_id
+  LEFT JOIN dbo.suppliers s     ON h.supplier_id    = s.supplier_id
+  LEFT JOIN dbo.branding_agents ba ON h.branding_agent_id = ba.agent_id
   WHERE h.header_id = @header_id;
   -- RS1: items (includes product detail fields for digitisation)
   SELECT pi.*, pm.ew_collection, pm.style_model, pm.source_type, pm.branding_required,
@@ -316,7 +317,8 @@ IF OBJECT_ID('dbo.sp_PurchaseHeader_BrandingDispatch','P') IS NOT NULL DROP PROC
 GO
 CREATE PROCEDURE dbo.sp_PurchaseHeader_BrandingDispatch
   @header_id             INT,
-  @branding_instructions VARCHAR(500) = NULL
+  @branding_instructions VARCHAR(500) = NULL,
+  @branding_agent_id     INT          = NULL
 AS BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
@@ -324,11 +326,15 @@ AS BEGIN
     BEGIN RAISERROR('Branding dispatch only allowed at PENDING_BRANDING stage.',16,1); RETURN; END;
     UPDATE dbo.purchase_headers SET
       branding_instructions = @branding_instructions,
+      branding_agent_id     = @branding_agent_id,
       pipeline_status       = 'BRANDING_DISPATCHED',
       dispatched_at         = DATEADD(MINUTE, 330, SYSUTCDATETIME()),
       updated_at            = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
-    SELECT header_id, pipeline_status, dispatched_at FROM dbo.purchase_headers WHERE header_id = @header_id;
+    SELECT h.header_id, h.pipeline_status, h.dispatched_at, ba.agent_name AS branding_agent_name
+    FROM dbo.purchase_headers h
+    LEFT JOIN dbo.branding_agents ba ON h.branding_agent_id = ba.agent_id
+    WHERE h.header_id = @header_id;
   END TRY
   BEGIN CATCH DECLARE @e NVARCHAR(4000)=ERROR_MESSAGE(); RAISERROR(@e,16,1); END CATCH;
 END;
@@ -421,28 +427,32 @@ AS BEGIN
     IF @product_master_id IS NULL
       BEGIN RAISERROR('Could not resolve product for the given item/colour.',16,1); RETURN; END;
 
-    DECLARE @seq     INT = (SELECT COUNT(*)+1 FROM dbo.skus);
-    DECLARE @sku_code VARCHAR(50) = @brand_part + '-' + @coll_part + '-' + @clr_part + '-' + RIGHT('0000'+CAST(@seq AS VARCHAR),4);
+    -- SKU = stable product identifier: BRAND-COLL-CLR (same for all purchases of same product+colour)
+    DECLARE @sku_code VARCHAR(50) = @brand_part + '-' + @coll_part + '-' + @clr_part;
 
-    -- Ensure unique
-    WHILE EXISTS (SELECT 1 FROM dbo.skus WHERE sku_code = @sku_code)
+    -- PID = purchase identifier: SKU-P{header_id} (unique per purchase batch)
+    DECLARE @pid VARCHAR(80) = @sku_code + '-P' + CAST(@header_id AS VARCHAR);
+
+    -- Ensure PID is unique (safety: if same header somehow generates duplicate colour)
+    DECLARE @pid_seq INT = 1;
+    WHILE EXISTS (SELECT 1 FROM dbo.skus WHERE pid = @pid)
     BEGIN
-      SET @seq = @seq + 1;
-      SET @sku_code = @brand_part + '-' + @coll_part + '-' + @clr_part + '-' + RIGHT('0000'+CAST(@seq AS VARCHAR),4);
+      SET @pid_seq = @pid_seq + 1;
+      SET @pid = @sku_code + '-P' + CAST(@header_id AS VARCHAR) + '-' + CAST(@pid_seq AS VARCHAR);
     END;
 
     INSERT INTO dbo.skus (
       product_master_id, purchase_colour_id,
       header_id, item_id, item_colour_id,
-      sku_code, barcode, quantity, cost_price, sale_price, status
+      sku_code, barcode, pid, quantity, cost_price, sale_price, status
     )
     VALUES (
       @product_master_id, NULL,
       @header_id, @item_id, @item_colour_id,
-      @sku_code, @sku_code, @colour_qty, @cost_price, @sale_price, 'PENDING'
+      @sku_code, @pid, @pid, @colour_qty, @cost_price, @sale_price, 'PENDING'
     );
 
-    SELECT SCOPE_IDENTITY() AS sku_id, @sku_code AS sku_code, @sku_code AS barcode, @colour_qty AS quantity;
+    SELECT SCOPE_IDENTITY() AS sku_id, @sku_code AS sku_code, @pid AS pid, @pid AS barcode, @colour_qty AS quantity;
   END TRY
   BEGIN CATCH DECLARE @e NVARCHAR(4000)=ERROR_MESSAGE(); RAISERROR(@e,16,1); END CATCH;
 END;
@@ -456,7 +466,7 @@ GO
 CREATE PROCEDURE dbo.sp_PurchaseHeader_GetSKUs @header_id INT
 AS BEGIN
   SET NOCOUNT ON;
-  SELECT sk.sku_id, sk.item_colour_id, sk.sku_code, sk.barcode, sk.sale_price, sk.status,
+  SELECT sk.sku_id, sk.item_colour_id, sk.sku_code, sk.pid, sk.barcode, sk.sale_price, sk.status,
          pic.colour_name, pic.colour_code, pic.quantity,
          pi.item_id, pi.purchase_rate, pi.quantity AS item_qty,
          pm.ew_collection, pm.style_model

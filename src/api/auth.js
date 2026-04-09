@@ -54,7 +54,8 @@ router.post('/login', async (req, res, next) => {
         user_id: { type: sql.Int, value: user.user_id }
       });
       (modResult.recordset || []).forEach((r) => {
-        modules[r.module_key] = !!r.is_effective;
+        const k = String(r.module_key || '').toLowerCase();
+        if (k) modules[k] = !!r.is_effective;
       });
     } catch (spErr) {
       // Non-fatal: if SP not yet deployed the login still succeeds;
@@ -62,10 +63,24 @@ router.post('/login', async (req, res, next) => {
       console.warn('[auth/login] sp_User_EffectiveModules failed:', spErr.message);
     }
 
+    let permissions = [];
+    try {
+      const permResult = await executeStoredProcedure('sp_Role_GetPermissions', {
+        role_key: { type: sql.VarChar(50), value: user.role_key }
+      });
+      permissions = (permResult.recordset || []).map((row) =>
+        String(row.permission || '').toLowerCase()
+      ).filter(Boolean);
+    } catch (permErr) {
+      console.warn('[auth/login] sp_Role_GetPermissions failed:', permErr.message);
+    }
+
     const payload = {
       user_id: user.user_id,
       role: user.role_key,
-      store_id: user.store_id || null
+      store_id: user.store_id || null,
+      modules,
+      permissions
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -83,7 +98,8 @@ router.post('/login', async (req, res, next) => {
           role: user.role_key,
           store_id: user.store_id,
           store_name: user.store_name || null,
-          modules
+          modules,
+          permissions
         }
       }
     });
