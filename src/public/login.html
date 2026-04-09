@@ -98,14 +98,14 @@
   <div class="card">
     <h1>Cosmos ERP</h1>
     <div class="sub">Sign in to Command Unit</div>
-    <form id="login-form">
+    <form id="login-form" autocomplete="off" novalidate>
       <div class="field">
         <label for="username">Username</label>
-        <input id="username" name="username" type="text" autocomplete="username" required>
+        <input id="username" name="username" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" readonly required>
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <input id="password" name="password" type="password" autocomplete="off" readonly required>
       </div>
       <label class="remember">
         <input id="login-remember-me" type="checkbox" name="remember">

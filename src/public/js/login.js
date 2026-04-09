@@ -3,12 +3,10 @@ const API_KEY = 'CHANGE_ME_API_KEY';
 const LS_USER = 'cosmos_login_username';
 const LS_PASS = 'cosmos_login_password';
 
-const DEFAULT_USER = 'admin';
-const DEFAULT_PASS = 'Admin@123';
-
 /**
- * Remembered credentials live in localStorage (convenient for internal/demo).
- * Not suitable for shared or high-risk machines; user must opt in via checkbox.
+ * Only pre-fill from our "Remember me" localStorage — no default admin/password.
+ * Browsers may still autofill from their own password store; we use autocomplete="off"
+ * and readonly-until-focus in HTML to reduce that.
  */
 function applySavedOrDefaults() {
   const userEl = document.getElementById('username');
@@ -21,20 +19,36 @@ function applySavedOrDefaults() {
 
   if (savedU != null && savedU !== '') {
     userEl.value = savedU;
+    userEl.removeAttribute('readonly');
   } else {
-    userEl.value = DEFAULT_USER;
+    userEl.value = '';
   }
 
   if (savedP != null && savedP !== '') {
     passEl.value = savedP;
     if (rememberEl) rememberEl.checked = true;
+    passEl.removeAttribute('readonly');
   } else {
-    passEl.value = (savedU === null || savedU === '') ? DEFAULT_PASS : '';
+    passEl.value = '';
   }
+}
+
+/** Lets user type without double-click; also helps avoid autofill until interaction. */
+function attachReadonlyUnlock() {
+  ['username', 'password'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const unlock = () => {
+      if (el.hasAttribute('readonly')) el.removeAttribute('readonly');
+    };
+    el.addEventListener('focus', unlock, { once: true });
+    el.addEventListener('pointerdown', unlock, { once: true });
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   applySavedOrDefaults();
+  attachReadonlyUnlock();
 
   const form = document.getElementById('login-form');
   const errorEl = document.getElementById('error');
