@@ -55,6 +55,21 @@
     .field {
       margin-bottom: 14px;
     }
+    .remember {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      color: #9ca3af;
+      cursor: pointer;
+      user-select: none;
+    }
+    .remember input {
+      width: auto;
+      margin: 0;
+      cursor: pointer;
+    }
     button {
       width: 100%;
       padding: 9px 12px;
@@ -86,12 +101,16 @@
     <form id="login-form">
       <div class="field">
         <label for="username">Username</label>
-        <input id="username" name="username" type="text" autocomplete="username" required value="admin">
+        <input id="username" name="username" type="text" autocomplete="username" required>
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required value="Admin@123">
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
       </div>
+      <label class="remember">
+        <input id="login-remember-me" type="checkbox" name="remember">
+        <span>Remember username and password on this device</span>
+      </label>
       <button id="login-btn" type="submit">Sign in</button>
       <div id="error" class="error"></div>
     </form>

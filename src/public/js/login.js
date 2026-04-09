@@ -1,6 +1,41 @@
 const API_KEY = 'CHANGE_ME_API_KEY';
 
+const LS_USER = 'cosmos_login_username';
+const LS_PASS = 'cosmos_login_password';
+
+const DEFAULT_USER = 'admin';
+const DEFAULT_PASS = 'Admin@123';
+
+/**
+ * Remembered credentials live in localStorage (convenient for internal/demo).
+ * Not suitable for shared or high-risk machines; user must opt in via checkbox.
+ */
+function applySavedOrDefaults() {
+  const userEl = document.getElementById('username');
+  const passEl = document.getElementById('password');
+  const rememberEl = document.getElementById('login-remember-me');
+  if (!userEl || !passEl) return;
+
+  const savedU = localStorage.getItem(LS_USER);
+  const savedP = localStorage.getItem(LS_PASS);
+
+  if (savedU != null && savedU !== '') {
+    userEl.value = savedU;
+  } else {
+    userEl.value = DEFAULT_USER;
+  }
+
+  if (savedP != null && savedP !== '') {
+    passEl.value = savedP;
+    if (rememberEl) rememberEl.checked = true;
+  } else {
+    passEl.value = (savedU === null || savedU === '') ? DEFAULT_PASS : '';
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  applySavedOrDefaults();
+
   const form = document.getElementById('login-form');
   const errorEl = document.getElementById('error');
   const btn = document.getElementById('login-btn');
@@ -14,6 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value;
+    const remember = document.getElementById('login-remember-me')?.checked;
 
     try {
       const res = await fetch('/api/auth/login', {
@@ -28,6 +64,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.message || 'Login failed');
+      }
+
+      if (remember) {
+        localStorage.setItem(LS_USER, username);
+        localStorage.setItem(LS_PASS, password);
+      } else {
+        localStorage.removeItem(LS_USER);
+        localStorage.removeItem(LS_PASS);
       }
 
       const u = data.data.user;
@@ -68,4 +112,3 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
-
