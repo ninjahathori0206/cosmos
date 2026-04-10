@@ -180,7 +180,8 @@
     flex-direction: column;
     gap: 16px;
   }
-  #page-new-purchase.apply-coll-minimal-ui .item-line-collection-dup {
+  #page-new-purchase.apply-coll-minimal-ui .item-line-collection-dup,
+  #page-new-purchase.apply-coll-minimal-ui .item-line-rate-gst-brand-dup {
     display: none !important;
   }
   #page-new-purchase .purchase-item-card .cb {
@@ -196,6 +197,111 @@
       max-height: none;
       overflow: visible;
       padding-right: 0;
+    }
+  }
+
+  /* New Purchase — global product entry (one per page) + compact item row */
+  #page-new-purchase .purchase-global-entry-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 14px;
+  }
+  #page-new-purchase .purchase-global-entry-bar .purchase-active-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text1);
+    margin-right: 4px;
+  }
+  #page-new-purchase .purchase-global-search-wrap {
+    width: 100%;
+    margin-top: 4px;
+  }
+  #page-new-purchase .purchase-global-search-wrap .purchase-global-search-inner {
+    position: relative;
+  }
+  #page-new-purchase .purchase-item-card.purchase-item-card--active {
+    outline: 2px solid var(--acc2);
+    outline-offset: 1px;
+  }
+  #page-new-purchase .purchase-item-quick-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(100px, 140px) minmax(200px, 1fr);
+    gap: 14px;
+    align-items: end;
+    margin-bottom: 8px;
+  }
+  #page-new-purchase .item-totals-cluster {
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  #page-new-purchase .item-mini-amts {
+    text-align: right;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  #page-new-purchase .item-money-row {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+  }
+  #page-new-purchase .item-money-row .td2 {
+    color: var(--text3);
+    font-weight: 500;
+  }
+  #page-new-purchase .item-money-row .mono {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text2);
+  }
+  #page-new-purchase .purchase-item-quick-row .item-total-cell {
+    text-align: right;
+    padding-bottom: 0;
+    flex-shrink: 0;
+  }
+  #page-new-purchase .purchase-item-quick-row .item-total-cell .item-total-lbl {
+    font-size: 11px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+  }
+  #page-new-purchase .purchase-item-quick-row .item-total-cell .mono {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--acc);
+  }
+  #page-new-purchase .purchase-colour-section {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+  @media (max-width: 720px) {
+    #page-new-purchase .purchase-item-quick-row {
+      grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+    #page-new-purchase .item-totals-cluster {
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    #page-new-purchase .item-mini-amts {
+      text-align: left;
+    }
+    #page-new-purchase .item-money-row {
+      justify-content: space-between;
+    }
+    #page-new-purchase .purchase-item-quick-row .item-total-cell {
+      text-align: right;
     }
   }
 
@@ -465,7 +571,7 @@
 
   <!-- ═══ DASHBOARD ═══ -->
   <div class="page active" id="page-dashboard">
-    <div class="ph"><div class="pt">Foundry Dashboard</div><div class="ps">Supply chain overview · HQ Warehouse · All procurement activity</div></div>
+    <div class="ph"><div class="pt">Foundry Dashboard</div></div>
     <div class="sg4">
       <div class="sc" style="--sc-color:var(--acc)"><div class="sl">Active Purchases</div><div class="sv" id="dash-active-purchases">—</div><div class="sm" id="dash-pending-bill">— pending bill verification</div></div>
       <div class="sc" style="--sc-color:var(--teal)"><div class="sl">SKUs in Catalogue</div><div class="sv" id="dash-skus">—</div><div class="sm">Live SKUs in system</div></div>
@@ -516,7 +622,7 @@
 
   <!-- ═══ NEW PURCHASE ═══ -->
   <div class="page" id="page-new-purchase">
-    <div class="ph flex ic"><div><div class="pt">New Purchase Registration</div><div class="ps">Stage 1 of 5 — Bill &amp; collection on the left; line items on the right (wide screens).</div></div></div>
+    <div class="ph flex ic"><div><div class="pt">New Purchase Registration</div></div></div>
 
     <div class="pipeline">
       <div class="pstep active"><div class="pstep-num">STAGE 1</div><div class="pstep-title">📋 Purchase Reg.</div><div class="pstep-sub">Current step</div></div>
@@ -532,7 +638,7 @@
       <aside class="np-aside">
         <!-- ── Bill Header (shared across all items in this bill) ── -->
         <div class="card mb4">
-          <div class="ch"><div class="ct">Bill Header</div><div class="cb-hint xs td2">All items on this bill share the same supplier &amp; bill reference</div></div>
+          <div class="ch"><div class="ct">Bill Header</div></div>
           <div class="cb">
             <div class="fg3">
               <div class="fgrp">
@@ -542,9 +648,9 @@
                 </select>
                 <div class="fhint" id="bill-supplier-hint" style="display:none"></div>
               </div>
-              <div class="fgrp"><label>Bill Reference / Invoice No.</label><input id="bill-ref-input" placeholder="e.g. INV-2024-001 (optional)"></div>
+              <div class="fgrp"><label>Invoice No.</label><input id="bill-ref-input" placeholder="e.g. INV-2024-001 (optional)"></div>
               <div class="fgrp"><label>Purchase Date <span class="req">*</span></label><input type="text" id="bill-purchase-date-input" placeholder="dd/MM/yyyy" readonly class="datepicker"></div>
-              <div class="fgrp"><label>Transport / Freight Cost (₹)</label><input type="number" id="bill-transport-input" placeholder="0" min="0" step="0.01" oninput="recalcGrandTotal()"></div>
+              <div class="fgrp"><label>Transport Cost (₹)</label><input type="number" id="bill-transport-input" placeholder="0" min="0" step="0.01" oninput="recalcGrandTotal()"></div>
               <div class="fgrp"><label>PO Reference</label><input id="bill-po-ref-input" placeholder="Optional PO number"></div>
               <div class="fgrp"><label>Notes</label><input id="bill-notes-input" placeholder="Any additional notes..."></div>
             </div>
@@ -553,13 +659,12 @@
 
         <!-- ── Collection defaults ── -->
         <div class="card mb4" id="purchase-collection-defaults-card">
-          <div class="ch"><div class="ct">Collection defaults</div><div class="cb-hint xs td2">Set once per bill, then use “Next model” for more lines.</div></div>
+          <div class="ch"><div class="ct">Collection defaults</div></div>
           <div class="cb">
             <div class="fg3">
               <div class="fgrp">
                 <label>Product Type</label>
                 <select id="coll-default-product-type"><option value="">— Select Product Type —</option></select>
-                <div class="fhint">Applied with the fields below when you add items or click Apply to all.</div>
               </div>
               <div class="fgrp">
                 <label>Manufacturer</label>
@@ -577,6 +682,22 @@
                 <input id="coll-default-source-coll" list="coll-default-source-coll-list" placeholder="Optional" onfocus="onCollectionDefaultSourceCollectionInputChange()" oninput="onCollectionDefaultSourceCollectionInputChange()">
                 <datalist id="coll-default-source-coll-list"></datalist>
               </div>
+              <div class="fgrp">
+                <label>Purchase rate (₹)</label>
+                <input type="number" id="coll-default-rate" placeholder="Optional — same for all lines" min="0" step="0.01">
+              </div>
+              <div class="fgrp">
+                <label>GST %</label>
+                <input type="number" id="coll-default-gst" placeholder="e.g. 12" step="0.01" min="0" max="100">
+              </div>
+              <div class="fgrp" style="grid-column:1/-1">
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px">
+                  <input type="checkbox" id="coll-default-branding" style="width:16px;height:16px;cursor:pointer;accent-color:var(--acc2)">
+                  <div>
+                    <label for="coll-default-branding" style="font-size:13px;font-weight:600;cursor:pointer">Branding required</label>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="flex ic g2 mt2" style="flex-wrap:wrap;align-items:center">
               <label class="flex ic g2" style="cursor:pointer;font-size:13px">
@@ -585,12 +706,24 @@
               </label>
               <button type="button" class="btn sm" onclick="applyCollectionDefaultsToAllPurchaseItems()">Apply to all line items now</button>
             </div>
-            <p class="fhint" id="coll-apply-minimal-hint" style="margin-top:10px;display:none">When checked, Product Type / Manufacturer / Source Brand / Collection are hidden on each line (values still applied for save).</p>
           </div>
         </div>
       </aside>
 
       <div class="np-main">
+        <div class="purchase-global-entry-bar" id="purchase-global-entry-bar">
+          <span class="purchase-active-label" id="purchase-active-item-label">Editing: Item #1</span>
+          <button type="button" class="btn sm" id="purchase-entry-mode-new" onclick="setPurchaseItemMode(getPurchaseActiveIdx(),'new')">✚ New product</button>
+          <button type="button" class="btn sm" id="purchase-entry-mode-search" onclick="setPurchaseItemMode(getPurchaseActiveIdx(),'search')">🔍 Search existing</button>
+          <div class="purchase-global-search-wrap" id="purchase-global-search-wrap" style="display:none">
+            <div class="purchase-global-search-inner">
+              <input id="purchase-global-search-q" placeholder="Search by brand, model, manufacturer…" style="width:100%;padding-right:32px" oninput="onPurchaseItemSearch()" autocomplete="off">
+              <span id="purchase-global-search-spinner" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text3)">…</span>
+            </div>
+            <div id="purchase-global-search-results" style="display:none;border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:280px;overflow-y:auto;background:var(--card)"></div>
+          </div>
+        </div>
+
         <!-- ── Items Container ── -->
         <div id="purchase-items-container">
           <!-- Items rendered by JS: addPurchaseItem() -->
@@ -599,7 +732,7 @@
         <div class="flex ic g2 mb4">
           <button class="btn sm" id="add-item-btn" onclick="addPurchaseItem()">+ Add Another Item</button>
           <button class="btn sm" id="dup-item-btn" onclick="duplicatePurchaseItem()" title="Copy all fields from the last item">⧉ Duplicate Last Item</button>
-          <button class="btn sm" id="dup-same-coll-btn" onclick="duplicatePurchaseItemSameCollection()" title="Same manufacturer, brand &amp; collection as last item — enter a new model, rate &amp; qty">+ Next model (same collection)</button>
+          <button class="btn sm" id="dup-same-coll-btn" onclick="duplicatePurchaseItemSameCollection()" title="Same manufacturer, brand, collection, rate, GST &amp; branding as last item — enter a new model &amp; qty">+ Next model (same collection)</button>
           <span class="xs td2" id="items-count-hint">1 item</span>
         </div>
 
@@ -610,7 +743,7 @@
             <div id="bill-grand-total-rows" style="display:flex;flex-direction:column;gap:8px">
               <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Items Sub-Total</span><span class="mono xs" id="grand-subtotal">₹0</span></div>
               <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Total GST</span><span class="mono xs" id="grand-gst">₹0</span></div>
-              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Transport / Freight</span><span class="mono xs" id="grand-transport">₹0</span></div>
+              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Transport Cost</span><span class="mono xs" id="grand-transport">₹0</span></div>
               <hr class="sep" style="margin:4px 0">
               <div class="flex ic" style="justify-content:space-between"><span class="fw6">Grand Total (Expected Bill)</span><span class="mono fw6" id="grand-total" style="font-size:16px;color:var(--acc)">₹0</span></div>
             </div>
@@ -624,7 +757,7 @@
 
   <!-- ═══ PURCHASES LIST ═══ -->
   <div class="page" id="page-purchases">
-    <div class="ph flex ic"><div><div class="pt">All Purchases</div><div class="ps">Full procurement history across all pipeline stages</div></div><button class="btn primary mla" data-foundry-permission="foundry.purchases.create" onclick="nav('new-purchase',document.querySelector('[onclick*=new-purchase]'))">+ New Purchase</button></div>
+    <div class="ph flex ic"><div><div class="pt">All Purchases</div></div><button class="btn primary mla" data-foundry-permission="foundry.purchases.create" onclick="nav('new-purchase',document.querySelector('[onclick*=new-purchase]'))">+ New Purchase</button></div>
     <div class="sg4">
       <div class="sc" style="--sc-color:var(--gold)"><div class="sl">Bill Verification</div><div class="sv" id="pstat-bill">—</div></div>
       <div class="sc" style="--sc-color:var(--acc)"><div class="sl">Branding</div><div class="sv" id="pstat-brand">—</div></div>
@@ -648,7 +781,7 @@
       </div>
       <div class="tw">
         <table>
-          <thead><tr><th>Bill ID</th><th>Supplier</th><th>Bill Ref</th><th>Items</th><th>Total Qty</th><th>Expected Bill</th><th>Stage</th><th>Date</th><th></th></tr></thead>
+          <thead><tr><th>Bill ID</th><th>Supplier</th><th>Invoice No.</th><th>Items</th><th>Total Qty</th><th>Expected Bill</th><th>Stage</th><th>Date</th><th></th></tr></thead>
           <tbody id="purchases-tbody"><tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text3)">Loading...</td></tr></tbody>
         </table>
       </div>
@@ -657,7 +790,7 @@
 
   <!-- ═══ BILL VERIFICATION ═══ -->
   <div class="page" id="page-bill-verify">
-    <div class="ph flex ic"><div><div class="pt">Bill Verification</div><div class="ps">Stage 2 — Enter actual supplier bill and reconcile against expected amount</div></div><button class="btn sm mla" id="bv-print-btn" onclick="printBillSummary()" style="display:none">🖨 Print Summary</button></div>
+    <div class="ph flex ic"><div><div class="pt">Bill Verification</div></div><button class="btn sm mla" id="bv-print-btn" onclick="printBillSummary()" style="display:none">🖨 Print Summary</button></div>
 
     <!-- LIST VIEW -->
     <div id="bv-list-section">
@@ -665,7 +798,7 @@
         <div class="ch"><div class="ct">Pending Bill Verification</div><span class="b b-gold" id="bv-list-count">—</span></div>
         <div class="cb">
           <div class="tw"><table>
-            <thead><tr><th>Bill ID</th><th>Supplier</th><th>Bill Ref</th><th>Items</th><th>Total Qty</th><th>Expected Bill</th><th>Date</th><th>Action</th></tr></thead>
+            <thead><tr><th>Bill ID</th><th>Supplier</th><th>Invoice No.</th><th>Items</th><th>Total Qty</th><th>Expected Bill</th><th>Date</th><th>Action</th></tr></thead>
             <tbody id="bv-list-tbody"><tr><td colspan="8" class="tc td2 p12">Loading…</td></tr></tbody>
           </table></div>
         </div>
@@ -717,7 +850,7 @@
           <div class="cb">
             <div id="bv-breakdown" style="display:flex;flex-direction:column;gap:8px">
               <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Items Sub-total</span><span class="mono xs" id="bv-subtotal">₹0</span></div>
-              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Transport</span><span class="mono xs" id="bv-transport">₹0</span></div>
+              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Transport Cost</span><span class="mono xs" id="bv-transport">₹0</span></div>
               <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Total GST</span><span class="mono xs" id="bv-gst">₹0</span></div>
               <hr class="sep" style="margin:4px 0">
               <div class="flex ic" style="justify-content:space-between"><span class="fw6">Expected Total</span><span class="mono fw6" id="bv-expected" style="font-size:16px;color:var(--acc)">₹0</span></div>
@@ -734,7 +867,7 @@
 
   <!-- ═══ BRANDING ═══ -->
   <div class="page" id="page-branding">
-    <div class="ph flex ic"><div><div class="pt">Branding</div><div class="ps">Stage 3 — Dispatch all items to branding team · Receive and verify</div></div><button class="btn sm mla" id="branding-print-btn" onclick="printBrandingDispatch()" style="display:none">🖨 Print Dispatch Order</button></div>
+    <div class="ph flex ic"><div><div class="pt">Branding</div></div><button class="btn sm mla" id="branding-print-btn" onclick="printBrandingDispatch()" style="display:none">🖨 Print Dispatch Order</button></div>
 
     <!-- LIST VIEW -->
     <div id="branding-list-section">
@@ -742,7 +875,7 @@
         <div class="ch"><div class="ct">Pending Branding</div><span class="b b-blue" id="branding-list-count">—</span></div>
         <div class="cb">
           <div class="tw"><table>
-            <thead><tr><th>Bill ID</th><th>Supplier</th><th>Bill Ref</th><th>Items</th><th>Total Qty</th><th>Stage</th><th>Date</th><th>Action</th></tr></thead>
+            <thead><tr><th>Bill ID</th><th>Supplier</th><th>Invoice No.</th><th>Items</th><th>Total Qty</th><th>Stage</th><th>Date</th><th>Action</th></tr></thead>
             <tbody id="branding-list-tbody"><tr><td colspan="8" class="tc td2 p12">Loading…</td></tr></tbody>
           </table></div>
         </div>
@@ -806,7 +939,7 @@
 
   <!-- ═══ DIGITISATION ═══ -->
   <div class="page" id="page-digitisation">
-    <div class="ph flex ic"><div><div class="pt">Digitisation</div><div class="ps">Stage 4 — Generate SKUs for each colour variant · Publish to catalogue</div></div><span class="b mla" id="digi-skus-badge" style="font-size:13px"></span></div>
+    <div class="ph flex ic"><div><div class="pt">Digitisation</div></div><span class="b mla" id="digi-skus-badge" style="font-size:13px"></span></div>
 
     <!-- LIST VIEW -->
     <div id="digi-list-section">
@@ -814,7 +947,7 @@
         <div class="ch"><div class="ct">Pending Digitisation</div><span class="b b-teal" id="digi-list-count">—</span></div>
         <div class="cb">
           <div class="tw"><table>
-            <thead><tr><th>Bill ID</th><th>Supplier</th><th>Bill Ref</th><th>Items</th><th>Total Qty</th><th>Date</th><th>Action</th></tr></thead>
+            <thead><tr><th>Bill ID</th><th>Supplier</th><th>Invoice No.</th><th>Items</th><th>Total Qty</th><th>Date</th><th>Action</th></tr></thead>
             <tbody id="digi-list-tbody"><tr><td colspan="7" class="tc td2 p12">Loading…</td></tr></tbody>
           </table></div>
         </div>
@@ -857,7 +990,7 @@
     <div class="ph flex ic">
       <div>
         <div class="pt" id="pv-title">Purchase History</div>
-        <div class="ps" id="pv-subtitle">Full pipeline view — all stages</div>
+        <div class="ps" id="pv-subtitle"></div>
       </div>
       <button class="btn sm mla" onclick="loadPurchases();nav('purchases',document.querySelector('.nav-item[onclick*=&quot;purchases&quot;]'))">&#8592; All Purchases</button>
     </div>
@@ -894,14 +1027,14 @@
   </div>
 <div class="page" id="page-sku-catalogue">
     <div class="ph flex ic">
-      <div><div class="pt">SKU Catalogue</div><div class="ps" id="sku-cat-subtitle">Loading&#8230;</div></div>
+      <div><div class="pt">SKU Catalogue</div><div class="ps" id="sku-cat-subtitle"></div></div>
       <div class="flex g2 mla">
         <button class="btn sm" id="cat-grid-btn" onclick="setCatalogueView('grid')" style="background:var(--acc2);color:#fff">&#8862; Grid</button>
         <button class="btn sm" id="cat-table-btn" onclick="setCatalogueView('table')">&#9776; Table</button>
       </div>
     </div>
     <div class="card mb4"><div class="cb"><div class="flex ic g3" style="flex-wrap:wrap">
-      <div class="sw" style="flex:1;min-width:200px"><span class="si">&#128269;</span><input id="cat-search" placeholder="Search SKU, product name, brand&#8230;" oninput="debounceCatSearch()"></div>
+      <div class="sw" style="flex:1;min-width:200px"><span class="si">&#128269;</span><input id="cat-search" placeholder="SKU, brand, collection, model&#8230;" oninput="debounceCatSearch()"></div>
       <select id="cat-brand-filter" style="min-width:130px" onchange="window.loadSkuCatalogue()"><option value="">All Brands</option></select>
       <select id="cat-type-filter" style="min-width:130px" onchange="window.loadSkuCatalogue()">
         <option value="">All Types</option><option value="FRAMES">Frames</option>
@@ -924,13 +1057,13 @@
 
   <!-- ═══ STOCK VIEW ═══ -->
   <div class="page" id="page-stock-view">
-    <div class="ph"><div class="pt">SKU Stock Distribution View</div><div class="ps">Real-time stock across all locations for any SKU</div></div>
+    <div class="ph"><div class="pt">SKU Stock Distribution View</div></div>
     <div class="card mb4">
       <div class="cb">
         <div class="flex ic g3">
           <div class="sw" style="flex:1;position:relative">
             <span class="si">🔍</span>
-            <input id="sv-search-q" placeholder="Search SKU code, barcode, product name or colour…" autocomplete="off"
+            <input id="sv-search-q" placeholder="SKU, barcode, brand, collection, model, colour…" autocomplete="off"
               oninput="onStockViewSearch()" onkeydown="if(event.key==='Enter')doStockViewSearch()">
             <span id="sv-search-spinner" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text3)">…</span>
           </div>
@@ -943,7 +1076,7 @@
     <div id="sv-empty-state" style="text-align:center;padding:40px 20px;color:var(--text3)">
       <div style="font-size:40px;margin-bottom:12px">📦</div>
       <div style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">Search for a SKU to view stock distribution</div>
-      <div style="font-size:12.5px">Type a SKU code, barcode, product name, or colour and select from the results</div>
+      <div style="font-size:12.5px">Search by SKU, barcode, brand, collection, model, or colour — then pick a result</div>
     </div>
 
     <div id="sv-distribution-panel" style="display:none">
@@ -1032,7 +1165,6 @@
 
     <div class="ph">
       <div class="pt">Goods Transfer</div>
-      <div class="ps">Immediately move stock from HQ Warehouse to a store — no request required. For store-initiated requests, use Store Connect → Goods Request.</div>
     </div>
 
     <!-- Transfer controls header -->
@@ -1043,7 +1175,7 @@
           <div style="flex:1;display:flex;flex-direction:column;gap:4px">
             <label style="font-size:11px;font-weight:600;color:var(--text3)">Destination Store</label>
             <select id="st-store-sel" style="padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text1);font-size:14px">
-              <option value="">— Select destination store —</option>
+              <option value="" disabled selected>Loading stores…</option>
             </select>
           </div>
           <div style="flex:1;display:flex;flex-direction:column;gap:4px">
@@ -1079,7 +1211,7 @@
         <!-- Manual / scanner-wedge search -->
         <div class="sw" style="margin-bottom:8px">
           <span class="si">🔍</span>
-          <input type="text" id="st-search-input" placeholder="Type SKU code, model, or scan with hardware scanner…"
+          <input type="text" id="st-search-input" placeholder="SKU, barcode, brand, collection, model — or scan QR…"
             style="font-size:14px"
             oninput="stSearchDebounce()" onkeydown="stSearchKeydown(event)">
         </div>
@@ -1145,7 +1277,7 @@
 
   <!-- ═══ LENS PORTFOLIO ═══ -->
   <div class="page" id="page-lens-portfolio">
-    <div class="ph flex ic"><div><div class="pt">Lens Portfolio</div><div class="ps">Virtual lens catalogue — managed by HQ · Stores activate what they carry</div></div><button class="btn primary mla" onclick="openM('modal-new-lens')">+ Add Lens Product</button></div>
+    <div class="ph flex ic"><div><div class="pt">Lens Portfolio</div></div><button class="btn primary mla" onclick="openM('modal-new-lens')">+ Add Lens Product</button></div>
 
     <div class="alert alert-blue"><span>🔒</span><div>Supplier confidentiality: <strong>Source Brand and Source Name are internal only</strong>. Only Lens Brand and Lens Name are shown publicly on POS, Store OS Browser, and Eyewoot Go.</div></div>
 
@@ -1233,7 +1365,7 @@
 
   <!-- ═══ RATE INTELLIGENCE ═══ -->
   <div class="page" id="page-rate-intelligence">
-    <div class="ph"><div class="pt">Vendor &amp; Product Rate Intelligence</div><div class="ps">Lowest · Highest · Last rate · Trend — all automatic from purchase history</div></div>
+    <div class="ph"><div class="pt">Vendor &amp; Product Rate Intelligence</div></div>
     <div class="tabs">
       <div class="tab active" onclick="switchTab(this,'rtab-product')">Product-Centric View</div>
       <div class="tab" onclick="switchTab(this,'rtab-vendor')">Vendor-Centric View</div>
@@ -1285,7 +1417,7 @@
 
   <!-- ═══ MASTER CATALOGUE ═══ -->
   <div class="page" id="page-master-catalogue">
-    <div class="ph flex ic"><div><div class="pt">Master Catalogue</div><div class="ps">Every Brand + Collection + Style combination ever purchased — the backbone of repeat detection</div></div></div>
+    <div class="ph flex ic"><div><div class="pt">Master Catalogue</div></div></div>
     <div class="card">
       <div class="ch">
         <div class="flex ic g3" style="flex:1">
@@ -1316,7 +1448,6 @@
   <div class="page" id="page-transfer-requests">
     <div class="ph">
       <div class="pt">Goods Request</div>
-      <div class="ps">Review store-initiated stock requests — approve quantities, then dispatch. Dispatching auto-creates a Goods Transfer record.</div>
     </div>
 
     <!-- Status filter tabs -->
@@ -1352,7 +1483,6 @@
   <div class="page" id="page-movement-list">
     <div class="ph">
       <div class="pt">Movement List</div>
-      <div class="ps">All stock transfer documents dispatched to stores — track status from Dispatched through Accepted to Stocked.</div>
     </div>
 
     <!-- Filter row -->
@@ -1397,8 +1527,8 @@
       </div>
       <div class="section-lbl">Internal / Supplier</div>
       <div class="fg2 mb4">
-        <div class="fgrp"><label>Source Brand (Internal)</label><input placeholder="Supplier's brand name..."><div class="fhint">Never shown publicly</div></div>
-        <div class="fgrp"><label>Source Name (Internal)</label><input placeholder="Supplier's product name/ref..."><div class="fhint">Never shown publicly</div></div>
+        <div class="fgrp"><label>Source Brand (Internal)</label><input placeholder="Supplier's brand name..."></div>
+        <div class="fgrp"><label>Source Name (Internal)</label><input placeholder="Supplier's product name/ref..."></div>
       </div>
       <div class="section-lbl">Lens Attributes</div>
       <div class="fg3 mb4">
@@ -1476,7 +1606,7 @@
             <option value="">— Select Supplier —</option>
           </select>
         </div>
-        <div class="fgrp"><label>Bill Reference</label><input id="edit-bill-ref" placeholder="Invoice / bill number..."></div>
+        <div class="fgrp"><label>Invoice No.</label><input id="edit-bill-ref" placeholder="Invoice / bill number..."></div>
         <div class="fgrp"><label>Purchase Date</label><input type="text" id="edit-purchase-date" placeholder="dd/MM/yyyy" readonly class="datepicker"></div>
         <div class="fgrp"><label>Purchase Rate (₹)</label><input type="number" id="edit-purchase-rate" placeholder="0.00"></div>
         <div class="fgrp"><label>Quantity</label><input type="number" id="edit-quantity" placeholder="0"></div>

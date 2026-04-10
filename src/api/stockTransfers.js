@@ -28,6 +28,9 @@ const transferSchema = Joi.object({
   notes:       Joi.string().max(500).allow('', null)
 });
 
+// Destination store list: implemented in app.js (GET /api/stock-transfers/destination-stores)
+// so long-lived Node processes always pick it up.
+
 // ── GET /api/stock-transfers/distribution/search?q=&limit= ───────────────────
 // Full-text search across live SKUs for the Stock Distribution picker.
 router.get('/distribution/search', ...foundryStockView, async (req, res, next) => {

@@ -50,8 +50,9 @@ BEGIN
     -- Catalogue & Stock (view)
     (N'foundry.catalogue.view'),
     (N'foundry.stock.view'),
-    -- Transfers (view)
+    -- Transfers (view + create direct dispatch from Foundry Goods Transfer)
     (N'foundry.transfers.view'),
+    (N'foundry.transfers.create'),
     -- Suppliers (view only)
     (N'foundry.suppliers.view'),
     -- Makers (view)

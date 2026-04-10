@@ -287,7 +287,6 @@
     <div class="ph" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
       <div>
         <div class="pt">Store command centre</div>
-        <div class="ps">Real-time overview — stock, transfers, and store performance at a glance.</div>
       </div>
       <button class="btn sm" onclick="loadDashboard()">↻ Refresh</button>
     </div>
@@ -325,16 +324,6 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="ch"><div class="ct">About Store Pilot</div></div>
-      <div class="cb">
-        <p><strong>Store Pilot</strong> is the Store Manager's command centre — monitor stock levels, track inbound transfers, and review store performance, all without touching POS.</p>
-        <div class="hint">
-          <strong>Revenue, Orders, and Attendance</strong> widgets will populate once Store OS (POS) and Army are live.
-          This dashboard auto-refreshes every 60 seconds.
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- ═══════════════ STOCK VIEW: BROWSE CATALOGUE ═══════════════ -->
@@ -343,7 +332,6 @@
       <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div>
           <div class="pt">Browse Catalogue</div>
-          <div class="ps">Full live SKU catalogue — add items to your request cart and place a goods request to HQ.</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <div class="sw" style="width:260px">
@@ -370,7 +358,6 @@
       <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div>
           <div class="pt">Store Catalogue</div>
-          <div class="ps">Items currently in stock at your store — add to request cart to request more from HQ.</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <div class="sw" style="width:260px">
@@ -438,14 +425,6 @@
   <div class="page" id="page-transfers-create">
     <div class="ph">
       <div class="pt">Request Goods</div>
-      <div class="ps">Request stock from HQ Warehouse — Foundry reviews, approves quantities, and dispatches to your store.</div>
-    </div>
-
-    <div class="hint" style="margin-bottom:20px">
-      <strong>How this works:</strong> Search stock available at the HQ Warehouse, add items to your request, and submit.
-      HQ Foundry reviews → approves quantities → dispatches from Warehouse to your store (inventory updates automatically).
-      Once goods arrive, confirm receipt under <strong>Stock Requests → My Requests</strong>.
-      Lifecycle: <strong>SUBMITTED → APPROVED → DISPATCHED → RECEIVED</strong>.
     </div>
 
     <!-- Shown only when user has no store assignment -->
@@ -524,7 +503,6 @@
     <div class="ph" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
       <div>
         <div class="pt">Store reports</div>
-        <div class="ps">Transfer and stock summary — generated from available data. Auto-generated when daily, weekly, and monthly triggers are configured.</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn sm" onclick="loadReports()">↻ Refresh</button>
@@ -604,13 +582,6 @@
 
     <div class="ph">
       <div class="pt">Incoming Goods</div>
-      <div class="ps">Stock dispatched from HQ Warehouse to your store — accept then verify quantities to credit your store balance.</div>
-    </div>
-
-    <div class="hint" style="margin-bottom:18px">
-      <strong>Two steps:</strong>
-      1) <strong>Accept</strong> — confirm the shipment has physically arrived at your store.
-      2) <strong>Verify &amp; Stock</strong> — enter the actual quantities received; your store stock balance updates immediately.
     </div>
 
     <!-- Status filter tabs -->
@@ -644,7 +615,6 @@
   <div class="page" id="page-movement-list">
     <div class="ph">
       <div class="pt">Movement List</div>
-      <div class="ps">All stock transfer documents sent from HQ Warehouse to your store — view dispatch, acceptance and stocking history.</div>
     </div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">

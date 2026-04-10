@@ -407,8 +407,8 @@ AS BEGIN
     IF EXISTS (SELECT 1 FROM dbo.skus WHERE item_colour_id=@item_colour_id)
     BEGIN RAISERROR('SKU already generated for this colour variant.',16,1); RETURN; END;
 
-    -- Fetch product_master_id, cost_price, colour_qty, brand parts in one query
-    DECLARE @brand_part VARCHAR(6), @coll_part VARCHAR(8), @clr_part VARCHAR(6);
+    -- Fetch product_master_id, cost_price, colour_qty, brand / collection / model / colour parts
+    DECLARE @brand_part VARCHAR(6), @coll_part VARCHAR(8), @model_part VARCHAR(8), @clr_part VARCHAR(6);
     DECLARE @product_master_id INT, @cost_price DECIMAL(10,2), @colour_qty INT;
 
     SELECT TOP 1
@@ -416,8 +416,12 @@ AS BEGIN
       @cost_price        = pi.purchase_rate,
       @colour_qty        = pic.quantity,
       @brand_part = UPPER(LEFT(ISNULL(hb.brand_code, LEFT(ISNULL(pm.source_brand,'UNK'),3)),4)),
-      @coll_part  = UPPER(LEFT(REPLACE(pm.ew_collection,' ',''),6)),
-      @clr_part   = UPPER(LEFT(REPLACE(pic.colour_code,' ',''),4))
+      @coll_part  = UPPER(LEFT(REPLACE(ISNULL(pm.ew_collection,''),' ',''),6)),
+      @model_part = CASE
+        WHEN LEN(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(pm.source_model_number,''))),' ',''),'-','')) < 1 THEN 'UNK'
+        ELSE UPPER(LEFT(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(pm.source_model_number,''))),' ',''),'-',''), 8))
+      END,
+      @clr_part   = UPPER(LEFT(REPLACE(ISNULL(pic.colour_code,''),' ',''),4))
     FROM dbo.purchase_item_colours pic
     JOIN dbo.purchase_items pi     ON pic.item_id = pi.item_id
     JOIN dbo.product_master pm     ON pi.product_master_id = pm.product_id
@@ -427,11 +431,11 @@ AS BEGIN
     IF @product_master_id IS NULL
       BEGIN RAISERROR('Could not resolve product for the given item/colour.',16,1); RETURN; END;
 
-    -- SKU = stable product identifier: BRAND-COLL-CLR (same for all purchases of same product+colour)
-    DECLARE @sku_code VARCHAR(50) = @brand_part + '-' + @coll_part + '-' + @clr_part;
+    -- SKU = stable product identifier: BRAND-COLL-MODEL-COLOUR (same product+colour across purchases)
+    DECLARE @sku_code VARCHAR(100) = @brand_part + '-' + @coll_part + '-' + @model_part + '-' + @clr_part;
 
     -- PID = purchase identifier: SKU-P{header_id} (unique per purchase batch)
-    DECLARE @pid VARCHAR(80) = @sku_code + '-P' + CAST(@header_id AS VARCHAR);
+    DECLARE @pid VARCHAR(120) = @sku_code + '-P' + CAST(@header_id AS VARCHAR);
 
     -- Ensure PID is unique (safety: if same header somehow generates duplicate colour)
     DECLARE @pid_seq INT = 1;

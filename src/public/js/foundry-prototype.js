@@ -111,6 +111,22 @@ document.addEventListener('DOMContentLoaded', () => {
     return data.data;
   }
 
+  /** Try several GET paths (e.g. primary + fallback when an older server lacks one route). */
+  async function apiGetFirst(paths) {
+    let lastErr;
+    for (const p of paths) {
+      try {
+        return await apiGet(p);
+      } catch (e) {
+        lastErr = e;
+        const m = e && e.message ? e.message : '';
+        if (m.includes('Resource not found') || m.includes('HTTP 404')) continue;
+        throw e;
+      }
+    }
+    throw lastErr;
+  }
+
   // ── Format helpers ────────────────────────────────────────────────────────
   const inr = (n) => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
   const inrD = (n) => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -174,6 +190,11 @@ document.addEventListener('DOMContentLoaded', () => {
   let _allBrandingAgents = [];
   let _itemCount         = 0;
   window._currentHeaderId = null;
+  window._purchaseActiveItemIdx = 1;
+  window._purchaseLineModes = {};
+  window.getPurchaseActiveIdx = function() {
+    return window._purchaseActiveItemIdx || 1;
+  };
 
   // ── Lookup / initial data ─────────────────────────────────────────────────
   async function loadFormData() {
@@ -273,6 +294,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (pt) pt.value = '';
     const cb = document.getElementById('coll-default-apply-new');
     if (cb) cb.checked = true;
+    const cRate = document.getElementById('coll-default-rate');
+    if (cRate) cRate.value = '';
+    const cGst = document.getElementById('coll-default-gst');
+    if (cGst) cGst.value = '';
+    const cBrand = document.getElementById('coll-default-branding');
+    if (cBrand) cBrand.checked = false;
     setDatalistOptions('coll-default-source-brand-list', []);
     setDatalistOptions('coll-default-source-coll-list', []);
     if (typeof window.refreshApplyCollMinimalUi === 'function') window.refreshApplyCollMinimalUi();
@@ -284,25 +311,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const pt = val('coll-default-product-type');
     const sb = val('coll-default-source-brand');
     const sc = val('coll-default-source-coll');
-    if (!makerName && !pt && !sb && !sc) return;
+    const defRate = String(val('coll-default-rate') || '').trim();
+    const defGst = String(val('coll-default-gst') || '').trim();
+    const collBrandEl = document.getElementById('coll-default-branding');
+    const itemBrandEl = document.getElementById(`item-branding-${idx}`);
+    if (itemBrandEl && collBrandEl) itemBrandEl.checked = collBrandEl.checked;
 
-    const dstMaker = document.getElementById(`item-maker-name-${idx}`);
-    if (dstMaker && makerName) {
-      dstMaker.value = makerName;
-      await window.onMakerInputChange(idx);
+    const hasIdentity = !!(makerName || pt || sb || sc);
+    if (!hasIdentity && defRate === '' && defGst === '') {
+      if (typeof window.calcItemBill === 'function') window.calcItemBill(idx);
+      return;
     }
 
-    const dstPt = document.getElementById(`item-product-type-${idx}`);
-    if (dstPt && pt) dstPt.value = pt;
+    if (hasIdentity) {
+      const dstMaker = document.getElementById(`item-maker-name-${idx}`);
+      if (dstMaker && makerName) {
+        dstMaker.value = makerName;
+        await window.onMakerInputChange(idx);
+      }
 
-    const dstBrand = document.getElementById(`item-source-brand-${idx}`);
-    if (dstBrand && sb) dstBrand.value = sb;
-    const dstColl = document.getElementById(`item-source-coll-${idx}`);
-    if (dstColl && sc) dstColl.value = sc;
+      const dstPt = document.getElementById(`item-product-type-${idx}`);
+      if (dstPt && pt) dstPt.value = pt;
 
-    await window.onSourceBrandInputChange(idx);
-    await window.onSourceCollectionInputChange(idx);
-    await window.onSourceModelInputChange(idx);
+      const dstBrand = document.getElementById(`item-source-brand-${idx}`);
+      if (dstBrand && sb) dstBrand.value = sb;
+      const dstColl = document.getElementById(`item-source-coll-${idx}`);
+      if (dstColl && sc) dstColl.value = sc;
+
+      await window.onSourceBrandInputChange(idx);
+      await window.onSourceCollectionInputChange(idx);
+      await window.onSourceModelInputChange(idx);
+    }
+
+    const dstRate = document.getElementById(`item-rate-${idx}`);
+    if (dstRate && defRate !== '') dstRate.value = defRate;
+    const dstGst = document.getElementById(`item-gst-${idx}`);
+    if (dstGst && defGst !== '') dstGst.value = defGst;
+
+    if (typeof window.calcItemBill === 'function') window.calcItemBill(idx);
   }
 
   window.onCollectionDefaultMakerInputChange = async function() {
@@ -568,39 +614,70 @@ document.addEventListener('DOMContentLoaded', () => {
     setDatalistOptions(`item-source-model-list-${idx}`, models);
   };
 
-  // ── Existing Product Search ───────────────────────────────────────────────
-  const _searchTimers = {};
+  // ── Existing Product Search (global bar + per-line target idx) ────────────
+  let _purchaseSearchTimer = null;
+
+  function updatePurchaseGlobalModeButtonStyles(mode) {
+    const newBtn = document.getElementById('purchase-entry-mode-new');
+    const searchBtn = document.getElementById('purchase-entry-mode-search');
+    if (mode === 'search') {
+      if (newBtn) { newBtn.style.background = ''; newBtn.style.color = ''; newBtn.style.borderColor = ''; }
+      if (searchBtn) { searchBtn.style.background = 'var(--acc2)'; searchBtn.style.color = '#fff'; searchBtn.style.borderColor = 'var(--acc2)'; }
+    } else {
+      if (searchBtn) { searchBtn.style.background = ''; searchBtn.style.color = ''; searchBtn.style.borderColor = ''; }
+      if (newBtn) { newBtn.style.background = 'var(--acc2)'; newBtn.style.color = '#fff'; newBtn.style.borderColor = 'var(--acc2)'; }
+    }
+  }
+
+  function refreshPurchaseEditSurfacesForActive() {
+    const active = window.getPurchaseActiveIdx();
+    const modes = window._purchaseLineModes || {};
+    document.querySelectorAll('.purchase-item-card').forEach((card) => {
+      const i = parseInt(card.dataset.idx, 10);
+      const surf = document.getElementById(`item-purchase-edit-surface-${i}`);
+      if (!surf) return;
+      const m = modes[i] || 'new';
+      if (i === active && m === 'search') surf.style.display = 'none';
+      else surf.style.display = '';
+    });
+    const searchWrap = document.getElementById('purchase-global-search-wrap');
+    const am = modes[active] || 'new';
+    if (searchWrap) searchWrap.style.display = am === 'search' ? 'block' : 'none';
+    updatePurchaseGlobalModeButtonStyles(am);
+  }
+
+  window.setPurchaseActiveItem = function(idx) {
+    window._purchaseActiveItemIdx = idx;
+    const label = document.getElementById('purchase-active-item-label');
+    if (label) label.textContent = `Editing: Item #${idx}`;
+    document.querySelectorAll('.purchase-item-card').forEach((c) => c.classList.remove('purchase-item-card--active'));
+    const card = document.getElementById(`item-card-${idx}`);
+    if (card) card.classList.add('purchase-item-card--active');
+    refreshPurchaseEditSurfacesForActive();
+  };
 
   window.setPurchaseItemMode = function(idx, mode) {
-    const searchPanel    = document.getElementById(`item-search-panel-${idx}`);
-    const sourceFields   = document.getElementById(`item-source-fields-${idx}`);
-    const newBtn         = document.getElementById(`item-mode-new-btn-${idx}`);
-    const searchBtn      = document.getElementById(`item-mode-search-btn-${idx}`);
+    if (!window._purchaseLineModes) window._purchaseLineModes = {};
+    window._purchaseLineModes[idx] = mode;
     const selectedBanner = document.getElementById(`item-selected-banner-${idx}`);
-
     if (mode === 'search') {
-      if (searchPanel)  searchPanel.style.display  = 'block';
-      if (sourceFields) sourceFields.style.display = 'none';
-      if (newBtn)    { newBtn.style.background = ''; newBtn.style.color = ''; newBtn.style.borderColor = ''; }
-      if (searchBtn) { searchBtn.style.background = 'var(--acc2)'; searchBtn.style.color = '#fff'; searchBtn.style.borderColor = 'var(--acc2)'; }
-      // Keep selected banner visible when switching to search mode
       if (!document.getElementById(`item-selected-pm-${idx}`)?.value) {
         if (selectedBanner) selectedBanner.style.display = 'none';
       }
-      setTimeout(() => { const q = document.getElementById(`item-search-q-${idx}`); if (q) q.focus(); }, 50);
-    } else {
-      if (searchPanel)  searchPanel.style.display  = 'none';
-      if (sourceFields) sourceFields.style.display = 'block';
-      if (searchBtn) { searchBtn.style.background = ''; searchBtn.style.color = ''; searchBtn.style.borderColor = ''; }
-      if (newBtn)    { newBtn.style.background = 'var(--acc2)'; newBtn.style.color = '#fff'; newBtn.style.borderColor = 'var(--acc2)'; }
+      setTimeout(() => {
+        const q = document.getElementById('purchase-global-search-q');
+        if (q && window.getPurchaseActiveIdx() === idx) q.focus();
+      }, 50);
     }
+    refreshPurchaseEditSurfacesForActive();
   };
 
-  window.onPurchaseItemSearch = function(idx) {
-    clearTimeout(_searchTimers[idx]);
-    const q = val(`item-search-q-${idx}`);
-    const resultsEl = document.getElementById(`item-search-results-${idx}`);
-    const spinner   = document.getElementById(`item-search-spinner-${idx}`);
+  window.onPurchaseItemSearch = function() {
+    const idx = window.getPurchaseActiveIdx();
+    clearTimeout(_purchaseSearchTimer);
+    const q = val('purchase-global-search-q');
+    const resultsEl = document.getElementById('purchase-global-search-results');
+    const spinner = document.getElementById('purchase-global-search-spinner');
 
     if (!q || q.length < 2) {
       if (resultsEl) resultsEl.style.display = 'none';
@@ -608,7 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (spinner) spinner.style.display = 'inline';
-    _searchTimers[idx] = setTimeout(async () => {
+    _purchaseSearchTimer = setTimeout(async () => {
       try {
         const params = new URLSearchParams({ q, limit: 15 });
         const mmId = val(`item-maker-${idx}`);
@@ -624,7 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   function renderProductSearchResults(idx, rows) {
-    const el = document.getElementById(`item-search-results-${idx}`);
+    const el = document.getElementById('purchase-global-search-results');
     if (!el) return;
     if (!rows.length) {
       el.innerHTML = '<div style="padding:12px;color:var(--text3);font-size:12.5px;text-align:center">No matching products found</div>';
@@ -705,8 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Switch to "new product" mode so source fields (now populated) are visible and locked-ish
     setPurchaseItemMode(idx, 'new');
 
-    // Hide search results
-    const resultsEl = document.getElementById(`item-search-results-${idx}`);
+    const resultsEl = document.getElementById('purchase-global-search-results');
     if (resultsEl) resultsEl.style.display = 'none';
 
     // Make source fields read-only to show they came from search
@@ -733,12 +809,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const makerEl = document.getElementById(`item-maker-${idx}`);
     if (makerEl) makerEl.value = '';
 
-    // Reset to "new product" mode
     setPurchaseItemMode(idx, 'new');
 
-    // Clear search input
-    const qEl = document.getElementById(`item-search-q-${idx}`);
+    const qEl = document.getElementById('purchase-global-search-q');
     if (qEl) qEl.value = '';
+    const resultsEl = document.getElementById('purchase-global-search-results');
+    if (resultsEl) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; }
   };
 
   // ── Supplier auto-code ────────────────────────────────────────────────────
@@ -788,16 +864,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const fpEl = document.getElementById('bill-purchase-date-input');
     if (fpEl && !fpEl.value && fpEl._flatpickr) fpEl._flatpickr.setDate(new Date(), true);
     addPurchaseItem();
+    window._purchaseLineModes = { 1: 'new' };
+    if (typeof window.setPurchaseActiveItem === 'function') window.setPurchaseActiveItem(1);
+    if (typeof window.setPurchaseItemMode === 'function') window.setPurchaseItemMode(1, 'new');
     if (typeof window.refreshApplyCollMinimalUi === 'function') window.refreshApplyCollMinimalUi();
   }
 
   window.refreshApplyCollMinimalUi = function() {
     const page = document.getElementById('page-new-purchase');
     const cb = document.getElementById('coll-default-apply-new');
-    const hint = document.getElementById('coll-apply-minimal-hint');
     const on = !!(cb && cb.checked);
     if (page) page.classList.toggle('apply-coll-minimal-ui', on);
-    if (hint) hint.style.display = on ? 'block' : 'none';
   };
 
   window.addPurchaseItem = function(opts) {
@@ -818,29 +895,11 @@ document.addEventListener('DOMContentLoaded', () => {
     card.innerHTML = `
       <div class="ch">
         <div class="ct">Item #${idx}</div>
-        ${_itemCount > 1 ? `<button type="button" class="btn sm" style="margin-left:auto;color:var(--red)" onclick="removePurchaseItem(${idx})">✕ Remove</button>` : ''}
+        ${_itemCount > 1 ? `<button type="button" class="btn sm" style="margin-left:auto;color:var(--red)" onclick="event.stopPropagation();removePurchaseItem(${idx})">✕ Remove</button>` : ''}
       </div>
       <div class="cb">
         <input type="hidden" id="item-selected-pm-${idx}">
 
-        <!-- Mode toggle -->
-        <div style="display:flex;gap:8px;margin-bottom:14px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;align-items:center">
-          <span style="font-size:12px;color:var(--text3);margin-right:4px">Product entry mode:</span>
-          <button type="button" id="item-mode-new-btn-${idx}" class="btn sm" style="background:var(--acc2);color:#fff;border-color:var(--acc2)" onclick="setPurchaseItemMode(${idx},'new')">✚ New Product</button>
-          <button type="button" id="item-mode-search-btn-${idx}" class="btn sm" onclick="setPurchaseItemMode(${idx},'search')">🔍 Search Existing</button>
-        </div>
-
-        <!-- Search panel (hidden by default) -->
-        <div id="item-search-panel-${idx}" style="display:none;margin-bottom:14px">
-          <div style="position:relative">
-            <input id="item-search-q-${idx}" placeholder="Search by brand, model, manufacturer…" style="width:100%;padding-right:32px"
-              oninput="onPurchaseItemSearch(${idx})" autocomplete="off">
-            <span id="item-search-spinner-${idx}" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text3)">…</span>
-          </div>
-          <div id="item-search-results-${idx}" style="display:none;border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:280px;overflow-y:auto;background:var(--card)"></div>
-        </div>
-
-        <!-- Selected product banner -->
         <div id="item-selected-banner-${idx}" style="display:none;background:#e8f5e9;border:1px solid #66bb6a;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12.5px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start">
             <div>
@@ -848,94 +907,103 @@ document.addEventListener('DOMContentLoaded', () => {
               <span style="margin-left:8px;background:#c8e6c9;color:#1b5e20;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600" id="item-selected-badge-${idx}">Restock Candidate</span>
               <div id="item-selected-desc-${idx}" style="margin-top:5px;color:var(--text2);line-height:1.5"></div>
             </div>
-            <button type="button" class="btn xs" style="color:var(--red);flex-shrink:0;margin-left:12px" onclick="clearExistingProductSelection(${idx})">✕ Clear</button>
+            <button type="button" class="btn xs" style="color:var(--red);flex-shrink:0;margin-left:12px" onclick="event.stopPropagation();clearExistingProductSelection(${idx})">✕ Clear</button>
           </div>
         </div>
 
-        <!-- Source fields (shown by default) -->
-        <div id="item-source-fields-${idx}">
-          <div class="item-line-collection-dup">
-            <div class="fg3 mb3">
-              <div class="fgrp">
-                <label>Product Type <span class="req">*</span></label>
-                <select id="item-product-type-${idx}">${ptOpts}</select>
-                <div class="fhint">Same list as Foundry Settings → Product Types (active values).</div>
+        <div id="item-purchase-edit-surface-${idx}">
+          <div id="item-source-fields-${idx}">
+            <div class="item-line-collection-dup">
+              <div class="fg3 mb3">
+                <div class="fgrp">
+                  <label>Product Type <span class="req">*</span></label>
+                  <select id="item-product-type-${idx}">${ptOpts}</select>
+                </div>
+                <div class="fgrp">
+                  <label>Manufacturer <span class="req">*</span></label>
+                  <input id="item-maker-name-${idx}" list="item-maker-list-${idx}" placeholder="e.g. Gandhi" oninput="onMakerInputChange(${idx})">
+                  <datalist id="item-maker-list-${idx}">
+                    ${(_allMakers || []).map((m) => `<option value="${String(m.maker_name || '').replace(/"/g, '&quot;')}"></option>`).join('')}
+                  </datalist>
+                  <input type="hidden" id="item-maker-${idx}">
+                </div>
+                <div class="fgrp">
+                  <label>Source Brand <span class="req">*</span></label>
+                  <input id="item-source-brand-${idx}" list="item-source-brand-list-${idx}" placeholder="e.g. IKON" onfocus="onSourceBrandInputChange(${idx})" oninput="onSourceBrandInputChange(${idx})">
+                  <datalist id="item-source-brand-list-${idx}"></datalist>
+                </div>
+                <div class="fgrp">
+                  <label>Source Collection</label>
+                  <input id="item-source-coll-${idx}" list="item-source-coll-list-${idx}" placeholder="Optional — filtered by brand" onfocus="onSourceCollectionInputChange(${idx})" oninput="onSourceCollectionInputChange(${idx})">
+                  <datalist id="item-source-coll-list-${idx}"></datalist>
+                </div>
               </div>
-              <div class="fgrp">
-                <label>Manufacturer <span class="req">*</span></label>
-                <input id="item-maker-name-${idx}" list="item-maker-list-${idx}" placeholder="e.g. Gandhi" oninput="onMakerInputChange(${idx})">
-                <datalist id="item-maker-list-${idx}">
-                  ${(_allMakers || []).map((m) => `<option value="${String(m.maker_name || '').replace(/"/g, '&quot;')}"></option>`).join('')}
-                </datalist>
-                <input type="hidden" id="item-maker-${idx}">
-                <div class="fhint">Source brands are filtered by manufacturer.</div>
+            </div>
+
+            <div id="item-repeat-banner-${idx}" style="display:none;background:var(--goldL);border:1px solid var(--gold);border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:12px">
+              🔁 This product exists. Details will be pre-filled.
+            </div>
+          </div>
+
+          <div class="mb3" style="border-top:1px solid var(--border);padding-top:12px">
+            <div class="item-line-rate-gst-brand-dup">
+              <div class="fg3 mb3">
+                <div class="fgrp">
+                  <label>Purchase Rate (₹) <span class="req">*</span></label>
+                  <input type="number" id="item-rate-${idx}" placeholder="Per unit rate" oninput="calcItemBill(${idx})">
+                </div>
+                <div class="fgrp">
+                  <label>GST % <span class="req">*</span></label>
+                  <input type="number" id="item-gst-${idx}" placeholder="e.g. 12 for 12%" step="0.01" min="0" max="100" oninput="calcItemBill(${idx})">
+                </div>
               </div>
-              <div class="fgrp">
-                <label>Source Brand <span class="req">*</span></label>
-                <input id="item-source-brand-${idx}" list="item-source-brand-list-${idx}" placeholder="e.g. IKON" onfocus="onSourceBrandInputChange(${idx})" oninput="onSourceBrandInputChange(${idx})">
-                <datalist id="item-source-brand-list-${idx}"></datalist>
-              </div>
-              <div class="fgrp">
-                <label>Source Collection</label>
-                <input id="item-source-coll-${idx}" list="item-source-coll-list-${idx}" placeholder="Optional — filtered by brand" onfocus="onSourceCollectionInputChange(${idx})" oninput="onSourceCollectionInputChange(${idx})">
-                <datalist id="item-source-coll-list-${idx}"></datalist>
+              <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+                <input type="checkbox" id="item-branding-${idx}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--acc2)">
+                <label for="item-branding-${idx}" style="font-size:13px;font-weight:600;cursor:pointer">Branding Required</label>
               </div>
             </div>
           </div>
-          <div class="fg3 mb3">
+
+          <div class="purchase-item-quick-row">
             <div class="fgrp">
               <label>Source Model Number <span class="req">*</span></label>
               <input id="item-source-model-${idx}" list="item-source-model-list-${idx}" placeholder="e.g. VR-01" onfocus="onSourceModelInputChange(${idx})" oninput="onSourceModelInputChange(${idx})">
               <datalist id="item-source-model-list-${idx}"></datalist>
             </div>
-          </div>
-
-          <div id="item-repeat-banner-${idx}" style="display:none;background:var(--goldL);border:1px solid var(--gold);border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:12px">
-            🔁 This product exists. Details will be pre-filled.
-          </div>
-        </div>
-
-        <div class="fg3 mb3" style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="fgrp">
-            <label>Purchase Rate (₹) <span class="req">*</span></label>
-            <input type="number" id="item-rate-${idx}" placeholder="Per unit rate" oninput="calcItemBill(${idx})">
-          </div>
-          <div class="fgrp">
-            <label>Quantity <span class="req">*</span></label>
-            <input type="number" id="item-qty-${idx}" placeholder="Total units" oninput="calcItemBill(${idx});validateColourQty(${idx})">
-          </div>
-          <div class="fgrp">
-            <label>GST % <span class="req">*</span></label>
-            <input type="number" id="item-gst-${idx}" placeholder="e.g. 12 for 12%" step="0.01" min="0" max="100" oninput="calcItemBill(${idx})">
+            <div class="fgrp">
+              <label>Quantity <span class="req">*</span></label>
+              <input type="number" id="item-qty-${idx}" placeholder="Total units" oninput="calcItemBill(${idx});validateColourQty(${idx})">
+            </div>
+            <div class="item-totals-cluster">
+              <div class="item-mini-amts">
+                <div class="item-money-row"><span class="td2">Base value</span><span class="mono" id="item-base-${idx}">₹0</span></div>
+                <div class="item-money-row"><span class="td2">GST amount</span><span class="mono" id="item-gst-amt-${idx}">₹0</span></div>
+              </div>
+              <div class="item-total-cell">
+                <div class="item-total-lbl">Item total</div>
+                <span class="mono" id="item-total-${idx}">₹0</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Branding toggle -->
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
-          <input type="checkbox" id="item-branding-${idx}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--acc2)">
-          <div>
-            <label for="item-branding-${idx}" style="font-size:13px;font-weight:600;cursor:pointer">Branding Required</label>
-            <div style="font-size:11.5px;color:var(--text3);margin-top:1px">Check if this item needs to be re-branded under an Eyewoot home brand. Leave unchecked to use Source Brand directly.</div>
+        <div class="purchase-colour-section">
+          <div class="section-lbl mb2" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <span>Colour Variants</span>
+            <button type="button" class="btn xs" onclick="event.stopPropagation();addColourToItem(${idx})">+ Add colour</button>
           </div>
-        </div>
-
-        <!-- Item bill summary -->
-        <div style="background:var(--bg);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px" id="item-bill-summary-${idx}">
-          <div class="flex ic" style="justify-content:space-between"><span class="td2">Base Value</span><span class="mono" id="item-base-${idx}">₹0</span></div>
-          <div class="flex ic" style="justify-content:space-between"><span class="td2">GST Amount</span><span class="mono" id="item-gst-amt-${idx}">₹0</span></div>
-          <div class="flex ic fw6" style="justify-content:space-between;margin-top:4px;border-top:1px solid var(--border);padding-top:4px"><span>Item Total</span><span class="mono" id="item-total-${idx}">₹0</span></div>
-        </div>
-
-        <!-- Colour Variants -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="section-lbl mb2">Colour Variants</div>
           <div id="colours-container-${idx}"></div>
           <div id="colour-qty-warn-${idx}" style="display:none;color:var(--red);font-size:12px;margin:4px 0 8px"></div>
-          <button type="button" class="btn sm mt1" onclick="addColourToItem(${idx})">+ Add Colour</button>
         </div>
       </div>`;
     container.appendChild(card);
-    addColourToItem(idx);
+    card.addEventListener('click', (ev) => {
+      if (ev.target.closest('button, input, select, textarea, label, a, option')) return;
+      if (typeof window.setPurchaseActiveItem === 'function') window.setPurchaseActiveItem(idx);
+    });
+    if (!window._purchaseLineModes) window._purchaseLineModes = {};
+    window._purchaseLineModes[idx] = 'new';
+    if (typeof window.setPurchaseActiveItem === 'function') window.setPurchaseActiveItem(idx);
 
     if (!skipDefaultsApply && document.getElementById('coll-default-apply-new')?.checked) {
       void (async () => {
@@ -952,12 +1020,20 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   window.removePurchaseItem = function(idx) {
+    const wasActive = window.getPurchaseActiveIdx() === idx;
     const card = document.getElementById(`item-card-${idx}`);
     if (card) card.remove();
+    if (window._purchaseLineModes) delete window._purchaseLineModes[idx];
     recalcGrandTotal();
-    const remaining = document.querySelectorAll('.purchase-item-card').length;
+    const remaining = document.querySelectorAll('.purchase-item-card');
     const hint = document.getElementById('items-count-hint');
-    if (hint) hint.textContent = remaining === 1 ? '1 item' : `${remaining} items`;
+    if (hint) hint.textContent = remaining.length === 1 ? '1 item' : `${remaining.length} items`;
+    if (!remaining.length) return;
+    if (wasActive || !document.getElementById(`item-card-${window._purchaseActiveItemIdx}`)) {
+      const last = remaining[remaining.length - 1];
+      const ni = parseInt(last.dataset.idx, 10);
+      if (typeof window.setPurchaseActiveItem === 'function') window.setPurchaseActiveItem(ni);
+    }
   };
 
   window.duplicatePurchaseItem = async function() {
@@ -1039,7 +1115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  /** Same manufacturer / brand / collection as last item; clear model, rate, qty, colours; keep GST & branding. */
+  /** Same manufacturer / brand / collection / rate / GST / branding as last item; clear model & qty & colours. */
   window.duplicatePurchaseItemSameCollection = async function() {
     const cards = document.querySelectorAll('.purchase-item-card');
     if (!cards.length) {
@@ -1050,7 +1126,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const srcIdx = parseInt(srcCard.dataset.idx, 10);
 
     const snapshot = {};
-    ['source-brand', 'source-coll', 'gst'].forEach((f) => {
+    ['source-brand', 'source-coll', 'rate', 'gst'].forEach((f) => {
       const el = document.getElementById(`item-${f}-${srcIdx}`);
       snapshot[f] = el ? el.value : '';
     });
@@ -1072,6 +1148,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dstBrand) dstBrand.value = snapshot['source-brand'] || '';
     if (dstColl) dstColl.value = snapshot['source-coll'] || '';
 
+    const dstRate = document.getElementById(`item-rate-${newIdx}`);
+    if (dstRate) dstRate.value = snapshot['rate'] || '';
     const dstGst = document.getElementById(`item-gst-${newIdx}`);
     if (dstGst) dstGst.value = snapshot['gst'] || '';
 
@@ -1454,7 +1532,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="cb">
             <div class="fg3 mb4">
               <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-              <div><div class="xs td2">Bill Reference</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
+              <div><div class="xs td2">Invoice No.</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
               <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>
               <div><div class="xs td2">Registered</div><div class="fw6">${fmtDateTime(h.created_at)}</div></div>
             </div>
@@ -1666,7 +1744,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       document.getElementById('bv-meta').innerHTML = `
         <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-        <div><div class="xs td2">Bill Reference</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
+        <div><div class="xs td2">Invoice No.</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
         <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>`;
 
       // Items table
@@ -1803,7 +1881,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       document.getElementById('branding-meta').innerHTML = `
         <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-        <div><div class="xs td2">Bill Ref</div><div class="mono xs">${h.bill_ref || h.bill_number || '—'}</div></div>
+        <div><div class="xs td2">Invoice No.</div><div class="mono xs">${h.bill_ref || h.bill_number || '—'}</div></div>
         <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>`;
 
       // Build all-items colour table
@@ -2071,7 +2149,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="text-align:right;font-size:13px">
           <div><strong>Purchase #${h.header_id}</strong></div>
           <div>Supplier: ${h.supplier_name || '—'}</div>
-          <div>Bill Ref: ${h.bill_ref || h.bill_number || '—'}</div>
+          <div>Invoice No.: ${h.bill_ref || h.bill_number || '—'}</div>
           <div>Purchase Date: ${fmtDate(h.purchase_date)}</div>
         </div>
       </div>
@@ -3789,7 +3867,6 @@ ${initScript}
     let _scanner     = null;
     let _scanRunning = false;
     let _searchTimer = null;
-    let _stInited    = false;
     let _stLastDocId = null;
 
     // ── Toast feedback ────────────────────────────────────────────────────────
@@ -3815,10 +3892,8 @@ ${initScript}
       return d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
     }
 
-    // ── Init (called once on first nav) ───────────────────────────────────────
+    // ── Init (each visit to Goods Transfer — refresh destinations + history) ──
     window.stInit = async function stInit() {
-      if (_stInited) { window.stLoadHistory(); return; }
-      _stInited = true;
       await stLoadStores();
       window.stLoadHistory();
       stRenderCart();
@@ -3826,19 +3901,64 @@ ${initScript}
 
     // ── Load stores dropdown ──────────────────────────────────────────────────
     async function stLoadStores() {
+      const sel = document.getElementById('st-store-sel');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">Loading stores…</option>';
       try {
-        const stores = await apiGet('/api/stores');
-        const sel = document.getElementById('st-store-sel');
-        if (!sel) return;
-        (stores || [])
-          .filter((s) => s.status === 'ACTIVE')
-          .forEach((s) => {
-            const o = document.createElement('option');
-            o.value = s.store_id;
-            o.textContent = `${s.store_name} (${s.store_code})`;
-            sel.appendChild(o);
-          });
-      } catch (_) {}
+        const raw = await apiGetFirst([
+          '/api/stock-transfers/destination-stores',
+          '/api/foundry/destination-stores'
+        ]);
+        const rows = Array.isArray(raw) ? raw : [];
+        const seen = new Set();
+        const list = [];
+        for (const s of rows) {
+          if (!s || typeof s !== 'object') continue;
+          const sid = Number(s.store_id);
+          if (!Number.isFinite(sid) || sid < 1) continue;
+          if (seen.has(sid)) continue;
+          const status = String(s.status || '').trim().toUpperCase();
+          if (status !== 'ACTIVE') continue;
+          const stype = String(s.store_type || '').trim().toUpperCase();
+          if (stype === 'HQ') continue;
+          seen.add(sid);
+          list.push(s);
+        }
+        list.sort((a, b) =>
+          String(a.store_name || '').localeCompare(String(b.store_name || ''), undefined, { sensitivity: 'base' })
+        );
+
+        sel.innerHTML = '';
+        const ph = document.createElement('option');
+        ph.value = '';
+        ph.textContent = '— Select destination store —';
+        ph.disabled = true;
+        ph.selected = true;
+        sel.appendChild(ph);
+
+        for (const s of list) {
+          const o = document.createElement('option');
+          o.value = String(s.store_id);
+          const name = String(s.store_name || '').trim() || 'Store';
+          const code = String(s.store_code || '').trim() || '—';
+          o.textContent = `${name} (${code})`;
+          sel.appendChild(o);
+        }
+
+        if (!list.length) {
+          stToast(
+            'No destination stores available. Ensure at least one active non-HQ store exists in Command Unit.',
+            '#e53e3e'
+          );
+        }
+      } catch (e) {
+        sel.innerHTML = '';
+        const errOpt = document.createElement('option');
+        errOpt.value = '';
+        errOpt.textContent = '— Could not load stores —';
+        sel.appendChild(errOpt);
+        stToast('Could not load stores: ' + (e && e.message ? e.message : 'error'), '#e53e3e');
+      }
     }
 
     // ── Cart management ───────────────────────────────────────────────────────
@@ -4038,12 +4158,32 @@ ${initScript}
     };
 
     // ── Lookup by code (scan / Enter) ─────────────────────────────────────────
+    /** QR / wedge scan: trim; if payload is a URL, use ?sku= / ?code= or last path segment for lookup. */
+    function stNormalizeScanPayload(raw) {
+      let s = String(raw || '').trim().replace(/\s+/g, ' ');
+      if (!s) return '';
+      if (/^https?:\/\//i.test(s)) {
+        try {
+          const u = new URL(s);
+          const qSku = u.searchParams.get('sku') || u.searchParams.get('code');
+          if (qSku) return qSku.trim();
+          const path = u.pathname.replace(/\/+$/, '');
+          const parts = path.split('/').filter(Boolean);
+          const last = parts.length ? parts[parts.length - 1] : '';
+          if (last) return decodeURIComponent(last);
+        } catch (_) { /* ignore */ }
+      }
+      return s;
+    }
+
     async function stLookupAndAdd(code) {
+      const key = stNormalizeScanPayload(code);
+      if (!key) return;
       try {
-        const sku = await apiGet(`/api/stock-transfers/lookup?q=${encodeURIComponent(code)}`);
+        const sku = await apiGet(`/api/stock-transfers/lookup?q=${encodeURIComponent(key)}`);
         if (sku) stAddToCart(sku);
       } catch (err) {
-        stToast('Not found: ' + code, '#e53e3e');
+        stToast('Not found: ' + key, '#e53e3e');
       }
     }
 

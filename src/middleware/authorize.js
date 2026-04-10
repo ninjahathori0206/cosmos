@@ -95,6 +95,31 @@ function requireAnyModule(moduleKeys) {
   };
 }
 
+/**
+ * Goods Transfer destination picker — read-only store list.
+ * super_admin: always. Others: Foundry or Command Unit module, then either
+ * one of the usual permissions OR legacy JWT with empty permissions but Foundry access
+ * (matches client nav when role_permissions are not fully seeded).
+ */
+function requireGoodsTransferDestinationStores(req, res, next) {
+  if (isSuperAdmin(req)) return next();
+  const hasF = hasModuleAccess(req, 'foundry');
+  const hasCU = hasModuleAccess(req, 'command_unit');
+  if (!hasF && !hasCU) {
+    return res.status(403).json({ success: false, message: 'Module access denied.' });
+  }
+  const perms = getPermissions(req);
+  const allow = [
+    'foundry.stock.view',
+    'foundry.transfers.view',
+    'foundry.transfers.create',
+    'command_unit.stores.view'
+  ];
+  if (perms.length === 0 && hasF) return next();
+  if (allow.some((k) => perms.includes(k))) return next();
+  return res.status(403).json({ success: false, message: 'Permission denied.' });
+}
+
 module.exports = {
   isSuperAdmin,
   normRole,
@@ -104,5 +129,6 @@ module.exports = {
   requireModule,
   requirePermission,
   requireAllPermissions,
-  requireAnyModule
+  requireAnyModule,
+  requireGoodsTransferDestinationStores
 };

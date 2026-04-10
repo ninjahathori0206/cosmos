@@ -560,7 +560,7 @@
   <div class="page active" id="page-dashboard">
     <div class="page-header">
       <div class="page-title">Good morning, Talha 👋</div>
-      <div class="page-subtitle">Here's what's happening across the Eyewoot network today.</div>
+      <div class="page-subtitle"></div>
     </div>
 
     <div class="stats-grid">
@@ -733,7 +733,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Store Management</div>
-        <div class="page-subtitle">14 active stores · 2 coming soon · 1 inactive</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-store')">+ Add Store</button>
     </div>
@@ -842,7 +842,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">User Management</div>
-        <div class="page-subtitle">Core Users only — Super Admin and HR Admin accounts</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-user')">+ Add Core User</button>
     </div>
@@ -886,7 +886,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Roles & Permissions</div>
-        <div class="page-subtitle">Data-driven RBAC — no code changes needed to add or edit roles</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-role')">+ Add Role</button>
     </div>
@@ -917,7 +917,7 @@
   <div class="page" id="page-modules">
     <div class="page-header">
       <div class="page-title">Module Access Control</div>
-      <div class="page-subtitle">Modules are assigned by <strong>role</strong>. When you define a role (Roles &amp; Permissions), you choose which Cosmos modules it may access. Users inherit modules from their role. Store-level toggles below are an optional location cap.</div>
+      <div class="page-subtitle"></div>
     </div>
 
     <div class="alert alert-gold">
@@ -944,7 +944,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Home Brand Management</div>
-        <div class="page-subtitle">Eyewoot's private label brands — used in Foundry procurement for local supplier products</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-brand')">+ Add Home Brand</button>
     </div>
@@ -1001,7 +1001,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Location Type Configuration</div>
-        <div class="page-subtitle">Define stock location types for the SKU Stock Distribution View. New types added here — no code change needed.</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-location')">+ Add Location Type</button>
     </div>
@@ -1068,7 +1068,7 @@
   <div class="page" id="page-settings">
     <div class="page-header">
       <div class="page-title">System Settings</div>
-      <div class="page-subtitle">Global business rules — changes apply immediately across all modules. All rates read at runtime — no app update required.</div>
+      <div class="page-subtitle"></div>
     </div>
 
     <div class="tabs">
@@ -1102,11 +1102,11 @@
         <div class="card-body">
           <div class="alert alert-gold"><span class="alert-icon">⚠️</span><div>Weights must sum to 100%. Changes apply to the next month's performance calculations.</div></div>
           <div class="form-grid">
-            <div class="form-group"><label>Sales Performance <span class="font-mono" style="color:var(--purple);font-size:11px">POS data</span></label><input type="number" value="35"><div class="form-hint">% — Compared against store average and personal target</div></div>
-            <div class="form-group"><label>Attendance <span class="font-mono" style="color:var(--purple);font-size:11px">GPS + selfie</span></label><input type="number" value="25"><div class="form-hint">% — Late arrivals and absences reduce this score</div></div>
-            <div class="form-group"><label>Manager Rating <span class="font-mono" style="color:var(--purple);font-size:11px">Monthly 1–5</span></label><input type="number" value="20"><div class="form-hint">% — Mandatory monthly submission by Store Manager</div></div>
-            <div class="form-group"><label>Task Completion <span class="font-mono" style="color:var(--purple);font-size:11px">Army tasks</span></label><input type="number" value="10"><div class="form-hint">% — Assigned vs completed with proof</div></div>
-            <div class="form-group"><label>Training Completion <span class="font-mono" style="color:var(--purple);font-size:11px">Army training</span></label><input type="number" value="10"><div class="form-hint">% — Modules assigned and completed this month</div></div>
+            <div class="form-group"><label>Sales Performance <span class="font-mono" style="color:var(--purple);font-size:11px">POS data</span></label><input type="number" value="35"></div>
+            <div class="form-group"><label>Attendance <span class="font-mono" style="color:var(--purple);font-size:11px">GPS + selfie</span></label><input type="number" value="25"></div>
+            <div class="form-group"><label>Manager Rating <span class="font-mono" style="color:var(--purple);font-size:11px">Monthly 1–5</span></label><input type="number" value="20"></div>
+            <div class="form-group"><label>Task Completion <span class="font-mono" style="color:var(--purple);font-size:11px">Army tasks</span></label><input type="number" value="10"></div>
+            <div class="form-group"><label>Training Completion <span class="font-mono" style="color:var(--purple);font-size:11px">Army training</span></label><input type="number" value="10"></div>
             <div class="form-group"><label>Total</label><input type="number" value="100" style="border-color:var(--green);font-weight:600" readonly></div>
           </div>
           <div class="section-divider">Incentive Tiers</div>
@@ -1130,10 +1130,10 @@
         <div class="card-header"><div class="card-title">Loyalty Points Rules</div><button class="topbar-btn primary" style="font-size:12px">Save Changes</button></div>
         <div class="card-body">
           <div class="form-grid">
-            <div class="form-group"><label>Points Earned per ₹10 Spent</label><input type="number" value="1"><div class="form-hint">e.g. 1 point per ₹10 = 0.1 points per rupee</div></div>
-            <div class="form-group"><label>Points Required for ₹1 Discount</label><input type="number" value="10"><div class="form-hint">10 points = ₹1 at POS redemption</div></div>
+            <div class="form-group"><label>Points Earned per ₹10 Spent</label><input type="number" value="1"></div>
+            <div class="form-group"><label>Points Required for ₹1 Discount</label><input type="number" value="10"></div>
             <div class="form-group"><label>Minimum Points to Redeem</label><input type="number" value="100"></div>
-            <div class="form-group"><label>Points Expiry (months)</label><input type="number" value="12"><div class="form-hint">0 = points never expire</div></div>
+            <div class="form-group"><label>Points Expiry (months)</label><input type="number" value="12"><div class="form-hint">0 = never</div></div>
           </div>
           <div class="section-divider">Tier Thresholds</div>
           <div class="form-grid-3">
@@ -1150,12 +1150,12 @@
         <div class="card-header"><div class="card-title">Promoter Commission Settings</div><button class="topbar-btn primary" style="font-size:12px">Save Changes</button></div>
         <div class="card-body">
           <div class="form-grid">
-            <div class="form-group"><label>Referral Commission Rate</label><input type="text" value="5%"><div class="form-hint">% of sale value when referred customer completes a purchase</div></div>
-            <div class="form-group"><label>D2C Commission Rate</label><input type="text" value="7%"><div class="form-hint">% of order value via Promoter catalogue link</div></div>
-            <div class="form-group"><label>Direct Sale Commission Rate</label><input type="text" value="8%"><div class="form-hint">% when Promoter places a direct order on behalf of customer</div></div>
+            <div class="form-group"><label>Referral Commission Rate</label><input type="text" value="5%"></div>
+            <div class="form-group"><label>D2C Commission Rate</label><input type="text" value="7%"></div>
+            <div class="form-group"><label>Direct Sale Commission Rate</label><input type="text" value="8%"></div>
             <div class="form-group"><label>Payout Cycle</label><select><option>Monthly</option><option>Weekly</option></select></div>
             <div class="form-group"><label>Minimum Payout Threshold (₹)</label><input type="number" value="500"></div>
-            <div class="form-group"><label>Bill Discrepancy Threshold (₹)</label><input type="number" value="50"><div class="form-hint">Beyond this — Super Admin approval required</div></div>
+            <div class="form-group"><label>Bill Discrepancy Threshold (₹)</label><input type="number" value="50"><div class="form-hint">Super Admin approval above threshold</div></div>
           </div>
         </div>
       </div>
@@ -1179,7 +1179,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Membership Tiers</div>
-        <div class="page-subtitle">Eyewoot membership plans — sold by Promoters and on Eyewoot Go</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-membership')">+ Add Tier</button>
     </div>
@@ -1219,7 +1219,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Leave Types</div>
-        <div class="page-subtitle">HR leave types — read by Army attendance and performance modules</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-leave')">+ Add Leave Type</button>
     </div>
@@ -1244,7 +1244,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Foundry Settings</div>
-        <div class="page-subtitle">Master data for all Foundry form dropdowns — changes populate immediately in Foundry forms</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" id="foundry-add-value-btn">+ Add Value</button>
     </div>
@@ -1287,7 +1287,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Suppliers</div>
-        <div class="page-subtitle">Vendors who supply products to Eyewoot — used across Foundry procurement</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" onclick="openCuSupplierModal()">+ Add Supplier</button>
     </div>
@@ -1309,7 +1309,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Maker Master</div>
-        <div class="page-subtitle">Manufacturers and factories that produce eyewear for Eyewoot brands</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" onclick="openCuMakerModal()">+ Add Maker</button>
     </div>
@@ -1331,7 +1331,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Branding Agents</div>
-        <div class="page-subtitle">External vendors who handle branding (screen printing, label application) for dispatched goods</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" onclick="openCuBrandingAgentModal()">+ Add Branding Agent</button>
     </div>
@@ -1353,7 +1353,7 @@
     <div class="page-header flex items-center">
       <div>
         <div class="page-title">Audit Logs</div>
-        <div class="page-subtitle">Every action across all 6 Cosmos modules — append-only, never deletable</div>
+        <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn ml-auto">⬇ Export CSV</button>
     </div>
@@ -1462,7 +1462,7 @@
       </div>
       <div class="form-grid">
         <div class="form-group"><label>Store Name <span class="label-req">*</span></label><input id="new-store-name" type="text" placeholder="e.g. Eyewoot Surat Main"></div>
-        <div class="form-group"><label>Store Code <span class="label-req">*</span></label><input id="new-store-code" type="text" placeholder="e.g. EW-SRT-01"><div class="form-hint">Auto-generated — can be overridden</div></div>
+        <div class="form-group"><label>Store Code <span class="label-req">*</span></label><input id="new-store-code" type="text" placeholder="e.g. EW-SRT-01"><div class="form-hint">Override optional</div></div>
         <div class="form-group"><label>Store Format <span class="label-req">*</span></label><select id="new-store-format"><option>Eyewoot-Owned</option><option>Franchise</option><option>Kiosk / Pop-up</option><option>Online / D2C</option></select></div>
         <div class="form-group"><label>Status</label><select id="new-store-status"><option>Coming Soon</option><option selected>Active</option><option>Inactive</option></select></div>
         <div class="form-group"><label>GSTIN</label><input id="new-store-gstin" type="text" placeholder="24AABCE1234F1Z5" class="font-mono"></div>
@@ -1571,7 +1571,7 @@
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-group"><label>Role Key <span class="label-req">*</span></label><input id="new-role-key" type="text" placeholder="e.g. store_manager" class="font-mono"><div class="form-hint">Lowercase, underscores. Used in JWT claims.</div></div>
+        <div class="form-group"><label>Role Key <span class="label-req">*</span></label><input id="new-role-key" type="text" placeholder="e.g. store_manager" class="font-mono"><div class="form-hint">Lowercase, underscores — JWT claims</div></div>
         <div class="form-group"><label>Display Name <span class="label-req">*</span></label><input id="new-role-display" type="text" placeholder="e.g. Store Manager"></div>
       </div>
       <div id="new-role-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
@@ -1615,7 +1615,7 @@
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-group"><label>Brand Name <span class="label-req">*</span></label><input id="new-brand-name" type="text" placeholder="e.g. EW Studio"></div>
-        <div class="form-group"><label>Brand Code <span class="label-req">*</span></label><input id="new-brand-code" type="text" placeholder="e.g. EWS" class="font-mono" style="text-transform:uppercase"><div class="form-hint">3–10 chars. Immutable once SKUs are generated.</div></div>
+        <div class="form-group"><label>Brand Code <span class="label-req">*</span></label><input id="new-brand-code" type="text" placeholder="e.g. EWS" class="font-mono" style="text-transform:uppercase"><div class="form-hint">3–10 chars — immutable after SKUs exist</div></div>
         <div class="form-group span2"><label>Brand Description</label><textarea id="new-brand-desc" placeholder="Positioning and target audience..."></textarea></div>
       </div>
       <div id="new-brand-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
@@ -1659,9 +1659,9 @@
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-group"><label>Type Key <span class="label-req">*</span></label><input type="text" placeholder="e.g. KIOSK" class="font-mono" style="text-transform:uppercase"><div class="form-hint">Uppercase, no spaces. Used in DB and stock movements.</div></div>
+        <div class="form-group"><label>Type Key <span class="label-req">*</span></label><input type="text" placeholder="e.g. KIOSK" class="font-mono" style="text-transform:uppercase"><div class="form-hint">Uppercase, no spaces — DB key</div></div>
         <div class="form-group"><label>Display Name <span class="label-req">*</span></label><input type="text" placeholder="e.g. Kiosk"></div>
-        <div class="form-group"><label>Display Icon</label><input type="text" placeholder="e.g. 🛒"><div class="form-hint">Emoji shown in SKU Stock Distribution View.</div></div>
+        <div class="form-group"><label>Display Icon</label><input type="text" placeholder="e.g. 🛒"><div class="form-hint">SKU stock view icon</div></div>
         <div class="form-group"><label>Scope</label><select><option>own — user sees only their store</option><option>all — Super Admin sees all</option><option>none — not visible in stock view</option></select></div>
         <div class="form-group span2"><label>Visible To Roles</label><div style="display:flex;gap:8px;flex-wrap:wrap;padding:10px;border:1.5px solid var(--border);border-radius:8px">
           <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer"><input type="checkbox" checked> Super Admin</label>
@@ -1801,7 +1801,7 @@
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-group span2"><label>Leave Type Name <span class="label-req">*</span></label><input id="new-leave-name" type="text" placeholder="e.g. Paternity Leave"></div>
-        <div class="form-group"><label>Annual Quota (days)</label><input id="new-leave-quota" type="number" placeholder="e.g. 5"><div class="form-hint">Leave blank for no quota</div></div>
+        <div class="form-group"><label>Annual Quota (days)</label><input id="new-leave-quota" type="number" placeholder="e.g. 5"><div class="form-hint">Blank = no quota</div></div>
         <div class="form-group"><label>Max Carry Forward (days)</label><input id="new-leave-carry" type="number" placeholder="0 = no carry forward"></div>
         <div class="form-group"><label>Requires Approval</label>
           <select id="new-leave-approval"><option value="1">Yes</option><option value="0">No</option></select>
@@ -1893,7 +1893,7 @@
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-group"><label>Lookup Type</label><input id="fl-type" readonly style="background:var(--bg2);font-family:monospace"></div>
-        <div class="form-group"><label>Key (Internal Code) <span class="label-req">*</span></label><input id="fl-key" placeholder="e.g. LOCAL_SUPPLIER" class="font-mono"><div class="form-hint">Uppercase, underscores. Auto-formatted on save.</div></div>
+        <div class="form-group"><label>Key (Internal Code) <span class="label-req">*</span></label><input id="fl-key" placeholder="e.g. LOCAL_SUPPLIER" class="font-mono"><div class="form-hint">Uppercase, underscores — auto-format on save</div></div>
         <div class="form-group span2"><label>Label (shown in forms) <span class="label-req">*</span></label><input id="fl-label" placeholder="e.g. Local Supplier (Home Brand)"></div>
         <div class="form-group span2"><label>Description / Use Case</label><textarea id="fl-desc" placeholder="Explain when and why this option is used..."></textarea></div>
         <div class="form-group"><label>Display Order</label><input id="fl-order" type="number" min="0" placeholder="0"></div>
