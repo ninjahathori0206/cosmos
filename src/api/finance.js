@@ -2,8 +2,17 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure, getPool } = require('../config/db');
+const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
+
+// financeView accepts any of the three sub-feature view permissions (OR logic)
+const financeView = [
+  requireModule('finance'),
+  requirePermission('finance.dashboard.view', 'finance.payments.view', 'finance.reports.view')
+];
+const financePaymentsCreate = [requireModule('finance'), requirePermission('finance.payments.create')];
+const financePaymentsEdit   = [requireModule('finance'), requirePermission('finance.payments.edit')];
 
 // ── Validation schemas ────────────────────────────────────────────────────────
 
@@ -32,7 +41,7 @@ const creditDaysSchema = Joi.object({
 });
 
 // ── GET /api/finance/dashboard ───────────────────────────────────────────────
-router.get('/dashboard', async (req, res, next) => {
+router.get('/dashboard', ...financeView, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_Finance_DashboardStats', {});
     return res.json({ success: true, data: result.recordset && result.recordset[0] });
@@ -43,7 +52,7 @@ router.get('/dashboard', async (req, res, next) => {
 
 // ── GET /api/finance/supplier-summary ────────────────────────────────────────
 // Optional ?supplier_id=N to get a single supplier summary row.
-router.get('/supplier-summary', async (req, res, next) => {
+router.get('/supplier-summary', ...financeView, async (req, res, next) => {
   try {
     const supplierId = req.query.supplier_id ? Number(req.query.supplier_id) : null;
     const result = await executeStoredProcedure('sp_Finance_SupplierSummary', {
@@ -90,7 +99,7 @@ router.get('/supplier/:id/statement', async (req, res, next) => {
 });
 
 // ── PUT /api/finance/supplier/:id/credit-days ─────────────────────────────────
-router.put('/supplier/:id/credit-days', async (req, res, next) => {
+router.put('/supplier/:id/credit-days', ...financePaymentsEdit, async (req, res, next) => {
   try {
     const supplierId = Number(req.params.id);
     const { error, value } = creditDaysSchema.validate(req.body);
@@ -108,7 +117,7 @@ router.put('/supplier/:id/credit-days', async (req, res, next) => {
 });
 
 // ── GET /api/finance/payments?supplier_id=N ───────────────────────────────────
-router.get('/payments', async (req, res, next) => {
+router.get('/payments', ...financeView, async (req, res, next) => {
   try {
     const supplierId = req.query.supplier_id ? Number(req.query.supplier_id) : null;
     if (!supplierId) {
@@ -141,7 +150,7 @@ router.get('/payments', async (req, res, next) => {
 });
 
 // ── POST /api/finance/payments ────────────────────────────────────────────────
-router.post('/payments', async (req, res, next) => {
+router.post('/payments', ...financePaymentsCreate, async (req, res, next) => {
   try {
     const { error, value } = paymentSchema.validate(req.body, { abortEarly: false });
     if (error) {
@@ -184,7 +193,7 @@ router.post('/payments', async (req, res, next) => {
 // ── GET /api/finance/purchase-report ─────────────────────────────────────────
 // Query params: from_date, to_date, supplier_id, pipeline_status, category
 // Returns { summary, supplierBreakdown, bills }
-router.get('/purchase-report', async (req, res, next) => {
+router.get('/purchase-report', ...financeView, async (req, res, next) => {
   try {
     const { from_date, to_date, supplier_id, pipeline_status, category } = req.query;
     const result = await executeStoredProcedure('sp_Finance_PurchaseReport', {
@@ -211,7 +220,7 @@ router.get('/purchase-report', async (req, res, next) => {
 // ── GET /api/finance/item-finance ────────────────────────────────────────────
 // Query params: brand_id, product_type, status, q
 // Returns { summary, items }
-router.get('/item-finance', async (req, res, next) => {
+router.get('/item-finance', ...financeView, async (req, res, next) => {
   try {
     const { brand_id, product_type, status, q } = req.query;
     const result = await executeStoredProcedure('sp_Finance_ItemFinance', {
@@ -221,9 +230,6 @@ router.get('/item-finance', async (req, res, next) => {
       q:            { type: sql.VarChar(200), value: q            || null }
     });
     const [summaryRows, itemRows] = result.recordsets || [[], []];
-    // #region agent log
-    fetch('http://127.0.0.1:7701/ingest/24aa53f2-1d4f-48eb-8837-69df532a7134',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1d0c1b'},body:JSON.stringify({sessionId:'1d0c1b',runId:'item-finance-pre-fix',hypothesisId:'H1',location:'src/api/finance.js:item-finance',message:'Server item finance payload prepared',data:{query:{brand_id:brand_id||null,product_type:product_type||null,status:status||null,q:q||null},summaryKeys:summaryRows&&summaryRows[0]?Object.keys(summaryRows[0]):[],summarySample:summaryRows&&summaryRows[0]?{total_skus:summaryRows[0].total_skus,total_cost_value:summaryRows[0].total_cost_value,total_sale_value:summaryRows[0].total_sale_value,portfolio_margin_pct:summaryRows[0].portfolio_margin_pct}:null,itemCount:Array.isArray(itemRows)?itemRows.length:0,firstItem:itemRows&&itemRows[0]?{sku_code:itemRows[0].sku_code,margin_pct:itemRows[0].margin_pct,cost_value:itemRows[0].cost_value,sale_value:itemRows[0].sale_value}:null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     return res.json({
       success: true,
       data: {
@@ -237,7 +243,7 @@ router.get('/item-finance', async (req, res, next) => {
 });
 
 // ── GET /api/finance/item-finance/filters ─────────────────────────────────────
-router.get('/item-finance/filters', async (req, res, next) => {
+router.get('/item-finance/filters', ...financeView, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_Finance_ItemFinance_Filters', {});
     const [brandRows, typeRows] = result.recordsets || [[], []];
@@ -264,7 +270,7 @@ router.get('/purchase-report/categories', async (req, res, next) => {
 });
 
 // ── PUT /api/finance/payments/:id/void ────────────────────────────────────────
-router.put('/payments/:id/void', async (req, res, next) => {
+router.put('/payments/:id/void', ...financePaymentsEdit, async (req, res, next) => {
   try {
     const paymentId = Number(req.params.id);
     const { error, value } = voidSchema.validate(req.body);

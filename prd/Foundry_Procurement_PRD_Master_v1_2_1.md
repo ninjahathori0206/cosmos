@@ -553,26 +553,29 @@ simultaneously.
 **SKU Auto-Generation Formula**
 
 +-----------------------------------------------------------------------+
-| **🔢 SKU Format: \[BRAND_CODE\]-\[COLLECTION_CODE\]-\[COLOUR_CODE\]** |
+| **🔢 SKU Format: \[BRAND\]-\[COLLECTION\]-\[MODEL_NO\]-\[COLOUR\]**   |
 +-----------------------------------------------------------------------+
-| Example: EWS-BOTAN-TRNBLU = EW Studio · Botanica Series · Transparent |
-| Blue                                                                  |
+| Example: EWS-BOTAN-VR01-TRNB = EW Studio · Botanica · model VR-01 ·   |
+| colour segment                                                        |
 |                                                                       |
 | Brand Code: Home Brand Code for Local Supplier (e.g. EWS for EW       |
 | Studio). First 2--4 uppercase letters of brand name for others (e.g.  |
 | RB for Ray-Ban).                                                      |
 |                                                                       |
-| Collection Code: First 5 letters of EW Collection name, no spaces     |
+| Collection Code: First 6 letters of EW Collection name, no spaces     |
 | (e.g. BOTAN for Botanica Series).                                     |
 |                                                                       |
-| Colour Code: Staff selects from standardised colour library OR        |
-| creates new (max 6 chars, e.g. TRNBLU, BLKGLD).                       |
+| Model number: From Source Model Number on the product; spaces and      |
+| hyphens stripped; max 8 chars uppercase (e.g. VR01 from VR-01). If   |
+| missing, segment **UNK**.                                             |
 |                                                                       |
-| Uniqueness check: System validates SKU does not already exist.        |
-| Auto-increments suffix if duplicate (e.g. EWS-BOTAN-TRNBLU-02).       |
+| Colour Code: From purchase line colour code; max 4 chars uppercase.   |
 |                                                                       |
-| Barcode: CODE-128 barcode auto-generated from SKU. Printable PDF tag  |
-| available for download.                                               |
+| Purchase ID (PID): Appends -P{header_id} to the logical SKU for        |
+| unique barcode per purchase batch.                                   |
+|                                                                       |
+| Uniqueness: One SKU row per purchase colour at digitisation; PID      |
+| collision loop adds a numeric suffix if needed.                       |
 +-----------------------------------------------------------------------+
 
 **Digitisation Form --- Per SKU (Model × Colour)**
@@ -580,8 +583,8 @@ simultaneously.
   -------------------------------------------------------------------------
   **Section**      **Field**        **Specification**
   ---------------- ---------------- ---------------------------------------
-  SKU & Identity   Auto-generated   Brand Code + Collection Code + Colour
-                   SKU              Code. Editable before save.
+  SKU & Identity   Auto-generated   Brand + Collection + Model + Colour
+                   SKU              segments (see formula). Editable before save.
 
   SKU & Identity   Barcode          CODE-128 auto-generated from SKU.
                                     Printable PDF tag.

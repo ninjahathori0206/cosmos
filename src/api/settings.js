@@ -2,8 +2,12 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
+
+const settingsView = [requireModule('command_unit'), requirePermission('command_unit.settings.view')];
+const settingsManage = [requireModule('command_unit'), requirePermission('command_unit.settings.edit')];
 
 // ─── GST RATES ───────────────────────────────────────────────────────────────
 
@@ -20,14 +24,14 @@ const gstUpdateSchema = gstSchema.append({
   is_active: Joi.boolean().optional()
 });
 
-router.get('/gst-rates', async (req, res, next) => {
+router.get('/gst-rates', ...settingsView, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_GstRate_GetAll', {});
     return res.json({ success: true, data: result.recordset || [] });
   } catch (err) { return next(err); }
 });
 
-router.post('/gst-rates', async (req, res, next) => {
+router.post('/gst-rates', ...settingsManage, async (req, res, next) => {
   try {
     const { error, value } = gstSchema.validate(req.body);
     if (error) return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });
@@ -45,7 +49,7 @@ router.post('/gst-rates', async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.put('/gst-rates/:id', async (req, res, next) => {
+router.put('/gst-rates/:id', ...settingsManage, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { error, value } = gstUpdateSchema.validate(req.body);
@@ -66,7 +70,7 @@ router.put('/gst-rates/:id', async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.delete('/gst-rates/:id', async (req, res, next) => {
+router.delete('/gst-rates/:id', ...settingsManage, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const result = await executeStoredProcedure('sp_GstRate_Delete', {
@@ -90,7 +94,7 @@ const tierUpdateSchema = tierSchema.append({
   is_active: Joi.boolean().optional()
 });
 
-router.get('/membership-tiers', async (req, res, next) => {
+router.get('/membership-tiers', ...settingsView, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_MembershipTier_GetAll', {});
     return res.json({ success: true, data: result.recordset || [] });
@@ -117,7 +121,7 @@ router.post('/membership-tiers', async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.put('/membership-tiers/:id', async (req, res, next) => {
+router.put('/membership-tiers/:id', ...settingsManage, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { error, value } = tierUpdateSchema.validate(req.body);
@@ -137,7 +141,7 @@ router.put('/membership-tiers/:id', async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.delete('/membership-tiers/:id', async (req, res, next) => {
+router.delete('/membership-tiers/:id', ...settingsManage, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const result = await executeStoredProcedure('sp_MembershipTier_Deactivate', {
@@ -162,14 +166,14 @@ const leaveUpdateSchema = leaveSchema.append({
   is_active: Joi.boolean().optional()
 });
 
-router.get('/leave-types', async (req, res, next) => {
+router.get('/leave-types', ...settingsView, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_LeaveType_GetAll', {});
     return res.json({ success: true, data: result.recordset || [] });
   } catch (err) { return next(err); }
 });
 
-router.post('/leave-types', async (req, res, next) => {
+router.post('/leave-types', ...settingsManage, async (req, res, next) => {
   try {
     const { error, value } = leaveSchema.validate(req.body);
     if (error) return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });
@@ -190,7 +194,7 @@ router.post('/leave-types', async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.put('/leave-types/:id', async (req, res, next) => {
+router.put('/leave-types/:id', ...settingsManage, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { error, value } = leaveUpdateSchema.validate(req.body);
@@ -211,7 +215,7 @@ router.put('/leave-types/:id', async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.delete('/leave-types/:id', async (req, res, next) => {
+router.delete('/leave-types/:id', ...settingsManage, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const result = await executeStoredProcedure('sp_LeaveType_Deactivate', {

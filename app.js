@@ -24,7 +24,8 @@ const moduleAccessRouter = require('./src/api/moduleAccess');
 const userModuleAccessRouter = require('./src/api/userModuleAccess');
 const roleModuleAccessRouter = require('./src/api/roleModuleAccess');
 const foundryLookupsRouter = require('./src/api/foundryLookups');
-const makerMasterRouter    = require('./src/api/makerMaster');
+const makerMasterRouter      = require('./src/api/makerMaster');
+const brandingAgentsRouter   = require('./src/api/brandingAgents');
 const skusRouter           = require('./src/api/skus');
 const uploadsRouter        = require('./src/api/uploads');
 const qrRouter             = require('./src/api/qr');
@@ -32,7 +33,18 @@ const financeRouter        = require('./src/api/finance');
 const stockTransfersRouter     = require('./src/api/stockTransfers');
 const transferRequestsRouter   = require('./src/api/transferRequests');
 const stockTransferDocsRouter  = require('./src/api/stockTransferDocs');
+const { executeStoredProcedure } = require('./src/config/db');
+const { requireGoodsTransferDestinationStores } = require('./src/middleware/authorize');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
+
+async function handleDestinationStores(req, res, next) {
+  try {
+    const result = await executeStoredProcedure('sp_Store_GetAll', {});
+    return res.json({ success: true, data: result.recordset || [] });
+  } catch (err) {
+    return next(err);
+  }
+}
 
 const app = express();
 
@@ -77,6 +89,11 @@ app.use(
 
 // Request logging
 app.use(requestLogger);
+
+// Goods Transfer — destination stores (before static + two paths so old proxies / cached routes still resolve)
+const destinationStoresChain = [apiKeyAuth, authJwt, requireGoodsTransferDestinationStores, handleDestinationStores];
+app.get('/api/stock-transfers/destination-stores', ...destinationStoresChain);
+app.get('/api/foundry/destination-stores', ...destinationStoresChain);
 
 // Default route -> login UI
 app.get('/', (req, res) => {
@@ -153,11 +170,13 @@ app.use('/api/store-modules', apiKeyAuth, authJwt, moduleAccessRouter);
 app.use('/api/user-modules', apiKeyAuth, authJwt, userModuleAccessRouter);
 app.use('/api/role-modules', apiKeyAuth, authJwt, roleModuleAccessRouter);
 app.use('/api/foundry-lookups', apiKeyAuth, authJwt, foundryLookupsRouter);
-app.use('/api/maker-master',   apiKeyAuth, authJwt, makerMasterRouter);
+app.use('/api/maker-master',      apiKeyAuth, authJwt, makerMasterRouter);
+app.use('/api/branding-agents',  apiKeyAuth, authJwt, brandingAgentsRouter);
 app.use('/api/skus',          apiKeyAuth, authJwt, skusRouter);
 app.use('/api/uploads',      apiKeyAuth, authJwt, uploadsRouter);
 app.use('/api/qr',           qrRouter); // public — <img> tags cannot send auth headers; QR data is non-sensitive
 app.use('/api/finance',          apiKeyAuth, authJwt, financeRouter);
+
 app.use('/api/stock-transfers',     apiKeyAuth, authJwt, stockTransfersRouter);
 app.use('/api/transfer-requests',  apiKeyAuth, authJwt, transferRequestsRouter);
 app.use('/api/stock-transfer-docs', apiKeyAuth, authJwt, stockTransferDocsRouter);

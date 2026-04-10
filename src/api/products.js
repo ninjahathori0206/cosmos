@@ -2,8 +2,22 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
+
+const foundryPurchasesView = [
+  requireModule('foundry'),
+  requirePermission('foundry.purchases.view')
+];
+const foundryPurchasesCreate = [
+  requireModule('foundry'),
+  requirePermission('foundry.purchases.create')
+];
+const foundryPurchasesEdit = [
+  requireModule('foundry'),
+  requirePermission('foundry.purchases.edit')
+];
 
 const productSchema = Joi.object({
   source_type:       Joi.string().max(50).allow('', null),
@@ -20,7 +34,7 @@ const productSchema = Joi.object({
   catalogue_status:  Joi.string().valid('ACTIVE','DRAFT','DISCONTINUED').optional()
 });
 
-router.get('/', async (req, res, next) => {
+router.get('/', ...foundryPurchasesView, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_ProductMaster_GetAll', {});
     return res.json({ success: true, data: result.recordset || [] });
@@ -29,7 +43,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/check-repeat', async (req, res, next) => {
+router.get('/check-repeat', ...foundryPurchasesView, async (req, res, next) => {
   try {
     const {
       ew_collection,
@@ -70,7 +84,7 @@ router.get('/check-repeat', async (req, res, next) => {
   }
 });
 
-router.get('/source-suggestions', async (req, res, next) => {
+router.get('/source-suggestions', ...foundryPurchasesView, async (req, res, next) => {
   try {
     const { field, q, source_brand, source_collection, limit, maker_master_id } = req.query;
     const allowed = new Set(['source_brand', 'source_collection', 'source_model_number']);
@@ -100,7 +114,7 @@ router.get('/source-suggestions', async (req, res, next) => {
   }
 });
 
-router.get('/search', async (req, res, next) => {
+router.get('/search', ...foundryPurchasesView, async (req, res, next) => {
   try {
     const { q, maker_master_id, limit } = req.query;
     const maxLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
@@ -132,7 +146,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', ...foundryPurchasesCreate, async (req, res, next) => {
   try {
     const { error, value } = productSchema.validate(req.body, { abortEarly: false });
     if (error) {
@@ -177,7 +191,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', ...foundryPurchasesEdit, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { error, value } = productSchema.validate(req.body, { abortEarly: false });
@@ -223,7 +237,7 @@ router.put('/:id', async (req, res, next) => {
 });
 
 // PUT /api/products/:id/details — update digitisation / catalogue detail fields
-router.put('/:id/details', async (req, res, next) => {
+router.put('/:id/details', ...foundryPurchasesEdit, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { description, frame_width, lens_height, temple_length, frame_material, image_url } = req.body;

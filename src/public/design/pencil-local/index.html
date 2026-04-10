@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pencil design — local publish</title>
+  <style>
+    :root { --bg: #f8fafc; --card: #fff; --text: #0f172a; --muted: #64748b; --accent: #c2410c; }
+    * { box-sizing: border-box; }
+    body { font-family: "DM Sans", system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); line-height: 1.5; padding: 24px 20px 48px; }
+    main { max-width: 520px; margin: 0 auto; }
+    h1 { font-size: 1.35rem; font-weight: 700; margin: 0 0 8px; }
+    p { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+    .card { background: var(--card); border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(15,23,42,.08); margin-bottom: 16px; }
+    a { color: var(--accent); font-weight: 600; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { font-size: 12px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
+    ul { margin: 0; padding-left: 20px; font-size: 14px; color: var(--muted); }
+    li { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>StorePilot &amp; Foundry — Pencil (local)</h1>
+    <p>This folder is the local publish of <code>pencil-new.pen</code>. Use it on your machine without pushing to Git.</p>
+
+    <div class="card">
+      <p style="margin-bottom:12px"><strong>Source file</strong></p>
+      <a href="pencil-new.pen" download>Download pencil-new.pen</a>
+      <p style="margin-top:16px;margin-bottom:0">Open the file in <strong>Pencil</strong> (Cursor) to edit. To export PNG/PDF: Pencil → export the screen frames you need.</p>
+    </div>
+
+    <div class="card">
+      <p style="margin-bottom:12px"><strong>Screens in this design</strong></p>
+      <ul>
+        <li>SP — Dashboard</li>
+        <li>SP — Browse Catalogue</li>
+        <li>SP — Request Goods</li>
+        <li>SP — Incoming Goods</li>
+        <li>FY — Dashboard</li>
+        <li>FY — Goods Requests</li>
+        <li>FY — Movement List</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <p style="margin-bottom:8px"><strong>After copying a newer .pen from the repo root</strong></p>
+      <p style="margin-bottom:0">Replace <code>src/public/design/pencil-local/pencil-new.pen</code> (or run your sync script) so this page stays in sync.</p>
+    </div>
+  </main>
+</body>
+</html>

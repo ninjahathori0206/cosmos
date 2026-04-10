@@ -2,8 +2,22 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
+
+const foundrySuppliersView = [
+  requireModule('foundry'),
+  requirePermission('foundry.suppliers.view')
+];
+const foundrySuppliersCreate = [
+  requireModule('foundry'),
+  requirePermission('foundry.suppliers.create')
+];
+const foundrySuppliersEdit = [
+  requireModule('foundry'),
+  requirePermission('foundry.suppliers.edit')
+];
 
 const supplierSchema = Joi.object({
   vendor_name:           Joi.string().max(200).required(),
@@ -39,7 +53,7 @@ const updateSchema = Joi.object({
   bank_account_holder:   Joi.string().max(200).allow('', null)
 });
 
-router.get('/', async (req, res, next) => {
+router.get('/', ...foundrySuppliersView, async (req, res, next) => {
   try {
     const { status, q } = req.query;
     const result = await executeStoredProcedure('sp_Supplier_GetAll', {
@@ -52,7 +66,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/search', async (req, res, next) => {
+router.get('/search', ...foundrySuppliersView, async (req, res, next) => {
   try {
     const q = req.query.q || '';
     const result = await executeStoredProcedure('sp_Supplier_Search', {
@@ -65,7 +79,7 @@ router.get('/search', async (req, res, next) => {
 });
 
 // GET auto-generate a vendor code suggestion
-router.get('/auto-code', async (req, res, next) => {
+router.get('/auto-code', ...foundrySuppliersView, async (req, res, next) => {
   try {
     const name = req.query.name || '';
     if (!name) return res.status(400).json({ success: false, message: 'name query param required' });
@@ -77,7 +91,7 @@ router.get('/auto-code', async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', ...foundrySuppliersView, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const result = await executeStoredProcedure('sp_Supplier_GetById', {
@@ -93,7 +107,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', ...foundrySuppliersCreate, async (req, res, next) => {
   try {
     const { error, value } = supplierSchema.validate(req.body, { abortEarly: false });
     if (error) {
@@ -145,7 +159,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', ...foundrySuppliersEdit, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { error, value } = updateSchema.validate(req.body, { abortEarly: false });
@@ -183,7 +197,7 @@ router.put('/:id', async (req, res, next) => {
   }
 });
 
-router.put('/:id/status', async (req, res, next) => {
+router.put('/:id/status', ...foundrySuppliersEdit, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { status } = req.body;

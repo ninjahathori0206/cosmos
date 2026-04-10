@@ -2,20 +2,37 @@ const express = require('express');
 const sql     = require('mssql');
 const Joi     = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const {
+  requireAnyModule,
+  requirePermission,
+  hasPermission,
+  isSuperAdmin
+} = require('../middleware/authorize');
+const {
+  shouldScopeTransferRequestsToUserStore,
+  canConfirmTransferReceipt
+} = require('../config/storeRoles');
 
 const router = express.Router();
 
-// Roles that belong to a specific store (their requests are scoped to that store)
-const STORE_ROLES = new Set(['store_incharge', 'store_manager']);
-function isStoreRole(role) { return STORE_ROLES.has(role); }
+const transferModAndView = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('foundry.transfers.view', 'storepilot.transfers.view')
+];
+const transferModAndRaise = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('foundry.transfers.create', 'storepilot.transfers.create')
+];
 
 // ── GET /api/transfer-requests ────────────────────────────────────────────────
-// Store roles → see only their own store's requests.
-// HQ / admin  → see all. Optional ?status= and ?top_n= filters.
-router.get('/', async (req, res, next) => {
+// Store-scoped (permissions + store_id) → own store only. HQ (foundry.transfers.edit) → all.
+// Optional ?status= and ?top_n= filters.
+router.get('/', ...transferModAndView, async (req, res, next) => {
   try {
     const user    = req.user;
-    const storeId = isStoreRole(user.role) ? Number(user.store_id) : null;
+    const storeId = shouldScopeTransferRequestsToUserStore(req)
+      ? Number(user.store_id)
+      : null;
     const { status, top_n = 50 } = req.query;
 
     const result = await executeStoredProcedure('sp_TransferRequest_List', {
@@ -33,7 +50,7 @@ router.get('/', async (req, res, next) => {
 // ── POST /api/transfer-requests ───────────────────────────────────────────────
 // Creates a new transfer request (header + lines).
 // store_id defaults to the caller's own store when not provided.
-router.post('/', async (req, res, next) => {
+router.post('/', ...transferModAndRaise, async (req, res, next) => {
   try {
     const { error, value } = Joi.object({
       store_id: Joi.number().integer().min(1).optional(),
@@ -85,7 +102,7 @@ router.post('/', async (req, res, next) => {
 
 // ── GET /api/transfer-requests/:id ───────────────────────────────────────────
 // Returns header + lines for one request (two recordsets from the SP).
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', ...transferModAndView, async (req, res, next) => {
   try {
     const requestId = Number(req.params.id);
     if (!Number.isFinite(requestId) || requestId <= 0) {
@@ -103,6 +120,13 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Transfer request not found.' });
     }
 
+    if (
+      shouldScopeTransferRequestsToUserStore(req)
+      && Number(header.store_id) !== Number(req.user.store_id)
+    ) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
     return res.json({ success: true, data: { ...header, lines } });
   } catch (err) {
     return next(err);
@@ -111,15 +135,15 @@ router.get('/:id', async (req, res, next) => {
 
 // ── PUT /api/transfer-requests/:id/status ────────────────────────────────────
 // Allowed transitions (enforced at API level):
-//   SUBMITTED  → APPROVED | REJECTED    (HQ / non-store-role only)
-//   APPROVED   → DISPATCHED             (HQ / non-store-role only)
-//   DISPATCHED → RECEIVED               (store role OR super_admin)
+//   SUBMITTED  → APPROVED | REJECTED    (foundry.transfers.edit or super_admin)
+//   APPROVED   → DISPATCHED             (foundry.transfers.edit or super_admin)
+//   DISPATCHED → RECEIVED               (storepilot.transfers.edit + store; super_admin)
 //
 // Optional body:
 //   lines         — array of { line_id, approved_qty? / dispatched_qty? / received_qty? }
 //   extra_lines   — on DISPATCHED only: [{ sku_id, qty }] SKUs not on the request (HQ adds)
 //   notes         — reviewer / dispatch note
-router.put('/:id/status', async (req, res, next) => {
+router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), async (req, res, next) => {
   try {
     const VALID_STATUSES = ['APPROVED', 'REJECTED', 'DISPATCHED', 'RECEIVED'];
 
@@ -153,17 +177,36 @@ router.put('/:id/status', async (req, res, next) => {
     const hqAction    = ['APPROVED', 'REJECTED', 'DISPATCHED'].includes(value.status);
     const storeAction = value.status === 'RECEIVED';
 
-    if (hqAction && isStoreRole(user.role)) {
+    if (hqAction && !isSuperAdmin(req) && !hasPermission(req, 'foundry.transfers.edit')) {
       return res.status(403).json({
         success: false,
-        message: `Only HQ staff can set status to ${value.status}.`
+        message: 'Permission denied for this transfer action.'
       });
     }
-    if (storeAction && !isStoreRole(user.role) && user.role !== 'super_admin') {
+    if (storeAction && !canConfirmTransferReceipt(req)) {
       return res.status(403).json({
         success: false,
         message: 'Only store staff can confirm receipt.'
       });
+    }
+
+    // RECEIVED: must be for this user's store (store roles are scoped; super_admin may act for any)
+    if (storeAction && !isSuperAdmin(req)) {
+      const recvDetail = await executeStoredProcedure('sp_TransferRequest_GetById', {
+        request_id: { type: sql.Int, value: requestId }
+      });
+      const recvHeader = recvDetail.recordsets?.[0]?.[0];
+      if (!recvHeader) {
+        return res.status(404).json({ success: false, message: 'Transfer request not found.' });
+      }
+      const userStore = user.store_id != null ? Number(user.store_id) : null;
+      const reqStore  = Number(recvHeader.store_id);
+      if (userStore == null || userStore !== reqStore) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only staff at the requesting store can confirm receipt.'
+        });
+      }
     }
 
     // ── DISPATCHED: create a Transfer Document (decrement WAREHOUSE; store accepts/stocks later) ──

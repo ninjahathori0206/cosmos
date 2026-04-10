@@ -43,6 +43,10 @@ BEGIN
       OR pm.ew_collection         LIKE @search
       OR pm.style_model           LIKE @search
       OR ISNULL(hb.brand_name,'') LIKE @search
+      OR ISNULL(mm.maker_name,'') LIKE @search
+      OR ISNULL(pm.source_brand,'') LIKE @search
+      OR ISNULL(pm.source_collection,'') LIKE @search
+      OR ISNULL(pm.source_model_number,'') LIKE @search
       OR ISNULL(pic.colour_name,'') LIKE @search
     )
   ORDER BY

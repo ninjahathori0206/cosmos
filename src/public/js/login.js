@@ -1,6 +1,55 @@
 const API_KEY = 'CHANGE_ME_API_KEY';
 
+const LS_USER = 'cosmos_login_username';
+const LS_PASS = 'cosmos_login_password';
+
+/**
+ * Only pre-fill from our "Remember me" localStorage — no default admin/password.
+ * Browsers may still autofill from their own password store; we use autocomplete="off"
+ * and readonly-until-focus in HTML to reduce that.
+ */
+function applySavedOrDefaults() {
+  const userEl = document.getElementById('username');
+  const passEl = document.getElementById('password');
+  const rememberEl = document.getElementById('login-remember-me');
+  if (!userEl || !passEl) return;
+
+  const savedU = localStorage.getItem(LS_USER);
+  const savedP = localStorage.getItem(LS_PASS);
+
+  if (savedU != null && savedU !== '') {
+    userEl.value = savedU;
+    userEl.removeAttribute('readonly');
+  } else {
+    userEl.value = '';
+  }
+
+  if (savedP != null && savedP !== '') {
+    passEl.value = savedP;
+    if (rememberEl) rememberEl.checked = true;
+    passEl.removeAttribute('readonly');
+  } else {
+    passEl.value = '';
+  }
+}
+
+/** Lets user type without double-click; also helps avoid autofill until interaction. */
+function attachReadonlyUnlock() {
+  ['username', 'password'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const unlock = () => {
+      if (el.hasAttribute('readonly')) el.removeAttribute('readonly');
+    };
+    el.addEventListener('focus', unlock, { once: true });
+    el.addEventListener('pointerdown', unlock, { once: true });
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  applySavedOrDefaults();
+  attachReadonlyUnlock();
+
   const form = document.getElementById('login-form');
   const errorEl = document.getElementById('error');
   const btn = document.getElementById('login-btn');
@@ -14,6 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value;
+    const remember = document.getElementById('login-remember-me')?.checked;
 
     try {
       const res = await fetch('/api/auth/login', {
@@ -28,6 +78,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.message || 'Login failed');
+      }
+
+      if (remember) {
+        localStorage.setItem(LS_USER, username);
+        localStorage.setItem(LS_PASS, password);
+      } else {
+        localStorage.removeItem(LS_USER);
+        localStorage.removeItem(LS_PASS);
       }
 
       const u = data.data.user;
@@ -68,4 +126,3 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
-

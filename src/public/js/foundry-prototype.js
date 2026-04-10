@@ -43,6 +43,40 @@ document.addEventListener('DOMContentLoaded', () => {
     window.applyCosmosModuleSwitchNav('fd-switch-module-wrap', user);
   }
 
+  // ── Foundry sidebar permission gating ─────────────────────────────────────
+  // Hide nav items the current user lacks permission for, then collapse any
+  // nav-group heading that has no visible items beneath it.
+  (function applyFoundryPermissionNav() {
+    const perms = Array.isArray(user.permissions) ? user.permissions : [];
+    // super_admin (empty permissions array with role super_admin) sees everything
+    if (user.role === 'super_admin') return;
+
+    const nav = document.querySelector('.sidebar-nav');
+    if (!nav) return;
+
+    document.querySelectorAll('[data-foundry-permission]').forEach((el) => {
+      const required = el.getAttribute('data-foundry-permission');
+      if (required && !perms.includes(required)) {
+        el.style.display = 'none';
+      }
+    });
+
+    // Hide nav-group headings whose subsequent permission-gated items are all hidden
+    nav.querySelectorAll('.nav-group[data-foundry-nav-group]').forEach((group) => {
+      // Collect all nav-items between this group and the next sibling group (or end)
+      const items = [];
+      let sibling = group.nextElementSibling;
+      while (sibling && !sibling.classList.contains('nav-group') && sibling.id !== 'fd-switch-module-wrap') {
+        if (sibling.classList.contains('nav-item') && sibling.hasAttribute('data-foundry-permission')) {
+          items.push(sibling);
+        }
+        sibling = sibling.nextElementSibling;
+      }
+      const allHidden = items.length > 0 && items.every((el) => el.style.display === 'none');
+      if (allHidden) group.style.display = 'none';
+    });
+  })();
+
   // ── HTTP helpers ──────────────────────────────────────────────────────────
   function authHeaders(extra) {
     return Object.assign({ 'X-API-Key': API_KEY, Authorization: `Bearer ${token}` }, extra || {});
@@ -75,6 +109,22 @@ document.addEventListener('DOMContentLoaded', () => {
     let data; try { data = await res.json(); } catch(_) { throw new Error(`HTTP ${res.status}: unparseable response`); }
     if (!res.ok || !data.success) throw _buildApiError(data, res.status);
     return data.data;
+  }
+
+  /** Try several GET paths (e.g. primary + fallback when an older server lacks one route). */
+  async function apiGetFirst(paths) {
+    let lastErr;
+    for (const p of paths) {
+      try {
+        return await apiGet(p);
+      } catch (e) {
+        lastErr = e;
+        const m = e && e.message ? e.message : '';
+        if (m.includes('Resource not found') || m.includes('HTTP 404')) continue;
+        throw e;
+      }
+    }
+    throw lastErr;
   }
 
   // ── Format helpers ────────────────────────────────────────────────────────
@@ -133,45 +183,74 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let _allSuppliers = [];
-  let _allMakers    = [];
-  let _lookups      = {};
-  let _homeBrands   = [];
-  let _itemCount    = 0;
+  let _allSuppliers      = [];
+  let _allMakers         = [];
+  let _lookups           = {};
+  let _homeBrands        = [];
+  let _allBrandingAgents = [];
+  let _itemCount         = 0;
   window._currentHeaderId = null;
+  window._purchaseActiveItemIdx = 1;
+  window._purchaseLineModes = {};
+  window.getPurchaseActiveIdx = function() {
+    return window._purchaseActiveItemIdx || 1;
+  };
 
   // ── Lookup / initial data ─────────────────────────────────────────────────
   async function loadFormData() {
-    try {
-      const [suppliers, makers, lookupArr, brands, productTypeRows] = await Promise.all([
-        apiGet('/api/suppliers/search?q='),
-        apiGet('/api/maker-master'),
-        apiGet('/api/foundry-lookups'),
-        apiGet('/api/home-brands'),
-        apiGet('/api/foundry-lookups?type=product_type') // active-only, same as Foundry Settings → Product Types
-      ]);
-      _allSuppliers = suppliers;
-      _allMakers    = makers;
-      _homeBrands   = brands;
+    // Use allSettled so one failing endpoint (e.g. branding-agents) does not block suppliers.
+    // Use GET /api/suppliers?status=active (full list) — search?q= uses sp_Supplier_Search TOP 20 only.
+    showErr('new-purchase-error', '');
+    const [supR, makersR, lookupsR, brandsR, ptR, agentsR] = await Promise.allSettled([
+      apiGet('/api/suppliers?status=active'),
+      apiGet('/api/maker-master'),
+      apiGet('/api/foundry-lookups'),
+      apiGet('/api/home-brands'),
+      apiGet('/api/foundry-lookups?type=product_type'),
+      apiGet('/api/branding-agents')
+    ]);
 
-      // Group flat lookup array into { lookup_type: [{key, label}, ...] }
-      _lookups = {};
-      (lookupArr || []).forEach((row) => {
-        const t = row.lookup_type;
-        if (!_lookups[t]) _lookups[t] = [];
-        _lookups[t].push({ key: row.lookup_key, label: row.lookup_label, id: row.lookup_id });
-      });
-      // Product types: always use typed endpoint so list matches Foundry Settings (active + display order)
-      _lookups.product_type = (productTypeRows || []).map((row) => ({
-        key: row.lookup_key,
-        label: row.lookup_label,
-        id: row.lookup_id
-      }));
+    if (supR.status === 'fulfilled') {
+      _allSuppliers = supR.value || [];
+    } else {
+      console.error('loadFormData: suppliers', supR.reason);
+      _allSuppliers = [];
+      const msg = supR.reason && supR.reason.message ? supR.reason.message : String(supR.reason);
+      showErr('new-purchase-error', 'Could not load suppliers: ' + msg);
+    }
 
-      populateAllSupplierSelects();
-      populateMakerSelects();
-      syncPurchaseItemProductTypeSelects();
-    } catch (err) { console.error('loadFormData:', err); }
+    if (makersR.status === 'fulfilled') _allMakers = makersR.value || [];
+    else console.error('loadFormData: maker-master', makersR.reason);
+
+    if (brandsR.status === 'fulfilled') _homeBrands = brandsR.value || [];
+    else console.error('loadFormData: home-brands', brandsR.reason);
+
+    if (agentsR.status === 'fulfilled') _allBrandingAgents = agentsR.value || [];
+    else console.error('loadFormData: branding-agents', agentsR.reason);
+
+    const lookupArr = lookupsR.status === 'fulfilled' ? (lookupsR.value || []) : [];
+    if (lookupsR.status === 'rejected') console.error('loadFormData: foundry-lookups', lookupsR.reason);
+
+    _lookups = {};
+    lookupArr.forEach((row) => {
+      const t = row.lookup_type;
+      if (!_lookups[t]) _lookups[t] = [];
+      _lookups[t].push({ key: row.lookup_key, label: row.lookup_label, id: row.lookup_id });
+    });
+
+    const productTypeRows = ptR.status === 'fulfilled' ? (ptR.value || []) : [];
+    if (ptR.status === 'rejected') console.error('loadFormData: product_type lookups', ptR.reason);
+    _lookups.product_type = (productTypeRows || []).map((row) => ({
+      key: row.lookup_key,
+      label: row.lookup_label,
+      id: row.lookup_id
+    }));
+
+    populateAllSupplierSelects();
+    populateMakerSelects();
+    syncPurchaseItemProductTypeSelects();
+    populateCollectionDefaultsMakerDatalist();
+    syncCollectionDefaultsProductTypeSelect();
   }
 
   /** Rebuild Product Type dropdown options on existing item rows after lookups refresh. */
@@ -187,10 +266,183 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function populateCollectionDefaultsMakerDatalist() {
+    const ml = document.getElementById('coll-default-maker-list');
+    if (!ml) return;
+    ml.innerHTML = (_allMakers || []).map((m) => `<option value="${String(m.maker_name || '').replace(/"/g, '&quot;')}"></option>`).join('');
+  }
+
+  function syncCollectionDefaultsProductTypeSelect() {
+    const sel = document.getElementById('coll-default-product-type');
+    if (!sel) return;
+    const cur = sel.value;
+    let html = '<option value="">— Select Product Type —</option>';
+    (_lookups.product_type || []).forEach((pt) => {
+      html += `<option value="${pt.key}">${pt.label}</option>`;
+    });
+    sel.innerHTML = html;
+    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  }
+
+  function resetCollectionDefaultsCard() {
+    const ids = ['coll-default-maker-name', 'coll-default-maker', 'coll-default-source-brand', 'coll-default-source-coll'];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const pt = document.getElementById('coll-default-product-type');
+    if (pt) pt.value = '';
+    const cb = document.getElementById('coll-default-apply-new');
+    if (cb) cb.checked = true;
+    const cRate = document.getElementById('coll-default-rate');
+    if (cRate) cRate.value = '';
+    const cGst = document.getElementById('coll-default-gst');
+    if (cGst) cGst.value = '';
+    const cBrand = document.getElementById('coll-default-branding');
+    if (cBrand) cBrand.checked = false;
+    setDatalistOptions('coll-default-source-brand-list', []);
+    setDatalistOptions('coll-default-source-coll-list', []);
+    if (typeof window.refreshApplyCollMinimalUi === 'function') window.refreshApplyCollMinimalUi();
+  }
+
+  /** Apply strip values to one line item (used for new lines and “apply to all”). */
+  async function applyPurchaseCollectionDefaultsToItem(idx) {
+    const makerName = val('coll-default-maker-name');
+    const pt = val('coll-default-product-type');
+    const sb = val('coll-default-source-brand');
+    const sc = val('coll-default-source-coll');
+    const defRate = String(val('coll-default-rate') || '').trim();
+    const defGst = String(val('coll-default-gst') || '').trim();
+    const collBrandEl = document.getElementById('coll-default-branding');
+    const itemBrandEl = document.getElementById(`item-branding-${idx}`);
+    if (itemBrandEl && collBrandEl) itemBrandEl.checked = collBrandEl.checked;
+
+    const hasIdentity = !!(makerName || pt || sb || sc);
+    if (!hasIdentity && defRate === '' && defGst === '') {
+      if (typeof window.calcItemBill === 'function') window.calcItemBill(idx);
+      return;
+    }
+
+    if (hasIdentity) {
+      const dstMaker = document.getElementById(`item-maker-name-${idx}`);
+      if (dstMaker && makerName) {
+        dstMaker.value = makerName;
+        await window.onMakerInputChange(idx);
+      }
+
+      const dstPt = document.getElementById(`item-product-type-${idx}`);
+      if (dstPt && pt) dstPt.value = pt;
+
+      const dstBrand = document.getElementById(`item-source-brand-${idx}`);
+      if (dstBrand && sb) dstBrand.value = sb;
+      const dstColl = document.getElementById(`item-source-coll-${idx}`);
+      if (dstColl && sc) dstColl.value = sc;
+
+      await window.onSourceBrandInputChange(idx);
+      await window.onSourceCollectionInputChange(idx);
+      await window.onSourceModelInputChange(idx);
+    }
+
+    const dstRate = document.getElementById(`item-rate-${idx}`);
+    if (dstRate && defRate !== '') dstRate.value = defRate;
+    const dstGst = document.getElementById(`item-gst-${idx}`);
+    if (dstGst && defGst !== '') dstGst.value = defGst;
+
+    if (typeof window.calcItemBill === 'function') window.calcItemBill(idx);
+  }
+
+  window.onCollectionDefaultMakerInputChange = async function() {
+    const makerName = val('coll-default-maker-name');
+    const matched = resolveMakerByName(makerName);
+    const hidden = document.getElementById('coll-default-maker');
+    const prevMm = hidden ? hidden.value : '';
+    const nextMm = matched ? String(matched.maker_id) : '';
+    if (hidden) hidden.value = nextMm;
+
+    if (prevMm !== nextMm) {
+      const b = document.getElementById('coll-default-source-brand');
+      const c = document.getElementById('coll-default-source-coll');
+      if (b) b.value = '';
+      if (c) c.value = '';
+      setDatalistOptions('coll-default-source-brand-list', []);
+      setDatalistOptions('coll-default-source-coll-list', []);
+    }
+
+    if (matched) {
+      const brands = await loadSourceSuggestions('source_brand', { maker_master_id: matched.maker_id, q: '' });
+      setDatalistOptions('coll-default-source-brand-list', brands);
+    }
+  };
+
+  window.onCollectionDefaultSourceBrandInputChange = async function() {
+    const mmId = val('coll-default-maker');
+    const sourceBrand = val('coll-default-source-brand');
+    if (!mmId) {
+      setDatalistOptions('coll-default-source-brand-list', []);
+      setDatalistOptions('coll-default-source-coll-list', []);
+      return;
+    }
+    const mm = Number(mmId);
+
+    const brands = await loadSourceSuggestions('source_brand', { maker_master_id: mm, q: sourceBrand });
+    setDatalistOptions('coll-default-source-brand-list', brands);
+
+    if (!sourceBrand) {
+      setDatalistOptions('coll-default-source-coll-list', []);
+      return;
+    }
+
+    const brandList = document.getElementById('coll-default-source-brand-list');
+    const knownBrands = brandList
+      ? [...brandList.options].map((o) => o.value.trim().toUpperCase())
+      : [];
+    const typedUpper = sourceBrand.trim().toUpperCase();
+    if (!knownBrands.includes(typedUpper)) {
+      setDatalistOptions('coll-default-source-coll-list', []);
+      return;
+    }
+
+    const collections = await loadSourceSuggestions('source_collection', { maker_master_id: mm, source_brand: sourceBrand, q: '' });
+    setDatalistOptions('coll-default-source-coll-list', collections);
+  };
+
+  window.onCollectionDefaultSourceCollectionInputChange = async function() {
+    const mmId = val('coll-default-maker');
+    const sourceBrand = val('coll-default-source-brand');
+    const sourceColl = val('coll-default-source-coll');
+    if (!mmId || !sourceBrand) return;
+
+    const mm = Number(mmId);
+    const collections = await loadSourceSuggestions('source_collection', {
+      maker_master_id: mm,
+      source_brand: sourceBrand,
+      q: sourceColl
+    });
+    setDatalistOptions('coll-default-source-coll-list', collections);
+  };
+
+  window.applyCollectionDefaultsToAllPurchaseItems = async function() {
+    const cards = document.querySelectorAll('.purchase-item-card');
+    if (!cards.length) return;
+    for (const card of cards) {
+      const idx = parseInt(card.dataset.idx, 10);
+      await applyPurchaseCollectionDefaultsToItem(idx);
+    }
+  };
+
+  function supplierIdOf(s) {
+    if (!s) return '';
+    const id = s.supplier_id != null ? s.supplier_id : s.Supplier_Id;
+    return id != null ? id : '';
+  }
+
   function buildSupplierOptions(placeholder) {
     let html = `<option value="">${placeholder || '— Select Supplier —'}</option>`;
     (_allSuppliers || []).forEach((s) => {
-      html += `<option value="${s.supplier_id}">${s.vendor_name}${s.vendor_code ? ' (' + s.vendor_code + ')' : ''}</option>`;
+      const id = supplierIdOf(s);
+      const name = s.vendor_name || s.Vendor_Name || '—';
+      const code = s.vendor_code || s.Vendor_Code || '';
+      html += `<option value="${id}">${name}${code ? ' (' + code + ')' : ''}</option>`;
     });
     return html;
   }
@@ -362,39 +614,70 @@ document.addEventListener('DOMContentLoaded', () => {
     setDatalistOptions(`item-source-model-list-${idx}`, models);
   };
 
-  // ── Existing Product Search ───────────────────────────────────────────────
-  const _searchTimers = {};
+  // ── Existing Product Search (global bar + per-line target idx) ────────────
+  let _purchaseSearchTimer = null;
+
+  function updatePurchaseGlobalModeButtonStyles(mode) {
+    const newBtn = document.getElementById('purchase-entry-mode-new');
+    const searchBtn = document.getElementById('purchase-entry-mode-search');
+    if (mode === 'search') {
+      if (newBtn) { newBtn.style.background = ''; newBtn.style.color = ''; newBtn.style.borderColor = ''; }
+      if (searchBtn) { searchBtn.style.background = 'var(--acc2)'; searchBtn.style.color = '#fff'; searchBtn.style.borderColor = 'var(--acc2)'; }
+    } else {
+      if (searchBtn) { searchBtn.style.background = ''; searchBtn.style.color = ''; searchBtn.style.borderColor = ''; }
+      if (newBtn) { newBtn.style.background = 'var(--acc2)'; newBtn.style.color = '#fff'; newBtn.style.borderColor = 'var(--acc2)'; }
+    }
+  }
+
+  function refreshPurchaseEditSurfacesForActive() {
+    const active = window.getPurchaseActiveIdx();
+    const modes = window._purchaseLineModes || {};
+    document.querySelectorAll('.purchase-item-card').forEach((card) => {
+      const i = parseInt(card.dataset.idx, 10);
+      const surf = document.getElementById(`item-purchase-edit-surface-${i}`);
+      if (!surf) return;
+      const m = modes[i] || 'new';
+      if (i === active && m === 'search') surf.style.display = 'none';
+      else surf.style.display = '';
+    });
+    const searchWrap = document.getElementById('purchase-global-search-wrap');
+    const am = modes[active] || 'new';
+    if (searchWrap) searchWrap.style.display = am === 'search' ? 'block' : 'none';
+    updatePurchaseGlobalModeButtonStyles(am);
+  }
+
+  window.setPurchaseActiveItem = function(idx) {
+    window._purchaseActiveItemIdx = idx;
+    const label = document.getElementById('purchase-active-item-label');
+    if (label) label.textContent = `Editing: Item #${idx}`;
+    document.querySelectorAll('.purchase-item-card').forEach((c) => c.classList.remove('purchase-item-card--active'));
+    const card = document.getElementById(`item-card-${idx}`);
+    if (card) card.classList.add('purchase-item-card--active');
+    refreshPurchaseEditSurfacesForActive();
+  };
 
   window.setPurchaseItemMode = function(idx, mode) {
-    const searchPanel    = document.getElementById(`item-search-panel-${idx}`);
-    const sourceFields   = document.getElementById(`item-source-fields-${idx}`);
-    const newBtn         = document.getElementById(`item-mode-new-btn-${idx}`);
-    const searchBtn      = document.getElementById(`item-mode-search-btn-${idx}`);
+    if (!window._purchaseLineModes) window._purchaseLineModes = {};
+    window._purchaseLineModes[idx] = mode;
     const selectedBanner = document.getElementById(`item-selected-banner-${idx}`);
-
     if (mode === 'search') {
-      if (searchPanel)  searchPanel.style.display  = 'block';
-      if (sourceFields) sourceFields.style.display = 'none';
-      if (newBtn)    { newBtn.style.background = ''; newBtn.style.color = ''; newBtn.style.borderColor = ''; }
-      if (searchBtn) { searchBtn.style.background = 'var(--acc2)'; searchBtn.style.color = '#fff'; searchBtn.style.borderColor = 'var(--acc2)'; }
-      // Keep selected banner visible when switching to search mode
       if (!document.getElementById(`item-selected-pm-${idx}`)?.value) {
         if (selectedBanner) selectedBanner.style.display = 'none';
       }
-      setTimeout(() => { const q = document.getElementById(`item-search-q-${idx}`); if (q) q.focus(); }, 50);
-    } else {
-      if (searchPanel)  searchPanel.style.display  = 'none';
-      if (sourceFields) sourceFields.style.display = 'block';
-      if (searchBtn) { searchBtn.style.background = ''; searchBtn.style.color = ''; searchBtn.style.borderColor = ''; }
-      if (newBtn)    { newBtn.style.background = 'var(--acc2)'; newBtn.style.color = '#fff'; newBtn.style.borderColor = 'var(--acc2)'; }
+      setTimeout(() => {
+        const q = document.getElementById('purchase-global-search-q');
+        if (q && window.getPurchaseActiveIdx() === idx) q.focus();
+      }, 50);
     }
+    refreshPurchaseEditSurfacesForActive();
   };
 
-  window.onPurchaseItemSearch = function(idx) {
-    clearTimeout(_searchTimers[idx]);
-    const q = val(`item-search-q-${idx}`);
-    const resultsEl = document.getElementById(`item-search-results-${idx}`);
-    const spinner   = document.getElementById(`item-search-spinner-${idx}`);
+  window.onPurchaseItemSearch = function() {
+    const idx = window.getPurchaseActiveIdx();
+    clearTimeout(_purchaseSearchTimer);
+    const q = val('purchase-global-search-q');
+    const resultsEl = document.getElementById('purchase-global-search-results');
+    const spinner = document.getElementById('purchase-global-search-spinner');
 
     if (!q || q.length < 2) {
       if (resultsEl) resultsEl.style.display = 'none';
@@ -402,7 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (spinner) spinner.style.display = 'inline';
-    _searchTimers[idx] = setTimeout(async () => {
+    _purchaseSearchTimer = setTimeout(async () => {
       try {
         const params = new URLSearchParams({ q, limit: 15 });
         const mmId = val(`item-maker-${idx}`);
@@ -418,7 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   function renderProductSearchResults(idx, rows) {
-    const el = document.getElementById(`item-search-results-${idx}`);
+    const el = document.getElementById('purchase-global-search-results');
     if (!el) return;
     if (!rows.length) {
       el.innerHTML = '<div style="padding:12px;color:var(--text3);font-size:12.5px;text-align:center">No matching products found</div>';
@@ -499,8 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Switch to "new product" mode so source fields (now populated) are visible and locked-ish
     setPurchaseItemMode(idx, 'new');
 
-    // Hide search results
-    const resultsEl = document.getElementById(`item-search-results-${idx}`);
+    const resultsEl = document.getElementById('purchase-global-search-results');
     if (resultsEl) resultsEl.style.display = 'none';
 
     // Make source fields read-only to show they came from search
@@ -527,45 +809,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const makerEl = document.getElementById(`item-maker-${idx}`);
     if (makerEl) makerEl.value = '';
 
-    // Reset to "new product" mode
     setPurchaseItemMode(idx, 'new');
 
-    // Clear search input
-    const qEl = document.getElementById(`item-search-q-${idx}`);
+    const qEl = document.getElementById('purchase-global-search-q');
     if (qEl) qEl.value = '';
+    const resultsEl = document.getElementById('purchase-global-search-results');
+    if (resultsEl) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; }
   };
 
   // ── Supplier auto-code ────────────────────────────────────────────────────
-  let _autoCodeTimer = null;
-  window.autoFillVendorCode = function(name) {
-    if (!name || name.length < 2) return;
-    clearTimeout(_autoCodeTimer);
-    _autoCodeTimer = setTimeout(async () => {
-      try {
-        const res = await apiGet(`/api/suppliers/auto-code?name=${encodeURIComponent(name)}`);
-        const el = document.getElementById('sup-vendor-code');
-        if (el && !el.dataset.manuallySet) el.value = res.vendor_code || '';
-      } catch (_) {}
-    }, 500);
-  };
-
-  window.refreshVendorCode = async function() {
-    const name = val('sup-vendor-name');
-    if (!name) return;
-    try {
-      const res = await apiGet(`/api/suppliers/auto-code?name=${encodeURIComponent(name)}`);
-      const el = document.getElementById('sup-vendor-code');
-      if (el) el.value = res.vendor_code || '';
-    } catch (_) {}
-  };
-
-  // Mark code as manually set when user types in it
-  const vcEl = document.getElementById('sup-vendor-code');
-  if (vcEl) vcEl.addEventListener('input', () => { vcEl.dataset.manuallySet = vcEl.value ? '1' : ''; });
-
   window.onBillSupplierChange = function(sel) {
     const supplierHint = document.getElementById('bill-supplier-hint');
-    const s = (_allSuppliers || []).find((x) => String(x.supplier_id) === String(sel.value));
+    const s = (_allSuppliers || []).find((x) => String(supplierIdOf(x)) === String(sel.value));
     if (s) {
       if (supplierHint) {
         supplierHint.textContent = [s.city, s.state].filter(Boolean).join(', ') + (s.contact_phone ? ' · ' + s.contact_phone : '');
@@ -603,14 +858,27 @@ document.addEventListener('DOMContentLoaded', () => {
     _itemCount = 0;
     const container = document.getElementById('purchase-items-container');
     if (container) container.innerHTML = '';
+    resetCollectionDefaultsCard();
     const today = istToday();
     // Set today as default in flatpickr if not already set
     const fpEl = document.getElementById('bill-purchase-date-input');
     if (fpEl && !fpEl.value && fpEl._flatpickr) fpEl._flatpickr.setDate(new Date(), true);
     addPurchaseItem();
+    window._purchaseLineModes = { 1: 'new' };
+    if (typeof window.setPurchaseActiveItem === 'function') window.setPurchaseActiveItem(1);
+    if (typeof window.setPurchaseItemMode === 'function') window.setPurchaseItemMode(1, 'new');
+    if (typeof window.refreshApplyCollMinimalUi === 'function') window.refreshApplyCollMinimalUi();
   }
 
-  window.addPurchaseItem = function() {
+  window.refreshApplyCollMinimalUi = function() {
+    const page = document.getElementById('page-new-purchase');
+    const cb = document.getElementById('coll-default-apply-new');
+    const on = !!(cb && cb.checked);
+    if (page) page.classList.toggle('apply-coll-minimal-ui', on);
+  };
+
+  window.addPurchaseItem = function(opts) {
+    const skipDefaultsApply = opts && opts.skipDefaultsApply;
     _itemCount++;
     const idx = _itemCount;
     const container = document.getElementById('purchase-items-container');
@@ -627,29 +895,11 @@ document.addEventListener('DOMContentLoaded', () => {
     card.innerHTML = `
       <div class="ch">
         <div class="ct">Item #${idx}</div>
-        ${_itemCount > 1 ? `<button type="button" class="btn sm" style="margin-left:auto;color:var(--red)" onclick="removePurchaseItem(${idx})">✕ Remove</button>` : ''}
+        ${_itemCount > 1 ? `<button type="button" class="btn sm" style="margin-left:auto;color:var(--red)" onclick="event.stopPropagation();removePurchaseItem(${idx})">✕ Remove</button>` : ''}
       </div>
       <div class="cb">
         <input type="hidden" id="item-selected-pm-${idx}">
 
-        <!-- Mode toggle -->
-        <div style="display:flex;gap:8px;margin-bottom:14px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;align-items:center">
-          <span style="font-size:12px;color:var(--text3);margin-right:4px">Product entry mode:</span>
-          <button type="button" id="item-mode-new-btn-${idx}" class="btn sm" style="background:var(--acc2);color:#fff;border-color:var(--acc2)" onclick="setPurchaseItemMode(${idx},'new')">✚ New Product</button>
-          <button type="button" id="item-mode-search-btn-${idx}" class="btn sm" onclick="setPurchaseItemMode(${idx},'search')">🔍 Search Existing</button>
-        </div>
-
-        <!-- Search panel (hidden by default) -->
-        <div id="item-search-panel-${idx}" style="display:none;margin-bottom:14px">
-          <div style="position:relative">
-            <input id="item-search-q-${idx}" placeholder="Search by brand, model, manufacturer…" style="width:100%;padding-right:32px"
-              oninput="onPurchaseItemSearch(${idx})" autocomplete="off">
-            <span id="item-search-spinner-${idx}" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text3)">…</span>
-          </div>
-          <div id="item-search-results-${idx}" style="display:none;border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:280px;overflow-y:auto;background:var(--card)"></div>
-        </div>
-
-        <!-- Selected product banner -->
         <div id="item-selected-banner-${idx}" style="display:none;background:#e8f5e9;border:1px solid #66bb6a;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12.5px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start">
             <div>
@@ -657,102 +907,133 @@ document.addEventListener('DOMContentLoaded', () => {
               <span style="margin-left:8px;background:#c8e6c9;color:#1b5e20;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600" id="item-selected-badge-${idx}">Restock Candidate</span>
               <div id="item-selected-desc-${idx}" style="margin-top:5px;color:var(--text2);line-height:1.5"></div>
             </div>
-            <button type="button" class="btn xs" style="color:var(--red);flex-shrink:0;margin-left:12px" onclick="clearExistingProductSelection(${idx})">✕ Clear</button>
+            <button type="button" class="btn xs" style="color:var(--red);flex-shrink:0;margin-left:12px" onclick="event.stopPropagation();clearExistingProductSelection(${idx})">✕ Clear</button>
           </div>
         </div>
 
-        <!-- Source fields (shown by default) -->
-        <div id="item-source-fields-${idx}">
-          <div class="fg3 mb3">
-            <div class="fgrp">
-              <label>Product Type <span class="req">*</span></label>
-              <select id="item-product-type-${idx}">${ptOpts}</select>
-              <div class="fhint">Same list as Foundry Settings → Product Types (active values).</div>
+        <div id="item-purchase-edit-surface-${idx}">
+          <div id="item-source-fields-${idx}">
+            <div class="item-line-collection-dup">
+              <div class="fg3 mb3">
+                <div class="fgrp">
+                  <label>Product Type <span class="req">*</span></label>
+                  <select id="item-product-type-${idx}">${ptOpts}</select>
+                </div>
+                <div class="fgrp">
+                  <label>Manufacturer <span class="req">*</span></label>
+                  <input id="item-maker-name-${idx}" list="item-maker-list-${idx}" placeholder="e.g. Gandhi" oninput="onMakerInputChange(${idx})">
+                  <datalist id="item-maker-list-${idx}">
+                    ${(_allMakers || []).map((m) => `<option value="${String(m.maker_name || '').replace(/"/g, '&quot;')}"></option>`).join('')}
+                  </datalist>
+                  <input type="hidden" id="item-maker-${idx}">
+                </div>
+                <div class="fgrp">
+                  <label>Source Brand <span class="req">*</span></label>
+                  <input id="item-source-brand-${idx}" list="item-source-brand-list-${idx}" placeholder="e.g. IKON" onfocus="onSourceBrandInputChange(${idx})" oninput="onSourceBrandInputChange(${idx})">
+                  <datalist id="item-source-brand-list-${idx}"></datalist>
+                </div>
+                <div class="fgrp">
+                  <label>Source Collection</label>
+                  <input id="item-source-coll-${idx}" list="item-source-coll-list-${idx}" placeholder="Optional — filtered by brand" onfocus="onSourceCollectionInputChange(${idx})" oninput="onSourceCollectionInputChange(${idx})">
+                  <datalist id="item-source-coll-list-${idx}"></datalist>
+                </div>
+              </div>
             </div>
-            <div class="fgrp">
-              <label>Manufacturer <span class="req">*</span></label>
-              <input id="item-maker-name-${idx}" list="item-maker-list-${idx}" placeholder="e.g. Gandhi" oninput="onMakerInputChange(${idx})">
-              <datalist id="item-maker-list-${idx}">
-                ${(_allMakers || []).map((m) => `<option value="${String(m.maker_name || '').replace(/"/g, '&quot;')}"></option>`).join('')}
-              </datalist>
-              <input type="hidden" id="item-maker-${idx}">
-              <div class="fhint">Source brands are filtered by manufacturer.</div>
+
+            <div id="item-repeat-banner-${idx}" style="display:none;background:var(--goldL);border:1px solid var(--gold);border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:12px">
+              🔁 This product exists. Details will be pre-filled.
             </div>
-            <div class="fgrp">
-              <label>Source Brand <span class="req">*</span></label>
-              <input id="item-source-brand-${idx}" list="item-source-brand-list-${idx}" placeholder="e.g. IKON" onfocus="onSourceBrandInputChange(${idx})" oninput="onSourceBrandInputChange(${idx})">
-              <datalist id="item-source-brand-list-${idx}"></datalist>
+          </div>
+
+          <div class="mb3" style="border-top:1px solid var(--border);padding-top:12px">
+            <div class="item-line-rate-gst-brand-dup">
+              <div class="fg3 mb3">
+                <div class="fgrp">
+                  <label>Purchase Rate (₹) <span class="req">*</span></label>
+                  <input type="number" id="item-rate-${idx}" placeholder="Per unit rate" oninput="calcItemBill(${idx})">
+                </div>
+                <div class="fgrp">
+                  <label>GST % <span class="req">*</span></label>
+                  <input type="number" id="item-gst-${idx}" placeholder="e.g. 12 for 12%" step="0.01" min="0" max="100" oninput="calcItemBill(${idx})">
+                </div>
+              </div>
+              <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+                <input type="checkbox" id="item-branding-${idx}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--acc2)">
+                <label for="item-branding-${idx}" style="font-size:13px;font-weight:600;cursor:pointer">Branding Required</label>
+              </div>
             </div>
-            <div class="fgrp">
-              <label>Source Collection</label>
-              <input id="item-source-coll-${idx}" list="item-source-coll-list-${idx}" placeholder="Optional — filtered by brand" onfocus="onSourceCollectionInputChange(${idx})" oninput="onSourceCollectionInputChange(${idx})">
-              <datalist id="item-source-coll-list-${idx}"></datalist>
-            </div>
+          </div>
+
+          <div class="purchase-item-quick-row">
             <div class="fgrp">
               <label>Source Model Number <span class="req">*</span></label>
               <input id="item-source-model-${idx}" list="item-source-model-list-${idx}" placeholder="e.g. VR-01" onfocus="onSourceModelInputChange(${idx})" oninput="onSourceModelInputChange(${idx})">
               <datalist id="item-source-model-list-${idx}"></datalist>
             </div>
-          </div>
-
-          <div id="item-repeat-banner-${idx}" style="display:none;background:var(--goldL);border:1px solid var(--gold);border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:12px">
-            🔁 This product exists. Details will be pre-filled.
-          </div>
-        </div>
-
-        <div class="fg3 mb3" style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="fgrp">
-            <label>Purchase Rate (₹) <span class="req">*</span></label>
-            <input type="number" id="item-rate-${idx}" placeholder="Per unit rate" oninput="calcItemBill(${idx})">
-          </div>
-          <div class="fgrp">
-            <label>Quantity <span class="req">*</span></label>
-            <input type="number" id="item-qty-${idx}" placeholder="Total units" oninput="calcItemBill(${idx});validateColourQty(${idx})">
-          </div>
-          <div class="fgrp">
-            <label>GST % <span class="req">*</span></label>
-            <input type="number" id="item-gst-${idx}" placeholder="e.g. 12 for 12%" step="0.01" min="0" max="100" oninput="calcItemBill(${idx})">
+            <div class="fgrp">
+              <label>Quantity <span class="req">*</span></label>
+              <input type="number" id="item-qty-${idx}" placeholder="Total units" oninput="calcItemBill(${idx});validateColourQty(${idx})">
+            </div>
+            <div class="item-totals-cluster">
+              <div class="item-mini-amts">
+                <div class="item-money-row"><span class="td2">Base value</span><span class="mono" id="item-base-${idx}">₹0</span></div>
+                <div class="item-money-row"><span class="td2">GST amount</span><span class="mono" id="item-gst-amt-${idx}">₹0</span></div>
+              </div>
+              <div class="item-total-cell">
+                <div class="item-total-lbl">Item total</div>
+                <span class="mono" id="item-total-${idx}">₹0</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Branding toggle -->
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
-          <input type="checkbox" id="item-branding-${idx}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--acc2)">
-          <div>
-            <label for="item-branding-${idx}" style="font-size:13px;font-weight:600;cursor:pointer">Branding Required</label>
-            <div style="font-size:11.5px;color:var(--text3);margin-top:1px">Check if this item needs to be re-branded under an Eyewoot home brand. Leave unchecked to use Source Brand directly.</div>
+        <div class="purchase-colour-section">
+          <div class="section-lbl mb2" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <span>Colour Variants</span>
+            <button type="button" class="btn xs" onclick="event.stopPropagation();addColourToItem(${idx})">+ Add colour</button>
           </div>
-        </div>
-
-        <!-- Item bill summary -->
-        <div style="background:var(--bg);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px" id="item-bill-summary-${idx}">
-          <div class="flex ic" style="justify-content:space-between"><span class="td2">Base Value</span><span class="mono" id="item-base-${idx}">₹0</span></div>
-          <div class="flex ic" style="justify-content:space-between"><span class="td2">GST Amount</span><span class="mono" id="item-gst-amt-${idx}">₹0</span></div>
-          <div class="flex ic fw6" style="justify-content:space-between;margin-top:4px;border-top:1px solid var(--border);padding-top:4px"><span>Item Total</span><span class="mono" id="item-total-${idx}">₹0</span></div>
-        </div>
-
-        <!-- Colour Variants -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="section-lbl mb2">Colour Variants</div>
           <div id="colours-container-${idx}"></div>
           <div id="colour-qty-warn-${idx}" style="display:none;color:var(--red);font-size:12px;margin:4px 0 8px"></div>
-          <button type="button" class="btn sm mt1" onclick="addColourToItem(${idx})">+ Add Colour</button>
         </div>
       </div>`;
     container.appendChild(card);
-    addColourToItem(idx);
+    card.addEventListener('click', (ev) => {
+      if (ev.target.closest('button, input, select, textarea, label, a, option')) return;
+      if (typeof window.setPurchaseActiveItem === 'function') window.setPurchaseActiveItem(idx);
+    });
+    if (!window._purchaseLineModes) window._purchaseLineModes = {};
+    window._purchaseLineModes[idx] = 'new';
+    if (typeof window.setPurchaseActiveItem === 'function') window.setPurchaseActiveItem(idx);
+
+    if (!skipDefaultsApply && document.getElementById('coll-default-apply-new')?.checked) {
+      void (async () => {
+        try {
+          await applyPurchaseCollectionDefaultsToItem(idx);
+        } catch (e) {
+          console.error('applyPurchaseCollectionDefaultsToItem', e);
+        }
+      })();
+    }
 
     const hint = document.getElementById('items-count-hint');
     if (hint) hint.textContent = _itemCount === 1 ? '1 item' : `${_itemCount} items`;
   };
 
   window.removePurchaseItem = function(idx) {
+    const wasActive = window.getPurchaseActiveIdx() === idx;
     const card = document.getElementById(`item-card-${idx}`);
     if (card) card.remove();
+    if (window._purchaseLineModes) delete window._purchaseLineModes[idx];
     recalcGrandTotal();
-    const remaining = document.querySelectorAll('.purchase-item-card').length;
+    const remaining = document.querySelectorAll('.purchase-item-card');
     const hint = document.getElementById('items-count-hint');
-    if (hint) hint.textContent = remaining === 1 ? '1 item' : `${remaining} items`;
+    if (hint) hint.textContent = remaining.length === 1 ? '1 item' : `${remaining.length} items`;
+    if (!remaining.length) return;
+    if (wasActive || !document.getElementById(`item-card-${window._purchaseActiveItemIdx}`)) {
+      const last = remaining[remaining.length - 1];
+      const ni = parseInt(last.dataset.idx, 10);
+      if (typeof window.setPurchaseActiveItem === 'function') window.setPurchaseActiveItem(ni);
+    }
   };
 
   window.duplicatePurchaseItem = async function() {
@@ -772,8 +1053,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const srcPtVal        = document.getElementById(`item-product-type-${srcIdx}`)?.value || '';
     const srcBrandingVal  = document.getElementById(`item-branding-${srcIdx}`)?.checked || false;
 
-    // Add a new blank item card
-    window.addPurchaseItem();
+    // Add a new blank item card (do not apply collection-defaults strip — would overwrite copy)
+    window.addPurchaseItem({ skipDefaultsApply: true });
     const newIdx = _itemCount;
 
     // Set maker FIRST and await so onMakerInputChange can set the hidden ID.
@@ -830,6 +1111,63 @@ document.addEventListener('DOMContentLoaded', () => {
     calcItemBill(newIdx);
     validateColourQty(newIdx);
     // Scroll the new card into view
+    const newCard = document.getElementById(`item-card-${newIdx}`);
+    if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  /** Same manufacturer / brand / collection / rate / GST / branding as last item; clear model & qty & colours. */
+  window.duplicatePurchaseItemSameCollection = async function() {
+    const cards = document.querySelectorAll('.purchase-item-card');
+    if (!cards.length) {
+      alert('Add an item first before adding the next model.');
+      return;
+    }
+    const srcCard = cards[cards.length - 1];
+    const srcIdx = parseInt(srcCard.dataset.idx, 10);
+
+    const snapshot = {};
+    ['source-brand', 'source-coll', 'rate', 'gst'].forEach((f) => {
+      const el = document.getElementById(`item-${f}-${srcIdx}`);
+      snapshot[f] = el ? el.value : '';
+    });
+    const srcMakerNameVal = document.getElementById(`item-maker-name-${srcIdx}`)?.value || '';
+    const srcPtVal = document.getElementById(`item-product-type-${srcIdx}`)?.value || '';
+    const srcBrandingVal = document.getElementById(`item-branding-${srcIdx}`)?.checked || false;
+
+    window.addPurchaseItem({ skipDefaultsApply: true });
+    const newIdx = _itemCount;
+
+    const dstMakerName = document.getElementById(`item-maker-name-${newIdx}`);
+    if (dstMakerName) {
+      dstMakerName.value = srcMakerNameVal;
+      await window.onMakerInputChange(newIdx);
+    }
+
+    const dstBrand = document.getElementById(`item-source-brand-${newIdx}`);
+    const dstColl = document.getElementById(`item-source-coll-${newIdx}`);
+    if (dstBrand) dstBrand.value = snapshot['source-brand'] || '';
+    if (dstColl) dstColl.value = snapshot['source-coll'] || '';
+
+    const dstRate = document.getElementById(`item-rate-${newIdx}`);
+    if (dstRate) dstRate.value = snapshot['rate'] || '';
+    const dstGst = document.getElementById(`item-gst-${newIdx}`);
+    if (dstGst) dstGst.value = snapshot['gst'] || '';
+
+    await window.onSourceBrandInputChange(newIdx);
+    await window.onSourceCollectionInputChange(newIdx);
+
+    const dstPt = document.getElementById(`item-product-type-${newIdx}`);
+    if (dstPt) dstPt.value = srcPtVal;
+
+    const dstBranding = document.getElementById(`item-branding-${newIdx}`);
+    if (dstBranding) dstBranding.checked = srcBrandingVal;
+
+    calcItemBill(newIdx);
+    validateColourQty(newIdx);
+
+    const modelEl = document.getElementById(`item-source-model-${newIdx}`);
+    if (modelEl) modelEl.focus();
+
     const newCard = document.getElementById(`item-card-${newIdx}`);
     if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -1129,6 +1467,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const h     = purchData.header;
       const items = purchData.items || [];
       const skus  = skuData || [];
+      window._pvCurrentSkus = skus;
 
       const titleEl = document.getElementById('pv-title');
       const subEl   = document.getElementById('pv-subtitle');
@@ -1193,7 +1532,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="cb">
             <div class="fg3 mb4">
               <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-              <div><div class="xs td2">Bill Reference</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
+              <div><div class="xs td2">Invoice No.</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
               <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>
               <div><div class="xs td2">Registered</div><div class="fw6">${fmtDateTime(h.created_at)}</div></div>
             </div>
@@ -1271,8 +1610,17 @@ document.addEventListener('DOMContentLoaded', () => {
       <td class="tc">${sk.quantity}</td>
       <td><span class="b b-green xs">${sk.status}</span></td>
     </tr>`).join('');
+    const printBtn4 = skus.length
+      ? `<button type="button" class="btn btn-sm" onclick="openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print Barcodes</button>`
+      : '';
     el.innerHTML = `<div class="card">
-      <div class="ch"><div class="ct">Generated SKUs</div><span class="b b-teal xs">${skus.length} SKUs</span></div>
+      <div class="ch" style="gap:12px">
+        <div class="ct" style="min-width:0">Generated SKUs</div>
+        <div class="flex ic g2" style="flex-shrink:0;margin-left:auto">
+          <span class="b b-teal xs">${skus.length} SKUs</span>
+          ${printBtn4}
+        </div>
+      </div>
       <div class="cb">
         <div class="tw"><table>
           <thead><tr><th>SKU Code</th><th>Barcode</th><th>Product</th><th>Colour</th><th>Sale Price</th><th>Qty</th><th>Status</th></tr></thead>
@@ -1339,16 +1687,13 @@ document.addEventListener('DOMContentLoaded', () => {
       <td class="mono xs">${inrD(Number(sk.sale_price || 0) * Number(sk.quantity || 0))}</td>
     </tr>`).join('');
 
-    // Store skus on window for barcode modal
-    window._pvCurrentSkus = skus;
-
     el.innerHTML = `<div class="main-side">
       <div class="col-stack">
         <div class="card">
-          <div class="ch">
-            <div class="ct">Warehouse Stock Added</div>
-            <div class="flex ic g2">
-              <button class="btn btn-sm" onclick="openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px">🏷️ Print Barcodes</button>
+          <div class="ch" style="gap:12px">
+            <div class="ct" style="min-width:0">Warehouse Stock Added</div>
+            <div class="flex ic g2" style="flex-shrink:0;margin-left:auto">
+              <button type="button" class="btn btn-sm" onclick="openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print Barcodes</button>
               <span class="b b-green">✓ LIVE</span>
             </div>
           </div>
@@ -1399,7 +1744,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       document.getElementById('bv-meta').innerHTML = `
         <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-        <div><div class="xs td2">Bill Reference</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
+        <div><div class="xs td2">Invoice No.</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
         <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>`;
 
       // Items table
@@ -1536,7 +1881,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       document.getElementById('branding-meta').innerHTML = `
         <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-        <div><div class="xs td2">Bill Ref</div><div class="mono xs">${h.bill_ref || h.bill_number || '—'}</div></div>
+        <div><div class="xs td2">Invoice No.</div><div class="mono xs">${h.bill_ref || h.bill_number || '—'}</div></div>
         <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>`;
 
       // Build all-items colour table
@@ -1620,7 +1965,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Store for print function
       window._currentBrandingData = { header: h, items };
 
-      // Show/hide dispatch vs receipt panel
+      // Show/hide dispatch vs receipt panel; inject Branding Agent dropdown for dispatch
       const dispatchBtn = document.getElementById('branding-dispatch-btn');
       const receiptCard = document.getElementById('branding-receipt-card');
       const bypassCard  = document.getElementById('branding-bypass-card');
@@ -1628,12 +1973,33 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dispatchBtn) dispatchBtn.style.display = '';
         if (receiptCard) receiptCard.style.display = 'none';
         if (bypassCard)  bypassCard.style.display  = 'none';
+
+        // Inject Branding Agent selector before the instructions textarea
+        const instrEl = document.getElementById('branding-instructions-input');
+        if (instrEl && !document.getElementById('branding-agent-sel')) {
+          const agentOpts = (_allBrandingAgents || [])
+            .map((a) => `<option value="${a.agent_id}">${a.agent_name}${a.city ? ' · ' + a.city : ''}</option>`)
+            .join('');
+          const agentWrap = document.createElement('div');
+          agentWrap.id = 'branding-agent-field';
+          agentWrap.style.cssText = 'margin-bottom:12px';
+          agentWrap.innerHTML = `
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Branding Agent <span class="req">*</span></label>
+            <select id="branding-agent-sel" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);color:var(--text)">
+              <option value="">— Select Branding Agent —</option>
+              ${agentOpts}
+            </select>`;
+          instrEl.parentNode.insertBefore(agentWrap, instrEl);
+        }
       } else if (h.pipeline_status === 'BRANDING_DISPATCHED') {
         if (dispatchBtn) dispatchBtn.style.display = 'none';
         if (receiptCard) receiptCard.style.display = '';
         if (bypassCard)  bypassCard.style.display  = 'none';
         const dispDate = document.getElementById('branding-dispatched-date');
         if (dispDate) dispDate.textContent = fmtDateTime(h.dispatched_at);
+        // Show assigned branding agent name
+        const agentInfo = document.getElementById('branding-dispatched-agent');
+        if (agentInfo) agentInfo.textContent = h.branding_agent_name || '—';
       }
 
     } catch (err) { console.error('openBrandingPage:', err); }
@@ -1643,6 +2009,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const headerId = window._currentHeaderId;
     if (!headerId) return;
     const instructions = val('branding-instructions-input');
+
+    // Validate Branding Agent selection
+    const agentSel = document.getElementById('branding-agent-sel');
+    const agentId  = agentSel ? (agentSel.value ? Number(agentSel.value) : null) : null;
+    if (!agentId) {
+      alert('Please select a Branding Agent before dispatching.');
+      return;
+    }
 
     // Collect brand + collection for items that require branding
     const itemBrands = [];
@@ -1674,9 +2048,12 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       await apiPut(`/api/purchases/${headerId}/branding-dispatch`, {
         branding_instructions: instructions || null,
-        item_brands: itemBrands
+        branding_agent_id:     agentId,
+        item_brands:           itemBrands
       });
       await openBrandingPage(headerId);
+      // Auto-pop Dispatch Order print after successful dispatch
+      printBrandingDispatch();
     } catch (err) { alert(err.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Confirm Dispatch → DISPATCHED TO BRANDING'; } }
   };
@@ -1772,7 +2149,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="text-align:right;font-size:13px">
           <div><strong>Purchase #${h.header_id}</strong></div>
           <div>Supplier: ${h.supplier_name || '—'}</div>
-          <div>Bill Ref: ${h.bill_ref || h.bill_number || '—'}</div>
+          <div>Invoice No.: ${h.bill_ref || h.bill_number || '—'}</div>
           <div>Purchase Date: ${fmtDate(h.purchase_date)}</div>
         </div>
       </div>
@@ -2243,173 +2620,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) { btn.disabled = true; btn.textContent = 'Publishing…'; }
     try {
       await apiPut(`/api/purchases/${headerId}/warehouse-ready`, {});
-      alert('All SKUs are now LIVE and stock has been updated!');
+      const skus = await apiGet(`/api/purchases/${headerId}/skus`);
+      openBarcodeModal(skus, { defaultType: 'QR' });
       loadPurchases();
       nav('purchases', document.querySelector('.nav-item[onclick*="nav(\'purchases\'"]'));
     } catch (err) { alert(err.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Publish All to Warehouse ✓'; } }
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // SUPPLIERS
-  // ─────────────────────────────────────────────────────────────────────────
-  async function loadSuppliers() {
-    const q  = val('suppliers-search');
-    const tb = document.getElementById('suppliers-tbody');
-    if (!tb) return;
-    tb.innerHTML = '<tr><td colspan="6" class="tc td2 p12">Loading…</td></tr>';
-    try {
-      const rows = await apiGet(`/api/suppliers/search?q=${encodeURIComponent(q)}`);
-      if (!rows.length) { tb.innerHTML = '<tr><td colspan="6" class="tc td2 p12">No suppliers found</td></tr>'; return; }
-      tb.innerHTML = rows.map((s) => `<tr>
-        <td class="fw6">${s.vendor_name}</td>
-        <td class="mono xs">${s.vendor_code || '—'}</td>
-        <td class="td2">${s.city || '—'}${s.state ? ', ' + s.state : ''}</td>
-        <td class="mono xs td2">${s.gstin || '—'}</td>
-        <td><span class="b ${s.vendor_status === 'active' ? 'b-green' : 'b-gray'} xs">${s.vendor_status || 'active'}</span></td>
-        <td class="tc"><button class="btn xs" onclick="openEditSupplier(${s.supplier_id})">✎</button></td>
-      </tr>`).join('');
-    } catch (err) { tb.innerHTML = `<tr><td colspan="6" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`; }
-  }
-
-  window.openNewSupplierModal = function() {
-    document.getElementById('supplier-editing-id').value = '';
-    document.getElementById('supplier-modal-title').textContent = 'Add Supplier';
-    document.getElementById('save-supplier-btn').textContent = 'Add Supplier';
-    document.getElementById('supplier-modal-error').style.display = 'none';
-    ['sup-vendor-name','sup-vendor-code','sup-city','sup-state','sup-gstin','sup-contact-person','sup-contact-phone'].forEach((id) => {
-      const el = document.getElementById(id); if (el) el.value = '';
-    });
-    document.getElementById('sup-vendor-code').dataset.manuallySet = '';
-    document.getElementById('modal-new-supplier').style.display = 'flex';
-  };
-
-  window.openEditSupplier = async function(id) {
-    try {
-      const s = await apiGet(`/api/suppliers/${id}`);
-      document.getElementById('supplier-editing-id').value = id;
-      document.getElementById('supplier-modal-title').textContent = 'Edit Supplier';
-      document.getElementById('save-supplier-btn').textContent = 'Save Changes';
-      document.getElementById('sup-vendor-name').value  = s.vendor_name || '';
-      document.getElementById('sup-vendor-code').value  = s.vendor_code || '';
-      document.getElementById('sup-city').value         = s.city || '';
-      document.getElementById('sup-state').value        = s.state || '';
-      document.getElementById('sup-gstin').value        = s.gstin || '';
-      document.getElementById('sup-contact-person').value = s.contact_person || '';
-      document.getElementById('sup-contact-phone').value  = s.contact_phone || '';
-      document.getElementById('supplier-modal-error').style.display = 'none';
-      document.getElementById('modal-new-supplier').style.display = 'flex';
-    } catch (err) { alert(err.message); }
-  };
-
-  window.handleSaveSupplier = async function() {
-    const editingId = val('supplier-editing-id');
-    const payload = {
-      vendor_name: val('sup-vendor-name'),
-      vendor_code: val('sup-vendor-code') || null,
-      city: val('sup-city') || null,
-      state: val('sup-state') || null,
-      gstin: val('sup-gstin') || null,
-      contact_person: val('sup-contact-person') || null,
-      contact_phone: val('sup-contact-phone') || null
-    };
-    if (!payload.vendor_name) return showErr('supplier-modal-error', 'Vendor Name is required.');
-    try {
-      if (editingId) {
-        await apiPut(`/api/suppliers/${editingId}`, { vendor_name: payload.vendor_name, ...payload });
-      } else {
-        await apiPost('/api/suppliers', payload);
-      }
-      document.getElementById('modal-new-supplier').style.display = 'none';
-      await loadSuppliers();
-      // Refresh supplier lists in forms
-      _allSuppliers = await apiGet('/api/suppliers/search?q=');
-      populateAllSupplierSelects();
-    } catch (err) { showErr('supplier-modal-error', err.message); }
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // MAKER MASTER
-  // ─────────────────────────────────────────────────────────────────────────
-  async function loadMakers() {
-    const q  = val('makers-search') || '';
-    const tb = document.getElementById('makers-tbody');
-    if (!tb) return;
-    tb.innerHTML = '<tr><td colspan="6" class="tc td2 p12">Loading…</td></tr>';
-    try {
-      const rows = await apiGet('/api/maker-master');
-      const filtered = q ? rows.filter((m) => m.maker_name.toLowerCase().includes(q.toLowerCase()) || (m.maker_code || '').toLowerCase().includes(q.toLowerCase())) : rows;
-      if (!filtered.length) { tb.innerHTML = '<tr><td colspan="6" class="tc td2 p12">No makers found</td></tr>'; return; }
-      tb.innerHTML = filtered.map((m) => `<tr>
-        <td class="fw6">${m.maker_name}</td>
-        <td class="mono xs">${m.maker_code}</td>
-        <td class="td2">${m.country || '—'}</td>
-        <td class="td2 xs">${m.description || '—'}</td>
-        <td><span class="b ${m.is_active ? 'b-green' : 'b-gray'} xs">${m.is_active ? 'Active' : 'Inactive'}</span></td>
-        <td class="tc">
-          <button class="btn xs" onclick="openEditMaker(${m.maker_id})">✎</button>
-          <button class="btn xs" style="margin-left:4px;color:${m.is_active?'var(--red)':'var(--green)'}" onclick="toggleMakerStatus(${m.maker_id},${m.is_active?0:1})">${m.is_active?'Deactivate':'Activate'}</button>
-        </td>
-      </tr>`).join('');
-    } catch (err) { tb.innerHTML = `<tr><td colspan="6" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`; }
-  }
-
-  window.openNewMakerModal = function() {
-    document.getElementById('maker-editing-id').value = '';
-    document.getElementById('maker-modal-title').textContent = 'Add Maker';
-    document.getElementById('save-maker-btn').textContent = 'Add Maker';
-    document.getElementById('maker-modal-error').style.display = 'none';
-    ['maker-name','maker-code','maker-country','maker-description'].forEach((id) => {
-      const el = document.getElementById(id); if (el) el.value = '';
-    });
-    document.getElementById('modal-maker').style.display = 'flex';
-  };
-
-  window.openEditMaker = async function(id) {
-    try {
-      const m = await apiGet(`/api/maker-master/${id}`);
-      document.getElementById('maker-editing-id').value = id;
-      document.getElementById('maker-modal-title').textContent = 'Edit Maker';
-      document.getElementById('save-maker-btn').textContent = 'Save Changes';
-      document.getElementById('maker-name').value        = m.maker_name || '';
-      document.getElementById('maker-code').value        = m.maker_code || '';
-      document.getElementById('maker-country').value     = m.country || '';
-      document.getElementById('maker-description').value = m.description || '';
-      document.getElementById('maker-modal-error').style.display = 'none';
-      document.getElementById('modal-maker').style.display = 'flex';
-    } catch (err) { alert(err.message); }
-  };
-
-  window.handleSaveMaker = async function() {
-    const editingId = val('maker-editing-id');
-    const payload = {
-      maker_name: val('maker-name'),
-      maker_code: val('maker-code'),
-      country:    val('maker-country') || null,
-      description: val('maker-description') || null
-    };
-    if (!payload.maker_name) return showErr('maker-modal-error', 'Maker Name is required.');
-    if (!payload.maker_code) return showErr('maker-modal-error', 'Maker Code is required.');
-    try {
-      if (editingId) {
-        await apiPut(`/api/maker-master/${editingId}`, payload);
-      } else {
-        await apiPost('/api/maker-master', payload);
-      }
-      document.getElementById('modal-maker').style.display = 'none';
-      _allMakers = await apiGet('/api/maker-master');
-      populateMakerSelects();
-      loadMakers();
-    } catch (err) { showErr('maker-modal-error', err.message); }
-  };
-
-  window.toggleMakerStatus = async function(id, newStatus) {
-    try {
-      await apiPut(`/api/maker-master/${id}`, { is_active: !!newStatus });
-      _allMakers = await apiGet('/api/maker-master');
-      populateMakerSelects();
-      loadMakers();
-    } catch (err) { alert(err.message); }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2446,14 +2662,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // MODAL CLOSE HELPERS
+  // MODAL HELPERS (override Foundry_Prototype.html globals — class `open`, not inline display)
+  // Inline display:none would beat `.overlay.open { display:flex }` and block reopening.
   // ─────────────────────────────────────────────────────────────────────────
-  window.closeM = function(id) { const el = document.getElementById(id); if (el) el.style.display = 'none'; };
-
-  // Close overlay on backdrop click
-  document.querySelectorAll('.overlay').forEach((ov) => {
-    ov.addEventListener('click', (e) => { if (e.target === ov) ov.style.display = 'none'; });
-  });
+  window.openM = function(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.removeProperty('display');
+    el.classList.add('open');
+  };
+  window.closeM = function(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('open');
+    el.style.removeProperty('display');
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // STAGE LIST VIEWS (Bill Verify / Branding / Digitisation)
@@ -3157,8 +3380,6 @@ document.addEventListener('DOMContentLoaded', () => {
         initNewPurchaseForm();
       })();
     }
-    if (id === 'suppliers')    loadSuppliers();
-    if (id === 'maker-master') loadMakers();
     if (id === 'sku-catalogue')    loadSkuCatalogue();
     if (id === 'stock-view')       loadStockView();
     if (id === 'stock-transfer')   stInit();
@@ -3182,7 +3403,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // TSC P210 USB vendor/product IDs (TSC Auto ID)
   const TSC_VENDOR_ID = 0x0EB8;
 
-  window.openBarcodeModal = function(skus) {
+  function _bcEsc(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** PID (or barcode when pid omitted) for QR; never use SKU alone when barcode carries PID. */
+  function _bcQrPayload(sk) {
+    const sku = sk.sku_code || '';
+    const p = sk.pid != null && String(sk.pid).trim() !== '' ? String(sk.pid) : '';
+    const b = sk.barcode != null && String(sk.barcode).trim() !== '' ? String(sk.barcode) : '';
+    if (p) return p;
+    if (b && b !== sku) return b;
+    return sku;
+  }
+
+  window.openBarcodeModal = function(skus, opts) {
+    opts = opts || {};
     if (!skus || !skus.length) { alert('No SKUs available to print.'); return; }
     _bcSkus = skus;
     _bcUsbDevice = null;
@@ -3191,12 +3432,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // Build SKU list rows — each row has its own qty input defaulting to unit quantity
     const listEl = document.getElementById('bc-sku-list');
     if (listEl) {
-      listEl.innerHTML = skus.map((sk, i) => `
+      listEl.innerHTML = skus.map((sk, i) => {
+        const sku = sk.sku_code || '—';
+        const qrVal = _bcQrPayload(sk);
+        const legacy = !sk.pid && sk.barcode === sk.sku_code && sk.sku_code;
+        const qrLine = qrVal !== sku
+          ? `<div class="bc-sku-qr mono" style="font-size:9px;color:var(--text2);margin-top:2px">QR: ${_bcEsc(qrVal)}</div>`
+          : '';
+        const legacyLine = legacy
+          ? `<div style="font-size:9px;color:var(--gold);margin-top:2px">Legacy row: QR may match SKU only.</div>`
+          : '';
+        return `
         <div class="bc-sku-row">
           <input type="checkbox" id="bc-chk-${i}" checked onchange="bcRenderPreview()">
           <div style="flex:1;min-width:0">
-            <div class="bc-sku-code">${sk.sku_code || '—'}</div>
-            <div class="bc-sku-info">${sk.ew_collection || ''} · ${sk.colour_name || ''}</div>
+            <div class="bc-sku-code">${_bcEsc(sku)}</div>
+            ${qrLine}${legacyLine}
+            <div class="bc-sku-info">${_bcEsc(sk.ew_collection || '')} · ${_bcEsc(sk.colour_name || '')}</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0">
             <span style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">Qty</span>
@@ -3205,14 +3457,15 @@ document.addEventListener('DOMContentLoaded', () => {
               oninput="bcRenderPreview()">
             <span style="font-size:9px;color:var(--text2)">${sk.quantity || 0} stk</span>
           </div>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     }
 
     // Reset controls
     const copiesEl = document.getElementById('bc-copies');
     if (copiesEl) copiesEl.value = '';
     const typeEl = document.getElementById('bc-type');
-    if (typeEl) typeEl.value = 'QR';
+    if (typeEl) typeEl.value = opts.defaultType || 'QR';
 
     openM('modal-barcode-print');
     setTimeout(bcRenderPreview, 100); // wait for modal to render
@@ -3247,14 +3500,16 @@ document.addEventListener('DOMContentLoaded', () => {
     bcRenderPreview();
   };
 
-  // Build list of {sku_code, copies} reading per-row qty inputs
+  // Build list of {code (pid for QR), label (sku_code for text), copies}
   function _bcSelectedItems() {
     const items = [];
     _bcSkus.forEach((sk, i) => {
       const chk = document.getElementById(`bc-chk-${i}`);
       if (!chk || !chk.checked) return;
       const copies = Math.max(1, parseInt(document.getElementById(`bc-qty-${i}`)?.value || '1', 10));
-      items.push({ code: sk.sku_code, copies });
+      const code = _bcQrPayload(sk);
+      const label = sk.sku_code || '';
+      items.push({ code, label, copies });
     });
     return items;
   }
@@ -3270,6 +3525,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const summaryEl = document.getElementById('bc-summary');
     if (!previewEl) return;
 
+    const mm = _bcReadMarginsMm();
+    const gp = _bcReadGapMm();
+    previewEl.style.padding = `${mm.top}mm ${mm.right}mm ${mm.bottom}mm ${mm.left}mm`;
+    previewEl.style.boxSizing = 'border-box';
+
     const items = _bcSelectedItems();
     const type  = document.getElementById('bc-type')?.value || 'QR';
 
@@ -3279,36 +3539,38 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Expand by copies
+    // Expand by copies — each entry is {code: pid, label: sku_code}
     const expanded = [];
-    items.forEach(({ code, copies }) => { for (let c = 0; c < copies; c++) expanded.push(code); });
+    items.forEach(({ code, label, copies }) => { for (let c = 0; c < copies; c++) expanded.push({ code, label }); });
 
     // Group into rows of 6
     const rows = [];
     for (let i = 0; i < expanded.length; i += 6) rows.push(expanded.slice(i, i + 6));
 
-    // Build HTML — QR images served directly from /api/qr
-    let html = '';
+    // Build HTML — QR encodes pid (code), text below shows sku_code (label)
+    const rowGapCss = `${gp.rowGap}mm`;
+    const colGapCss = `${gp.colGap}mm`;
+    let inner = '';
     rows.forEach((row) => {
-      html += '<div class="bc-label-row">';
+      inner += `<div class="bc-label-row" style="display:flex;flex-wrap:nowrap;gap:${colGapCss};align-items:flex-start">`;
       for (let col = 0; col < 6; col++) {
-        const code = row[col];
-        if (!code) { html += '<div class="bc-empty-cell"></div>'; continue; }
+        const item = row[col];
+        if (!item) { inner += '<div class="bc-empty-cell"></div>'; continue; }
 
         if (type === 'QR') {
-          html += `<div class="bc-label-cell" style="height:72px">
-            <img src="${_bcQRSrc(code, 56)}" style="width:52px;height:52px;display:block;margin:0 auto"
+          inner += `<div class="bc-label-cell" style="height:72px">
+            <img src="${_bcQRSrc(item.code, 56)}" style="width:52px;height:52px;display:block;margin:0 auto"
                  onerror="this.outerHTML='<div style=\\'width:52px;height:52px;background:#fef2f2;display:flex;align-items:center;justify-content:center;font-size:6px;color:#ef4444\\'>QR ERR</div>'">
-            <div class="bc-label-code">${code}</div>
+            <div class="bc-label-code">${_bcEsc(item.label)}</div>
           </div>`;
         } else {
           const uid = `bc-svg-${Math.random().toString(36).slice(2)}`;
-          html += `<div class="bc-label-cell"><svg id="${uid}" data-code="${code}" xmlns="http://www.w3.org/2000/svg"></svg><div class="bc-label-code">${code}</div></div>`;
+          inner += `<div class="bc-label-cell"><svg id="${uid}" data-code="${_bcEsc(item.code)}" xmlns="http://www.w3.org/2000/svg"></svg><div class="bc-label-code">${_bcEsc(item.label)}</div></div>`;
         }
       }
-      html += '</div>';
+      inner += '</div>';
     });
-    previewEl.innerHTML = html;
+    previewEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:${rowGapCss}">${inner}</div>`;
 
     // Render Code128 barcodes after DOM is updated
     if (type === 'CODE128' && typeof JsBarcode !== 'undefined') {
@@ -3379,31 +3641,76 @@ document.addEventListener('DOMContentLoaded', () => {
   const BC_MM_TO_DOT   = 8;
   const BC_LABEL_H_DOT = 15 * BC_MM_TO_DOT; // 120 dots
 
+  function _bcReadMarginsMm() {
+    const clip = (v) => Math.max(0, Math.min(20, v));
+    const g = (id) => clip(parseFloat(document.getElementById(id)?.value || '0') || 0);
+    return {
+      top: g('bc-margin-top'),
+      bottom: g('bc-margin-bottom'),
+      left: g('bc-margin-left'),
+      right: g('bc-margin-right'),
+    };
+  }
+
+  /** Row gap = TSPL feed GAP (mm). Column gap = extra space between adjacent labels in one row (mm). */
+  function _bcReadGapMm() {
+    const elRow = document.getElementById('bc-gap-row');
+    const elCol = document.getElementById('bc-gap-col');
+    const rowRaw = parseFloat(elRow?.value ?? '2');
+    const colRaw = parseFloat(elCol?.value ?? '0');
+    const rowGap = Math.max(0, Math.min(10, Number.isFinite(rowRaw) ? rowRaw : 2));
+    const colGap = Math.max(0, Math.min(5, Number.isFinite(colRaw) ? colRaw : 0));
+    return { rowGap, colGap };
+  }
+
+  function _bcMarginsToDots() {
+    const m = _bcReadMarginsMm();
+    return {
+      top: Math.round(m.top * BC_MM_TO_DOT),
+      bottom: Math.round(m.bottom * BC_MM_TO_DOT),
+      left: Math.round(m.left * BC_MM_TO_DOT),
+      right: Math.round(m.right * BC_MM_TO_DOT),
+    };
+  }
+
+  function _bcTsplQuote(s) {
+    return String(s == null ? '' : s).replace(/"/g, "'");
+  }
+
   function _bcGenerateTSPL2(labelBatches, labelType) {
     /*
-      labelBatches: array of rows, each row = array of up to 6 sku_code strings
+      labelBatches: array of rows, each row = array of up to 6 {code, label} objects
+        code  = PID (unique purchase identifier, encoded in QR for scanning)
+        label = SKU (stable product identifier, printed as text below QR for search)
       Returns: Uint8Array of TSPL2 command bytes
     */
+    const d = _bcMarginsToDots();
+    const { rowGap, colGap } = _bcReadGapMm();
+    const colGapDots = Math.round(colGap * BC_MM_TO_DOT);
+    const maxXDots = Math.round(106 * BC_MM_TO_DOT);
     let cmds = '';
 
     labelBatches.forEach((row) => {
-      cmds += 'SIZE 110 mm, 15 mm\r\n';
-      cmds += 'GAP 2 mm, 0 mm\r\n';
+      cmds += 'SIZE 108 mm, 15 mm\r\n';
+      cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
       cmds += 'DIRECTION 0\r\n';
       cmds += 'CLS\r\n';
 
-      row.forEach((code, col) => {
-        if (!code) return;
-        const x = BC_X_POSITIONS[col];
-        const y = 5; // 5 dots top margin inside label
+      row.forEach((item, col) => {
+        if (!item) return;
+        let x = BC_X_POSITIONS[col] + d.left - d.right + col * colGapDots;
+        x = Math.min(x, maxXDots);
+        const yQr = Math.max(2, 5 + d.top - d.bottom);
+        const yTx = Math.max(12, 90 + d.top - d.bottom);
+        const code = _bcTsplQuote(item.code);
+        const label = _bcTsplQuote(item.label);
 
         if (labelType === 'QR') {
-          // QR code: QRCODE x, y, ECC level, cell width, mode, rotation, "data"
-          cmds += `QRCODE ${x},${y},L,3,A,0,"${code}"\r\n`;
+          cmds += `QRCODE ${x},${yQr},L,3,A,0,"${code}"\r\n`;
+          cmds += `TEXT ${x},${yTx},"1",0,1,1,"${label}"\r\n`;
         } else {
-          // CODE128: BARCODE x, y, type, height, readable, rotation, narrow, wide, "data"
-          // height = 60 dots (~7.5mm), readable=1 (human readable below), narrow=2, wide=2
-          cmds += `BARCODE ${x},${y},"128",60,1,0,2,2,"${code}"\r\n`;
+          cmds += `BARCODE ${x},${yQr},"128",60,1,0,2,2,"${code}"\r\n`;
+          cmds += `TEXT ${x},${yTx},"1",0,1,1,"${label}"\r\n`;
         }
       });
 
@@ -3416,14 +3723,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Print via WebUSB ──────────────────────────────────────────────────
   window.bcPrint = async function() {
     const items    = _bcSelectedItems();
-    const type     = document.getElementById('bc-type')?.value || 'CODE128';
+    const type     = document.getElementById('bc-type')?.value || 'QR';
     const printBtn = document.getElementById('bc-print-btn');
 
     if (!items.length) { alert('Please select at least one SKU to print.'); return; }
 
-    // Expand by copies
+    // Expand by copies — each entry is {code: pid, label: sku_code}
     const expanded = [];
-    items.forEach(({ code, copies }) => { for (let c = 0; c < copies; c++) expanded.push(code); });
+    items.forEach(({ code, label, copies }) => { for (let c = 0; c < copies; c++) expanded.push({ code, label }); });
 
     // Batch into rows of 6
     const batches = [];
@@ -3473,6 +3780,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
 
+    const pad = _bcReadMarginsMm();
+    const gp = _bcReadGapMm();
+    const sheetPad = `${pad.top}mm ${pad.right}mm ${pad.bottom}mm ${pad.left}mm`;
+    const tableSpacing = `${gp.colGap}mm ${gp.rowGap}mm`;
+
     const isQR = labelType === 'QR';
     const totalLabels = batches.reduce((s, r) => s + r.filter(Boolean).length, 0);
     // Use absolute URL so the print window (different origin) can reach our server
@@ -3482,13 +3794,15 @@ document.addEventListener('DOMContentLoaded', () => {
     batches.forEach((row) => {
       const cells = [];
       for (let col = 0; col < 6; col++) {
-        const code = row[col] || '';
-        if (!code) { cells.push('<td class="empty"></td>'); continue; }
+        const item = row[col];
+        if (!item || !item.code) { cells.push('<td class="empty"></td>'); continue; }
         if (isQR) {
-          const src = `${origin}/api/qr?data=${encodeURIComponent(code)}&size=120`;
-          cells.push(`<td class="label-cell"><img src="${src}" class="qr-img"><div class="bc-txt">${code}</div></td>`);
+          // QR encodes pid (code); SKU (label) shown as human-readable text below
+          const src = `${origin}/api/qr?data=${encodeURIComponent(item.code)}&size=120`;
+          cells.push(`<td class="label-cell"><img src="${src}" class="qr-img"><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);
         } else {
-          cells.push(`<td class="label-cell"><svg data-code="${code}" class="bc-svg"></svg><div class="bc-txt">${code}</div></td>`);
+          const ac = String(item.code || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+          cells.push(`<td class="label-cell"><svg data-code="${ac}" class="bc-svg"></svg><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);
         }
       }
       labelRows += `<tr>${cells.join('')}</tr>`;
@@ -3517,8 +3831,8 @@ ${libScript}
   .controls button { padding:6px 16px; border:1px solid #888; border-radius:4px; cursor:pointer; background:#fff; font-size:13px; }
   .controls button.primary { background:#2563eb; color:#fff; border-color:#2563eb; }
   @media print { .controls { display:none; } }
-  .label-sheet { padding:6mm; }
-  table { border-collapse:separate; border-spacing:2mm; }
+  .label-sheet { padding:${sheetPad}; }
+  table { border-collapse:separate; border-spacing:${tableSpacing}; }
   td.label-cell {
     width:15mm; height:18mm; border:0.3pt solid #bbb; border-radius:1mm;
     text-align:center; vertical-align:middle; padding:1mm; overflow:hidden;
@@ -3553,7 +3867,7 @@ ${initScript}
     let _scanner     = null;
     let _scanRunning = false;
     let _searchTimer = null;
-    let _stInited    = false;
+    let _stLastDocId = null;
 
     // ── Toast feedback ────────────────────────────────────────────────────────
     function stToast(msg, color) {
@@ -3578,10 +3892,8 @@ ${initScript}
       return d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
     }
 
-    // ── Init (called once on first nav) ───────────────────────────────────────
+    // ── Init (each visit to Goods Transfer — refresh destinations + history) ──
     window.stInit = async function stInit() {
-      if (_stInited) { window.stLoadHistory(); return; }
-      _stInited = true;
       await stLoadStores();
       window.stLoadHistory();
       stRenderCart();
@@ -3589,19 +3901,64 @@ ${initScript}
 
     // ── Load stores dropdown ──────────────────────────────────────────────────
     async function stLoadStores() {
+      const sel = document.getElementById('st-store-sel');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">Loading stores…</option>';
       try {
-        const stores = await apiGet('/api/stores');
-        const sel = document.getElementById('st-store-sel');
-        if (!sel) return;
-        (stores || [])
-          .filter((s) => s.status === 'ACTIVE')
-          .forEach((s) => {
-            const o = document.createElement('option');
-            o.value = s.store_id;
-            o.textContent = `${s.store_name} (${s.store_code})`;
-            sel.appendChild(o);
-          });
-      } catch (_) {}
+        const raw = await apiGetFirst([
+          '/api/stock-transfers/destination-stores',
+          '/api/foundry/destination-stores'
+        ]);
+        const rows = Array.isArray(raw) ? raw : [];
+        const seen = new Set();
+        const list = [];
+        for (const s of rows) {
+          if (!s || typeof s !== 'object') continue;
+          const sid = Number(s.store_id);
+          if (!Number.isFinite(sid) || sid < 1) continue;
+          if (seen.has(sid)) continue;
+          const status = String(s.status || '').trim().toUpperCase();
+          if (status !== 'ACTIVE') continue;
+          const stype = String(s.store_type || '').trim().toUpperCase();
+          if (stype === 'HQ') continue;
+          seen.add(sid);
+          list.push(s);
+        }
+        list.sort((a, b) =>
+          String(a.store_name || '').localeCompare(String(b.store_name || ''), undefined, { sensitivity: 'base' })
+        );
+
+        sel.innerHTML = '';
+        const ph = document.createElement('option');
+        ph.value = '';
+        ph.textContent = '— Select destination store —';
+        ph.disabled = true;
+        ph.selected = true;
+        sel.appendChild(ph);
+
+        for (const s of list) {
+          const o = document.createElement('option');
+          o.value = String(s.store_id);
+          const name = String(s.store_name || '').trim() || 'Store';
+          const code = String(s.store_code || '').trim() || '—';
+          o.textContent = `${name} (${code})`;
+          sel.appendChild(o);
+        }
+
+        if (!list.length) {
+          stToast(
+            'No destination stores available. Ensure at least one active non-HQ store exists in Command Unit.',
+            '#e53e3e'
+          );
+        }
+      } catch (e) {
+        sel.innerHTML = '';
+        const errOpt = document.createElement('option');
+        errOpt.value = '';
+        errOpt.textContent = '— Could not load stores —';
+        sel.appendChild(errOpt);
+        stToast('Could not load stores: ' + (e && e.message ? e.message : 'error'), '#e53e3e');
+      }
     }
 
     // ── Cart management ───────────────────────────────────────────────────────
@@ -3801,14 +4158,115 @@ ${initScript}
     };
 
     // ── Lookup by code (scan / Enter) ─────────────────────────────────────────
+    /** QR / wedge scan: trim; if payload is a URL, use ?sku= / ?code= or last path segment for lookup. */
+    function stNormalizeScanPayload(raw) {
+      let s = String(raw || '').trim().replace(/\s+/g, ' ');
+      if (!s) return '';
+      if (/^https?:\/\//i.test(s)) {
+        try {
+          const u = new URL(s);
+          const qSku = u.searchParams.get('sku') || u.searchParams.get('code');
+          if (qSku) return qSku.trim();
+          const path = u.pathname.replace(/\/+$/, '');
+          const parts = path.split('/').filter(Boolean);
+          const last = parts.length ? parts[parts.length - 1] : '';
+          if (last) return decodeURIComponent(last);
+        } catch (_) { /* ignore */ }
+      }
+      return s;
+    }
+
     async function stLookupAndAdd(code) {
+      const key = stNormalizeScanPayload(code);
+      if (!key) return;
       try {
-        const sku = await apiGet(`/api/stock-transfers/lookup?q=${encodeURIComponent(code)}`);
+        const sku = await apiGet(`/api/stock-transfers/lookup?q=${encodeURIComponent(key)}`);
         if (sku) stAddToCart(sku);
       } catch (err) {
-        stToast('Not found: ' + code, '#e53e3e');
+        stToast('Not found: ' + key, '#e53e3e');
       }
     }
+
+    // ── Printable dispatch slip (same window pattern as barcode labels) ───────
+    function stPrintDispatchSlip(doc) {
+      if (!doc) return;
+      const lines = doc.lines || [];
+      const lineRows = lines.map((l) => `
+        <tr>
+          <td class="mono">${stEsc(l.sku_code)}</td>
+          <td>${stEsc(l.product_name || '')}</td>
+          <td>${stEsc(l.brand_name || '—')}</td>
+          <td>${stEsc(l.colour_name || '—')}</td>
+          <td class="tc">${l.qty_sent != null ? Number(l.qty_sent) : '—'}</td>
+        </tr>`).join('');
+      const win = window.open('', '_blank');
+      if (!win) {
+        stToast('Allow pop-ups to print the dispatch slip', '#e53e3e');
+        return;
+      }
+      const dispatched = stFmtDate(doc.dispatched_at || doc.created_at);
+      const docType = doc.doc_type === 'REQUEST' ? 'Via request' : 'Direct';
+      const title = 'Goods transfer — dispatch slip';
+      win.document.write(`<!DOCTYPE html>
+<html><head><title>${title}</title>
+<style>
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:system-ui,Segoe UI,sans-serif; background:#fff; color:#111; }
+  .controls { padding:10px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid #ddd; background:#f5f5f5; }
+  .controls button { padding:8px 18px; border:1px solid #888; border-radius:6px; cursor:pointer; font-size:14px; background:#fff; }
+  .controls .primary { background:#2563eb; color:#fff; border-color:#2563eb; }
+  @media print { .controls { display:none !important; } body { padding:0; } }
+  .slip { padding:20px 24px; max-width:800px; margin:0 auto; }
+  h1 { font-size:18px; margin-bottom:4px; letter-spacing:0.02em; }
+  .sub { font-size:13px; color:#444; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:140px 1fr; gap:6px 12px; font-size:13px; margin-bottom:16px; }
+  .grid dt { color:#666; font-weight:600; }
+  .grid dd { margin:0; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th, td { border:1px solid #ccc; padding:8px 10px; text-align:left; }
+  th { background:#f0f0f0; font-weight:600; }
+  td.tc, th.tc { text-align:center; }
+  .mono { font-family:Consolas,'Courier New',monospace; font-size:12px; }
+  .notes { margin-top:14px; padding:10px; background:#fafafa; border:1px solid #e5e5e5; border-radius:4px; font-size:12px; white-space:pre-wrap; }
+</style></head><body>
+<div class="controls">
+  <span style="font-size:14px;font-weight:600">${title}</span>
+  <button type="button" class="primary" onclick="window.print()">Print</button>
+  <button type="button" onclick="window.close()">Close</button>
+</div>
+<div class="slip">
+  <h1>Eyewoot — Goods transfer (dispatch)</h1>
+  <p class="sub">Carry this slip with the shipment. Destination store confirms in StorePilot — Incoming Goods.</p>
+  <dl class="grid">
+    <dt>Document #</dt><dd>${stEsc(String(doc.doc_id))}</dd>
+    <dt>Type</dt><dd>${stEsc(docType)}</dd>
+    <dt>Status</dt><dd>${stEsc(doc.status || '—')}</dd>
+    <dt>Destination</dt><dd>${stEsc(doc.store_name || '—')} (${stEsc(doc.store_code || '')})</dd>
+    <dt>Dispatched</dt><dd>${stEsc(dispatched)}</dd>
+    <dt>Dispatched by</dt><dd>${stEsc(doc.dispatched_by_name || '—')}</dd>
+  </dl>
+  ${doc.notes ? `<div class="notes"><strong>Notes</strong><br>${stEsc(doc.notes)}</div>` : ''}
+  <table>
+    <thead><tr><th>SKU</th><th>Product</th><th>Brand</th><th>Colour</th><th class="tc">Qty</th></tr></thead>
+    <tbody>${lineRows || '<tr><td colspan="5" style="text-align:center;color:#666">No lines</td></tr>'}</tbody>
+  </table>
+</div>
+</body></html>`);
+      win.document.close();
+    }
+
+    window.stReprintLastTransferSlip = async function stReprintLastTransferSlip() {
+      if (!_stLastDocId) {
+        stToast('No transfer slip in this session yet', '#e53e3e');
+        return;
+      }
+      try {
+        const doc = await apiGet('/api/stock-transfer-docs/' + _stLastDocId);
+        stPrintDispatchSlip(doc);
+      } catch (err) {
+        stToast('Could not load slip: ' + err.message, '#e53e3e');
+      }
+    };
 
     // ── Submit transfer ────────────────────────────────────────────────────────
     window.stSubmitTransfer = async function stSubmitTransfer() {
@@ -3825,12 +4283,23 @@ ${initScript}
           notes: notes || null
         });
         const storeName = document.getElementById('st-store-sel').selectedOptions[0]?.text || 'store';
-        const docId     = resp?.data?.doc_id;
+        const docId     = resp && resp.doc_id;
+        _stLastDocId    = docId || null;
+        const printLast = document.getElementById('st-print-last-btn');
+        if (printLast) printLast.style.display = docId ? '' : 'none';
         stToast(`✓ Transfer Doc #${docId} dispatched to ${storeName} — awaiting store acceptance`, '#16a34a');
         _cart = [];
         stRenderCart();
         document.getElementById('st-notes').value = '';
         window.stLoadHistory();
+        try {
+          if (docId) {
+            const doc = await apiGet('/api/stock-transfer-docs/' + docId);
+            stPrintDispatchSlip(doc);
+          }
+        } catch (_) {
+          /* slip is optional; dispatch already succeeded */
+        }
       } catch (err) {
         stToast('Transfer failed: ' + err.message, '#e53e3e');
       } finally {

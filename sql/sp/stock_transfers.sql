@@ -34,6 +34,7 @@ AS BEGIN
   FROM dbo.skus sk
   JOIN dbo.product_master pm         ON sk.product_master_id  = pm.product_id
   LEFT JOIN dbo.home_brands hb       ON pm.home_brand_id      = hb.brand_id
+  LEFT JOIN dbo.maker_master mm      ON pm.maker_master_id   = mm.maker_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
   LEFT JOIN dbo.stock_balances sb
     ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE'
@@ -48,6 +49,10 @@ AS BEGIN
       OR pm.ew_collection     LIKE '%'+@q+'%'
       OR pm.style_model       LIKE '%'+@q+'%'
       OR ISNULL(hb.brand_name,'') LIKE '%'+@q+'%'
+      OR ISNULL(mm.maker_name,'') LIKE '%'+@q+'%'
+      OR ISNULL(pm.source_brand,'') LIKE '%'+@q+'%'
+      OR ISNULL(pm.source_collection,'') LIKE '%'+@q+'%'
+      OR ISNULL(pm.source_model_number,'') LIKE '%'+@q+'%'
       OR ISNULL(pic.colour_name,'') LIKE '%'+@q+'%'
     )
   ORDER BY hb.brand_name, pm.ew_collection, pic.colour_name;
