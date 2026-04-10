@@ -1417,27 +1417,41 @@
 
   <!-- ═══ MASTER CATALOGUE ═══ -->
   <div class="page" id="page-master-catalogue">
-    <div class="ph flex ic"><div><div class="pt">Master Catalogue</div></div></div>
-    <div class="card">
-      <div class="ch">
-        <div class="flex ic g3" style="flex:1">
-          <div class="sw" style="flex:1;max-width:280px"><span class="si">🔍</span><input placeholder="Search products..."></div>
-          <select style="min-width:140px"><option>All Source Types</option><option>Local Supplier</option><option>Direct Brand</option><option>Import</option></select>
-          <select style="min-width:130px"><option>All Status</option><option>Active</option><option>Discontinued</option><option>Seasonal</option></select>
-        </div>
-      </div>
-      <div class="tw">
-        <table>
-          <thead><tr><th>Brand (Public)</th><th>EW Collection</th><th>Source Collection</th><th>Style / Model</th><th>Source Type</th><th>Product Type</th><th>Branding</th><th>Status</th><th>Purchases</th></tr></thead>
-          <tbody>
-            <tr><td class="fw6">EW Studio</td><td>Botanica Series</td><td class="mono xs td2">Classic TR-90 Series</td><td class="mono xs">VR-01</td><td><span class="b b-blue">Local Supplier</span></td><td><span class="b b-gray">Frames</span></td><td><span class="b b-green">Required</span></td><td><span class="b b-green">Active</span></td><td class="fw6">6</td></tr>
-            <tr><td class="fw6">Ray-Ban</td><td>Aviator Series</td><td class="td2">—</td><td class="mono xs">RB3025</td><td><span class="b b-purple">Direct Brand</span></td><td><span class="b b-gray">Sunglasses</span></td><td><span class="b b-gray">Bypass OK</span></td><td><span class="b b-green">Active</span></td><td class="fw6">4</td></tr>
-            <tr><td class="fw6">EW Sport</td><td>Coastal Wave</td><td class="mono xs td2">Ocean Flex Series</td><td class="mono xs">CW-03</td><td><span class="b b-blue">Local Supplier</span></td><td><span class="b b-gray">Frames</span></td><td><span class="b b-green">Required</span></td><td><span class="b b-green">Active</span></td><td class="fw6">5</td></tr>
-            <tr><td class="fw6">WoodWear</td><td>Vintage Round</td><td class="td2">—</td><td class="mono xs">VR-01</td><td><span class="b b-purple">Direct Brand</span></td><td><span class="b b-gray">Frames</span></td><td><span class="b b-gray">Bypass OK</span></td><td><span class="b b-green">Active</span></td><td class="fw6">3</td></tr>
-          </tbody>
-        </table>
-      </div>
+    <div class="ph flex ic">
+      <div><div class="pt">Master Catalogue</div><div class="ps" id="mc-subtitle"></div></div>
     </div>
+    <div class="card mb4"><div class="cb"><div class="flex ic g3" style="flex-wrap:wrap">
+      <div class="sw" style="flex:1;min-width:200px"><span class="si">&#128269;</span><input id="mc-search" type="search" placeholder="Brand, collection, style, manufacturer, source brand&#8230;" autocomplete="off" oninput="debounceMcSearch()"></div>
+      <select id="mc-brand-filter" style="min-width:140px" onchange="window.loadMasterCatalogue()"><option value="">All brands</option></select>
+      <select id="mc-product-type" style="min-width:130px" onchange="window.loadMasterCatalogue()">
+        <option value="">All types</option>
+        <option value="FRAMES">Frames</option>
+        <option value="SUNGLASSES">Sunglasses</option>
+        <option value="READERS">Readers</option>
+        <option value="SPORTS">Sports</option>
+      </select>
+      <select id="mc-source-type" style="min-width:160px" onchange="window.loadMasterCatalogue()">
+        <option value="">All source types</option>
+        <option value="LOCAL_SUPPLIER">Local Supplier</option>
+        <option value="DIRECT_BRAND">Direct Brand</option>
+        <option value="IMPORT">Import</option>
+        <option value="INHOUSE">In-house</option>
+      </select>
+      <select id="mc-status" style="min-width:140px" onchange="window.loadMasterCatalogue()">
+        <option value="">All status</option>
+        <option value="ACTIVE" selected>Active</option>
+        <option value="DRAFT">Draft</option>
+        <option value="DISCONTINUED">Discontinued</option>
+      </select>
+    </div></div></div>
+    <div class="card"><div class="tw">
+      <table>
+        <thead><tr><th>Brand</th><th>EW Collection</th><th>Style</th><th>Manufacturer</th><th>Source type</th><th>Status</th><th></th></tr></thead>
+        <tbody id="mc-tbody">
+          <tr><td colspan="7" class="tc td2 p12">Open this page from the sidebar to load products.</td></tr>
+        </tbody>
+      </table>
+    </div></div>
   </div>
 
   <!-- ═══ SUPPLIERS ═══ -->
@@ -1631,6 +1645,18 @@
       <div class="tc td2">Loading…</div>
     </div>
     <div class="mf"><button class="btn" onclick="closeM('modal-sku-detail')">Close</button></div>
+  </div>
+</div>
+
+<!-- Master Catalogue — product (model) detail -->
+<div class="overlay" id="modal-master-product">
+  <div class="modal" style="max-width:520px">
+    <div class="mh">
+      <div><div class="mt-title" id="mc-detail-title">Product</div><div class="ps mono xs" id="mc-detail-id" style="margin-top:4px"></div></div>
+      <div class="mc" onclick="closeM('modal-master-product')">×</div>
+    </div>
+    <div class="mb" id="mc-detail-body" style="min-height:200px"></div>
+    <div class="mf"><button class="btn" onclick="closeM('modal-master-product')">Close</button></div>
   </div>
 </div>
 

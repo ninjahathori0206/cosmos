@@ -21,7 +21,11 @@ function homeBrandReadAuth(req, res, next) {
   }
   if (
     hasModuleAccess(req, 'foundry')
-    && (hasPermission(req, 'foundry.branding.view') || hasPermission(req, 'foundry.purchases.view'))
+    && (
+      hasPermission(req, 'foundry.catalogue.view')
+      || hasPermission(req, 'foundry.branding.view')
+      || hasPermission(req, 'foundry.purchases.view')
+    )
   ) {
     return next();
   }
