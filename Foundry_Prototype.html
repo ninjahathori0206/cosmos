@@ -151,6 +151,54 @@
   textarea { resize:vertical; min-height:72px; }
   .fhint { font-size:11px; color:var(--text3); }
 
+  /* New Purchase — two-column layout + minimal line items when auto-apply is on */
+  #page-new-purchase .np-layout {
+    display: grid;
+    grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+    max-width: 1480px;
+    margin: 0 auto;
+  }
+  #page-new-purchase .np-aside {
+    position: sticky;
+    top: 62px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+    z-index: 2;
+  }
+  #page-new-purchase .np-aside::-webkit-scrollbar { width: 6px; }
+  #page-new-purchase .np-aside::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 6px; }
+  #page-new-purchase .np-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  #page-new-purchase.apply-coll-minimal-ui .item-line-collection-dup {
+    display: none !important;
+  }
+  #page-new-purchase .purchase-item-card .cb {
+    padding: 14px 16px;
+  }
+  @media (max-width: 1100px) {
+    #page-new-purchase .np-layout {
+      grid-template-columns: 1fr;
+      max-width: none;
+    }
+    #page-new-purchase .np-aside {
+      position: static;
+      max-height: none;
+      overflow: visible;
+      padding-right: 0;
+    }
+  }
+
   /* COLOURS TABLE */
   .colour-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); }
   .colour-row:last-child { border-bottom:none; }
@@ -468,7 +516,7 @@
 
   <!-- ═══ NEW PURCHASE ═══ -->
   <div class="page" id="page-new-purchase">
-    <div class="ph flex ic"><div><div class="pt">New Purchase Registration</div><div class="ps">Stage 1 of 5 — Enter bill header, then add all items from this bill</div></div></div>
+    <div class="ph flex ic"><div><div class="pt">New Purchase Registration</div><div class="ps">Stage 1 of 5 — Bill &amp; collection on the left; line items on the right (wide screens).</div></div></div>
 
     <div class="pipeline">
       <div class="pstep active"><div class="pstep-num">STAGE 1</div><div class="pstep-title">📋 Purchase Reg.</div><div class="pstep-sub">Current step</div></div>
@@ -480,91 +528,98 @@
 
     <div id="new-purchase-error" style="display:none;color:var(--red);background:var(--redL);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
 
-    <!-- ── Bill Header (shared across all items in this bill) ── -->
-    <div class="card mb4">
-      <div class="ch"><div class="ct">Bill Header</div><div class="cb-hint xs td2">All items on this bill share the same supplier &amp; bill reference</div></div>
-      <div class="cb">
-        <div class="fg3">
-          <div class="fgrp">
-            <label>Supplier <span class="req">*</span></label>
-            <select id="bill-supplier-select" onchange="onBillSupplierChange(this)">
-              <option value="">— Select Supplier —</option>
-            </select>
-            <div class="fhint" id="bill-supplier-hint" style="display:none"></div>
+    <div class="np-layout">
+      <aside class="np-aside">
+        <!-- ── Bill Header (shared across all items in this bill) ── -->
+        <div class="card mb4">
+          <div class="ch"><div class="ct">Bill Header</div><div class="cb-hint xs td2">All items on this bill share the same supplier &amp; bill reference</div></div>
+          <div class="cb">
+            <div class="fg3">
+              <div class="fgrp">
+                <label>Supplier <span class="req">*</span></label>
+                <select id="bill-supplier-select" onchange="onBillSupplierChange(this)">
+                  <option value="">— Select Supplier —</option>
+                </select>
+                <div class="fhint" id="bill-supplier-hint" style="display:none"></div>
+              </div>
+              <div class="fgrp"><label>Bill Reference / Invoice No.</label><input id="bill-ref-input" placeholder="e.g. INV-2024-001 (optional)"></div>
+              <div class="fgrp"><label>Purchase Date <span class="req">*</span></label><input type="text" id="bill-purchase-date-input" placeholder="dd/MM/yyyy" readonly class="datepicker"></div>
+              <div class="fgrp"><label>Transport / Freight Cost (₹)</label><input type="number" id="bill-transport-input" placeholder="0" min="0" step="0.01" oninput="recalcGrandTotal()"></div>
+              <div class="fgrp"><label>PO Reference</label><input id="bill-po-ref-input" placeholder="Optional PO number"></div>
+              <div class="fgrp"><label>Notes</label><input id="bill-notes-input" placeholder="Any additional notes..."></div>
+            </div>
           </div>
-          <div class="fgrp"><label>Bill Reference / Invoice No.</label><input id="bill-ref-input" placeholder="e.g. INV-2024-001 (optional)"></div>
-          <div class="fgrp"><label>Purchase Date <span class="req">*</span></label><input type="text" id="bill-purchase-date-input" placeholder="dd/MM/yyyy" readonly class="datepicker"></div>
-          <div class="fgrp"><label>Transport / Freight Cost (₹)</label><input type="number" id="bill-transport-input" placeholder="0" min="0" step="0.01" oninput="recalcGrandTotal()"></div>
-          <div class="fgrp"><label>PO Reference</label><input id="bill-po-ref-input" placeholder="Optional PO number"></div>
-          <div class="fgrp"><label>Notes</label><input id="bill-notes-input" placeholder="Any additional notes..."></div>
         </div>
+
+        <!-- ── Collection defaults ── -->
+        <div class="card mb4" id="purchase-collection-defaults-card">
+          <div class="ch"><div class="ct">Collection defaults</div><div class="cb-hint xs td2">Set once per bill, then use “Next model” for more lines.</div></div>
+          <div class="cb">
+            <div class="fg3">
+              <div class="fgrp">
+                <label>Product Type</label>
+                <select id="coll-default-product-type"><option value="">— Select Product Type —</option></select>
+                <div class="fhint">Applied with the fields below when you add items or click Apply to all.</div>
+              </div>
+              <div class="fgrp">
+                <label>Manufacturer</label>
+                <input id="coll-default-maker-name" list="coll-default-maker-list" placeholder="e.g. Gandhi" oninput="onCollectionDefaultMakerInputChange()">
+                <datalist id="coll-default-maker-list"></datalist>
+                <input type="hidden" id="coll-default-maker">
+              </div>
+              <div class="fgrp">
+                <label>Source Brand</label>
+                <input id="coll-default-source-brand" list="coll-default-source-brand-list" placeholder="e.g. IKON" onfocus="onCollectionDefaultSourceBrandInputChange()" oninput="onCollectionDefaultSourceBrandInputChange()">
+                <datalist id="coll-default-source-brand-list"></datalist>
+              </div>
+              <div class="fgrp">
+                <label>Source Collection</label>
+                <input id="coll-default-source-coll" list="coll-default-source-coll-list" placeholder="Optional" onfocus="onCollectionDefaultSourceCollectionInputChange()" oninput="onCollectionDefaultSourceCollectionInputChange()">
+                <datalist id="coll-default-source-coll-list"></datalist>
+              </div>
+            </div>
+            <div class="flex ic g2 mt2" style="flex-wrap:wrap;align-items:center">
+              <label class="flex ic g2" style="cursor:pointer;font-size:13px">
+                <input type="checkbox" id="coll-default-apply-new" checked style="width:16px;height:16px;accent-color:var(--acc2)" onchange="refreshApplyCollMinimalUi()">
+                Apply to new line items automatically
+              </label>
+              <button type="button" class="btn sm" onclick="applyCollectionDefaultsToAllPurchaseItems()">Apply to all line items now</button>
+            </div>
+            <p class="fhint" id="coll-apply-minimal-hint" style="margin-top:10px;display:none">When checked, Product Type / Manufacturer / Source Brand / Collection are hidden on each line (values still applied for save).</p>
+          </div>
+        </div>
+      </aside>
+
+      <div class="np-main">
+        <!-- ── Items Container ── -->
+        <div id="purchase-items-container">
+          <!-- Items rendered by JS: addPurchaseItem() -->
+        </div>
+
+        <div class="flex ic g2 mb4">
+          <button class="btn sm" id="add-item-btn" onclick="addPurchaseItem()">+ Add Another Item</button>
+          <button class="btn sm" id="dup-item-btn" onclick="duplicatePurchaseItem()" title="Copy all fields from the last item">⧉ Duplicate Last Item</button>
+          <button class="btn sm" id="dup-same-coll-btn" onclick="duplicatePurchaseItemSameCollection()" title="Same manufacturer, brand &amp; collection as last item — enter a new model, rate &amp; qty">+ Next model (same collection)</button>
+          <span class="xs td2" id="items-count-hint">1 item</span>
+        </div>
+
+        <!-- ── Bill Grand Total Summary ── -->
+        <div class="card mb4">
+          <div class="ch"><div class="ct">Grand Total Summary</div></div>
+          <div class="cb">
+            <div id="bill-grand-total-rows" style="display:flex;flex-direction:column;gap:8px">
+              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Items Sub-Total</span><span class="mono xs" id="grand-subtotal">₹0</span></div>
+              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Total GST</span><span class="mono xs" id="grand-gst">₹0</span></div>
+              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Transport / Freight</span><span class="mono xs" id="grand-transport">₹0</span></div>
+              <hr class="sep" style="margin:4px 0">
+              <div class="flex ic" style="justify-content:space-between"><span class="fw6">Grand Total (Expected Bill)</span><span class="mono fw6" id="grand-total" style="font-size:16px;color:var(--acc)">₹0</span></div>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn primary" id="save-purchase-btn" style="justify-content:center;padding:12px 32px;font-size:14px;max-width:420px" onclick="handleSavePurchase()">Save All Items → Bill Verification</button>
       </div>
     </div>
-
-    <!-- ── Collection defaults (optional — same Mfg / brand / collection for multiple models on one bill) ── -->
-    <div class="card mb4" id="purchase-collection-defaults-card">
-      <div class="ch"><div class="ct">Collection defaults</div><div class="cb-hint xs td2">Set once per bill, then add lines or use “Next model”. New lines can auto-fill from here.</div></div>
-      <div class="cb">
-        <div class="fg3">
-          <div class="fgrp">
-            <label>Product Type</label>
-            <select id="coll-default-product-type"><option value="">— Select Product Type —</option></select>
-            <div class="fhint">Applied with the fields below when you add items or click Apply to all.</div>
-          </div>
-          <div class="fgrp">
-            <label>Manufacturer</label>
-            <input id="coll-default-maker-name" list="coll-default-maker-list" placeholder="e.g. Gandhi" oninput="onCollectionDefaultMakerInputChange()">
-            <datalist id="coll-default-maker-list"></datalist>
-            <input type="hidden" id="coll-default-maker">
-          </div>
-          <div class="fgrp">
-            <label>Source Brand</label>
-            <input id="coll-default-source-brand" list="coll-default-source-brand-list" placeholder="e.g. IKON" onfocus="onCollectionDefaultSourceBrandInputChange()" oninput="onCollectionDefaultSourceBrandInputChange()">
-            <datalist id="coll-default-source-brand-list"></datalist>
-          </div>
-          <div class="fgrp">
-            <label>Source Collection</label>
-            <input id="coll-default-source-coll" list="coll-default-source-coll-list" placeholder="Optional" onfocus="onCollectionDefaultSourceCollectionInputChange()" oninput="onCollectionDefaultSourceCollectionInputChange()">
-            <datalist id="coll-default-source-coll-list"></datalist>
-          </div>
-        </div>
-        <div class="flex ic g2 mt2" style="flex-wrap:wrap;align-items:center">
-          <label class="flex ic g2" style="cursor:pointer;font-size:13px">
-            <input type="checkbox" id="coll-default-apply-new" checked style="width:16px;height:16px;accent-color:var(--acc2)">
-            Apply to new line items automatically
-          </label>
-          <button type="button" class="btn sm" onclick="applyCollectionDefaultsToAllPurchaseItems()">Apply to all line items now</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Items Container ── -->
-    <div id="purchase-items-container">
-      <!-- Items rendered by JS: addPurchaseItem() -->
-    </div>
-
-    <div class="flex ic g2 mb4">
-      <button class="btn sm" id="add-item-btn" onclick="addPurchaseItem()">+ Add Another Item</button>
-      <button class="btn sm" id="dup-item-btn" onclick="duplicatePurchaseItem()" title="Copy all fields from the last item">⧉ Duplicate Last Item</button>
-      <button class="btn sm" id="dup-same-coll-btn" onclick="duplicatePurchaseItemSameCollection()" title="Same manufacturer, brand &amp; collection as last item — enter a new model, rate &amp; qty">+ Next model (same collection)</button>
-      <span class="xs td2" id="items-count-hint">1 item</span>
-    </div>
-
-    <!-- ── Bill Grand Total Summary ── -->
-    <div class="card mb4">
-      <div class="ch"><div class="ct">Grand Total Summary</div></div>
-      <div class="cb">
-        <div id="bill-grand-total-rows" style="display:flex;flex-direction:column;gap:8px">
-          <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Items Sub-Total</span><span class="mono xs" id="grand-subtotal">₹0</span></div>
-          <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Total GST</span><span class="mono xs" id="grand-gst">₹0</span></div>
-          <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Transport / Freight</span><span class="mono xs" id="grand-transport">₹0</span></div>
-          <hr class="sep" style="margin:4px 0">
-          <div class="flex ic" style="justify-content:space-between"><span class="fw6">Grand Total (Expected Bill)</span><span class="mono fw6" id="grand-total" style="font-size:16px;color:var(--acc)">₹0</span></div>
-        </div>
-      </div>
-    </div>
-
-    <button class="btn primary" id="save-purchase-btn" style="justify-content:center;padding:12px 32px;font-size:14px" onclick="handleSavePurchase()">Save All Items → Bill Verification</button>
   </div>
 
   <!-- ═══ PURCHASES LIST ═══ -->

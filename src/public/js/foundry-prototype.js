@@ -275,6 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cb) cb.checked = true;
     setDatalistOptions('coll-default-source-brand-list', []);
     setDatalistOptions('coll-default-source-coll-list', []);
+    if (typeof window.refreshApplyCollMinimalUi === 'function') window.refreshApplyCollMinimalUi();
   }
 
   /** Apply strip values to one line item (used for new lines and “apply to all”). */
@@ -787,7 +788,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const fpEl = document.getElementById('bill-purchase-date-input');
     if (fpEl && !fpEl.value && fpEl._flatpickr) fpEl._flatpickr.setDate(new Date(), true);
     addPurchaseItem();
+    if (typeof window.refreshApplyCollMinimalUi === 'function') window.refreshApplyCollMinimalUi();
   }
+
+  window.refreshApplyCollMinimalUi = function() {
+    const page = document.getElementById('page-new-purchase');
+    const cb = document.getElementById('coll-default-apply-new');
+    const hint = document.getElementById('coll-apply-minimal-hint');
+    const on = !!(cb && cb.checked);
+    if (page) page.classList.toggle('apply-coll-minimal-ui', on);
+    if (hint) hint.style.display = on ? 'block' : 'none';
+  };
 
   window.addPurchaseItem = function(opts) {
     const skipDefaultsApply = opts && opts.skipDefaultsApply;
@@ -843,31 +854,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
         <!-- Source fields (shown by default) -->
         <div id="item-source-fields-${idx}">
+          <div class="item-line-collection-dup">
+            <div class="fg3 mb3">
+              <div class="fgrp">
+                <label>Product Type <span class="req">*</span></label>
+                <select id="item-product-type-${idx}">${ptOpts}</select>
+                <div class="fhint">Same list as Foundry Settings → Product Types (active values).</div>
+              </div>
+              <div class="fgrp">
+                <label>Manufacturer <span class="req">*</span></label>
+                <input id="item-maker-name-${idx}" list="item-maker-list-${idx}" placeholder="e.g. Gandhi" oninput="onMakerInputChange(${idx})">
+                <datalist id="item-maker-list-${idx}">
+                  ${(_allMakers || []).map((m) => `<option value="${String(m.maker_name || '').replace(/"/g, '&quot;')}"></option>`).join('')}
+                </datalist>
+                <input type="hidden" id="item-maker-${idx}">
+                <div class="fhint">Source brands are filtered by manufacturer.</div>
+              </div>
+              <div class="fgrp">
+                <label>Source Brand <span class="req">*</span></label>
+                <input id="item-source-brand-${idx}" list="item-source-brand-list-${idx}" placeholder="e.g. IKON" onfocus="onSourceBrandInputChange(${idx})" oninput="onSourceBrandInputChange(${idx})">
+                <datalist id="item-source-brand-list-${idx}"></datalist>
+              </div>
+              <div class="fgrp">
+                <label>Source Collection</label>
+                <input id="item-source-coll-${idx}" list="item-source-coll-list-${idx}" placeholder="Optional — filtered by brand" onfocus="onSourceCollectionInputChange(${idx})" oninput="onSourceCollectionInputChange(${idx})">
+                <datalist id="item-source-coll-list-${idx}"></datalist>
+              </div>
+            </div>
+          </div>
           <div class="fg3 mb3">
-            <div class="fgrp">
-              <label>Product Type <span class="req">*</span></label>
-              <select id="item-product-type-${idx}">${ptOpts}</select>
-              <div class="fhint">Same list as Foundry Settings → Product Types (active values).</div>
-            </div>
-            <div class="fgrp">
-              <label>Manufacturer <span class="req">*</span></label>
-              <input id="item-maker-name-${idx}" list="item-maker-list-${idx}" placeholder="e.g. Gandhi" oninput="onMakerInputChange(${idx})">
-              <datalist id="item-maker-list-${idx}">
-                ${(_allMakers || []).map((m) => `<option value="${String(m.maker_name || '').replace(/"/g, '&quot;')}"></option>`).join('')}
-              </datalist>
-              <input type="hidden" id="item-maker-${idx}">
-              <div class="fhint">Source brands are filtered by manufacturer.</div>
-            </div>
-            <div class="fgrp">
-              <label>Source Brand <span class="req">*</span></label>
-              <input id="item-source-brand-${idx}" list="item-source-brand-list-${idx}" placeholder="e.g. IKON" onfocus="onSourceBrandInputChange(${idx})" oninput="onSourceBrandInputChange(${idx})">
-              <datalist id="item-source-brand-list-${idx}"></datalist>
-            </div>
-            <div class="fgrp">
-              <label>Source Collection</label>
-              <input id="item-source-coll-${idx}" list="item-source-coll-list-${idx}" placeholder="Optional — filtered by brand" onfocus="onSourceCollectionInputChange(${idx})" oninput="onSourceCollectionInputChange(${idx})">
-              <datalist id="item-source-coll-list-${idx}"></datalist>
-            </div>
             <div class="fgrp">
               <label>Source Model Number <span class="req">*</span></label>
               <input id="item-source-model-${idx}" list="item-source-model-list-${idx}" placeholder="e.g. VR-01" onfocus="onSourceModelInputChange(${idx})" oninput="onSourceModelInputChange(${idx})">
