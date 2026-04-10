@@ -8,12 +8,12 @@ const {
   hasPermission,
   isSuperAdmin
 } = require('../middleware/authorize');
+const {
+  shouldScopeTransferRequestsToUserStore,
+  canConfirmTransferReceipt
+} = require('../config/storeRoles');
 
 const router = express.Router();
-
-// Roles that belong to a specific store (their requests are scoped to that store)
-const STORE_ROLES = new Set(['store_incharge', 'store_manager']);
-function isStoreRole(role) { return STORE_ROLES.has(role); }
 
 const transferModAndView = [
   requireAnyModule(['foundry', 'storepilot']),
@@ -25,12 +25,14 @@ const transferModAndRaise = [
 ];
 
 // ── GET /api/transfer-requests ────────────────────────────────────────────────
-// Store roles → see only their own store's requests.
-// HQ / admin  → see all. Optional ?status= and ?top_n= filters.
+// Store-scoped (permissions + store_id) → own store only. HQ (foundry.transfers.edit) → all.
+// Optional ?status= and ?top_n= filters.
 router.get('/', ...transferModAndView, async (req, res, next) => {
   try {
     const user    = req.user;
-    const storeId = isStoreRole(user.role) ? Number(user.store_id) : null;
+    const storeId = shouldScopeTransferRequestsToUserStore(req)
+      ? Number(user.store_id)
+      : null;
     const { status, top_n = 50 } = req.query;
 
     const result = await executeStoredProcedure('sp_TransferRequest_List', {
@@ -118,6 +120,13 @@ router.get('/:id', ...transferModAndView, async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Transfer request not found.' });
     }
 
+    if (
+      shouldScopeTransferRequestsToUserStore(req)
+      && Number(header.store_id) !== Number(req.user.store_id)
+    ) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
     return res.json({ success: true, data: { ...header, lines } });
   } catch (err) {
     return next(err);
@@ -126,9 +135,9 @@ router.get('/:id', ...transferModAndView, async (req, res, next) => {
 
 // ── PUT /api/transfer-requests/:id/status ────────────────────────────────────
 // Allowed transitions (enforced at API level):
-//   SUBMITTED  → APPROVED | REJECTED    (HQ / non-store-role only)
-//   APPROVED   → DISPATCHED             (HQ / non-store-role only)
-//   DISPATCHED → RECEIVED               (store role OR super_admin)
+//   SUBMITTED  → APPROVED | REJECTED    (foundry.transfers.edit or super_admin)
+//   APPROVED   → DISPATCHED             (foundry.transfers.edit or super_admin)
+//   DISPATCHED → RECEIVED               (storepilot.transfers.edit + store; super_admin)
 //
 // Optional body:
 //   lines         — array of { line_id, approved_qty? / dispatched_qty? / received_qty? }
@@ -168,34 +177,36 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), async (re
     const hqAction    = ['APPROVED', 'REJECTED', 'DISPATCHED'].includes(value.status);
     const storeAction = value.status === 'RECEIVED';
 
-    if (hqAction && isStoreRole(user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: `Only HQ staff can set status to ${value.status}.`
-      });
-    }
     if (hqAction && !isSuperAdmin(req) && !hasPermission(req, 'foundry.transfers.edit')) {
       return res.status(403).json({
         success: false,
         message: 'Permission denied for this transfer action.'
       });
     }
-    if (storeAction && !isStoreRole(user.role) && user.role !== 'super_admin') {
+    if (storeAction && !canConfirmTransferReceipt(req)) {
       return res.status(403).json({
         success: false,
         message: 'Only store staff can confirm receipt.'
       });
     }
-    if (
-      storeAction
-      && isStoreRole(user.role)
-      && !isSuperAdmin(req)
-      && !hasPermission(req, 'storepilot.transfers.edit')
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: 'Permission denied for confirming receipt.'
+
+    // RECEIVED: must be for this user's store (store roles are scoped; super_admin may act for any)
+    if (storeAction && !isSuperAdmin(req)) {
+      const recvDetail = await executeStoredProcedure('sp_TransferRequest_GetById', {
+        request_id: { type: sql.Int, value: requestId }
       });
+      const recvHeader = recvDetail.recordsets?.[0]?.[0];
+      if (!recvHeader) {
+        return res.status(404).json({ success: false, message: 'Transfer request not found.' });
+      }
+      const userStore = user.store_id != null ? Number(user.store_id) : null;
+      const reqStore  = Number(recvHeader.store_id);
+      if (userStore == null || userStore !== reqStore) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only staff at the requesting store can confirm receipt.'
+        });
+      }
     }
 
     // ── DISPATCHED: create a Transfer Document (decrement WAREHOUSE; store accepts/stocks later) ──

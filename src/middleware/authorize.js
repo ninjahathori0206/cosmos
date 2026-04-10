@@ -8,6 +8,12 @@ function normRole(role) {
   return String(role || '').toLowerCase();
 }
 
+/** Case-insensitive role_key match for fixed sets (JWT role may not be lowercased). */
+function isOneOfRoles(role, roleSet) {
+  const r = normRole(role);
+  return roleSet.has(r);
+}
+
 function isSuperAdmin(req) {
   return normRole(req.user && req.user.role) === 'super_admin';
 }
@@ -91,6 +97,8 @@ function requireAnyModule(moduleKeys) {
 
 module.exports = {
   isSuperAdmin,
+  normRole,
+  isOneOfRoles,
   hasModuleAccess,
   hasPermission,
   requireModule,

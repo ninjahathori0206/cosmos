@@ -4,7 +4,7 @@
  * Lifecycle: DISPATCHED → ACCEPTED → STOCKED
  *
  *  POST   /api/stock-transfer-docs          — HQ dispatches (Direct Transfer)
- *  GET    /api/stock-transfer-docs          — list (store-scoped for store roles)
+ *  GET    /api/stock-transfer-docs          — list (scoped by permissions + store_id)
  *  GET    /api/stock-transfer-docs/:id      — detail (header + lines)
  *  PUT    /api/stock-transfer-docs/:id/accept — store accepts  (DISPATCHED→ACCEPTED)
  *  PUT    /api/stock-transfer-docs/:id/stock  — store verifies (ACCEPTED→STOCKED)
@@ -16,15 +16,14 @@ const { executeStoredProcedure } = require('../config/db');
 const {
   requireModule,
   requirePermission,
-  requireAnyModule,
-  isSuperAdmin,
-  hasPermission
+  requireAnyModule
 } = require('../middleware/authorize');
+const {
+  shouldScopeStockTransferDocsToUserStore,
+  canAcceptOrStockTransfer
+} = require('../config/storeRoles');
 
 const router = express.Router();
-
-const STORE_ROLES = new Set(['store_incharge', 'store_manager']);
-const isStoreRole = (role) => STORE_ROLES.has(role);
 
 const docListAccess = [
   requireAnyModule(['foundry', 'storepilot']),
@@ -55,10 +54,6 @@ router.post(
         return res.status(400).json({ success: false, message: error.details.map(d => d.message).join('; ') });
       }
 
-      if (isStoreRole(req.user.role)) {
-        return res.status(403).json({ success: false, message: 'Only HQ staff can dispatch transfers.' });
-      }
-
       const linesJson = JSON.stringify(value.lines.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
 
       const result = await executeStoredProcedure('sp_StockTransferDoc_Dispatch', {
@@ -82,12 +77,14 @@ router.post(
 );
 
 // ── GET /api/stock-transfer-docs ──────────────────────────────────────────────
-// Store roles → their store only.  HQ → all (or ?to_store_id= filter).
+// Retail store users → their store only. HQ (Foundry create / no retail scope) → all or ?to_store_id=
 // Optional: ?status=DISPATCHED|ACCEPTED|STOCKED  ?top_n=50
 router.get('/', ...docListAccess, async (req, res, next) => {
   try {
     const user    = req.user;
-    const storeId = isStoreRole(user.role) ? Number(user.store_id) : (req.query.to_store_id ? Number(req.query.to_store_id) : null);
+    const storeId = shouldScopeStockTransferDocsToUserStore(req)
+      ? Number(user.store_id)
+      : (req.query.to_store_id ? Number(req.query.to_store_id) : null);
     const { status, top_n = 50 } = req.query;
 
     const result = await executeStoredProcedure('sp_StockTransferDoc_List', {
@@ -119,8 +116,10 @@ router.get('/:id', ...docListAccess, async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Transfer document not found.' });
     }
 
-    // Store roles can only see their own store's documents
-    if (isStoreRole(req.user.role) && header.to_store_id !== Number(req.user.store_id)) {
+    if (
+      shouldScopeStockTransferDocsToUserStore(req)
+      && header.to_store_id !== Number(req.user.store_id)
+    ) {
       return res.status(403).json({ success: false, message: 'Access denied.' });
     }
 
@@ -140,16 +139,23 @@ router.put('/:id/accept', requireModule('storepilot'), async (req, res, next) =>
       return res.status(400).json({ success: false, message: 'Invalid doc id.' });
     }
 
-    // Only store roles or super_admin can accept
-    if (!isStoreRole(req.user.role) && req.user.role !== 'super_admin') {
-      return res.status(403).json({ success: false, message: 'Only store staff can accept transfers.' });
+    const getResult = await executeStoredProcedure('sp_StockTransferDoc_GetById', {
+      doc_id: { type: sql.Int, value: docId }
+    });
+    const header = getResult.recordsets?.[0]?.[0];
+    if (!header) {
+      return res.status(404).json({ success: false, message: 'Transfer document not found.' });
     }
 
-    if (
-      isStoreRole(req.user.role)
-      && !isSuperAdmin(req)
-      && !hasPermission(req, 'storepilot.transfers.edit')
-    ) {
+    if (!canAcceptOrStockTransfer(req, header.to_store_id)) {
+      const userStore = req.user.store_id != null ? Number(req.user.store_id) : null;
+      const dest = Number(header.to_store_id);
+      if (userStore == null || userStore !== dest) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only staff at the destination store can accept this transfer.'
+        });
+      }
       return res.status(403).json({ success: false, message: 'Permission denied.' });
     }
 
@@ -191,15 +197,23 @@ router.put('/:id/stock', requireModule('storepilot'), async (req, res, next) => 
       return res.status(400).json({ success: false, message: error.details.map(d => d.message).join('; ') });
     }
 
-    if (!isStoreRole(req.user.role) && req.user.role !== 'super_admin') {
-      return res.status(403).json({ success: false, message: 'Only store staff can verify and stock transfers.' });
+    const getResult = await executeStoredProcedure('sp_StockTransferDoc_GetById', {
+      doc_id: { type: sql.Int, value: docId }
+    });
+    const header = getResult.recordsets?.[0]?.[0];
+    if (!header) {
+      return res.status(404).json({ success: false, message: 'Transfer document not found.' });
     }
 
-    if (
-      isStoreRole(req.user.role)
-      && !isSuperAdmin(req)
-      && !hasPermission(req, 'storepilot.transfers.edit')
-    ) {
+    if (!canAcceptOrStockTransfer(req, header.to_store_id)) {
+      const userStore = req.user.store_id != null ? Number(req.user.store_id) : null;
+      const dest = Number(header.to_store_id);
+      if (userStore == null || userStore !== dest) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only staff at the destination store can verify and stock transfers.'
+        });
+      }
       return res.status(403).json({ success: false, message: 'Permission denied.' });
     }
 

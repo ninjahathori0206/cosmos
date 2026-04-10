@@ -501,6 +501,43 @@
       </div>
     </div>
 
+    <!-- ── Collection defaults (optional — same Mfg / brand / collection for multiple models on one bill) ── -->
+    <div class="card mb4" id="purchase-collection-defaults-card">
+      <div class="ch"><div class="ct">Collection defaults</div><div class="cb-hint xs td2">Set once per bill, then add lines or use “Next model”. New lines can auto-fill from here.</div></div>
+      <div class="cb">
+        <div class="fg3">
+          <div class="fgrp">
+            <label>Product Type</label>
+            <select id="coll-default-product-type"><option value="">— Select Product Type —</option></select>
+            <div class="fhint">Applied with the fields below when you add items or click Apply to all.</div>
+          </div>
+          <div class="fgrp">
+            <label>Manufacturer</label>
+            <input id="coll-default-maker-name" list="coll-default-maker-list" placeholder="e.g. Gandhi" oninput="onCollectionDefaultMakerInputChange()">
+            <datalist id="coll-default-maker-list"></datalist>
+            <input type="hidden" id="coll-default-maker">
+          </div>
+          <div class="fgrp">
+            <label>Source Brand</label>
+            <input id="coll-default-source-brand" list="coll-default-source-brand-list" placeholder="e.g. IKON" onfocus="onCollectionDefaultSourceBrandInputChange()" oninput="onCollectionDefaultSourceBrandInputChange()">
+            <datalist id="coll-default-source-brand-list"></datalist>
+          </div>
+          <div class="fgrp">
+            <label>Source Collection</label>
+            <input id="coll-default-source-coll" list="coll-default-source-coll-list" placeholder="Optional" onfocus="onCollectionDefaultSourceCollectionInputChange()" oninput="onCollectionDefaultSourceCollectionInputChange()">
+            <datalist id="coll-default-source-coll-list"></datalist>
+          </div>
+        </div>
+        <div class="flex ic g2 mt2" style="flex-wrap:wrap;align-items:center">
+          <label class="flex ic g2" style="cursor:pointer;font-size:13px">
+            <input type="checkbox" id="coll-default-apply-new" checked style="width:16px;height:16px;accent-color:var(--acc2)">
+            Apply to new line items automatically
+          </label>
+          <button type="button" class="btn sm" onclick="applyCollectionDefaultsToAllPurchaseItems()">Apply to all line items now</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Items Container ── -->
     <div id="purchase-items-container">
       <!-- Items rendered by JS: addPurchaseItem() -->
@@ -509,6 +546,7 @@
     <div class="flex ic g2 mb4">
       <button class="btn sm" id="add-item-btn" onclick="addPurchaseItem()">+ Add Another Item</button>
       <button class="btn sm" id="dup-item-btn" onclick="duplicatePurchaseItem()" title="Copy all fields from the last item">⧉ Duplicate Last Item</button>
+      <button class="btn sm" id="dup-same-coll-btn" onclick="duplicatePurchaseItemSameCollection()" title="Same manufacturer, brand &amp; collection as last item — enter a new model, rate &amp; qty">+ Next model (same collection)</button>
       <span class="xs td2" id="items-count-hint">1 item</span>
     </div>
 
@@ -1020,7 +1058,10 @@
     <div class="card">
       <div class="ch">
         <div class="ct">Transfer History</div>
-        <button class="btn sm" style="margin-left:auto" onclick="stLoadHistory()">↻ Refresh</button>
+        <div style="display:flex;gap:8px;margin-left:auto;align-items:center;flex-wrap:wrap">
+          <button type="button" class="btn sm" id="st-print-last-btn" style="display:none" onclick="stReprintLastTransferSlip()" title="Re-print last dispatch slip">🖨️ Print last slip</button>
+          <button class="btn sm" onclick="stLoadHistory()">↻ Refresh</button>
+        </div>
       </div>
       <div style="overflow-x:auto">
         <table class="tbl">

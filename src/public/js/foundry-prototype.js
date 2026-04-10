@@ -228,6 +228,8 @@ document.addEventListener('DOMContentLoaded', () => {
     populateAllSupplierSelects();
     populateMakerSelects();
     syncPurchaseItemProductTypeSelects();
+    populateCollectionDefaultsMakerDatalist();
+    syncCollectionDefaultsProductTypeSelect();
   }
 
   /** Rebuild Product Type dropdown options on existing item rows after lookups refresh. */
@@ -242,6 +244,144 @@ document.addEventListener('DOMContentLoaded', () => {
       if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
     });
   }
+
+  function populateCollectionDefaultsMakerDatalist() {
+    const ml = document.getElementById('coll-default-maker-list');
+    if (!ml) return;
+    ml.innerHTML = (_allMakers || []).map((m) => `<option value="${String(m.maker_name || '').replace(/"/g, '&quot;')}"></option>`).join('');
+  }
+
+  function syncCollectionDefaultsProductTypeSelect() {
+    const sel = document.getElementById('coll-default-product-type');
+    if (!sel) return;
+    const cur = sel.value;
+    let html = '<option value="">— Select Product Type —</option>';
+    (_lookups.product_type || []).forEach((pt) => {
+      html += `<option value="${pt.key}">${pt.label}</option>`;
+    });
+    sel.innerHTML = html;
+    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  }
+
+  function resetCollectionDefaultsCard() {
+    const ids = ['coll-default-maker-name', 'coll-default-maker', 'coll-default-source-brand', 'coll-default-source-coll'];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const pt = document.getElementById('coll-default-product-type');
+    if (pt) pt.value = '';
+    const cb = document.getElementById('coll-default-apply-new');
+    if (cb) cb.checked = true;
+    setDatalistOptions('coll-default-source-brand-list', []);
+    setDatalistOptions('coll-default-source-coll-list', []);
+  }
+
+  /** Apply strip values to one line item (used for new lines and “apply to all”). */
+  async function applyPurchaseCollectionDefaultsToItem(idx) {
+    const makerName = val('coll-default-maker-name');
+    const pt = val('coll-default-product-type');
+    const sb = val('coll-default-source-brand');
+    const sc = val('coll-default-source-coll');
+    if (!makerName && !pt && !sb && !sc) return;
+
+    const dstMaker = document.getElementById(`item-maker-name-${idx}`);
+    if (dstMaker && makerName) {
+      dstMaker.value = makerName;
+      await window.onMakerInputChange(idx);
+    }
+
+    const dstPt = document.getElementById(`item-product-type-${idx}`);
+    if (dstPt && pt) dstPt.value = pt;
+
+    const dstBrand = document.getElementById(`item-source-brand-${idx}`);
+    if (dstBrand && sb) dstBrand.value = sb;
+    const dstColl = document.getElementById(`item-source-coll-${idx}`);
+    if (dstColl && sc) dstColl.value = sc;
+
+    await window.onSourceBrandInputChange(idx);
+    await window.onSourceCollectionInputChange(idx);
+    await window.onSourceModelInputChange(idx);
+  }
+
+  window.onCollectionDefaultMakerInputChange = async function() {
+    const makerName = val('coll-default-maker-name');
+    const matched = resolveMakerByName(makerName);
+    const hidden = document.getElementById('coll-default-maker');
+    const prevMm = hidden ? hidden.value : '';
+    const nextMm = matched ? String(matched.maker_id) : '';
+    if (hidden) hidden.value = nextMm;
+
+    if (prevMm !== nextMm) {
+      const b = document.getElementById('coll-default-source-brand');
+      const c = document.getElementById('coll-default-source-coll');
+      if (b) b.value = '';
+      if (c) c.value = '';
+      setDatalistOptions('coll-default-source-brand-list', []);
+      setDatalistOptions('coll-default-source-coll-list', []);
+    }
+
+    if (matched) {
+      const brands = await loadSourceSuggestions('source_brand', { maker_master_id: matched.maker_id, q: '' });
+      setDatalistOptions('coll-default-source-brand-list', brands);
+    }
+  };
+
+  window.onCollectionDefaultSourceBrandInputChange = async function() {
+    const mmId = val('coll-default-maker');
+    const sourceBrand = val('coll-default-source-brand');
+    if (!mmId) {
+      setDatalistOptions('coll-default-source-brand-list', []);
+      setDatalistOptions('coll-default-source-coll-list', []);
+      return;
+    }
+    const mm = Number(mmId);
+
+    const brands = await loadSourceSuggestions('source_brand', { maker_master_id: mm, q: sourceBrand });
+    setDatalistOptions('coll-default-source-brand-list', brands);
+
+    if (!sourceBrand) {
+      setDatalistOptions('coll-default-source-coll-list', []);
+      return;
+    }
+
+    const brandList = document.getElementById('coll-default-source-brand-list');
+    const knownBrands = brandList
+      ? [...brandList.options].map((o) => o.value.trim().toUpperCase())
+      : [];
+    const typedUpper = sourceBrand.trim().toUpperCase();
+    if (!knownBrands.includes(typedUpper)) {
+      setDatalistOptions('coll-default-source-coll-list', []);
+      return;
+    }
+
+    const collections = await loadSourceSuggestions('source_collection', { maker_master_id: mm, source_brand: sourceBrand, q: '' });
+    setDatalistOptions('coll-default-source-coll-list', collections);
+  };
+
+  window.onCollectionDefaultSourceCollectionInputChange = async function() {
+    const mmId = val('coll-default-maker');
+    const sourceBrand = val('coll-default-source-brand');
+    const sourceColl = val('coll-default-source-coll');
+    if (!mmId || !sourceBrand) return;
+
+    const mm = Number(mmId);
+    const collections = await loadSourceSuggestions('source_collection', {
+      maker_master_id: mm,
+      source_brand: sourceBrand,
+      q: sourceColl
+    });
+    setDatalistOptions('coll-default-source-coll-list', collections);
+  };
+
+  window.applyCollectionDefaultsToAllPurchaseItems = async function() {
+    const cards = document.querySelectorAll('.purchase-item-card');
+    if (!cards.length) return;
+    for (const card of cards) {
+      const idx = parseInt(card.dataset.idx, 10);
+      await applyPurchaseCollectionDefaultsToItem(idx);
+    }
+  };
 
   function supplierIdOf(s) {
     if (!s) return '';
@@ -641,6 +781,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _itemCount = 0;
     const container = document.getElementById('purchase-items-container');
     if (container) container.innerHTML = '';
+    resetCollectionDefaultsCard();
     const today = istToday();
     // Set today as default in flatpickr if not already set
     const fpEl = document.getElementById('bill-purchase-date-input');
@@ -648,7 +789,8 @@ document.addEventListener('DOMContentLoaded', () => {
     addPurchaseItem();
   }
 
-  window.addPurchaseItem = function() {
+  window.addPurchaseItem = function(opts) {
+    const skipDefaultsApply = opts && opts.skipDefaultsApply;
     _itemCount++;
     const idx = _itemCount;
     const container = document.getElementById('purchase-items-container');
@@ -780,6 +922,16 @@ document.addEventListener('DOMContentLoaded', () => {
     container.appendChild(card);
     addColourToItem(idx);
 
+    if (!skipDefaultsApply && document.getElementById('coll-default-apply-new')?.checked) {
+      void (async () => {
+        try {
+          await applyPurchaseCollectionDefaultsToItem(idx);
+        } catch (e) {
+          console.error('applyPurchaseCollectionDefaultsToItem', e);
+        }
+      })();
+    }
+
     const hint = document.getElementById('items-count-hint');
     if (hint) hint.textContent = _itemCount === 1 ? '1 item' : `${_itemCount} items`;
   };
@@ -810,8 +962,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const srcPtVal        = document.getElementById(`item-product-type-${srcIdx}`)?.value || '';
     const srcBrandingVal  = document.getElementById(`item-branding-${srcIdx}`)?.checked || false;
 
-    // Add a new blank item card
-    window.addPurchaseItem();
+    // Add a new blank item card (do not apply collection-defaults strip — would overwrite copy)
+    window.addPurchaseItem({ skipDefaultsApply: true });
     const newIdx = _itemCount;
 
     // Set maker FIRST and await so onMakerInputChange can set the hidden ID.
@@ -868,6 +1020,61 @@ document.addEventListener('DOMContentLoaded', () => {
     calcItemBill(newIdx);
     validateColourQty(newIdx);
     // Scroll the new card into view
+    const newCard = document.getElementById(`item-card-${newIdx}`);
+    if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  /** Same manufacturer / brand / collection as last item; clear model, rate, qty, colours; keep GST & branding. */
+  window.duplicatePurchaseItemSameCollection = async function() {
+    const cards = document.querySelectorAll('.purchase-item-card');
+    if (!cards.length) {
+      alert('Add an item first before adding the next model.');
+      return;
+    }
+    const srcCard = cards[cards.length - 1];
+    const srcIdx = parseInt(srcCard.dataset.idx, 10);
+
+    const snapshot = {};
+    ['source-brand', 'source-coll', 'gst'].forEach((f) => {
+      const el = document.getElementById(`item-${f}-${srcIdx}`);
+      snapshot[f] = el ? el.value : '';
+    });
+    const srcMakerNameVal = document.getElementById(`item-maker-name-${srcIdx}`)?.value || '';
+    const srcPtVal = document.getElementById(`item-product-type-${srcIdx}`)?.value || '';
+    const srcBrandingVal = document.getElementById(`item-branding-${srcIdx}`)?.checked || false;
+
+    window.addPurchaseItem({ skipDefaultsApply: true });
+    const newIdx = _itemCount;
+
+    const dstMakerName = document.getElementById(`item-maker-name-${newIdx}`);
+    if (dstMakerName) {
+      dstMakerName.value = srcMakerNameVal;
+      await window.onMakerInputChange(newIdx);
+    }
+
+    const dstBrand = document.getElementById(`item-source-brand-${newIdx}`);
+    const dstColl = document.getElementById(`item-source-coll-${newIdx}`);
+    if (dstBrand) dstBrand.value = snapshot['source-brand'] || '';
+    if (dstColl) dstColl.value = snapshot['source-coll'] || '';
+
+    const dstGst = document.getElementById(`item-gst-${newIdx}`);
+    if (dstGst) dstGst.value = snapshot['gst'] || '';
+
+    await window.onSourceBrandInputChange(newIdx);
+    await window.onSourceCollectionInputChange(newIdx);
+
+    const dstPt = document.getElementById(`item-product-type-${newIdx}`);
+    if (dstPt) dstPt.value = srcPtVal;
+
+    const dstBranding = document.getElementById(`item-branding-${newIdx}`);
+    if (dstBranding) dstBranding.checked = srcBrandingVal;
+
+    calcItemBill(newIdx);
+    validateColourQty(newIdx);
+
+    const modelEl = document.getElementById(`item-source-model-${newIdx}`);
+    if (modelEl) modelEl.focus();
+
     const newCard = document.getElementById(`item-card-${newIdx}`);
     if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -3568,6 +3775,7 @@ ${initScript}
     let _scanRunning = false;
     let _searchTimer = null;
     let _stInited    = false;
+    let _stLastDocId = null;
 
     // ── Toast feedback ────────────────────────────────────────────────────────
     function stToast(msg, color) {
@@ -3824,6 +4032,87 @@ ${initScript}
       }
     }
 
+    // ── Printable dispatch slip (same window pattern as barcode labels) ───────
+    function stPrintDispatchSlip(doc) {
+      if (!doc) return;
+      const lines = doc.lines || [];
+      const lineRows = lines.map((l) => `
+        <tr>
+          <td class="mono">${stEsc(l.sku_code)}</td>
+          <td>${stEsc(l.product_name || '')}</td>
+          <td>${stEsc(l.brand_name || '—')}</td>
+          <td>${stEsc(l.colour_name || '—')}</td>
+          <td class="tc">${l.qty_sent != null ? Number(l.qty_sent) : '—'}</td>
+        </tr>`).join('');
+      const win = window.open('', '_blank');
+      if (!win) {
+        stToast('Allow pop-ups to print the dispatch slip', '#e53e3e');
+        return;
+      }
+      const dispatched = stFmtDate(doc.dispatched_at || doc.created_at);
+      const docType = doc.doc_type === 'REQUEST' ? 'Via request' : 'Direct';
+      const title = 'Goods transfer — dispatch slip';
+      win.document.write(`<!DOCTYPE html>
+<html><head><title>${title}</title>
+<style>
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:system-ui,Segoe UI,sans-serif; background:#fff; color:#111; }
+  .controls { padding:10px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid #ddd; background:#f5f5f5; }
+  .controls button { padding:8px 18px; border:1px solid #888; border-radius:6px; cursor:pointer; font-size:14px; background:#fff; }
+  .controls .primary { background:#2563eb; color:#fff; border-color:#2563eb; }
+  @media print { .controls { display:none !important; } body { padding:0; } }
+  .slip { padding:20px 24px; max-width:800px; margin:0 auto; }
+  h1 { font-size:18px; margin-bottom:4px; letter-spacing:0.02em; }
+  .sub { font-size:13px; color:#444; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:140px 1fr; gap:6px 12px; font-size:13px; margin-bottom:16px; }
+  .grid dt { color:#666; font-weight:600; }
+  .grid dd { margin:0; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th, td { border:1px solid #ccc; padding:8px 10px; text-align:left; }
+  th { background:#f0f0f0; font-weight:600; }
+  td.tc, th.tc { text-align:center; }
+  .mono { font-family:Consolas,'Courier New',monospace; font-size:12px; }
+  .notes { margin-top:14px; padding:10px; background:#fafafa; border:1px solid #e5e5e5; border-radius:4px; font-size:12px; white-space:pre-wrap; }
+</style></head><body>
+<div class="controls">
+  <span style="font-size:14px;font-weight:600">${title}</span>
+  <button type="button" class="primary" onclick="window.print()">Print</button>
+  <button type="button" onclick="window.close()">Close</button>
+</div>
+<div class="slip">
+  <h1>Eyewoot — Goods transfer (dispatch)</h1>
+  <p class="sub">Carry this slip with the shipment. Destination store confirms in StorePilot — Incoming Goods.</p>
+  <dl class="grid">
+    <dt>Document #</dt><dd>${stEsc(String(doc.doc_id))}</dd>
+    <dt>Type</dt><dd>${stEsc(docType)}</dd>
+    <dt>Status</dt><dd>${stEsc(doc.status || '—')}</dd>
+    <dt>Destination</dt><dd>${stEsc(doc.store_name || '—')} (${stEsc(doc.store_code || '')})</dd>
+    <dt>Dispatched</dt><dd>${stEsc(dispatched)}</dd>
+    <dt>Dispatched by</dt><dd>${stEsc(doc.dispatched_by_name || '—')}</dd>
+  </dl>
+  ${doc.notes ? `<div class="notes"><strong>Notes</strong><br>${stEsc(doc.notes)}</div>` : ''}
+  <table>
+    <thead><tr><th>SKU</th><th>Product</th><th>Brand</th><th>Colour</th><th class="tc">Qty</th></tr></thead>
+    <tbody>${lineRows || '<tr><td colspan="5" style="text-align:center;color:#666">No lines</td></tr>'}</tbody>
+  </table>
+</div>
+</body></html>`);
+      win.document.close();
+    }
+
+    window.stReprintLastTransferSlip = async function stReprintLastTransferSlip() {
+      if (!_stLastDocId) {
+        stToast('No transfer slip in this session yet', '#e53e3e');
+        return;
+      }
+      try {
+        const doc = await apiGet('/api/stock-transfer-docs/' + _stLastDocId);
+        stPrintDispatchSlip(doc);
+      } catch (err) {
+        stToast('Could not load slip: ' + err.message, '#e53e3e');
+      }
+    };
+
     // ── Submit transfer ────────────────────────────────────────────────────────
     window.stSubmitTransfer = async function stSubmitTransfer() {
       const storeId = document.getElementById('st-store-sel').value;
@@ -3839,12 +4128,23 @@ ${initScript}
           notes: notes || null
         });
         const storeName = document.getElementById('st-store-sel').selectedOptions[0]?.text || 'store';
-        const docId     = resp?.data?.doc_id;
+        const docId     = resp && resp.doc_id;
+        _stLastDocId    = docId || null;
+        const printLast = document.getElementById('st-print-last-btn');
+        if (printLast) printLast.style.display = docId ? '' : 'none';
         stToast(`✓ Transfer Doc #${docId} dispatched to ${storeName} — awaiting store acceptance`, '#16a34a');
         _cart = [];
         stRenderCart();
         document.getElementById('st-notes').value = '';
         window.stLoadHistory();
+        try {
+          if (docId) {
+            const doc = await apiGet('/api/stock-transfer-docs/' + docId);
+            stPrintDispatchSlip(doc);
+          }
+        } catch (_) {
+          /* slip is optional; dispatch already succeeded */
+        }
       } catch (err) {
         stToast('Transfer failed: ' + err.message, '#e53e3e');
       } finally {
