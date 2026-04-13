@@ -2815,6 +2815,216 @@ document.addEventListener('DOMContentLoaded', () => {
   const _origOpenDigi = openDigitisationPage;
 
   // ─────────────────────────────────────────────────────────────────────────
+  // MASTER CATALOGUE (product_master)
+  // ─────────────────────────────────────────────────────────────────────────
+  let _mcSearchTimer = null;
+  window.debounceMcSearch = function() {
+    clearTimeout(_mcSearchTimer);
+    _mcSearchTimer = setTimeout(() => window.loadMasterCatalogue(), 350);
+  };
+
+  function _mcEsc(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function _mcSourceTypeBadge(st) {
+    if (st == null || String(st).trim() === '') return '—';
+    const u = String(st).toUpperCase();
+    let cls = 'b-gray';
+    if (u === 'LOCAL_SUPPLIER' || u.includes('LOCAL')) cls = 'b-blue';
+    else if (u === 'DIRECT_BRAND' || u.includes('DIRECT')) cls = 'b-purple';
+    else if (u === 'IMPORT') cls = 'b-gold';
+    else if (u === 'INHOUSE') cls = 'b-teal';
+    const labelMap = {
+      LOCAL_SUPPLIER: 'Local Supplier',
+      DIRECT_BRAND: 'Direct Brand',
+      IMPORT: 'Import',
+      INHOUSE: 'In-house'
+    };
+    const label = labelMap[u] || u.replace(/_/g, ' ');
+    return `<span class="b ${cls}">${_mcEsc(label)}</span>`;
+  }
+
+  function _mcCatalogueStatusBadge(status) {
+    const u = (status || '').toUpperCase();
+    if (u === 'ACTIVE') return '<span class="b b-green">Active</span>';
+    if (u === 'DRAFT') return '<span class="b b-gold">Draft</span>';
+    if (u === 'DISCONTINUED') return '<span class="b b-red">Discontinued</span>';
+    return `<span class="b b-gray">${_mcEsc(status || '—')}</span>`;
+  }
+
+  function _mcInr(n) {
+    if (n == null || n === '') return '—';
+    const x = Number(n);
+    if (Number.isNaN(x)) return '—';
+    return '₹' + x.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  }
+
+  function _mcDetailKV(label, innerHtml) {
+    return `<div style="margin-bottom:14px">
+      <div class="xs td2" style="text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;font-weight:600">${_mcEsc(label)}</div>
+      <div style="font-size:14px">${innerHtml}</div>
+    </div>`;
+  }
+
+  let _mcBrandFilterReady = false;
+  let _mcRowById = {};
+
+  async function _mcEnsureBrandFilter() {
+    if (_mcBrandFilterReady) return;
+    const sel = document.getElementById('mc-brand-filter');
+    if (!sel) return;
+    try {
+      const brands = await apiGet('/api/home-brands');
+      const list = Array.isArray(brands) ? brands : [];
+      list.forEach((b) => {
+        if (b.brand_id == null) return;
+        const opt = document.createElement('option');
+        opt.value = String(b.brand_id);
+        opt.textContent = b.brand_name || `Brand #${b.brand_id}`;
+        sel.appendChild(opt);
+      });
+      _mcBrandFilterReady = true;
+    } catch (_) {
+      /* non-fatal — user can still filter by other fields */
+    }
+  }
+
+  window.openMasterProductDetail = function(productId) {
+    const r = _mcRowById[productId];
+    if (!r) return;
+    const titleEl = document.getElementById('mc-detail-title');
+    const idEl = document.getElementById('mc-detail-id');
+    const bodyEl = document.getElementById('mc-detail-body');
+    if (titleEl) titleEl.textContent = r.brand_name || 'Product';
+    if (idEl) idEl.textContent = r.product_id ? `product_id ${r.product_id}` : '';
+    if (!bodyEl) return;
+
+    const styleBlock = (() => {
+      const sm = r.style_model ? `<div>${_mcEsc(r.style_model)}</div>` : '';
+      const sn = r.source_model_number && String(r.source_model_number).trim() !== ''
+        ? `<div class="xs td2 mono" style="margin-top:4px">Source model #: ${_mcEsc(r.source_model_number)}</div>`
+        : '';
+      if (!sm && !sn) return '—';
+      return sm + sn;
+    })();
+
+    const purchaseBlock = (() => {
+      const c = Number(r.purchase_count) || 0;
+      if (c === 0) return '<span class="td2">No purchase lines yet</span>';
+      const lo = r.purchase_rate_min;
+      const hi = r.purchase_rate_max;
+      if (lo == null && hi == null) return '—';
+      if (lo != null && hi != null) {
+        return `<div>Lowest (purchase rate): <span class="mono fw6">${_mcInr(lo)}</span></div>
+          <div style="margin-top:6px">Highest (purchase rate): <span class="mono fw6">${_mcInr(hi)}</span></div>`;
+      }
+      const v = _mcInr(lo != null ? lo : hi);
+      return `<div><span class="mono fw6">${v}</span></div>`;
+    })();
+
+    const mrpBlock = (() => {
+      const lo = r.mrp_min;
+      const hi = r.mrp_max;
+      if (lo == null && hi == null) {
+        return '<span class="td2">No SKUs / MRP (sale price) yet</span>';
+      }
+      if (lo != null && hi != null && Number(lo) === Number(hi)) {
+        return `<span class="mono fw6">${_mcInr(lo)}</span> <span class="xs td2">(from SKU sale prices)</span>`;
+      }
+      return `<div>Lowest MRP: <span class="mono fw6">${_mcInr(lo)}</span></div>
+        <div style="margin-top:6px">Highest MRP: <span class="mono fw6">${_mcInr(hi)}</span></div>
+        <div class="xs td2" style="margin-top:6px">MIN/MAX of SKU sale_price for this model.</div>`;
+    })();
+
+    bodyEl.innerHTML = [
+      _mcDetailKV('Brand', _mcEsc(r.brand_name || '—')),
+      _mcDetailKV('EW collection', _mcEsc(r.ew_collection || '—')),
+      _mcDetailKV('Style', styleBlock),
+      _mcDetailKV('Manufacturer', _mcEsc(r.manufacturer_name || '—')),
+      _mcDetailKV('Source brand', _mcEsc(r.source_brand || '—')),
+      _mcDetailKV('Source collection', _mcEsc(r.source_collection || '—')),
+      _mcDetailKV('Purchase (lowest & highest rate)', purchaseBlock),
+      _mcDetailKV('MRP', mrpBlock)
+    ].join('');
+    if (typeof openM === 'function') openM('modal-master-product');
+  };
+
+  window.loadMasterCatalogue = async function loadMasterCatalogue() {
+    const tbody = document.getElementById('mc-tbody');
+    const subEl = document.getElementById('mc-subtitle');
+    const q = val('mc-search');
+    const sourceType = val('mc-source-type');
+    const catStatus = val('mc-status');
+    const productType = val('mc-product-type');
+    const brandId = val('mc-brand-filter');
+
+    await _mcEnsureBrandFilter();
+
+    const params = new URLSearchParams();
+    if (catStatus) params.set('catalogue_status', catStatus);
+    if (sourceType) params.set('source_type', sourceType);
+    if (productType) params.set('product_type', productType);
+    if (brandId) params.set('brand_id', brandId);
+    if (q) params.set('q', q);
+    const qs = params.toString();
+
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="tc td2 p12">Loading…</td></tr>';
+
+    try {
+      const rows = await apiGet(`/api/products${qs ? `?${qs}` : ''}`);
+      if (!tbody) return;
+
+      _mcRowById = {};
+      rows.forEach((row) => {
+        if (row.product_id != null) _mcRowById[row.product_id] = row;
+      });
+
+      const parts = [];
+      parts.push(`${rows.length} product${rows.length !== 1 ? 's' : ''}`);
+      if (catStatus === 'ACTIVE') parts.push('Active catalogue');
+      else if (catStatus) parts.push(catStatus);
+      else parts.push('All statuses');
+      if (subEl) subEl.textContent = parts.join(' · ');
+
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="tc td2 p12">No products found</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = rows.map((r) => {
+        const brand = _mcEsc(r.brand_name || '—');
+        const ew = _mcEsc(r.ew_collection || '—');
+        const styleShort = _mcEsc(
+          (r.style_model && String(r.style_model).trim()) ? r.style_model : (r.source_model_number || '—')
+        );
+        const manufacturer = _mcEsc(r.manufacturer_name || '—');
+        const stBadge = _mcSourceTypeBadge(r.source_type);
+        const stStatus = _mcCatalogueStatusBadge(r.catalogue_status);
+        const pid = Number(r.product_id);
+        return `<tr>
+          <td class="fw6">${brand}</td>
+          <td>${ew}</td>
+          <td class="mono xs">${styleShort}</td>
+          <td class="xs">${manufacturer}</td>
+          <td>${stBadge}</td>
+          <td>${stStatus}</td>
+          <td class="tc"><button type="button" class="btn xs primary" onclick="openMasterProductDetail(${pid})">Details</button></td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">${_mcEsc(msg)}</td></tr>`;
+      if (subEl) subEl.textContent = '';
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
   // SKU CATALOGUE
   // ─────────────────────────────────────────────────────────────────────────
   let _catView = 'grid';
@@ -3381,6 +3591,7 @@ document.addEventListener('DOMContentLoaded', () => {
       })();
     }
     if (id === 'sku-catalogue')    loadSkuCatalogue();
+    if (id === 'master-catalogue') loadMasterCatalogue();
     if (id === 'stock-view')       loadStockView();
     if (id === 'stock-transfer')   stInit();
     if (id === 'transfer-requests') loadTransferRequests();

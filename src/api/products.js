@@ -19,6 +19,12 @@ const foundryPurchasesEdit = [
   requirePermission('foundry.purchases.edit')
 ];
 
+/** Master Catalogue list + other product reads that serve catalogue users. */
+const foundryCatalogueOrPurchasesView = [
+  requireModule('foundry'),
+  requirePermission('foundry.catalogue.view', 'foundry.purchases.view')
+];
+
 const productSchema = Joi.object({
   source_type:       Joi.string().max(50).allow('', null),
   maker_id:          Joi.number().integer().allow(null),
@@ -34,9 +40,29 @@ const productSchema = Joi.object({
   catalogue_status:  Joi.string().valid('ACTIVE','DRAFT','DISCONTINUED').optional()
 });
 
-router.get('/', ...foundryPurchasesView, async (req, res, next) => {
+router.get('/', ...foundryCatalogueOrPurchasesView, async (req, res, next) => {
   try {
-    const result = await executeStoredProcedure('sp_ProductMaster_GetAll', {});
+    const { catalogue_status, source_type, q, product_type, brand_id } = req.query;
+    const cs = catalogue_status != null && String(catalogue_status).trim() !== ''
+      ? String(catalogue_status).trim().toUpperCase()
+      : null;
+    const st = source_type != null && String(source_type).trim() !== ''
+      ? String(source_type).trim()
+      : null;
+    const qv = q != null && String(q).trim() !== '' ? String(q).trim() : null;
+    const pt = product_type != null && String(product_type).trim() !== ''
+      ? String(product_type).trim()
+      : null;
+    const bid = brand_id != null && String(brand_id).trim() !== ''
+      ? parseInt(String(brand_id).trim(), 10)
+      : null;
+    const result = await executeStoredProcedure('sp_ProductMaster_GetAll', {
+      catalogue_status: { type: sql.VarChar(20), value: cs },
+      source_type: { type: sql.VarChar(50), value: st },
+      q: { type: sql.VarChar(200), value: qv },
+      product_type: { type: sql.VarChar(50), value: pt },
+      home_brand_id: { type: sql.Int, value: Number.isFinite(bid) ? bid : null }
+    });
     return res.json({ success: true, data: result.recordset || [] });
   } catch (err) {
     return next(err);
@@ -130,7 +156,7 @@ router.get('/search', ...foundryPurchasesView, async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', ...foundryCatalogueOrPurchasesView, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const result = await executeStoredProcedure('sp_ProductMaster_GetById', {

@@ -35,3 +35,14 @@ Deploy the updated procedure to CosmosERP (run the `sp_SKUv2_Generate` section f
 5. If two lines could collide on `pid`, confirm the procedure’s `WHILE EXISTS` loop appends `-2`, `-3`, etc. to `pid` (rare).
 
 No automated test runs in-repo without a live database connection.
+
+## Troubleshooting: still seeing three-part SKUs (e.g. `BK-LIZ-STD`)
+
+Generation is **entirely in SQL Server**. The Node app only calls `sp_SKUv2_Generate`; it does not build `sku_code` in JavaScript.
+
+- **Symptom:** `sku_code` has **three** hyphen-separated parts and `barcode` looks like `{sku_code}-P{headerId}` (e.g. `BK-LIZ-STD` / `BK-LIZ-STD-P8`). That is the **previous** procedure (Brand–Collection–Colour only).
+- **Fix:** Deploy the current procedure on **CosmosERP**:
+  - Run [`sql/maintenance/deploy_sp_SKUv2_Generate_four_segment.sql`](../sql/maintenance/deploy_sp_SKUv2_Generate_four_segment.sql), **or**
+  - Execute the `sp_SKUv2_Generate` block in [`sql/sp/pipeline_v2.sql`](../sql/sp/pipeline_v2.sql) (same definition).
+- **After deploy:** New digitisation runs should produce **four** segments (model segment `UNK` if `source_model_number` is blank). Existing rows in `dbo.skus` are **not** rewritten.
+- **Note:** If your environment applied older migrations that redefine `sp_SKUv2_Generate` (e.g. restock-related alters), reconcile those scripts with `pipeline_v2` so a later migration does not replace this procedure with an older body.

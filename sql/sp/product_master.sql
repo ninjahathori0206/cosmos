@@ -143,9 +143,19 @@ IF OBJECT_ID('dbo.sp_ProductMaster_GetAll', 'P') IS NOT NULL
 GO
 
 CREATE PROCEDURE dbo.sp_ProductMaster_GetAll
+  @catalogue_status VARCHAR(20) = NULL,
+  @source_type      VARCHAR(50)  = NULL,
+  @q                VARCHAR(200) = NULL,
+  @product_type     VARCHAR(50)  = NULL,
+  @home_brand_id    INT          = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
+
+  DECLARE @qtrim NVARCHAR(200) = NULLIF(LTRIM(RTRIM(@q)), N'');
+  DECLARE @st NVARCHAR(50) = NULLIF(LTRIM(RTRIM(@source_type)), N'');
+  DECLARE @cs NVARCHAR(20) = NULLIF(LTRIM(RTRIM(@catalogue_status)), N'');
+  DECLARE @pt NVARCHAR(50) = NULLIF(LTRIM(RTRIM(@product_type)), N'');
 
   SELECT
     pm.product_id,
@@ -162,11 +172,50 @@ BEGIN
     pm.catalogue_status,
     pm.created_at,
     pm.updated_at,
-    s.vendor_name AS maker_name,
-    hb.brand_name
+    s.vendor_name AS supplier_name,
+    hb.brand_name,
+    mm.maker_name AS maker_master_name,
+    COALESCE(mm.maker_name, s.vendor_name) AS manufacturer_name,
+    ISNULL(pc.purchase_count, 0) AS purchase_count,
+    pc.purchase_rate_min,
+    pc.purchase_rate_max,
+    mrp.mrp_min,
+    mrp.mrp_max
   FROM dbo.product_master pm
   LEFT JOIN dbo.suppliers s ON pm.maker_id = s.supplier_id
+  LEFT JOIN dbo.maker_master mm ON pm.maker_master_id = mm.maker_id
   LEFT JOIN dbo.home_brands hb ON pm.home_brand_id = hb.brand_id
+  OUTER APPLY (
+    SELECT
+      COUNT(DISTINCT pi.header_id) AS purchase_count,
+      MIN(pi.purchase_rate) AS purchase_rate_min,
+      MAX(pi.purchase_rate) AS purchase_rate_max
+    FROM dbo.purchase_items pi
+    WHERE pi.product_master_id = pm.product_id
+  ) pc
+  OUTER APPLY (
+    SELECT
+      MIN(s.sale_price) AS mrp_min,
+      MAX(s.sale_price) AS mrp_max
+    FROM dbo.skus s
+    WHERE s.product_master_id = pm.product_id
+  ) mrp
+  WHERE (@cs IS NULL OR pm.catalogue_status = @cs)
+    AND (@st IS NULL OR pm.source_type = @st)
+    AND (@pt IS NULL OR pm.product_type = @pt)
+    AND (@home_brand_id IS NULL OR pm.home_brand_id = @home_brand_id)
+    AND (
+      @qtrim IS NULL
+      OR UPPER(ISNULL(hb.brand_name, N'')) LIKE N'%' + UPPER(@qtrim) + N'%'
+      OR UPPER(ISNULL(pm.ew_collection, N'')) LIKE N'%' + UPPER(@qtrim) + N'%'
+      OR UPPER(ISNULL(pm.source_collection, N'')) LIKE N'%' + UPPER(@qtrim) + N'%'
+      OR UPPER(ISNULL(pm.style_model, N'')) LIKE N'%' + UPPER(@qtrim) + N'%'
+      OR UPPER(ISNULL(pm.source_model_number, N'')) LIKE N'%' + UPPER(@qtrim) + N'%'
+      OR UPPER(ISNULL(pm.source_brand, N'')) LIKE N'%' + UPPER(@qtrim) + N'%'
+      OR UPPER(ISNULL(pm.product_type, N'')) LIKE N'%' + UPPER(@qtrim) + N'%'
+      OR UPPER(ISNULL(mm.maker_name, N'')) LIKE N'%' + UPPER(@qtrim) + N'%'
+      OR UPPER(ISNULL(s.vendor_name, N'')) LIKE N'%' + UPPER(@qtrim) + N'%'
+    )
   ORDER BY pm.created_at DESC;
 END;
 GO
