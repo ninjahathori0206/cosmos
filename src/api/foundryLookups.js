@@ -50,7 +50,9 @@ const createSchema = Joi.object({
   lookup_key:    Joi.string().max(100).required(),
   lookup_label:  Joi.string().max(200).required(),
   description:   Joi.string().max(500).allow(null, '').optional(),
-  display_order: Joi.number().integer().min(0).optional()
+  display_order: Joi.number().integer().min(0).optional(),
+  is_active:     Joi.boolean().optional(),
+  __is_active:   Joi.boolean().optional()
 });
 
 const updateSchema = Joi.object({
