@@ -13,6 +13,99 @@ function closeSidebar() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Visual-only theme polish for Foundry prototype screens.
+  // Keeps existing behavior and structure intact.
+  (function injectFoundryPrototypeUiPolish() {
+    if (document.getElementById('fy-ui-polish')) return;
+    const style = document.createElement('style');
+    style.id = 'fy-ui-polish';
+    style.textContent = `
+      :root{
+        --bg:#f8fafc;
+        --bg2:#eef2ff;
+        --text:#0f172a;
+        --text2:#334155;
+        --text3:#64748b;
+        --border:#dbe4f0;
+        --acc:#4f46e5;
+        --acc2:#2563eb;
+        --accL:#e0e7ff;
+        --green:#166534;
+        --greenL:#dcfce7;
+        --red:#dc2626;
+        --redL:#fee2e2;
+        --gold:#b45309;
+        --goldL:#fef3c7;
+        --teal:#0f766e;
+        --tealL:#ccfbf1;
+      }
+      body{background:var(--bg)}
+      .sidebar{border-right:1px solid var(--border)}
+      .sidebar-nav .nav-item{
+        border:1px solid transparent;
+        border-radius:10px;
+        margin:2px 6px;
+        transition:background .15s ease,border-color .15s ease,color .15s ease;
+      }
+      .sidebar-nav .nav-item:hover{background:#f1f5f9;border-color:var(--border)}
+      .sidebar-nav .nav-item.active{background:var(--acc2);color:#fff;border-color:var(--acc2)}
+      .card{
+        border:1px solid var(--border) !important;
+        border-radius:12px !important;
+        box-shadow:0 4px 14px rgba(15,23,42,.04);
+      }
+      .ch{border-bottom:1px solid var(--border)}
+      .ct{letter-spacing:.01em}
+      .btn{
+        border-radius:9px !important;
+        border:1px solid transparent;
+        transition:background .15s ease,border-color .15s ease,transform .06s ease;
+      }
+      .btn:hover{transform:translateY(-1px)}
+      .btn.primary{background:var(--acc2) !important}
+      .btn.primary:hover{background:#1d4ed8 !important}
+      .btn.xs,.btn.sm{font-weight:600}
+      input,select,textarea{
+        border:1px solid var(--border) !important;
+        border-radius:9px !important;
+        background:#fff !important;
+        color:var(--text) !important;
+        transition:border-color .15s ease, box-shadow .15s ease;
+      }
+      input:focus,select:focus,textarea:focus{
+        border-color:var(--acc2) !important;
+        box-shadow:0 0 0 2px rgba(37,99,235,.14);
+        outline:none;
+      }
+      .tw table thead th{
+        background:#eef2ff;
+        color:#4338ca;
+      }
+      .tw table tbody tr:hover td{background:#f8fbff}
+      .b{border-radius:999px;padding:2px 8px}
+      .b-green{background:var(--greenL);color:var(--green)}
+      .b-red{background:var(--redL);color:var(--red)}
+      .b-gold{background:var(--goldL);color:var(--gold)}
+      .b-blue{background:#dbeafe;color:#1d4ed8}
+      .b-teal{background:var(--tealL);color:var(--teal)}
+      .digi-media-grid{display:grid;grid-template-columns:100px 1fr;gap:10px;align-items:start}
+      .digi-upload-tile{
+        min-height:92px;border:1.5px dashed #c7d2fe;border-radius:10px;
+        background:#f8faff;color:#4f46e5;display:flex;align-items:center;justify-content:center;
+        text-align:center;font-size:11px;font-weight:600;line-height:1.3;cursor:pointer;padding:8px;
+      }
+      .digi-media-strip{display:flex;gap:8px;flex-wrap:wrap}
+      .digi-media-thumb{
+        width:112px;height:84px;border-radius:8px;border:1px solid var(--border);
+        overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;position:relative;
+      }
+      .digi-media-thumb img,.digi-media-thumb video{width:100%;height:100%;object-fit:cover}
+      .digi-media-actions{display:flex;gap:6px;margin-top:6px}
+      .digi-media-actions .btn{padding:4px 8px !important;font-size:11px}
+    `;
+    document.head.appendChild(style);
+  })();
+
   const token = sessionStorage.getItem('cosmos_token');
   const userRaw = sessionStorage.getItem('cosmos_user');
 
@@ -2236,12 +2329,16 @@ document.addEventListener('DOMContentLoaded', () => {
       // Summary bar
       const totalColours = items.reduce((s, it) => s + (it.colours || []).length, 0);
       const doneColours  = skus.length;
+      const pendingColours = Math.max(totalColours - doneColours, 0);
+      const readyPct = totalColours ? Math.round((doneColours / totalColours) * 100) : 0;
       if (summaryBar) {
         summaryBar.innerHTML = `
           <div><div class="xs td2">Purchase</div><div class="fw6">#${h.header_id}</div></div>
           <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
           <div><div class="xs td2">Items</div><div class="fw6">${items.length}</div></div>
-          <div><div class="xs td2">SKUs Generated</div><div class="fw6" style="color:${doneColours===totalColours?'var(--green)':'var(--gold)'}">${doneColours} / ${totalColours}</div></div>`;
+          <div><div class="xs td2">SKUs Generated</div><div class="fw6" style="color:${doneColours===totalColours?'var(--green)':'var(--gold)'}">${doneColours} / ${totalColours}</div></div>
+          <div><div class="xs td2">Pending Colours</div><div class="fw6" style="color:${pendingColours ? 'var(--red)' : 'var(--green)'}">${pendingColours}</div></div>
+          <div><div class="xs td2">Ready %</div><div class="fw6" style="color:${readyPct === 100 ? 'var(--green)' : 'var(--acc2)'}">${readyPct}%</div></div>`;
       }
 
       // Progress label
@@ -2252,15 +2349,33 @@ document.addEventListener('DOMContentLoaded', () => {
       const pstepSub = document.getElementById('digi-pstep-sub');
       if (pstepSub) pstepSub.textContent = `${doneColours} of ${totalColours} SKUs done`;
 
-      // Build item sections with colour tabs
+      // Build item sections with colour tabs + top-level item selector
       if (!container) return;
       container.innerHTML = '';
+      if (items.length > 1) {
+        const itemTabs = items.map((item, idx) => {
+          const label = `${item.ew_collection || 'Item'} · ${item.style_model || `#${idx + 1}`}`;
+          return `<div class="tab${idx === 0 ? ' active' : ''}" data-item-tab="${item.item_id}" onclick="switchDigiItemTab(this, ${item.item_id})">${label}</div>`;
+        }).join('');
+        const tabsWrap = document.createElement('div');
+        tabsWrap.className = 'card mb4';
+        tabsWrap.innerHTML = `
+          <div class="section-lbl mb2">Items</div>
+          <div class="tabs" id="digi-item-tabs">${itemTabs}</div>`;
+        container.appendChild(tabsWrap);
+      }
 
       items.forEach((item, itemIdx) => {
         const colours = item.colours || [];
+        const doneInItem = colours.reduce((acc, c) => acc + (skus.some((sk) => sk.item_colour_id === c.colour_id) ? 1 : 0), 0);
+        const pendingInItem = Math.max(colours.length - doneInItem, 0);
         const section = document.createElement('div');
         section.className = 'card mb4';
         section.id = `digi-item-section-${item.item_id}`;
+        if (itemIdx !== 0) section.style.display = 'none';
+        section.dataset.pending = String(pendingInItem);
+        section.dataset.done = String(doneInItem);
+        section.dataset.search = `${item.ew_collection || ''} ${item.style_model || ''} ${item.brand_name || item.source_brand || ''}`.toLowerCase();
 
         let tabsHtml = '';
         let panelsHtml = '';
@@ -2274,22 +2389,21 @@ document.addEventListener('DOMContentLoaded', () => {
           // Colour-level media — prefer SKU level, fall back to colour record
           const colourImgUrl = (existingSku && existingSku.image_url) || col.image_url || null;
           const colourVidUrl = (existingSku && existingSku.video_url) || col.video_url || null;
-          const currentColourImg = colourImgUrl
-            ? `<div style="width:100%;max-width:200px;height:150px;border-radius:8px;border:1px solid var(--border);overflow:hidden;background:#f7f9fc;margin-bottom:8px">
-                 <img src="${colourImgUrl}" alt="${col.colour_name}"
-                   style="width:100%;height:100%;object-fit:contain;padding:4px"
-                   onerror="this.parentElement.innerHTML='<div style=\'width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:24px\'>📷</div>'">
-               </div>`
-            : `<div style="width:100%;max-width:200px;height:100px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;color:var(--text3);font-size:28px;background:#fafafa">📷
-               <div class="xs td2" style="font-size:11px;margin-top:4px">No photo yet</div></div>`;
-          const currentColourVid = colourVidUrl
-            ? `<div style="width:100%;border-radius:8px;overflow:hidden;margin-bottom:8px">
-                 <video src="${colourVidUrl}" controls style="width:100%;max-height:140px;display:block;border-radius:8px;border:1px solid var(--border)"></video>
-               </div>`
-            : `<div style="width:100%;max-width:200px;height:80px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;color:var(--text3);font-size:24px;background:#fafafa">🎬
-               <div class="xs td2" style="font-size:11px;margin-top:4px">No video yet</div></div>`;
+          const mediaThumbs = [];
+          if (colourImgUrl) {
+            mediaThumbs.push(`<div class="digi-media-thumb">
+              <img src="${colourImgUrl}" alt="${col.colour_name}"
+                onerror="this.parentElement.innerHTML='<span class=\\'xs td2\\'>Image failed</span>'">
+            </div>`);
+          }
+          if (colourVidUrl) {
+            mediaThumbs.push(`<div class="digi-media-thumb"><video src="${colourVidUrl}" controls></video></div>`);
+          }
+          const currentMedia = mediaThumbs.length
+            ? mediaThumbs.join('')
+            : `<div class="digi-media-thumb"><span class="xs td2">No media yet</span></div>`;
 
-          tabsHtml += `<div class="tab${colIdx === 0 ? ' active' : ''}" onclick="switchDigiTab(this, '${tabId}')">
+          tabsHtml += `<div class="tab${colIdx === 0 ? ' active' : ''}" data-digi-status="${isDone ? 'done' : 'pending'}" onclick="switchDigiTab(this, '${tabId}')">
             ${col.colour_name} ${isDone ? '<span class="b b-green xs">Done</span>' : '<span class="b b-gold xs">Pending</span>'}
           </div>`;
 
@@ -2318,47 +2432,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
               </div>
               <div class="col-stack">
-                <div class="card">
-                  <div class="ch"><div class="ct">Product Info</div></div>
-                  <div class="cb">
-                    <div class="fg2">
-                      <div><div class="xs td2">EW Collection</div><div class="fw6">${item.ew_collection || '—'}</div></div>
-                      <div><div class="xs td2">Style</div><div class="fw6">${item.style_model || '—'}</div></div>
-                      <div><div class="xs td2">Brand</div><div class="fw6">${item.brand_name || item.source_brand || '—'}</div></div>
-                      <div><div class="xs td2">Quantity</div><div class="fw6">${item.quantity} units</div></div>
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px">
+                  <div class="section-lbl mb3">${col.colour_name} — Media</div>
+                  <div class="digi-media-grid">
+                    <div class="digi-upload-tile" onclick="document.getElementById('${imgId}-file').click()">
+                      Click to upload<br>or drag and drop
+                    </div>
+                    <div>
+                      <div id="${imgId}-current" class="digi-media-strip">${currentMedia}</div>
+                      <div id="${imgId}-preview" class="digi-media-strip" style="display:none"></div>
+                      <div class="digi-media-actions">
+                        <button type="button" class="btn sm" onclick="document.getElementById('${imgId}-file').click()">Replace</button>
+                        <button type="button" class="btn sm" onclick="clearColourMediaSelection('${imgId}')">Remove</button>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
-                  <div class="section-lbl mb3">${col.colour_name} — Media</div>
-
-                  <!-- Photo -->
-                  <div class="xs fw6 mb1" style="color:var(--text2)">Photo</div>
-                  <div id="${imgId}-current">${currentColourImg}</div>
-                  <div id="${imgId}-preview" style="display:none;margin-bottom:8px"></div>
-                  <label style="display:inline-block;cursor:pointer" title="Choose photo for ${col.colour_name}">
-                    <input type="file" id="${imgId}-file" accept="image/jpeg,image/png,image/webp,image/gif"
-                      style="display:none" onchange="handleColourImagePreview('${imgId}')">
-                    <span class="btn sm" style="pointer-events:none">📷 Choose Photo</span>
-                  </label>
-                  <div class="xs td2 mt1 mb2">JPG, PNG, WebP · Max 5 MB</div>
+                  <input type="file" id="${imgId}-file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/avi,video/x-matroska"
+                    style="display:none" onchange="handleColourMediaPreview('${imgId}')">
+                  <div class="xs td2 mt1 mb2">Upload one file (Photo max 5 MB or Video max 100 MB)</div>
                   <div id="${imgId}-msg" style="display:none;font-size:12px;margin-bottom:6px"></div>
-                  <button class="btn sm" onclick="handleSaveColourMedia(${headerId},${col.colour_id},'${imgId}','image')">💾 Save Photo</button>
-
-                  <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
-
-                  <!-- Video -->
-                  <div class="xs fw6 mb1" style="color:var(--text2)">Product Video</div>
-                  <div id="${imgId}-vid-current">${currentColourVid}</div>
-                  <div id="${imgId}-vid-preview" style="display:none;margin-bottom:8px"></div>
-                  <label style="display:inline-block;cursor:pointer" title="Choose video for ${col.colour_name}">
-                    <input type="file" id="${imgId}-vid-file" accept="video/mp4,video/quicktime,video/webm,video/avi,video/x-matroska"
-                      style="display:none" onchange="handleColourVideoPreview('${imgId}')">
-                    <span class="btn sm" style="pointer-events:none">🎬 Choose Video</span>
-                  </label>
-                  <div class="xs td2 mt1 mb2">MP4, MOV, WebM · Max 100 MB</div>
-                  <div id="${imgId}-vid-msg" style="display:none;font-size:12px;margin-bottom:6px"></div>
-                  <button class="btn sm" onclick="handleSaveColourMedia(${headerId},${col.colour_id},'${imgId}','video')">💾 Save Video</button>
+                  <button id="${imgId}-save-btn" class="btn sm" onclick="handleSaveColourMedia(${headerId},${col.colour_id},'${imgId}')">💾 Save Media</button>
                 </div>
               </div>
             </div>
@@ -2400,7 +2493,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         section.innerHTML = `
           <div class="ch"><div class="ct">${item.ew_collection || ''} · ${item.style_model || ''}</div>
-            <span class="xs td2">${item.quantity} units · ${colours.length} colour${colours.length !== 1 ? 's' : ''}</span>
+            <span class="xs td2">${item.quantity} units · ${doneInItem}/${colours.length} done${pendingInItem ? ` · ${pendingInItem} pending` : ''}</span>
           </div>
           <div class="cb">
             <div class="tabs">${tabsHtml}</div>
@@ -2434,6 +2527,16 @@ document.addEventListener('DOMContentLoaded', () => {
     el.classList.add('active');
     const panel = document.getElementById(panelId);
     if (panel) panel.style.display = '';
+  };
+
+  // Top-level item selector for Digitisation (same UX intent as colour tabs)
+  window.switchDigiItemTab = function(el, itemId) {
+    const tabsWrap = document.getElementById('digi-item-tabs');
+    if (tabsWrap) tabsWrap.querySelectorAll('[data-item-tab]').forEach((t) => t.classList.remove('active'));
+    if (el) el.classList.add('active');
+    document.querySelectorAll('[id^="digi-item-section-"]').forEach((sec) => {
+      sec.style.display = sec.id === `digi-item-section-${itemId}` ? '' : 'none';
+    });
   };
 
   window.handleGenerateSKU = async function(headerId, itemId, colourId) {
@@ -2502,71 +2605,79 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // Preview handler for per-colour image selection
-  window.handleColourImagePreview = function(imgId) {
+  // Unified preview handler for per-colour media selection (image or video)
+  window.handleColourMediaPreview = function(imgId) {
     const fileEl    = document.getElementById(`${imgId}-file`);
     const previewEl = document.getElementById(`${imgId}-preview`);
     const msgEl     = document.getElementById(`${imgId}-msg`);
     if (!fileEl || !fileEl.files[0]) return;
     const file = fileEl.files[0];
-    if (file.size > 5 * 1024 * 1024) {
-      if (msgEl) { msgEl.textContent = '⚠️ File exceeds 5 MB limit.'; msgEl.style.color = 'var(--red)'; msgEl.style.display = ''; }
+    const isVideo = file.type.startsWith('video/');
+    if (!isVideo && !file.type.startsWith('image/')) {
+      if (msgEl) { msgEl.textContent = '⚠️ Unsupported file type.'; msgEl.style.color = 'var(--red)'; msgEl.style.display = ''; }
       fileEl.value = '';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    const maxBytes = isVideo ? (100 * 1024 * 1024) : (5 * 1024 * 1024);
+    if (file.size > maxBytes) {
+      if (msgEl) { msgEl.textContent = `⚠️ File exceeds ${isVideo ? '100 MB' : '5 MB'} limit.`; msgEl.style.color = 'var(--red)'; msgEl.style.display = ''; }
+      fileEl.value = '';
+      return;
+    }
+    if (isVideo) {
+      const objectUrl = URL.createObjectURL(file);
       if (previewEl) {
-        previewEl.innerHTML = `<img src="${e.target.result}"
-          style="max-width:140px;max-height:110px;border-radius:8px;border:1px solid var(--border);object-fit:cover;display:block;margin-bottom:4px">
-          <div class="xs td2" style="color:var(--gold)">⬆ Ready — click Save Photo</div>`;
+        previewEl.innerHTML = `<div class="digi-media-thumb"><video src="${objectUrl}" controls style="width:100%;height:100%;object-fit:cover"></video></div>
+          <div class="xs td2" style="color:var(--gold)">⬆ Ready — click Save Media</div>`;
         previewEl.style.display = '';
       }
-      if (msgEl) msgEl.style.display = 'none';
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Preview handler for per-colour video selection
-  window.handleColourVideoPreview = function(imgId) {
-    const fileEl    = document.getElementById(`${imgId}-vid-file`);
-    const previewEl = document.getElementById(`${imgId}-vid-preview`);
-    const msgEl     = document.getElementById(`${imgId}-vid-msg`);
-    if (!fileEl || !fileEl.files[0]) return;
-    const file = fileEl.files[0];
-    if (file.size > 100 * 1024 * 1024) {
-      if (msgEl) { msgEl.textContent = '⚠️ File exceeds 100 MB limit.'; msgEl.style.color = 'var(--red)'; msgEl.style.display = ''; }
-      fileEl.value = '';
-      return;
-    }
-    const objectUrl = URL.createObjectURL(file);
-    if (previewEl) {
-      previewEl.innerHTML = `<video src="${objectUrl}" controls
-        style="max-width:100%;max-height:120px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:4px"></video>
-        <div class="xs td2" style="color:var(--gold)">⬆ Ready — click Save Video</div>`;
-      previewEl.style.display = '';
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (previewEl) {
+          previewEl.innerHTML = `<div class="digi-media-thumb"><img src="${e.target.result}" style="object-fit:cover"></div>
+            <div class="xs td2" style="color:var(--gold)">⬆ Ready — click Save Media</div>`;
+          previewEl.style.display = '';
+        }
+      };
+      reader.readAsDataURL(file);
     }
     if (msgEl) msgEl.style.display = 'none';
   };
 
-  // Unified upload + persist for photo OR video per colour variant
+  // Backward-compatible wrappers
+  window.handleColourImagePreview = function(imgId) { window.handleColourMediaPreview(imgId); };
+  window.handleColourVideoPreview = function(imgId) { window.handleColourMediaPreview(imgId); };
+
+  window.clearColourMediaSelection = function(imgId) {
+    const fileEl = document.getElementById(`${imgId}-file`);
+    const previewEl = document.getElementById(`${imgId}-preview`);
+    const msgEl = document.getElementById(`${imgId}-msg`);
+    if (fileEl) fileEl.value = '';
+    if (previewEl) { previewEl.innerHTML = ''; previewEl.style.display = 'none'; }
+    if (msgEl) { msgEl.textContent = 'Selection removed.'; msgEl.style.color = 'var(--text3)'; msgEl.style.display = ''; }
+  };
+
+  // Unified upload + persist for selected media per colour variant
   window.handleSaveColourMedia = async function(headerId, colourId, imgId, mediaType) {
-    const isVideo   = mediaType === 'video';
-    const fileKey   = isVideo ? `${imgId}-vid-file`    : `${imgId}-file`;
-    const msgKey    = isVideo ? `${imgId}-vid-msg`      : `${imgId}-msg`;
-    const prevKey   = isVideo ? `${imgId}-vid-preview`  : `${imgId}-preview`;
-    const currKey   = isVideo ? `${imgId}-vid-current`  : `${imgId}-current`;
+    const fileEl = document.getElementById(`${imgId}-file`);
+    const selected = fileEl && fileEl.files && fileEl.files[0] ? fileEl.files[0] : null;
+    const inferredVideo = selected ? selected.type.startsWith('video/') : false;
+    const isVideo = typeof mediaType === 'string' ? mediaType === 'video' : inferredVideo;
+    const fileKey = `${imgId}-file`;
+    const msgKey  = `${imgId}-msg`;
+    const prevKey = `${imgId}-preview`;
+    const currKey = `${imgId}-current`;
     const uploadEp  = isVideo ? '/api/uploads/product-video' : '/api/uploads/product-image';
     const fieldName = isVideo ? 'video' : 'image';
-    const btnLabel  = isVideo ? '💾 Save Video' : '💾 Save Photo';
+    const btnLabel  = '💾 Save Media';
     const sizeLabel = isVideo ? '100 MB' : '5 MB';
 
-    const fileEl = document.getElementById(fileKey);
     const msgEl  = document.getElementById(msgKey);
-    const btn    = document.querySelector(`button[onclick*="handleSaveColourMedia(${headerId},${colourId},'${imgId}','${mediaType}')"]`);
+    const btn    = document.getElementById(`${imgId}-save-btn`) || document.querySelector(`button[onclick*="handleSaveColourMedia(${headerId},${colourId},'${imgId}'"]`);
 
     if (!fileEl || !fileEl.files[0]) {
-      if (msgEl) { msgEl.textContent = `⚠️ Please choose a ${mediaType} first.`; msgEl.style.color = 'var(--gold)'; msgEl.style.display = ''; }
+      if (msgEl) { msgEl.textContent = '⚠️ Please choose a media file first.'; msgEl.style.color = 'var(--gold)'; msgEl.style.display = ''; }
       return;
     }
     if (fileEl.files[0].size > (isVideo ? 100 : 5) * 1024 * 1024) {
@@ -2590,23 +2701,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const payload = isVideo ? { video_url: mediaUrl } : { image_url: mediaUrl };
       await apiPut(`/api/purchases/${headerId}/colours/${colourId}/media`, payload);
 
-      // 3. Refresh the displayed media slot
-      const currentEl = document.getElementById(currKey);
-      if (currentEl) {
-        currentEl.innerHTML = isVideo
-          ? `<div style="width:100%;border-radius:8px;overflow:hidden;margin-bottom:8px">
-               <video src="${mediaUrl}" controls style="width:100%;max-height:140px;display:block;border-radius:8px;border:1px solid var(--border)"></video>
-             </div>`
-          : `<div style="width:100%;max-width:200px;height:150px;border-radius:8px;border:1px solid var(--border);overflow:hidden;background:#f7f9fc;margin-bottom:8px">
-               <img src="${mediaUrl}" style="width:100%;height:100%;object-fit:contain;padding:4px">
-             </div>`;
-      }
+      // 3. Clear local selected preview
       const previewEl = document.getElementById(prevKey);
       if (previewEl) previewEl.style.display = 'none';
       fileEl.value = '';
 
-      if (msgEl) { msgEl.textContent = `✅ ${isVideo ? 'Video' : 'Photo'} saved!`; msgEl.style.color = 'var(--green)'; msgEl.style.display = ''; }
-      setTimeout(() => { if (msgEl) msgEl.style.display = 'none'; }, 3000);
+      if (msgEl) { msgEl.textContent = `✅ ${isVideo ? 'Video' : 'Photo'} saved! Refreshing…`; msgEl.style.color = 'var(--green)'; msgEl.style.display = ''; }
+      await openDigitisationPage(headerId);
     } catch (err) {
       if (msgEl) { msgEl.textContent = '❌ ' + err.message; msgEl.style.color = 'var(--red)'; msgEl.style.display = ''; }
     } finally {

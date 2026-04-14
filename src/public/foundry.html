@@ -5,34 +5,49 @@
   <title>Foundry — Cosmos ERP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
+    :root {
+      --bg: #020617;
+      --bg-panel: #0b1220;
+      --bg-panel-soft: #0f172a;
+      --line: #1e293b;
+      --line-strong: #334155;
+      --text: #e5e7eb;
+      --text-muted: #94a3b8;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --danger: #f97373;
+    }
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0;
-      background: #020617;
-      color: #e5e7eb;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
     }
     header {
       padding: 12px 20px;
-      background: #0f172a;
-      border-bottom: 1px solid #1f2937;
+      background: linear-gradient(180deg, #111a2c 0%, #0e1727 100%);
+      border-bottom: 1px solid var(--line);
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 24px;
+      position: sticky;
+      top: 0;
+      z-index: 5;
     }
     .logo {
       font-weight: 700;
       letter-spacing: 0.12em;
       font-size: 11px;
       text-transform: uppercase;
-      color: #9ca3af;
+      color: var(--text-muted);
     }
     .user {
       font-size: 12px;
-      color: #9ca3af;
+      color: var(--text-muted);
     }
     .nav {
       display: flex;
@@ -41,74 +56,94 @@
       font-size: 13px;
     }
     .nav a {
-      color: #e5e7eb;
+      color: var(--text);
       text-decoration: none;
-      padding: 6px 10px;
+      padding: 7px 12px;
       border-radius: 999px;
       background: transparent;
       border: 1px solid transparent;
+      transition: background-color .15s ease, border-color .15s ease;
     }
     .nav a.active {
-      background: #1d4ed8;
-      border-color: #1d4ed8;
+      background: var(--primary);
+      border-color: var(--primary);
+      box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.25) inset;
     }
     .nav a:hover {
-      background: #111827;
+      background: #131d31;
+      border-color: #1f2d49;
     }
     .logout-btn {
-      padding: 6px 10px;
+      padding: 7px 11px;
       border-radius: 999px;
-      border: 1px solid #374151;
+      border: 1px solid var(--line-strong);
       background: transparent;
-      color: #e5e7eb;
+      color: var(--text);
       font-size: 12px;
       cursor: pointer;
+      transition: border-color .15s ease, background-color .15s ease;
+    }
+    .logout-btn:hover {
+      background: #111827;
+      border-color: #475569;
     }
     main {
-      padding: 16px 20px 24px;
+      padding: 18px 20px 26px;
       display: grid;
       grid-template-columns: 1.4fr 2fr;
       gap: 20px;
     }
     h2 {
-      margin: 0 0 10px;
+      margin: 0 0 12px;
       font-size: 16px;
+      letter-spacing: .01em;
     }
     section {
-      background: #020617;
-      border-radius: 10px;
-      border: 1px solid #1f2937;
-      padding: 14px 16px 16px;
+      background: linear-gradient(180deg, var(--bg-panel-soft) 0%, var(--bg-panel) 100%);
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 15px 16px 16px;
+      box-shadow: 0 8px 22px rgba(2, 6, 23, 0.25);
     }
     label {
       display: block;
       font-size: 12px;
-      margin-bottom: 4px;
+      margin-bottom: 5px;
+      color: #cbd5e1;
     }
     input, select, textarea {
       width: 100%;
-      padding: 7px 9px;
+      padding: 8px 10px;
       border-radius: 8px;
-      border: 1px solid #374151;
-      background: #020617;
-      color: #e5e7eb;
+      border: 1px solid var(--line-strong);
+      background: #0b1526;
+      color: var(--text);
       font-size: 13px;
       box-sizing: border-box;
-      margin-bottom: 8px;
+      margin-bottom: 9px;
+      transition: border-color .15s ease, box-shadow .15s ease;
     }
     input:focus, select:focus, textarea:focus {
       outline: none;
-      border-color: #1d4ed8;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
     }
     button {
-      padding: 7px 11px;
+      padding: 8px 12px;
       border-radius: 8px;
       border: none;
-      background: #1d4ed8;
+      background: var(--primary);
       color: white;
       font-weight: 600;
       font-size: 13px;
       cursor: pointer;
+      transition: background-color .15s ease, transform .06s ease;
+    }
+    button:hover {
+      background: var(--primary-hover);
+    }
+    button:active {
+      transform: translateY(1px);
     }
     button:disabled {
       opacity: 0.5;
@@ -120,16 +155,19 @@
       font-size: 12px;
     }
     th, td {
-      border-bottom: 1px solid #111827;
+      border-bottom: 1px solid #162238;
       padding: 6px 8px;
       text-align: left;
     }
     th {
-      background: #020617;
-      color: #9ca3af;
+      background: #0b1526;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.08em;
       font-size: 10px;
+    }
+    tbody tr:hover td {
+      background: #0f1b2f;
     }
     .tag {
       display: inline-block;
@@ -148,9 +186,18 @@
     }
     .error {
       font-size: 11px;
-      color: #f97373;
+      color: var(--danger);
       min-height: 16px;
       margin-top: 4px;
+    }
+    @media (max-width: 980px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+      header {
+        flex-wrap: wrap;
+        gap: 10px;
+      }
     }
   </style>
   <script src="/js/foundry.js" defer></script>
