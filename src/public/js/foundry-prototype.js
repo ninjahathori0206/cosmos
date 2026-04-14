@@ -2872,32 +2872,209 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  let _brandingHistoryDetailCache = {};
+  let _brandingHistoryOpenRowId = null;
+
+  function isBrandingActiveStatus(status) {
+    return ['PENDING_BRANDING', 'BRANDING_DISPATCHED'].includes(status);
+  }
+
+  function isBrandingHistoryStatus(status) {
+    return ['PENDING_DIGITISATION', 'WAREHOUSE_READY'].includes(status);
+  }
+
+  function renderBrandingHistoryDetail(data) {
+    const h = (data && data.header) || {};
+    const items = Array.isArray(data && data.items) ? data.items : [];
+    const brandingItems = items.filter((it) => !!it.branding_required);
+    const totalQty = brandingItems.reduce((sum, it) => sum + Number(it.quantity || 0), 0);
+    const missingBrand = brandingItems.filter((it) => !(it.brand_name || '').trim()).length;
+    const missingCollection = brandingItems.filter((it) => !(it.ew_collection || '').trim()).length;
+
+    const itemRows = brandingItems.length
+      ? brandingItems.map((it, idx) => `<tr>
+          <td class="xs">${idx + 1}</td>
+          <td class="fw6">${_mcEsc(it.style_model || `Item #${it.item_id || idx + 1}`)}</td>
+          <td>${_mcEsc(it.brand_name || '—')}</td>
+          <td>${_mcEsc(it.ew_collection || '—')}</td>
+          <td class="tc">${Number(it.quantity || 0)}</td>
+          <td class="tc">${Array.isArray(it.colours) ? it.colours.length : 0}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="tc td2 p12">No branding-required items in this dispatch</td></tr>';
+
+    return `<div class="card" style="margin:8px 0 12px">
+      <div class="cb" style="padding:12px">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <div class="fw6">Dispatch #${h.header_id || '—'}</div>
+          <div>${stageBadge(h.pipeline_status)}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px">
+          <div class="card" style="padding:8px"><div class="xs td2">Dispatch Date</div><div class="fw6">${fmtDateTime(h.dispatched_at || h.updated_at || h.created_at)}</div></div>
+          <div class="card" style="padding:8px"><div class="xs td2">Receive Date</div><div class="fw6">${fmtDateTime(h.received_at)}</div></div>
+          <div class="card" style="padding:8px"><div class="xs td2">Branding Agent</div><div class="fw6">${_mcEsc(h.branding_agent_name || '—')}</div></div>
+          <div class="card" style="padding:8px"><div class="xs td2">Branding Items / Qty</div><div class="fw6">${brandingItems.length} / ${totalQty}</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+          <div class="card" style="padding:8px"><div class="xs td2">Dispatch Instructions</div><div>${_mcEsc(h.branding_instructions || '—')}</div></div>
+          <div class="card" style="padding:8px"><div class="xs td2">Bypass Reason</div><div>${_mcEsc(h.bypass_reason || '—')}</div></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <span class="b ${missingBrand ? 'b-red' : 'b-green'}">Missing Brand: ${missingBrand}</span>
+          <span class="b ${missingCollection ? 'b-red' : 'b-green'}">Missing Collection: ${missingCollection}</span>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:60px">#</th>
+                <th>Style / Model</th>
+                <th>Brand Name</th>
+                <th>Collection</th>
+                <th class="tc">Qty</th>
+                <th class="tc">Colours</th>
+              </tr>
+            </thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  window.toggleBrandingHistoryDetail = async function toggleBrandingHistoryDetail(headerId) {
+    const detailRow = document.getElementById(`branding-hist-row-${headerId}`);
+    const detailCell = document.getElementById(`branding-hist-cell-${headerId}`);
+    if (!detailRow || !detailCell) return;
+
+    const isOpen = detailRow.style.display !== 'none';
+    if (isOpen) {
+      detailRow.style.display = 'none';
+      _brandingHistoryOpenRowId = null;
+      return;
+    }
+
+    if (_brandingHistoryOpenRowId && _brandingHistoryOpenRowId !== headerId) {
+      const prev = document.getElementById(`branding-hist-row-${_brandingHistoryOpenRowId}`);
+      if (prev) prev.style.display = 'none';
+    }
+
+    _brandingHistoryOpenRowId = headerId;
+    detailRow.style.display = '';
+
+    if (_brandingHistoryDetailCache[headerId]) {
+      detailCell.innerHTML = renderBrandingHistoryDetail(_brandingHistoryDetailCache[headerId]);
+      return;
+    }
+
+    detailCell.innerHTML = '<div class="p12 td2">Loading dispatch details…</div>';
+    try {
+      const data = await apiGet(`/api/purchases/${headerId}`);
+      _brandingHistoryDetailCache[headerId] = data;
+      detailCell.innerHTML = renderBrandingHistoryDetail(data);
+    } catch (err) {
+      detailCell.innerHTML = `<div class="p12" style="color:var(--red)">Could not load dispatch details: ${_mcEsc(err.message || 'Unknown error')}</div>`;
+    }
+  };
+
   async function loadBrandingList() {
     showBrandingList();
     const tb = document.getElementById('branding-list-tbody');
     if (tb) tb.innerHTML = '<tr><td colspan="8" class="tc td2 p12">Loading…</td></tr>';
+    if (typeof window._brandingListMode === 'undefined') window._brandingListMode = 'pending';
+
+    function ensureBrandingHistoryToolbar() {
+      const section = document.getElementById('branding-list-section');
+      if (!section || document.getElementById('branding-list-toolbar')) return;
+      const toolbar = document.createElement('div');
+      toolbar.id = 'branding-list-toolbar';
+      toolbar.className = 'flex ic g2 mb3';
+      toolbar.style.cssText = 'justify-content:space-between;flex-wrap:wrap;gap:8px';
+      toolbar.innerHTML = `
+        <div class="flex ic g2">
+          <button type="button" class="btn sm" id="branding-tab-pending">Pending</button>
+          <button type="button" class="btn sm" id="branding-tab-history">History</button>
+          <button type="button" class="btn sm" id="branding-tab-all">All</button>
+        </div>
+        <div class="xs td2" id="branding-list-mode-note"></div>`;
+      const tableWrap = section.querySelector('.tw') || section.querySelector('table')?.parentElement || null;
+      if (tableWrap && tableWrap.parentNode) {
+        tableWrap.parentNode.insertBefore(toolbar, tableWrap);
+      } else {
+        section.prepend(toolbar);
+      }
+
+      const bind = (id, mode) => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.onclick = () => {
+          window._brandingListMode = mode;
+          loadBrandingList();
+        };
+      };
+      bind('branding-tab-pending', 'pending');
+      bind('branding-tab-history', 'history');
+      bind('branding-tab-all', 'all');
+    }
+
+    function updateBrandingToolbarState(totalPending, totalHistory, visibleRows) {
+      const tabPending = document.getElementById('branding-tab-pending');
+      const tabHistory = document.getElementById('branding-tab-history');
+      const tabAll = document.getElementById('branding-tab-all');
+      [tabPending, tabHistory, tabAll].forEach((b) => { if (b) b.classList.remove('primary'); });
+      if (window._brandingListMode === 'history' && tabHistory) tabHistory.classList.add('primary');
+      else if (window._brandingListMode === 'all' && tabAll) tabAll.classList.add('primary');
+      else if (tabPending) tabPending.classList.add('primary');
+      const note = document.getElementById('branding-list-mode-note');
+      if (note) note.textContent = `Pending: ${totalPending} · History: ${totalHistory} · Showing: ${visibleRows}`;
+    }
+
+    ensureBrandingHistoryToolbar();
     try {
       const all = await apiGet('/api/purchases');
-      const rows = all.filter((r) => ['PENDING_BRANDING','BRANDING_DISPATCHED'].includes(r.pipeline_status));
+      const pendingRows = all.filter((r) => ['PENDING_BRANDING','BRANDING_DISPATCHED'].includes(r.pipeline_status));
+      const historyRows = all.filter((r) => ['PENDING_DIGITISATION','WAREHOUSE_READY'].includes(r.pipeline_status));
+      let rows = pendingRows;
+      if (window._brandingListMode === 'history') rows = historyRows;
+      else if (window._brandingListMode === 'all') rows = [...pendingRows, ...historyRows];
       const cnt = document.getElementById('branding-list-count');
-      if (cnt) cnt.textContent = rows.length + ' pending';
+      if (cnt) {
+        const label = window._brandingListMode === 'history' ? 'history'
+          : (window._brandingListMode === 'all' ? 'total' : 'pending');
+        cnt.textContent = `${rows.length} ${label}`;
+      }
       // Update sidebar badge
       const brandBadge = document.getElementById('branding-nav-badge');
-      if (brandBadge) { brandBadge.textContent = rows.length; brandBadge.style.display = rows.length > 0 ? '' : 'none'; }
+      if (brandBadge) { brandBadge.textContent = pendingRows.length; brandBadge.style.display = pendingRows.length > 0 ? '' : 'none'; }
+      updateBrandingToolbarState(pendingRows.length, historyRows.length, rows.length);
       if (!rows.length) {
-        if (tb) tb.innerHTML = '<tr><td colspan="8" class="tc td2 p12">No bills pending branding</td></tr>';
+        if (tb) tb.innerHTML = `<tr><td colspan="8" class="tc td2 p12">${window._brandingListMode === 'history' ? 'No branding history found' : 'No bills pending branding'}</td></tr>`;
         return;
       }
-      if (tb) tb.innerHTML = rows.map((r) => `<tr>
-        <td class="mono xs fw6">#${r.header_id}</td>
-        <td class="fw6">${r.supplier_name || '—'}</td>
-        <td class="mono xs td2">${r.bill_ref || r.bill_number || '—'}</td>
-        <td class="tc">${r.item_count || 0}</td>
-        <td class="tc">${r.total_qty || 0}</td>
-        <td>${stageBadge(r.pipeline_status)}</td>
-        <td class="xs td2">${fmtDate(r.created_at)}</td>
-        <td><button class="btn xs primary" onclick="openBrandingPage(${r.header_id})">View / Manage</button></td>
-      </tr>`).join('');
+      if (tb) tb.innerHTML = rows.map((r) => {
+        const active = isBrandingActiveStatus(r.pipeline_status);
+        const history = isBrandingHistoryStatus(r.pipeline_status);
+        const actionHtml = active
+          ? `<button class="btn xs primary" onclick="openBrandingPage(${r.header_id})">View / Manage</button>`
+          : (history
+            ? `<button class="btn xs primary" onclick="toggleBrandingHistoryDetail(${r.header_id}); return false;">View Details</button>`
+            : `<button class="btn xs" onclick="openPurchaseView(${r.header_id})">View</button>`);
+        const rowClick = history ? ` onclick="toggleBrandingHistoryDetail(${r.header_id})"` : '';
+        const rowStyle = history ? ' style="cursor:pointer"' : '';
+        const detailRow = history ? `
+          <tr id="branding-hist-row-${r.header_id}" style="display:none;background:#f8fbff">
+            <td colspan="8" id="branding-hist-cell-${r.header_id}" class="p0"></td>
+          </tr>` : '';
+        return `<tr${rowClick}${rowStyle}>
+          <td class="mono xs fw6">#${r.header_id}</td>
+          <td class="fw6">${r.supplier_name || '—'}</td>
+          <td class="mono xs td2">${r.bill_ref || r.bill_number || '—'}</td>
+          <td class="tc">${r.item_count || 0}</td>
+          <td class="tc">${r.total_qty || 0}</td>
+          <td>${stageBadge(r.pipeline_status)}</td>
+          <td class="xs td2">${fmtDate(r.created_at)}</td>
+          <td>${actionHtml}</td>
+        </tr>${detailRow}`;
+      }).join('');
     } catch (err) {
       if (tb) tb.innerHTML = `<tr><td colspan="8" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`;
     }
