@@ -102,6 +102,28 @@ document.addEventListener('DOMContentLoaded', () => {
       .digi-media-thumb img,.digi-media-thumb video{width:100%;height:100%;object-fit:cover}
       .digi-media-actions{display:flex;gap:6px;margin-top:6px}
       .digi-media-actions .btn{padding:4px 8px !important;font-size:11px}
+      .ml-toolbar{
+        display:flex;gap:10px;align-items:center;justify-content:space-between;
+        padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;margin-bottom:10px;
+      }
+      .ml-toolbar .ml-search{max-width:320px;width:100%}
+      .ml-count{font-size:12px;color:var(--text3);white-space:nowrap}
+      .ml-rows{display:flex;flex-direction:column;gap:8px}
+      .ml-row-dense{
+        display:flex;align-items:center;justify-content:space-between;gap:12px;
+        border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#fff;cursor:pointer;
+      }
+      .ml-row-dense:hover{background:#f8fbff}
+      .ml-pri{font-size:13px;font-weight:600;color:var(--text)}
+      .ml-sec{font-size:12px;color:var(--text3);margin-top:2px}
+      .ml-meta-grid{
+        display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;
+      }
+      .ml-meta-card{border:1px solid var(--border);border-radius:10px;padding:9px 10px;background:#fff}
+      .ml-meta-k{font-size:11px;color:var(--text3);margin-bottom:3px}
+      .ml-meta-v{font-size:13px;font-weight:600;color:var(--text)}
+      .ml-lines-table th{background:#eef2ff;color:#4338ca}
+      .ml-lines-table td,.ml-lines-table th{padding:7px 8px;border-bottom:1px solid var(--border)}
     `;
     document.head.appendChild(style);
   })();
@@ -5102,6 +5124,8 @@ ${initScript}
   // MOVEMENT LIST  (Store Connect › Movement List)
   // ─────────────────────────────────────────────────────────────────────────
   let _mlFilter = '';
+  let _mlSearch = '';
+  let _mlDocsCache = [];
 
   window.setMlFilter = function (status, btn) {
     _mlFilter = status;
@@ -5109,6 +5133,64 @@ ${initScript}
     if (btn) btn.classList.add('active');
     loadMovementList();
   };
+
+  function mlStatusBadge(s) {
+    const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
+    return map[s] || `<span class="badge">${s}</span>`;
+  }
+
+  function filterMovementDocs(docs, query) {
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter((d) => {
+      const hay = [
+        d.doc_id,
+        d.doc_type,
+        d.source_request_id,
+        d.store_name,
+        d.to_store_id,
+        d.status
+      ].join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  function renderMovementList(docs) {
+    const wrap = document.getElementById('ml-list');
+    if (!wrap) return;
+
+    const filtered = filterMovementDocs(docs, _mlSearch);
+    const toolbarHtml = `
+      <div class="ml-toolbar">
+        <input id="ml-search" class="ml-search" placeholder="Search doc id, store, type, status..." value="${trEsc(_mlSearch)}">
+        <div class="ml-count">${filtered.length} document${filtered.length !== 1 ? 's' : ''}</div>
+      </div>`;
+
+    if (!docs.length) {
+      wrap.innerHTML = `${toolbarHtml}<div class="empty-state"><div class="ei">📋</div><div class="et">No transfer documents found</div><div class="es">Dispatch a Goods Transfer to see records here.</div></div>`;
+    } else if (!filtered.length) {
+      wrap.innerHTML = `${toolbarHtml}<div class="empty-state"><div class="ei">🔎</div><div class="et">No matching movement documents</div><div class="es">Try a different search term.</div></div>`;
+    } else {
+      wrap.innerHTML = `${toolbarHtml}<div class="ml-rows" id="ml-rows">
+        ${filtered.map(d => `
+          <div class="ml-row-dense" onclick="expandMlDoc(${d.doc_id})">
+            <div style="flex:1;min-width:0">
+              <div class="ml-pri">Doc #${d.doc_id} — ${d.doc_type === 'DIRECT' ? 'Goods Transfer' : 'From Request #' + d.source_request_id}</div>
+              <div class="ml-sec">To ${trEsc(d.store_name || 'Store #' + d.to_store_id)} · ${fmtDateTime(d.dispatched_at)}</div>
+            </div>
+            <div>${mlStatusBadge(d.status)}</div>
+          </div>`).join('')}
+      </div>`;
+    }
+
+    const searchEl = document.getElementById('ml-search');
+    if (searchEl) {
+      searchEl.addEventListener('input', (e) => {
+        _mlSearch = e.target.value || '';
+        renderMovementList(_mlDocsCache);
+      });
+    }
+  }
 
   window.closeMlDetail = function () {
     const d = document.getElementById('ml-detail');
@@ -5124,22 +5206,8 @@ ${initScript}
     try {
       const qs   = _mlFilter ? `?status=${_mlFilter}` : '';
       const docs = await apiGet('/api/stock-transfer-docs' + qs);
-      if (!docs.length) {
-        wrap.innerHTML = '<div class="empty-state"><div class="ei">📋</div><div class="et">No transfer documents found</div><div class="es">Dispatch a Goods Transfer to see records here.</div></div>';
-        return;
-      }
-      const statusBadge = s => {
-        const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
-        return map[s] || `<span class="badge">${s}</span>`;
-      };
-      wrap.innerHTML = docs.map(d => `
-        <div class="list-row" onclick="expandMlDoc(${d.doc_id})" style="cursor:pointer">
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;margin-bottom:2px">Doc #${d.doc_id} — ${d.doc_type === 'DIRECT' ? '📦 Goods Transfer' : '📬 From Request #' + d.source_request_id}</div>
-            <div style="font-size:12px;color:var(--text3)">→ ${d.store_name || 'Store #' + d.to_store_id} &nbsp;·&nbsp; ${fmtDateTime(d.dispatched_at)}</div>
-          </div>
-          <div>${statusBadge(d.status)}</div>
-        </div>`).join('');
+      _mlDocsCache = docs || [];
+      renderMovementList(_mlDocsCache);
     } catch (e) {
       if (errEl) { errEl.textContent = 'Failed to load: ' + e.message; errEl.style.display = ''; }
       if (wrap)  wrap.innerHTML = '';
@@ -5158,10 +5226,6 @@ ${initScript}
     try {
       const doc = await apiGet(`/api/stock-transfer-docs/${docId}`);
       const fmtDt = dt => dt ? fmtDateTime(dt) : '—';
-      const statusBadge = s => {
-        const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
-        return map[s] || `<span class="badge">${s}</span>`;
-      };
       const lines = (doc.lines || []).map(l => `
         <tr>
           <td>${l.sku_code || l.sku_id}</td>
@@ -5170,21 +5234,21 @@ ${initScript}
           <td style="text-align:center">${l.qty_received != null ? l.qty_received : '—'}</td>
         </tr>`).join('');
       bodyEl.innerHTML = `
-        <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px">
-          <div><span style="color:var(--text3);font-size:12px">Type</span><br>${doc.doc_type === 'DIRECT' ? 'Goods Transfer (Direct)' : 'From Request #' + doc.source_request_id}</div>
-          <div><span style="color:var(--text3);font-size:12px">Status</span><br>${statusBadge(doc.status)}</div>
-          <div><span style="color:var(--text3);font-size:12px">To Store</span><br>${doc.store_name || 'Store #' + doc.to_store_id}</div>
-          <div><span style="color:var(--text3);font-size:12px">Dispatched</span><br>${fmtDt(doc.dispatched_at)}</div>
-          ${doc.accepted_at ? `<div><span style="color:var(--text3);font-size:12px">Accepted</span><br>${fmtDt(doc.accepted_at)}</div>` : ''}
-          ${doc.stocked_at  ? `<div><span style="color:var(--text3);font-size:12px">Stocked</span><br>${fmtDt(doc.stocked_at)}</div>` : ''}
+        <div class="ml-meta-grid">
+          <div class="ml-meta-card"><div class="ml-meta-k">Type</div><div class="ml-meta-v">${doc.doc_type === 'DIRECT' ? 'Goods Transfer (Direct)' : 'From Request #' + doc.source_request_id}</div></div>
+          <div class="ml-meta-card"><div class="ml-meta-k">Status</div><div class="ml-meta-v">${mlStatusBadge(doc.status)}</div></div>
+          <div class="ml-meta-card"><div class="ml-meta-k">To Store</div><div class="ml-meta-v">${doc.store_name || 'Store #' + doc.to_store_id}</div></div>
+          <div class="ml-meta-card"><div class="ml-meta-k">Dispatched</div><div class="ml-meta-v">${fmtDt(doc.dispatched_at)}</div></div>
+          ${doc.accepted_at ? `<div class="ml-meta-card"><div class="ml-meta-k">Accepted</div><div class="ml-meta-v">${fmtDt(doc.accepted_at)}</div></div>` : ''}
+          ${doc.stocked_at  ? `<div class="ml-meta-card"><div class="ml-meta-k">Stocked</div><div class="ml-meta-v">${fmtDt(doc.stocked_at)}</div></div>` : ''}
         </div>
         ${doc.notes ? `<div style="margin-bottom:14px;color:var(--text2);font-size:13px">📝 ${doc.notes}</div>` : ''}
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="border-bottom:1px solid var(--border)">
-            <th style="text-align:left;padding:6px 8px;color:var(--text3)">SKU</th>
-            <th style="text-align:left;padding:6px 8px;color:var(--text3)">Description</th>
-            <th style="text-align:center;padding:6px 8px;color:var(--text3)">Sent</th>
-            <th style="text-align:center;padding:6px 8px;color:var(--text3)">Received</th>
+        <table class="ml-lines-table" style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr>
+            <th style="text-align:left">SKU</th>
+            <th style="text-align:left">Description</th>
+            <th style="text-align:center">Sent</th>
+            <th style="text-align:center">Received</th>
           </tr></thead>
           <tbody>${lines}</tbody>
         </table>`;

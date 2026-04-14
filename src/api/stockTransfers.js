@@ -10,6 +10,10 @@ const foundryStockView = [
   requireModule('foundry'),
   requirePermission('foundry.stock.view')
 ];
+const foundryTransferHistoryView = [
+  requireModule('foundry'),
+  requirePermission('foundry.stock.view', 'foundry.transfers.view', 'storepilot.transfers.view')
+];
 const foundryStockCreate = [
   requireModule('foundry'),
   requirePermission('foundry.stock.create')
@@ -111,7 +115,7 @@ router.get('/lookup', ...foundryStockView, async (req, res, next) => {
 // ── GET /api/stock-transfers/history ─────────────────────────────────────────
 // Returns recent HQ-to-store movements.
 // Query params: to_store_id (optional), top_n (default 100)
-router.get('/history', ...foundryStockView, async (req, res, next) => {
+router.get('/history', ...foundryTransferHistoryView, async (req, res, next) => {
   try {
     const { to_store_id, top_n } = req.query;
     const result = await executeStoredProcedure('sp_StockTransfer_History', {
