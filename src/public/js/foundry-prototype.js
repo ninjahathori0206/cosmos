@@ -124,6 +124,33 @@ document.addEventListener('DOMContentLoaded', () => {
       .ml-meta-v{font-size:13px;font-weight:600;color:var(--text)}
       .ml-lines-table th{background:#eef2ff;color:#4338ca}
       .ml-lines-table td,.ml-lines-table th{padding:7px 8px;border-bottom:1px solid var(--border)}
+      .br-summary{
+        display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px
+      }
+      .br-kpi{
+        border:1px solid var(--border);border-radius:10px;padding:8px 10px;background:#fff;min-width:140px
+      }
+      .br-kpi .k{font-size:11px;color:var(--text3);margin-bottom:2px}
+      .br-kpi .v{font-size:13px;font-weight:700;color:var(--text)}
+      .br-item-card{
+        border:1px solid var(--border);border-radius:10px;background:#fff;padding:10px 12px;margin-bottom:10px
+      }
+      .br-item-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px}
+      .br-item-title{font-size:13px;font-weight:700;color:var(--text)}
+      .br-item-sub{font-size:12px;color:var(--text3)}
+      .br-pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--border);background:var(--bg)}
+      .br-meta-strip{
+        display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px
+      }
+      .br-meta-cell{
+        border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:6px 8px;display:flex;gap:6px;align-items:center
+      }
+      .br-meta-cell .k{font-size:11px;color:var(--text3)}
+      .br-meta-cell .v{font-size:12px;font-weight:600;color:var(--text)}
+      .br-table th{background:#f1f5ff;color:#4f46e5;font-size:10px}
+      .br-table td{padding:6px 8px}
+      #branding-receipt-verify-wrap .tw table th{background:#f1f5ff;color:#4f46e5}
+      #branding-receipt-verify-wrap .tw table td,#branding-receipt-verify-wrap .tw table th{padding:6px 8px}
     `;
     document.head.appendChild(style);
   })();
@@ -304,6 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let _homeBrands        = [];
   let _allBrandingAgents = [];
   let _itemCount         = 0;
+  window._brandingReceiptDraftByHeader = {};
   window._currentHeaderId = null;
   window._purchaseActiveItemIdx = 1;
   window._purchaseLineModes = {};
@@ -2002,6 +2030,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // Build all-items colour table
       let allItemsHtml = '';
       const isPendingDispatch = h.pipeline_status === 'PENDING_BRANDING';
+      const totalItemQty = items.reduce((s, it) => s + Number(it.quantity || 0), 0);
+      const totalColourRows = items.reduce((s, it) => s + ((it.colours || []).length), 0);
+      const brandingRequiredCount = items.filter((it) => !!it.branding_required).length;
       items.forEach((it) => {
         const needsBranding = it.branding_required;
         // Brand selector — shown for items needing branding in PENDING_BRANDING state;
@@ -2056,27 +2087,45 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>`;
         }
 
+        const totalColourQty = (it.colours || []).reduce((s, c) => s + Number(c.quantity || 0), 0);
         allItemsHtml += `
-          <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
-            <div class="fw6 mb1">${it.ew_collection || ''} · ${it.style_model || ''} <span class="xs td2">(${it.quantity} units)</span></div>
+          <div class="br-item-card">
+            <div class="br-item-head">
+              <div>
+                <div class="br-item-title">${it.ew_collection || '—'} · ${it.style_model || '—'}</div>
+                <div class="br-item-sub">Item #${it.item_id || '—'} · ${it.quantity || 0} units</div>
+              </div>
+              <div class="br-pill">${needsBranding ? 'Branding Required' : 'No Branding Needed'}</div>
+            </div>
             ${brandRowHtml}
-            <table style="width:100%;font-size:13px">
+            <div class="br-meta-strip">
+              <div class="br-meta-cell"><span class="k">Colour Lines</span><span class="v">${(it.colours || []).length}</span></div>
+              <div class="br-meta-cell"><span class="k">Total Colour Qty</span><span class="v">${totalColourQty}</span></div>
+            </div>
+            <table class="br-table" style="width:100%;font-size:13px">
               <thead><tr>
-                <th style="padding:6px 8px;font-size:11px;text-transform:uppercase">Colour</th>
-                <th style="padding:6px 8px;font-size:11px;text-transform:uppercase">Code</th>
-                <th style="padding:6px 8px;font-size:11px;text-transform:uppercase;text-align:center">Quantity</th>
+                <th>Colour</th>
+                <th>Code</th>
+                <th style="text-align:center">Quantity</th>
               </tr></thead>
               <tbody>
                 ${(it.colours || []).map((c) => `<tr>
-                  <td style="padding:7px 8px">${c.colour_name}</td>
-                  <td class="mono xs" style="padding:7px 8px">${c.colour_code}</td>
-                  <td style="padding:7px 8px;text-align:center">${c.quantity}</td>
+                  <td>${c.colour_name}</td>
+                  <td class="mono xs">${c.colour_code}</td>
+                  <td style="text-align:center">${c.quantity}</td>
                 </tr>`).join('')}
               </tbody>
             </table>
           </div>`;
       });
-      document.getElementById('branding-items-area').innerHTML = allItemsHtml || '<div class="empty">No items</div>';
+      document.getElementById('branding-items-area').innerHTML = `
+        <div class="br-summary">
+          <div class="br-kpi"><div class="k">Items</div><div class="v">${items.length}</div></div>
+          <div class="br-kpi"><div class="k">Branding Required</div><div class="v">${brandingRequiredCount}</div></div>
+          <div class="br-kpi"><div class="k">Total Qty</div><div class="v">${totalItemQty}</div></div>
+          <div class="br-kpi"><div class="k">Colour Lines</div><div class="v">${totalColourRows}</div></div>
+        </div>
+        ${allItemsHtml || '<div class="empty">No items</div>'}`;
       // Store for print function
       window._currentBrandingData = { header: h, items };
 
@@ -2115,6 +2164,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show assigned branding agent name
         const agentInfo = document.getElementById('branding-dispatched-agent');
         if (agentInfo) agentInfo.textContent = h.branding_agent_name || '—';
+        ensureBrandingReceiptVerificationUI(headerId, items);
       }
 
     } catch (err) { console.error('openBrandingPage:', err); }
@@ -2176,6 +2226,12 @@ document.addEventListener('DOMContentLoaded', () => {
   window.handleBrandingReceive = async function() {
     const headerId = window._currentHeaderId;
     if (!headerId) return;
+    const verify = computeBrandingReceiptMismatches(headerId);
+    renderBrandingReceiptSummary(headerId);
+    if (verify.itemMismatches.length || verify.colourMismatches.length) {
+      alert(`Cannot confirm receipt. Quantity mismatches found (Item: ${verify.itemMismatches.length}, Colour: ${verify.colourMismatches.length}).`);
+      return;
+    }
     const btn = document.getElementById('branding-receive-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Confirming…'; }
     try {
@@ -2184,6 +2240,127 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) { alert(err.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Confirm Receipt → Digitisation'; } }
   };
+
+  function ensureBrandingReceiptDraft(headerId, items) {
+    if (!headerId) return null;
+    const key = String(headerId);
+    let draft = window._brandingReceiptDraftByHeader[key];
+    if (!draft) draft = { items: {}, colours: {} };
+    (items || []).forEach((it, itemIdx) => {
+      const itemId = Number(it.item_id || itemIdx + 1);
+      const itemKey = String(itemId);
+      const expectedItemQty = Number(it.quantity || 0);
+      if (!draft.items[itemKey]) {
+        draft.items[itemKey] = {
+          item_id: itemId,
+          label: it.style_model || `Item #${itemId}`,
+          expected_qty: expectedItemQty,
+          received_qty: expectedItemQty
+        };
+      }
+      (it.colours || []).forEach((c, cIdx) => {
+        const colourId = Number(c.colour_id || cIdx + 1);
+        const colourKey = `${itemKey}:${colourId}`;
+        const expectedColourQty = Number(c.quantity || 0);
+        if (!draft.colours[colourKey]) {
+          draft.colours[colourKey] = {
+            item_id: itemId,
+            colour_id: colourId,
+            item_label: it.style_model || `Item #${itemId}`,
+            colour_label: c.colour_name || `Colour #${colourId}`,
+            expected_qty: expectedColourQty,
+            received_qty: expectedColourQty
+          };
+        }
+      });
+    });
+    window._brandingReceiptDraftByHeader[key] = draft;
+    return draft;
+  }
+
+  function computeBrandingReceiptMismatches(headerId) {
+    const draft = window._brandingReceiptDraftByHeader[String(headerId)] || { items: {}, colours: {} };
+    const itemMismatches = Object.values(draft.items).filter((x) => Number(x.received_qty || 0) !== Number(x.expected_qty || 0));
+    const colourMismatches = Object.values(draft.colours).filter((x) => Number(x.received_qty || 0) !== Number(x.expected_qty || 0));
+    return { itemMismatches, colourMismatches };
+  }
+
+  function renderBrandingReceiptSummary(headerId) {
+    const wrap = document.getElementById('branding-receipt-verify-summary');
+    if (!wrap) return;
+    const { itemMismatches, colourMismatches } = computeBrandingReceiptMismatches(headerId);
+    const total = itemMismatches.length + colourMismatches.length;
+    if (!total) {
+      wrap.innerHTML = `<div class="b b-green">All quantities matched. Confirm Receipt is enabled.</div>`;
+      return;
+    }
+    const itemList = itemMismatches.slice(0, 6).map((m) => `<li>Item ${_mcEsc(m.label || m.item_id)}: expected ${m.expected_qty}, received ${m.received_qty}</li>`).join('');
+    const colourList = colourMismatches.slice(0, 6).map((m) => `<li>${_mcEsc(m.item_label || ('Item #' + m.item_id))} · ${_mcEsc(m.colour_label)}: expected ${m.expected_qty}, received ${m.received_qty}</li>`).join('');
+    wrap.innerHTML = `
+      <div class="b b-red">Mismatches found: ${total} (Items: ${itemMismatches.length}, Colours: ${colourMismatches.length})</div>
+      <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><div class="xs td2" style="margin-bottom:4px">Item-level mismatches</div><ul style="margin:0;padding-left:16px">${itemList || '<li class="td2">None</li>'}</ul></div>
+        <div><div class="xs td2" style="margin-bottom:4px">Colour-level mismatches</div><ul style="margin:0;padding-left:16px">${colourList || '<li class="td2">None</li>'}</ul></div>
+      </div>`;
+  }
+
+  window.handleBrandingReceiptQtyInput = function(headerId, type, key, rawValue) {
+    const draft = window._brandingReceiptDraftByHeader[String(headerId)];
+    if (!draft) return;
+    const valNum = Math.max(0, Number(rawValue || 0));
+    if (type === 'item' && draft.items[key]) draft.items[key].received_qty = valNum;
+    if (type === 'colour' && draft.colours[key]) draft.colours[key].received_qty = valNum;
+    renderBrandingReceiptSummary(headerId);
+  };
+
+  function ensureBrandingReceiptVerificationUI(headerId, items) {
+    const receiptCard = document.getElementById('branding-receipt-card');
+    if (!receiptCard) return;
+    const draft = ensureBrandingReceiptDraft(headerId, items);
+    if (!draft) return;
+    let host = document.getElementById('branding-receipt-verify-wrap');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'branding-receipt-verify-wrap';
+      host.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid var(--border)';
+      receiptCard.appendChild(host);
+    }
+
+    const itemRows = Object.entries(draft.items).map(([k, it]) => `
+      <tr>
+        <td style="padding:6px 8px">${_mcEsc(it.label)}</td>
+        <td class="tc" style="padding:6px 8px">${Number(it.expected_qty || 0)}</td>
+        <td style="padding:6px 8px"><input type="number" min="0" step="1" value="${Number(it.received_qty || 0)}" oninput="handleBrandingReceiptQtyInput(${headerId}, 'item', '${k}', this.value)" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px"></td>
+      </tr>`).join('');
+
+    const colourRows = Object.entries(draft.colours).map(([k, c]) => `
+      <tr>
+        <td style="padding:6px 8px">${_mcEsc(c.item_label)}</td>
+        <td style="padding:6px 8px">${_mcEsc(c.colour_label)}</td>
+        <td class="tc" style="padding:6px 8px">${Number(c.expected_qty || 0)}</td>
+        <td style="padding:6px 8px"><input type="number" min="0" step="1" value="${Number(c.received_qty || 0)}" oninput="handleBrandingReceiptQtyInput(${headerId}, 'colour', '${k}', this.value)" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px"></td>
+      </tr>`).join('');
+
+    host.innerHTML = `
+      <div class="fw6" style="margin-bottom:8px">Receipt Quantity Verification</div>
+      <div class="xs td2" style="margin-bottom:8px">Confirm Receipt is blocked until item-wise and colour-wise received quantities match expected quantities.</div>
+      <div id="branding-receipt-verify-summary" style="margin-bottom:10px"></div>
+      <div style="display:grid;grid-template-columns:1fr;gap:10px">
+        <div class="tw">
+          <table>
+            <thead><tr><th>Item</th><th class="tc">Expected Qty</th><th>Received Qty</th></tr></thead>
+            <tbody>${itemRows || '<tr><td colspan="3" class="tc td2 p12">No items</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Item</th><th>Colour</th><th class="tc">Expected Qty</th><th>Received Qty</th></tr></thead>
+            <tbody>${colourRows || '<tr><td colspan="4" class="tc td2 p12">No colours</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>`;
+    renderBrandingReceiptSummary(headerId);
+  }
 
   window.showBrandingBypassModal = function() {
     const bypassCard = document.getElementById('branding-bypass-card');

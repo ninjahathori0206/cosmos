@@ -236,23 +236,23 @@
   </div>
   <nav class="sidebar-nav">
     <div class="nav-group">Overview</div>
-    <div class="nav-item active" onclick="spNav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
+    <div class="nav-item active" data-storepilot-menu="dashboard" data-storepilot-permission="storepilot.dashboard.view" onclick="spNav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
 
     <div class="nav-group">Stock View</div>
-    <div class="nav-item" onclick="spNav('stock-browse',this)"><span class="ic">🗂️</span> Browse Catalogue</div>
-    <div class="nav-item" onclick="spNav('store-catalogue',this)"><span class="ic">🏪</span> Store Catalogue</div>
+    <div class="nav-item" data-storepilot-menu="stock-browse" data-storepilot-permission="storepilot.catalogue.view,foundry.catalogue.view" onclick="spNav('stock-browse',this)"><span class="ic">🗂️</span> Browse Catalogue</div>
+    <div class="nav-item" data-storepilot-menu="store-catalogue" data-storepilot-permission="storepilot.catalogue.view,foundry.catalogue.view" onclick="spNav('store-catalogue',this)"><span class="ic">🏪</span> Store Catalogue</div>
 
     <div class="nav-group">Foundry Connect</div>
-    <div class="nav-item" onclick="spNav('transfers-create',this)"><span class="ic">📦</span> Request Goods</div>
-    <div class="nav-item" onclick="spNav('incoming-transfers',this)">
+    <div class="nav-item" data-storepilot-menu="transfers-create" data-storepilot-permission="storepilot.transfers.create,foundry.transfers.create" onclick="spNav('transfers-create',this)"><span class="ic">📦</span> Request Goods</div>
+    <div class="nav-item" data-storepilot-menu="incoming-transfers" data-storepilot-permission="storepilot.transfers.view,foundry.transfers.view" onclick="spNav('incoming-transfers',this)">
       <span class="ic">📥</span> Incoming Goods
       <span id="sp-inc-badge" class="b b-orange" style="font-size:10px;margin-left:auto;display:none"></span>
     </div>
-    <div class="nav-item" onclick="spNav('movement-list',this)"><span class="ic">📋</span> Movement List</div>
-    <div class="nav-item" onclick="spNav('transfers-history',this)" style="display:none"><span class="ic">📋</span> My Requests</div>
+    <div class="nav-item" data-storepilot-menu="movement-list" data-storepilot-permission="storepilot.transfers.view,foundry.transfers.view" onclick="spNav('movement-list',this)"><span class="ic">📋</span> Movement List</div>
+    <div class="nav-item" data-storepilot-menu="transfers-history" data-storepilot-permission="storepilot.transfers.view,foundry.transfers.view" onclick="spNav('transfers-history',this)" style="display:none"><span class="ic">📋</span> My Requests</div>
 
     <div class="nav-group">Reports</div>
-    <div class="nav-item" onclick="spNav('reports',this)"><span class="ic">📊</span> Store Reports</div>
+    <div class="nav-item" data-storepilot-menu="reports" data-storepilot-permission="storepilot.reports.view" onclick="spNav('reports',this)"><span class="ic">📊</span> Store Reports</div>
 
     <div id="sp-switch-module-wrap">
       <div class="nav-group">Switch Module</div>

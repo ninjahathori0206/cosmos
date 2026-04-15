@@ -1,15 +1,15 @@
 const express = require('express');
 const sql = require('mssql');
 const { executeStoredProcedure, getPool } = require('../config/db');
-const { requireModule, requirePermission } = require('../middleware/authorize');
+const { requireModule, requirePermission, requireAnyModule } = require('../middleware/authorize');
 
 const router = express.Router();
 
 // GET /api/skus — SKU catalogue with optional filters
 router.get(
   '/',
-  requireModule('foundry'),
-  requirePermission('foundry.catalogue.view'),
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('storepilot.catalogue.view', 'foundry.catalogue.view'),
   async (req, res, next) => {
     try {
       const { q, brand_id, product_type, status } = req.query;

@@ -2,17 +2,25 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
-const { requireModule, requirePermission } = require('../middleware/authorize');
+const { requireModule, requirePermission, requireAnyModule } = require('../middleware/authorize');
 
 const router = express.Router();
 
-const foundryStockView = [
-  requireModule('foundry'),
-  requirePermission('foundry.stock.view')
+const stockReadAccess = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('storepilot.catalogue.view', 'foundry.catalogue.view', 'foundry.stock.view')
 ];
-const foundryTransferHistoryView = [
-  requireModule('foundry'),
-  requirePermission('foundry.stock.view', 'foundry.transfers.view', 'storepilot.transfers.view')
+const transferCreateStockAccess = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('storepilot.transfers.create', 'foundry.transfers.create', 'storepilot.catalogue.view', 'foundry.catalogue.view', 'foundry.stock.view')
+];
+const transferHistoryViewAccess = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('storepilot.transfers.view', 'foundry.transfers.view', 'foundry.stock.view')
+];
+const storeCatalogueViewAccess = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('storepilot.catalogue.view', 'foundry.catalogue.view', 'foundry.stock.view')
 ];
 const foundryStockCreate = [
   requireModule('foundry'),
@@ -37,7 +45,7 @@ const transferSchema = Joi.object({
 
 // ── GET /api/stock-transfers/distribution/search?q=&limit= ───────────────────
 // Full-text search across live SKUs for the Stock Distribution picker.
-router.get('/distribution/search', ...foundryStockView, async (req, res, next) => {
+router.get('/distribution/search', ...stockReadAccess, async (req, res, next) => {
   try {
     const { q, limit } = req.query;
     const maxLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
@@ -53,7 +61,7 @@ router.get('/distribution/search', ...foundryStockView, async (req, res, next) =
 
 // ── GET /api/stock-transfers/distribution/:sku_id ─────────────────────────────
 // Returns SKU header + per-location stock breakdown for one SKU.
-router.get('/distribution/:sku_id', ...foundryStockView, async (req, res, next) => {
+router.get('/distribution/:sku_id', ...stockReadAccess, async (req, res, next) => {
   try {
     const skuId = Number(req.params.sku_id);
     if (!Number.isFinite(skuId) || skuId <= 0) {
@@ -76,7 +84,7 @@ router.get('/distribution/:sku_id', ...foundryStockView, async (req, res, next) 
 // ── GET /api/stock-transfers/available ────────────────────────────────────────
 // Returns warehouse-stock SKUs that can be transferred.
 // Query params: q (search), brand_id, product_type
-router.get('/available', ...foundryStockView, async (req, res, next) => {
+router.get('/available', ...transferCreateStockAccess, async (req, res, next) => {
   try {
     const { q, brand_id, product_type } = req.query;
     const result = await executeStoredProcedure('sp_StockTransfer_ListAvailable', {
@@ -93,7 +101,7 @@ router.get('/available', ...foundryStockView, async (req, res, next) => {
 // ── GET /api/stock-transfers/lookup ──────────────────────────────────────────
 // Resolves a scanned QR / barcode / SKU code to a transferable SKU row.
 // Query param: q (sku_code or barcode)
-router.get('/lookup', ...foundryStockView, async (req, res, next) => {
+router.get('/lookup', ...stockReadAccess, async (req, res, next) => {
   try {
     const { q } = req.query;
     if (!q || !q.trim()) {
@@ -115,7 +123,7 @@ router.get('/lookup', ...foundryStockView, async (req, res, next) => {
 // ── GET /api/stock-transfers/history ─────────────────────────────────────────
 // Returns recent HQ-to-store movements.
 // Query params: to_store_id (optional), top_n (default 100)
-router.get('/history', ...foundryTransferHistoryView, async (req, res, next) => {
+router.get('/history', ...transferHistoryViewAccess, async (req, res, next) => {
   try {
     const { to_store_id, top_n } = req.query;
     const result = await executeStoredProcedure('sp_StockTransfer_History', {
@@ -131,7 +139,7 @@ router.get('/history', ...foundryTransferHistoryView, async (req, res, next) => 
 // ── GET /api/stock-transfers/store-catalogue ─────────────────────────────────
 // Returns SKUs with qty > 0 at a specific store, for the StorePilot Store Catalogue page.
 // Query params: store_id (required), q (optional search)
-router.get('/store-catalogue', async (req, res, next) => {
+router.get('/store-catalogue', ...storeCatalogueViewAccess, async (req, res, next) => {
   try {
     const { store_id, q } = req.query;
     const storeId = Number(store_id);

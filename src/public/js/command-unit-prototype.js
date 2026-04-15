@@ -665,6 +665,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ]},
     { group: 'StorePilot (Showroom)', perms: [
       { key: 'storepilot.dashboard.view',           label: 'Dashboard — View' },
+      { key: 'storepilot.catalogue.view',           label: 'Catalogue — View' },
       { key: 'storepilot.floor.view',               label: 'Floor & Displays — View' },
       { key: 'storepilot.floor.create',             label: 'Floor & Displays — Create' },
       { key: 'storepilot.floor.edit',               label: 'Floor & Displays — Edit' },
@@ -677,6 +678,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { key: 'storepilot.handoffs.create',          label: 'POS Handoffs — Create' },
       { key: 'storepilot.reports.view',             label: 'Reports — View' },
       { key: 'storepilot.transfers.view',           label: 'Transfers — View' },
+      { key: 'storepilot.transfers.create',         label: 'Transfers — Create' },
       { key: 'storepilot.transfers.edit',           label: 'Transfers — Accept / Stock' },
     ]},
     { group: 'Store OS (POS)', perms: [

@@ -79,6 +79,19 @@ let _scDebounce      = null;
 let _dashTimer       = null;
 let _tcDebounce      = null;
 let _transferCart    = [];
+let _spPermissions   = [];
+let _spNoAccess      = false;
+
+const SP_MENU_PERM_MAP = {
+  dashboard: ['storepilot.dashboard.view'],
+  'stock-browse': ['storepilot.catalogue.view', 'foundry.catalogue.view'],
+  'store-catalogue': ['storepilot.catalogue.view', 'foundry.catalogue.view'],
+  'transfers-create': ['storepilot.transfers.create', 'foundry.transfers.create'],
+  'incoming-transfers': ['storepilot.transfers.view', 'foundry.transfers.view'],
+  'movement-list': ['storepilot.transfers.view', 'foundry.transfers.view'],
+  'transfers-history': ['storepilot.transfers.view', 'foundry.transfers.view'],
+  reports: ['storepilot.reports.view']
+};
 
 // ── Breadcrumb map ─────────────────────────────────────────────────────────────
 const spBcMap = {
@@ -94,6 +107,11 @@ const spBcMap = {
 
 // ── Navigation ─────────────────────────────────────────────────────────────────
 window.spNav = function (id, el) {
+  if (_spNoAccess) return;
+  if (!canAccessSpView(id)) {
+    renderNoAccessState('menu_access_denied');
+    return;
+  }
   document.querySelectorAll('.main .page').forEach((p) => p.classList.remove('active'));
   document.querySelectorAll('.sidebar-nav .nav-item').forEach((n) => n.classList.remove('active'));
   const page = document.getElementById('page-' + id);
@@ -116,9 +134,69 @@ function loadStorePilotPage(id) {
   if (id === 'movement-list')      loadSpMovementList();
 }
 
+function hasAnyPermission(list) {
+  if (!Array.isArray(list) || !list.length) return true;
+  return list.some((perm) => _spPermissions.includes(perm));
+}
+
+function canAccessSpView(id) {
+  const perms = SP_MENU_PERM_MAP[id] || [];
+  return hasAnyPermission(perms);
+}
+
+function applyStorepilotPermissionNav() {
+  const nav = document.querySelector('.sidebar-nav');
+  if (!nav) return [];
+
+  const visibleMenuIds = [];
+  nav.querySelectorAll('.nav-item[data-storepilot-menu]').forEach((item) => {
+    const menuId = item.getAttribute('data-storepilot-menu');
+    const perms = (item.getAttribute('data-storepilot-permission') || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const allowed = hasAnyPermission(perms);
+    item.style.display = allowed ? '' : 'none';
+    if (allowed && menuId) visibleMenuIds.push(menuId);
+  });
+
+  nav.querySelectorAll('.nav-group').forEach((group) => {
+    const items = [];
+    let sibling = group.nextElementSibling;
+    while (sibling && !sibling.classList.contains('nav-group') && sibling.id !== 'sp-switch-module-wrap') {
+      if (sibling.classList.contains('nav-item') && sibling.hasAttribute('data-storepilot-menu')) items.push(sibling);
+      sibling = sibling.nextElementSibling;
+    }
+    const hasVisible = items.some((el) => el.style.display !== 'none');
+    group.style.display = hasVisible ? '' : 'none';
+  });
+
+  return visibleMenuIds;
+}
+
+function renderNoAccessState(reasonKey) {
+  const main = document.querySelector('.main');
+  const topbar = document.querySelector('.topbar');
+  if (topbar) topbar.style.display = 'none';
+  document.querySelectorAll('.main .page').forEach((p) => p.classList.remove('active'));
+  if (!main) return;
+  let box = document.getElementById('sp-no-access');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'sp-no-access';
+    box.style.cssText = 'padding:40px 24px';
+    main.appendChild(box);
+  }
+  const msg = reasonKey === 'menu_access_denied'
+    ? 'You do not have permission for this menu.'
+    : 'You do not have any StorePilot menu permissions.';
+  box.innerHTML = `<div class="card"><div class="cb"><div style="font-weight:700;color:var(--text1);margin-bottom:6px">No access</div><div style="color:var(--text2)">${msg} Please contact administrator.</div></div></div>`;
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadUser();
+  if (_spNoAccess) return;
   loadDashboard();
   startDashRefresh();
 });
@@ -154,10 +232,24 @@ function loadUser() {
     if (av) av.textContent = initials;
     if (nm) nm.textContent = name;
     if (rl) rl.textContent = ROLE_LABELS[u.role] || u.role || 'Store Pilot';
+    _spPermissions = Array.isArray(u.permissions) ? u.permissions : [];
     _storeId   = u.store_id   || null;
     _storeName = u.store_name || null;
     if (typeof window.applyCosmosModuleSwitchNav === 'function') {
       window.applyCosmosModuleSwitchNav('sp-switch-module-wrap', u);
+    }
+    const visibleMenuIds = applyStorepilotPermissionNav();
+    if (!visibleMenuIds.length) {
+      _spNoAccess = true;
+      renderNoAccessState('no_menu_permissions');
+      return;
+    }
+    const activeItem = document.querySelector('.sidebar-nav .nav-item.active[data-storepilot-menu]');
+    const activeMenuId = activeItem ? activeItem.getAttribute('data-storepilot-menu') : null;
+    if (!activeMenuId || !visibleMenuIds.includes(activeMenuId)) {
+      const firstId = visibleMenuIds[0];
+      const firstEl = document.querySelector(`.sidebar-nav .nav-item[data-storepilot-menu="${firstId}"]`);
+      if (firstId) window.spNav(firstId, firstEl || null);
     }
   } catch (_) {}
 }

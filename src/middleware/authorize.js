@@ -8,6 +8,12 @@ function normRole(role) {
   return String(role || '').toLowerCase();
 }
 
+function normModuleKey(moduleKey) {
+  return String(moduleKey || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
 /** Case-insensitive role_key match for fixed sets (JWT role may not be lowercased). */
 function isOneOfRoles(role, roleSet) {
   const r = normRole(role);
@@ -26,11 +32,14 @@ function legacyModuleAllowAll(modules) {
 
 function hasModuleAccess(req, moduleKey) {
   if (isSuperAdmin(req)) return true;
-  const mk = String(moduleKey || '').toLowerCase();
+  const mk = normModuleKey(moduleKey);
   if (!mk) return false;
   const mods = req.user && req.user.modules;
   if (legacyModuleAllowAll(mods)) return true;
-  return mods[mk] === true;
+  if (mods[mk] === true) return true;
+  // Tolerate format variants like store_pilot / store-pilot / StorePilot
+  // by normalizing both requested key and JWT module keys.
+  return Object.keys(mods || {}).some((k) => normModuleKey(k) === mk && mods[k] === true);
 }
 
 function getPermissions(req) {
@@ -86,7 +95,7 @@ function requireAllPermissions(...permissionKeys) {
 }
 
 function requireAnyModule(moduleKeys) {
-  const keys = (moduleKeys || []).map((k) => String(k).toLowerCase()).filter(Boolean);
+  const keys = (moduleKeys || []).map((k) => normModuleKey(k)).filter(Boolean);
   return (req, res, next) => {
     if (!keys.length) return next();
     if (isSuperAdmin(req)) return next();

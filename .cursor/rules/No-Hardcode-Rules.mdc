@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+Do not hardcode user names, role names, store IDs, menu labels, or route paths in logic branches.    Drive visibility and authorization from permission keys only.    Reuse existing middleware/helpers (requirePermission, module guards, existing role-permission tables).    Keep compatibility by allowing existing Foundry keys only as fallback where migration is not yet complete.    All menu/route mappings should be declared once in config-style constants, then consumed by UI + guards.
