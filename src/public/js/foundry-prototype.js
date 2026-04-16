@@ -5898,8 +5898,12 @@ ${initScript}
     panEl.style.display = '';
     titleEl.textContent = `Transfer Document #${docId}`;
     bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>';
-    // Use non-smooth scrolling for Chrome/mobile stability (sticky topbar behavior)
-    panEl.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+    // Chrome/mobile has an issue where `position: sticky` headers can "disappear"
+    // when `scrollIntoView()` runs inside an overflow scrolling container.
+    // Safari works fine, so skip auto-scroll for Chrome and let the user scroll naturally.
+    const ua = navigator.userAgent || ''
+    const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+    if (!isChromeLike) panEl.scrollIntoView({ behavior: 'auto', block: 'nearest' });
     try {
       const doc = await apiGet(`/api/stock-transfer-docs/${docId}`);
       const fmtDt = dt => dt ? fmtDateTime(dt) : '—';
