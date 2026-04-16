@@ -1298,12 +1298,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Recalculate totals for the new card
     calcItemBill(newIdx);
     validateColourQty(newIdx);
-    // Scroll the new card into view
+    // On mobile Chrome, auto-scrolling via scrollIntoView can trigger sticky-header bugs.
+    // Skip scrolling on mobile; on desktop we can still bring it into view.
     const newCard = document.getElementById(`item-card-${newIdx}`);
     if (newCard) {
-      const ua = navigator.userAgent || ''
-      const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
-      newCard.scrollIntoView({ behavior: isChromeLike ? 'auto' : 'smooth', block: 'start' })
+      const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
+      if (!isMobile) {
+        const ua = navigator.userAgent || ''
+        const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+        // Bring the new card into view on desktop.
+        newCard.scrollIntoView({ behavior: isChromeLike ? 'auto' : 'smooth', block: 'start' })
+      }
     }
   };
 
@@ -1362,9 +1367,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const newCard = document.getElementById(`item-card-${newIdx}`);
     if (newCard) {
-      const ua = navigator.userAgent || ''
-      const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
-      newCard.scrollIntoView({ behavior: isChromeLike ? 'auto' : 'smooth', block: 'start' })
+      const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
+      if (!isMobile) {
+        const ua = navigator.userAgent || ''
+        const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+        newCard.scrollIntoView({ behavior: isChromeLike ? 'auto' : 'smooth', block: 'start' })
+      }
     }
   };
 
