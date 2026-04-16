@@ -1,9 +1,45 @@
 const express = require('express');
 const sql = require('mssql');
 const { executeStoredProcedure, getPool } = require('../config/db');
-const { requireModule, requirePermission, requireAnyModule } = require('../middleware/authorize');
+const {
+  requireModule,
+  requirePermission,
+  requireAnyModule,
+  hasPermission,
+  isSuperAdmin
+} = require('../middleware/authorize');
 
 const router = express.Router();
+
+const WAREHOUSE_STOCK_VISIBILITY_PERMISSIONS = [
+  'foundry.stock.view',
+  'foundry.transfers.create',
+  'foundry.transfers.view'
+];
+
+const STOCK_QUANTITY_KEYS = ['quantity', 'stock_qty', 'warehouse_qty', 'total_qty'];
+
+function canViewExactNetworkStock(req) {
+  if (isSuperAdmin(req)) return true;
+  return WAREHOUSE_STOCK_VISIBILITY_PERMISSIONS.some((key) => hasPermission(req, key));
+}
+
+function toAvailabilityLabel(qty) {
+  return Number(qty) > 0 ? 'AVAILABLE' : 'NOT_AVAILABLE';
+}
+
+function maskSkuStockQuantities(row) {
+  const availabilityQty = STOCK_QUANTITY_KEYS
+    .map((key) => Number(row[key]) || 0)
+    .find((value) => value > 0) || 0;
+  const maskedRow = { ...row };
+  STOCK_QUANTITY_KEYS.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(maskedRow, key)) maskedRow[key] = null;
+  });
+  maskedRow.availability = toAvailabilityLabel(availabilityQty);
+  maskedRow.is_available = availabilityQty > 0;
+  return maskedRow;
+}
 
 // GET /api/skus — SKU catalogue with optional filters
 router.get(
@@ -19,7 +55,11 @@ router.get(
         product_type: { type: sql.VarChar(50),  value: product_type || null },
         status:       { type: sql.VarChar(30),  value: status || 'LIVE' }
       });
-      res.json({ success: true, data: result.recordset });
+      const rows = result.recordset || [];
+      if (canViewExactNetworkStock(req)) {
+        return res.json({ success: true, data: rows });
+      }
+      return res.json({ success: true, data: rows.map(maskSkuStockQuantities) });
     } catch (err) { next(err); }
   }
 );

@@ -2,7 +2,13 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
-const { requireModule, requirePermission, requireAnyModule } = require('../middleware/authorize');
+const {
+  requireModule,
+  requirePermission,
+  requireAnyModule,
+  hasPermission,
+  isSuperAdmin
+} = require('../middleware/authorize');
 
 const router = express.Router();
 
@@ -26,6 +32,65 @@ const foundryStockCreate = [
   requireModule('foundry'),
   requirePermission('foundry.stock.create')
 ];
+
+const WAREHOUSE_STOCK_VISIBILITY_PERMISSIONS = [
+  'foundry.stock.view',
+  'foundry.transfers.create',
+  'foundry.transfers.view'
+];
+
+function canViewExactNetworkStock(req) {
+  if (isSuperAdmin(req)) return true;
+  return WAREHOUSE_STOCK_VISIBILITY_PERMISSIONS.some((key) => hasPermission(req, key));
+}
+
+function toAvailabilityLabel(qty) {
+  return Number(qty) > 0 ? 'AVAILABLE' : 'NOT_AVAILABLE';
+}
+
+function maskStockSearchRow(row) {
+  const totalQty = Number(row.total_stock) || 0;
+  return {
+    ...row,
+    total_stock: null,
+    availability: toAvailabilityLabel(totalQty),
+    is_available: totalQty > 0
+  };
+}
+
+function maskStockDistributionPayload(payload) {
+  const sku = payload.sku || {};
+  const locations = Array.isArray(payload.locations) ? payload.locations : [];
+  const totalQty = Number(sku.total_stock) || 0;
+  const maskedSku = {
+    ...sku,
+    total_stock: null,
+    availability: toAvailabilityLabel(totalQty),
+    is_available: totalQty > 0
+  };
+  const maskedLocations = locations.map((location) => {
+    const qty = Number(location.qty) || 0;
+    return {
+      ...location,
+      qty: null,
+      availability: toAvailabilityLabel(qty),
+      is_available: qty > 0
+    };
+  });
+  return { sku: maskedSku, locations: maskedLocations };
+}
+
+function maskAvailableStockRows(rows) {
+  return (rows || []).map((row) => {
+    const warehouseQty = Number(row.warehouse_qty) || 0;
+    return {
+      ...row,
+      warehouse_qty: null,
+      availability: toAvailabilityLabel(warehouseQty),
+      is_available: warehouseQty > 0
+    };
+  });
+}
 
 // ── Validation ─────────────────────────────────────────────────────────────────
 
@@ -53,7 +118,11 @@ router.get('/distribution/search', ...stockReadAccess, async (req, res, next) =>
       q:     { type: sql.VarChar(200), value: q || null },
       top_n: { type: sql.Int,          value: maxLimit }
     });
-    return res.json({ success: true, data: result.recordset || [] });
+    const rows = result.recordset || [];
+    if (canViewExactNetworkStock(req)) {
+      return res.json({ success: true, data: rows });
+    }
+    return res.json({ success: true, data: rows.map(maskStockSearchRow) });
   } catch (err) {
     return next(err);
   }
@@ -75,7 +144,13 @@ router.get('/distribution/:sku_id', ...stockReadAccess, async (req, res, next) =
       return res.status(404).json({ success: false, message: 'SKU not found' });
     }
     const locations = (result.recordsets && result.recordsets[1]) || [];
-    return res.json({ success: true, data: { sku, locations } });
+    if (canViewExactNetworkStock(req)) {
+      return res.json({ success: true, data: { sku, locations } });
+    }
+    return res.json({
+      success: true,
+      data: maskStockDistributionPayload({ sku, locations })
+    });
   } catch (err) {
     return next(err);
   }
@@ -92,7 +167,11 @@ router.get('/available', ...transferCreateStockAccess, async (req, res, next) =>
       brand_id:     { type: sql.Int,          value: brand_id     ? Number(brand_id) : null },
       product_type: { type: sql.VarChar(50),  value: product_type || null }
     });
-    return res.json({ success: true, data: result.recordset || [] });
+    const rows = result.recordset || [];
+    if (canViewExactNetworkStock(req)) {
+      return res.json({ success: true, data: rows });
+    }
+    return res.json({ success: true, data: maskAvailableStockRows(rows) });
   } catch (err) {
     return next(err);
   }

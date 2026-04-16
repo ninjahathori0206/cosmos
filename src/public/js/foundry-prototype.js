@@ -3900,6 +3900,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // ─────────────────────────────────────────────────────────────────────────
   let _svSearchTimer = null;
 
+  function svIsAvailable(row, qtyKeys) {
+    if (!row || typeof row !== 'object') return false;
+    if (typeof row.is_available === 'boolean') return row.is_available;
+    const availability = String(row.availability || '').toUpperCase();
+    if (availability === 'AVAILABLE') return true;
+    if (availability === 'NOT_AVAILABLE') return false;
+    const keys = Array.isArray(qtyKeys) ? qtyKeys : [];
+    return keys.some((key) => Number(row[key]) > 0);
+  }
+
   function svShow(id) {
     ['sv-empty-state','sv-distribution-panel','sv-error-state'].forEach((x) => {
       const el = document.getElementById(x);
@@ -3966,11 +3976,17 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     el.innerHTML = rows.map((r) => {
-      const stockBadge = r.total_stock > 0
-        ? `<span style="background:var(--greenL);color:var(--green);padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">${r.total_stock} in stock</span>`
-        : `<span style="background:var(--redL);color:var(--red);padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">Out of stock</span>`;
-      const whBadge = r.warehouse_qty > 0
-        ? `<span style="background:var(--accL);color:var(--acc);padding:1px 6px;border-radius:10px;font-size:10.5px;margin-left:4px">${r.warehouse_qty} WH</span>`
+      const hasTotalQty = r.total_stock != null;
+      const available = svIsAvailable(r, ['total_stock', 'warehouse_qty', 'stock_qty']);
+      const stockBadge = hasTotalQty
+        ? (r.total_stock > 0
+          ? `<span style="background:var(--greenL);color:var(--green);padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">${r.total_stock} in stock</span>`
+          : `<span style="background:var(--redL);color:var(--red);padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">Out of stock</span>`)
+        : `<span style="background:${available ? 'var(--greenL)' : 'var(--redL)'};color:${available ? 'var(--green)' : 'var(--red)'};padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">${available ? 'Available' : 'Out of stock'}</span>`;
+      const whBadge = r.warehouse_qty != null
+        ? (r.warehouse_qty > 0
+          ? `<span style="background:var(--accL);color:var(--acc);padding:1px 6px;border-radius:10px;font-size:10.5px;margin-left:4px">${r.warehouse_qty} WH</span>`
+          : '')
         : '';
       return `<div onclick="svSelectSku(${r.sku_id})"
           style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s"
@@ -4008,6 +4024,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function svRenderDistribution(data) {
     const sku = data.sku;
     const locs = data.locations || [];
+    const hasTotalQty = sku && sku.total_stock != null;
+    const skuAvailable = svIsAvailable(sku, ['total_stock', 'warehouse_qty', 'store_qty']);
+    const locQtyList = locs
+      .map((l) => Number(l.qty))
+      .filter((n) => Number.isFinite(n));
 
     // SKU header
     const headerEl = document.getElementById('sv-sku-header');
@@ -4020,8 +4041,8 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div style="text-align:right">
           <div class="xs td2">Total Stock</div>
-          <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:28px;font-weight:800;color:var(--acc)">${sku.total_stock}</div>
-          <div class="xs td2">units across all locations</div>
+          <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:28px;font-weight:800;color:var(--acc)">${hasTotalQty ? sku.total_stock : (skuAvailable ? 'Available' : 'Not available')}</div>
+          <div class="xs td2">${hasTotalQty ? 'units across all locations' : 'network stock status'}</div>
         </div>`;
     }
 
@@ -4031,7 +4052,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!locs.length) {
         locsEl.innerHTML = '<div style="padding:16px;color:var(--text3);font-size:13px;text-align:center">No stock in any location</div>';
       } else {
-        const maxQty = Math.max(...locs.map((l) => l.qty), 1);
+        const maxQty = locQtyList.length ? Math.max(...locQtyList, 1) : 1;
         const pct = (q) => Math.round((q / maxQty) * 100);
         const locIcon = (t) => t === 'WAREHOUSE' ? '🏭' : t === 'STORE' || t === 'AT_STORE' ? '🏪' : t === 'IN_TRANSIT' ? '🚚' : '📦';
         const locBadge = (t) => {
@@ -4041,7 +4062,8 @@ document.addEventListener('DOMContentLoaded', () => {
           return `<span class="b b-teal xs">${t}</span>`;
         };
 
-        const barPct = pct(locs.reduce((s,l) => s + l.qty, 0) > 0 ? locs[0].qty : 0);
+        const firstLocQty = Number(locs[0] && locs[0].qty);
+        const barPct = Number.isFinite(firstLocQty) ? pct(firstLocQty) : 0;
         locsEl.innerHTML = `
           <div class="pbar-wrap" style="height:8px;margin-bottom:20px">
             <div class="pbar" style="width:${barPct}%;background:linear-gradient(90deg,var(--acc),var(--teal))"></div>
@@ -4054,7 +4076,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="loc-sub">Updated: ${l.last_updated || '—'}</div>
               </div>
               <div style="text-align:right">
-                <div class="loc-units">${l.qty}</div>
+                <div class="loc-units">${l.qty != null ? l.qty : (svIsAvailable(l, ['qty']) ? 'Available' : 'N/A')}</div>
                 ${locBadge(l.location_type)}
               </div>
               ${l.location_type === 'WAREHOUSE' ? `<button class="btn xs primary" onclick="nav('stock-transfer',document.querySelector('.nav-item[onclick*=\\'stock-transfer\\']'))">Transfer</button>` : ''}
@@ -4066,24 +4088,38 @@ document.addEventListener('DOMContentLoaded', () => {
     const accEl = document.getElementById('sv-accounting');
     if (accEl) {
       // Prefer explicit fields from RS1 header (warehouse_qty / store_qty added in SP update)
-      const wqty = sku.warehouse_qty != null ? Number(sku.warehouse_qty) : locs.filter(l => l.location_type === 'WAREHOUSE').reduce((s, l) => s + l.qty, 0);
-      const sqty = sku.store_qty    != null ? Number(sku.store_qty)    : locs.filter(l => l.location_type === 'STORE' || l.location_type === 'AT_STORE').reduce((s, l) => s + l.qty, 0);
-      const tqty = sku.store_qty    != null ? (wqty + sqty)            : sku.total_stock;
+      const hasWarehouseQty = sku.warehouse_qty != null;
+      const hasStoreQty = sku.store_qty != null;
+      const hasAnyBreakdownQty = hasWarehouseQty || hasStoreQty;
+      const wqty = hasWarehouseQty
+        ? Number(sku.warehouse_qty)
+        : locs
+          .filter((l) => l.location_type === 'WAREHOUSE' && l.qty != null)
+          .reduce((s, l) => s + Number(l.qty || 0), 0);
+      const sqty = hasStoreQty
+        ? Number(sku.store_qty)
+        : locs
+          .filter((l) => (l.location_type === 'STORE' || l.location_type === 'AT_STORE') && l.qty != null)
+          .reduce((s, l) => s + Number(l.qty || 0), 0);
+      const tqty = hasAnyBreakdownQty ? (wqty + sqty) : (hasTotalQty ? sku.total_stock : null);
+      const warehouseAvailable = hasAnyBreakdownQty ? wqty > 0 : locs.some((l) => l.location_type === 'WAREHOUSE' && svIsAvailable(l, ['qty']));
+      const storesAvailable = hasAnyBreakdownQty ? sqty > 0 : locs.some((l) => (l.location_type === 'STORE' || l.location_type === 'AT_STORE') && svIsAvailable(l, ['qty']));
+      const totalAvailable = tqty != null ? Number(tqty) > 0 : skuAvailable;
 
       const warehouseRow = `
         <div class="flex ic" style="justify-content:space-between;padding:4px 0">
           <span class="xs td2" style="display:flex;align-items:center;gap:4px">🏭 <span>HQ Warehouse</span></span>
-          <span class="mono fw6" style="color:${wqty > 0 ? 'var(--green)' : 'var(--text3)'}">${wqty}</span>
+          <span class="mono fw6" style="color:${warehouseAvailable ? 'var(--green)' : 'var(--text3)'}">${hasAnyBreakdownQty ? wqty : (warehouseAvailable ? 'Available' : 'N/A')}</span>
         </div>`;
       const storeRow = `
         <div class="flex ic" style="justify-content:space-between;padding:4px 0">
           <span class="xs td2" style="display:flex;align-items:center;gap:4px">🏪 <span>At Stores</span></span>
-          <span class="mono fw6">${sqty}</span>
+          <span class="mono fw6">${hasAnyBreakdownQty ? sqty : (storesAvailable ? 'Available' : 'N/A')}</span>
         </div>`;
 
       accEl.innerHTML = warehouseRow + storeRow + `
         <hr class="sep" style="margin:4px 0">
-        <div class="flex ic" style="justify-content:space-between"><span class="sm-txt fw6">Total</span><span class="mono fw6" style="color:var(--acc)">${tqty}</span></div>
+        <div class="flex ic" style="justify-content:space-between"><span class="sm-txt fw6">Total</span><span class="mono fw6" style="color:var(--acc)">${tqty != null ? tqty : (totalAvailable ? 'Available' : 'Not available')}</span></div>
         <hr class="sep" style="margin:4px 0">
         <div class="flex ic" style="justify-content:space-between"><span class="xs td2">Sale Price</span><span class="mono xs">₹${Number(sku.sale_price||0).toLocaleString('en-IN')}</span></div>
         <div class="flex ic" style="justify-content:space-between"><span class="xs td2">Barcode</span><span class="mono xs">${sku.barcode || '—'}</span></div>`;

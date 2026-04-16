@@ -70,6 +70,15 @@ function showErr(id, msg) {
   el.style.display = msg ? 'block' : 'none';
 }
 
+function isStockAvailable(row, qtyKeys = []) {
+  if (!row || typeof row !== 'object') return false
+  if (typeof row.is_available === 'boolean') return row.is_available
+  const availability = String(row.availability || '').toUpperCase()
+  if (availability === 'AVAILABLE') return true
+  if (availability === 'NOT_AVAILABLE') return false
+  return qtyKeys.some((key) => Number(row[key]) > 0)
+}
+
 // ── Module state ───────────────────────────────────────────────────────────────
 let _storeId         = null;
 let _storeName       = null;
@@ -360,11 +369,15 @@ async function doFStockSearch(q) {
       return;
     }
     resultsEl.innerHTML = rows.map((r) => {
-      const badge = r.total_stock > 10
-        ? `<span class="b b-green">${r.total_stock} in stock</span>`
-        : r.total_stock > 0
-          ? `<span class="b b-gold">${r.total_stock} in stock</span>`
-          : `<span class="b b-red">Out of stock</span>`;
+      const canSeeQty = r.total_stock != null
+      const isAvailable = isStockAvailable(r, ['total_stock'])
+      const badge = canSeeQty
+        ? (r.total_stock > 10
+          ? `<span class="b b-green">${r.total_stock} in stock</span>`
+          : r.total_stock > 0
+            ? `<span class="b b-gold">${r.total_stock} in stock</span>`
+            : `<span class="b b-red">Out of stock</span>`)
+        : `<span class="b ${isAvailable ? 'b-green' : 'b-red'}">${isAvailable ? 'Available' : 'Out of stock'}</span>`
       return `
         <div class="result-row" onclick="loadStockDetail(${r.sku_id}, this)" data-sku-id="${r.sku_id}">
           <div>
@@ -396,17 +409,23 @@ window.loadStockDetail = async function (skuId, rowEl) {
 
     if (!sku) { wrap.innerHTML = '<div class="empty-state"><div class="et">SKU not found</div></div>'; return; }
 
-    const stockColor = sku.total_stock > 10 ? 'var(--green)' : sku.total_stock > 0 ? 'var(--gold)' : 'var(--red)';
+    const hasTotalQty = sku.total_stock != null;
+    const skuAvailable = isStockAvailable(sku, ['total_stock']);
+    const stockColor = hasTotalQty
+      ? (sku.total_stock > 10 ? 'var(--green)' : sku.total_stock > 0 ? 'var(--gold)' : 'var(--red)')
+      : (skuAvailable ? 'var(--green)' : 'var(--red)');
     const locRows = locs.length
       ? locs.map((l) => {
+          const hasQty = l.qty != null;
           const qty = Number(l.qty) || 0;
+          const available = isStockAvailable(l, ['qty']);
           return `
             <div class="loc-row">
               <div>
                 <div class="loc-name">${escHtml(l.location_name || l.location_type)}</div>
                 <div class="loc-type">${escHtml(l.location_type || '')} ${l.store_name ? '· ' + escHtml(l.store_name) : ''}</div>
               </div>
-              <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:${qty > 0 ? 'var(--text1)' : 'var(--text3)'}">${qty}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:${available ? 'var(--text1)' : 'var(--text3)'}">${hasQty ? qty : (available ? 'Available' : 'Not available')}</span>
             </div>`;
         }).join('')
       : '<div class="loc-row" style="color:var(--text3);font-size:13px">No stock in any location</div>';
@@ -417,8 +436,8 @@ window.loadStockDetail = async function (skuId, rowEl) {
           <div class="detail-sku">${escHtml(sku.sku_code)}</div>
           <div class="detail-desc">${escHtml(sku.description || sku.brand_name || '')}</div>
           <div style="display:flex;align-items:baseline;gap:10px;margin-top:10px">
-            <div class="detail-total" style="color:${stockColor}">${sku.total_stock || 0}</div>
-            <div style="font-size:12px;color:var(--text3)">total units across network</div>
+            <div class="detail-total" style="color:${stockColor}">${hasTotalQty ? (sku.total_stock || 0) : (skuAvailable ? 'Available' : 'Not Available')}</div>
+            <div style="font-size:12px;color:var(--text3)">${hasTotalQty ? 'total units across network' : 'network stock status'}</div>
           </div>
         </div>
         ${locRows}
@@ -514,7 +533,7 @@ window.toggleSkuLocations = async function (btn, skuId) {
       locsEl.innerHTML = locs.map((l) => `
         <div class="sku-loc-row">
           <span class="sku-loc-name">${escHtml(l.location_name || l.location_type)}</span>
-          <span class="b ${l.qty > 0 ? 'b-green' : 'b-gray'}">${l.qty}</span>
+          <span class="b ${isStockAvailable(l, ['qty']) ? 'b-green' : 'b-gray'}">${l.qty != null ? l.qty : (isStockAvailable(l, ['qty']) ? 'Available' : 'N/A')}</span>
         </div>`).join('');
     }
     locsEl.classList.add('open');
@@ -559,7 +578,10 @@ window.loadBrowseCatalogue = async function (q = '') {
       const type      = r.product_type || '';
       const colour    = r.colour_name  ? ` · ${r.colour_name}` : '';
       const whQty     = r.warehouse_qty != null ? Number(r.warehouse_qty) : (r.stock_qty != null ? Number(r.stock_qty) : null);
-      const whBadge   = whQty === null ? '' : `<span class="b ${whQty > 0 ? 'b-green' : 'b-red'}">${whQty} WH</span>`;
+      const whAvailable = isStockAvailable(r, ['warehouse_qty', 'stock_qty']);
+      const whBadge   = whQty !== null
+        ? `<span class="b ${whQty > 0 ? 'b-green' : 'b-red'}">${whQty} WH</span>`
+        : `<span class="b ${whAvailable ? 'b-green' : 'b-red'}">${whAvailable ? 'WH Available' : 'WH Unavailable'}</span>`;
       const desc      = name + colour;
       return `
         <div class="sku-card" data-sku-id="${skuId}">
@@ -841,16 +863,18 @@ async function doTransferSearch(q) {
     resultsEl.innerHTML = rows.map((r) => {
       const inCart    = _transferCart.some((c) => c.sku_id === r.sku_id);
       // API returns warehouse_qty from sp_StockTransfer_ListAvailable
-      const warehouseQty = r.warehouse_qty != null ? Number(r.warehouse_qty) : 0;
+      const hasWarehouseQty = r.warehouse_qty != null;
+      const warehouseQty = hasWarehouseQty ? Number(r.warehouse_qty) : (isStockAvailable(r, ['warehouse_qty']) ? 1 : 0);
       const displayName  = r.product_name  || r.description || r.brand_name || '';
       const colourPart   = r.colour_name   ? ` — ${r.colour_name}` : '';
+      const availLabel = hasWarehouseQty ? `${warehouseQty} in Warehouse` : (warehouseQty > 0 ? 'Warehouse Available' : 'Warehouse Unavailable');
       return `
         <div class="avail-row">
           <div style="flex:1;min-width:0">
             <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--acc)">${escHtml(r.sku_code)}</div>
             <div style="font-size:12.5px;color:var(--text2);margin-top:2px">${escHtml(displayName + colourPart)}</div>
           </div>
-          <span class="b ${warehouseQty > 0 ? 'b-green' : 'b-red'}" style="white-space:nowrap">${warehouseQty} in Warehouse</span>
+          <span class="b ${warehouseQty > 0 ? 'b-green' : 'b-red'}" style="white-space:nowrap">${availLabel}</span>
           <button class="btn sm ${inCart ? '' : 'primary'}" style="min-width:64px"
             data-sku-id="${r.sku_id}"
             data-sku-code="${escHtml(r.sku_code)}"
