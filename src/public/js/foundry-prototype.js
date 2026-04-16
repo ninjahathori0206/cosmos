@@ -5857,7 +5857,11 @@ ${initScript}
     // On mobile, the hamburger is controlled by the off-canvas sidebar overlay.
     // If it's still open when Doc Details closes, it can hide the topbar/hamburger.
     const overlayEl = document.getElementById('fy-sidebar-overlay')
-    if (overlayEl && overlayEl.classList.contains('open')) closeSidebar()
+    const sidebarEl = document.querySelector('.sidebar')
+    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+    const isBodyLocked = document.body.style.overflow === 'hidden'
+    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
   };
 
   window.loadMovementList = async function () {
@@ -5885,7 +5889,11 @@ ${initScript}
 
     // Ensure the off-canvas sidebar isn't covering the header/hamburger.
     const overlayEl = document.getElementById('fy-sidebar-overlay')
-    if (overlayEl && overlayEl.classList.contains('open')) closeSidebar()
+    const sidebarEl = document.querySelector('.sidebar')
+    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+    const isBodyLocked = document.body.style.overflow === 'hidden'
+    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
 
     panEl.style.display = '';
     titleEl.textContent = `Transfer Document #${docId}`;
