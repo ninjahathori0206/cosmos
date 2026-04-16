@@ -1300,7 +1300,11 @@ document.addEventListener('DOMContentLoaded', () => {
     validateColourQty(newIdx);
     // Scroll the new card into view
     const newCard = document.getElementById(`item-card-${newIdx}`);
-    if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (newCard) {
+      const ua = navigator.userAgent || ''
+      const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+      newCard.scrollIntoView({ behavior: isChromeLike ? 'auto' : 'smooth', block: 'start' })
+    }
   };
 
   /** Same manufacturer / brand / collection / rate / GST / branding as last item; clear model & qty & colours. */
@@ -1357,7 +1361,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modelEl) modelEl.focus();
 
     const newCard = document.getElementById(`item-card-${newIdx}`);
-    if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (newCard) {
+      const ua = navigator.userAgent || ''
+      const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+      newCard.scrollIntoView({ behavior: isChromeLike ? 'auto' : 'smooth', block: 'start' })
+    }
   };
 
   let _colourCounters = {};
@@ -5420,10 +5428,22 @@ ${initScript}
     const body  = document.getElementById('ftr-detail-body');
     const title = document.getElementById('ftr-detail-title');
     if (!card) return;
+
+    // If the mobile sidebar overlay is left open, it can hide the topbar/hamburger.
+    // Also, Chrome mobile can behave badly with sticky headers when we auto-scroll.
+    const overlayEl = document.getElementById('fy-sidebar-overlay')
+    const sidebarEl = document.querySelector('.sidebar')
+    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+    const isBodyLocked = document.body.style.overflow === 'hidden'
+    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
+
     if (title) title.textContent = `Request #${requestId}`;
     if (body)  body.innerHTML = '<div style="padding:16px;color:var(--text3)">Loading…</div>';
     card.style.display = '';
-    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const ua = navigator.userAgent || ''
+    const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+    if (!isChromeLike) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     try {
       const req  = await apiGet(`/api/transfer-requests/${requestId}`);
@@ -5596,6 +5616,14 @@ ${initScript}
     const card = document.getElementById('ftr-detail-card');
     if (card) card.style.display = 'none';
     _trExpanded = null;
+
+    // Clear any accidental sidebar overlay/body lock state.
+    const overlayEl = document.getElementById('fy-sidebar-overlay')
+    const sidebarEl = document.querySelector('.sidebar')
+    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+    const isBodyLocked = document.body.style.overflow === 'hidden'
+    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
   };
 
   // Quick approve from the list row (no qty adjustment)

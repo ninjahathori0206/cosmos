@@ -1166,7 +1166,19 @@ window.expandIncTransfer = async function (docId) {
 
   detailEl.style.display = '';
   bodyEl.innerHTML = '<div style="padding:20px;color:var(--text3)">Loading…</div>';
-  detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // If mobile sidebar overlay is left open, it can hide the hamburger/topbar.
+  // Also, Chrome mobile can mis-handle sticky headers when auto-scrolling.
+  const overlayEl = document.getElementById('sp-sidebar-overlay')
+  const sidebarEl = document.querySelector('.sidebar')
+  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+  const isBodyLocked = document.body.style.overflow === 'hidden'
+  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
+
+  const ua = navigator.userAgent || ''
+  const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+  if (!isChromeLike) detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
     const data = await apiGet(`/api/stock-transfer-docs/${docId}`);
@@ -1216,6 +1228,14 @@ window.expandIncTransfer = async function (docId) {
 window.closeIncDetail = function () {
   const el = document.getElementById('sp-inc-detail');
   if (el) el.style.display = 'none';
+
+  // Clear any accidental sidebar overlay/body lock state.
+  const overlayEl = document.getElementById('sp-sidebar-overlay')
+  const sidebarEl = document.querySelector('.sidebar')
+  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+  const isBodyLocked = document.body.style.overflow === 'hidden'
+  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
 };
 
 window.incAccept = async function (docId) {
