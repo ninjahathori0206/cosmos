@@ -1341,7 +1341,8 @@ window.expandSpMlDoc = async function (docId) {
   panEl.style.display = '';
   titleEl.textContent = `Transfer Document DOC-${docId}`;
   bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>';
-  panEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Use non-smooth scrolling for Chrome/mobile stability (sticky topbar behavior)
+  panEl.scrollIntoView({ behavior: 'auto', block: 'nearest' });
   try {
     const doc = await apiGet(`/api/stock-transfer-docs/${docId}`);
     const fmtDt = dt => dt ? new Date(dt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '—';

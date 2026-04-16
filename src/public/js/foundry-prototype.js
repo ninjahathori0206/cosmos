@@ -5898,7 +5898,8 @@ ${initScript}
     panEl.style.display = '';
     titleEl.textContent = `Transfer Document #${docId}`;
     bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>';
-    panEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // Use non-smooth scrolling for Chrome/mobile stability (sticky topbar behavior)
+    panEl.scrollIntoView({ behavior: 'auto', block: 'nearest' });
     try {
       const doc = await apiGet(`/api/stock-transfer-docs/${docId}`);
       const fmtDt = dt => dt ? fmtDateTime(dt) : '—';
