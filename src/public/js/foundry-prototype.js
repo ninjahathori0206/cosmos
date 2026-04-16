@@ -978,8 +978,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // DASHBOARD
   // ─────────────────────────────────────────────────────────────────────────
   async function loadDashboard() {
+    const lowStockTbody = document.getElementById('dash-low-stock');
+    const lowStockCount = document.getElementById('dash-low-stock-count');
+    if (lowStockTbody) {
+      lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>';
+    }
+    if (lowStockCount) {
+      lowStockCount.className = 'b b-gray';
+      lowStockCount.textContent = 'Loading…';
+    }
     try {
-      const data = await apiGet('/api/purchases/dashboard-stats');
+      const [data, availableStock] = await Promise.all([
+        apiGet('/api/purchases/dashboard-stats'),
+        apiGet('/api/stock-transfers/available').catch(() => [])
+      ]);
       const p = data.purchases || {};
       const setV = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v != null ? v : '0'; };
       setV('dash-active', p.active_purchases);
@@ -991,6 +1003,39 @@ document.addEventListener('DOMContentLoaded', () => {
       setV('dash-skus', (data.skus || {}).total_skus);
       setV('dash-stock', (data.stock || {}).warehouse_stock);
       setV('dash-suppliers', (data.suppliers || {}).active_suppliers);
+
+      if (lowStockTbody && lowStockCount) {
+        const safe = (v) => String(v == null ? '' : v)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+        const rows = Array.isArray(availableStock) ? availableStock : [];
+        const lowRows = rows
+          .filter((r) => Number(r.available_qty ?? r.warehouse_qty ?? r.qty ?? 0) <= 5)
+          .sort((a, b) => Number(a.available_qty ?? a.warehouse_qty ?? a.qty ?? 0) - Number(b.available_qty ?? b.warehouse_qty ?? b.qty ?? 0))
+          .slice(0, 8);
+
+        lowStockCount.className = lowRows.length ? 'b b-red' : 'b b-gray';
+        lowStockCount.textContent = lowRows.length ? `${lowRows.length} SKUs` : 'No alerts';
+
+        if (!lowRows.length) {
+          lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">No low stock alerts.</td></tr>';
+        } else {
+          lowStockTbody.innerHTML = lowRows.map((r) => {
+            const qty = Number(r.available_qty ?? r.warehouse_qty ?? r.qty ?? 0);
+            const threshold = Number(r.threshold_qty ?? r.min_qty ?? 5);
+            const qtyColor = qty <= 2 ? 'var(--red)' : 'var(--gold)';
+            return `<tr>
+              <td class="mono xs">${safe(r.sku_code || r.sku || '—')}</td>
+              <td>${safe(r.product_name || r.display_name || r.model_name || '—')}</td>
+              <td class="fw6" style="color:${qtyColor}">${qty}</td>
+              <td class="td2">${threshold}</td>
+            </tr>`;
+          }).join('');
+        }
+      }
     } catch (err) { console.error('loadDashboard:', err); }
   }
 

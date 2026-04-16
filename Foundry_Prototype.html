@@ -593,15 +593,12 @@
 
       <!-- Low Stock -->
       <div class="card">
-        <div class="ch"><div class="ct">Low Stock Alerts</div><span class="b b-red">14 SKUs</span></div>
+        <div class="ch"><div class="ct">Low Stock Alerts</div><span class="b b-gray" id="dash-low-stock-count">Loading…</span></div>
         <div class="tw">
           <table>
             <thead><tr><th>SKU</th><th>Product</th><th>Warehouse</th><th>Threshold</th></tr></thead>
-            <tbody>
-              <tr><td class="mono xs">EWS-BOTAN-TRNBLU</td><td>Botanica Transparent Blue</td><td class="fw6" style="color:var(--red)">2</td><td class="td2">5</td></tr>
-              <tr><td class="mono xs">RB-AVTR-BLKGLD</td><td>Aviator Black Gold</td><td class="fw6" style="color:var(--red)">3</td><td class="td2">10</td></tr>
-              <tr><td class="mono xs">WW-VTGRD-BLKGLD</td><td>Vintage Round BG</td><td class="fw6" style="color:var(--gold)">4</td><td class="td2">5</td></tr>
-              <tr><td class="mono xs">EWS-CSTAL-MTTBLU</td><td>Coastal Matte Blue</td><td class="fw6" style="color:var(--red)">0</td><td class="td2">5</td></tr>
+            <tbody id="dash-low-stock">
+              <tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>
             </tbody>
           </table>
         </div>

@@ -1,6 +1,7 @@
 const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
+const bcrypt = require('bcryptjs');
 const { executeStoredProcedure } = require('../config/db');
 const { requireModule, requirePermission } = require('../middleware/authorize');
 
@@ -77,7 +78,7 @@ router.post(
 
       const result = await executeStoredProcedure('sp_User_Create', {
         username:  { type: sql.VarChar(100), value: value.username },
-        password:  { type: sql.VarChar(200), value: value.password },
+        password:  { type: sql.VarChar(200), value: await bcrypt.hash(value.password, 12) },
         full_name: { type: sql.VarChar(200), value: value.full_name },
         email:     { type: sql.VarChar(200), value: value.email || null },
         phone:     { type: sql.VarChar(20),  value: value.phone || null },
@@ -111,6 +112,7 @@ router.put(
         });
       }
 
+      const nextPassword = value.password ? await bcrypt.hash(value.password, 12) : null;
       const result = await executeStoredProcedure('sp_User_Update', {
         user_id:   { type: sql.Int,          value: id },
         full_name: { type: sql.VarChar(200), value: value.full_name },
@@ -119,7 +121,7 @@ router.put(
         role_key:  { type: sql.VarChar(50),  value: value.role_key },
         store_id:  { type: sql.Int,          value: value.store_id || null },
         is_active: { type: sql.Bit,          value: value.is_active !== false },
-        password:  { type: sql.VarChar(200), value: value.password || null }
+        password:  { type: sql.VarChar(200), value: nextPassword }
       });
 
       return res.json({ success: true, data: result.recordset && result.recordset[0] });

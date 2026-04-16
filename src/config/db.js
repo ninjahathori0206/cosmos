@@ -19,11 +19,31 @@ const config = {
 };
 
 let poolPromise;
+const DB_CONNECT_RETRIES = Math.max(0, Number(process.env.DB_CONNECT_RETRIES || 3));
+const DB_CONNECT_BACKOFF_MS = Math.max(100, Number(process.env.DB_CONNECT_BACKOFF_MS || 500));
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function connectWithRetry() {
+  let lastErr;
+  for (let attempt = 0; attempt <= DB_CONNECT_RETRIES; attempt += 1) {
+    try {
+      return await sql.connect(config);
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= DB_CONNECT_RETRIES) break;
+      await sleep(DB_CONNECT_BACKOFF_MS * Math.pow(2, attempt));
+    }
+  }
+  throw lastErr;
+}
 
 async function getPool() {
   if (!poolPromise) {
     // If the initial connect fails, allow later retries by clearing the cached promise.
-    poolPromise = sql.connect(config).catch((err) => {
+    poolPromise = connectWithRetry().catch((err) => {
       poolPromise = undefined;
       throw err;
     });

@@ -281,28 +281,43 @@ router.put(
         branding_agent_id:     { type: sql.Int,          value: value.branding_agent_id     || null }
       });
 
-      // Update home_brand_id on product_master for each item brand assignment
+      // Apply item brand mapping in one set-based update to avoid N+1 round-trips.
       if (value.item_brands && value.item_brands.length > 0) {
         const pool = await getPool();
-        for (const ib of value.item_brands) {
-          // Resolve product_master_id from item_id (scoped to this header for security)
-          const pmRow = await pool.request()
-            .input('iid', sql.Int, ib.item_id)
-            .input('hid', sql.Int, headerId)
-            .query('SELECT product_master_id FROM dbo.purchase_items WHERE item_id=@iid AND header_id=@hid');
-          if (!pmRow.recordset || !pmRow.recordset[0]) continue;
-          const pmId = pmRow.recordset[0].product_master_id;
-          const ewColl = (ib.ew_collection && String(ib.ew_collection).trim()) || null;
-          await pool.request()
-            .input('pmId',    sql.Int, pmId)
-            .input('brandId', sql.Int, ib.home_brand_id)
-            .input('ewColl',  sql.VarChar(200), ewColl)
-            .query(`UPDATE dbo.product_master
-            SET home_brand_id = @brandId,
-                ew_collection = @ewColl,
-                updated_at = GETDATE()
-            WHERE product_id = @pmId`);
-        }
+        const itemBrandsJson = JSON.stringify(
+          value.item_brands.map((ib) => ({
+            item_id: Number(ib.item_id),
+            home_brand_id: Number(ib.home_brand_id),
+            ew_collection: (ib.ew_collection && String(ib.ew_collection).trim()) || null
+          }))
+        );
+        await pool.request()
+          .input('hid', sql.Int, headerId)
+          .input('itemBrandsJson', sql.NVarChar(sql.MAX), itemBrandsJson)
+          .query(`
+            ;WITH src AS (
+              SELECT
+                CAST(j.item_id AS INT) AS item_id,
+                CAST(j.home_brand_id AS INT) AS home_brand_id,
+                NULLIF(LTRIM(RTRIM(CAST(j.ew_collection AS VARCHAR(200)))), '') AS ew_collection
+              FROM OPENJSON(@itemBrandsJson)
+              WITH (
+                item_id INT '$.item_id',
+                home_brand_id INT '$.home_brand_id',
+                ew_collection NVARCHAR(200) '$.ew_collection'
+              ) j
+            )
+            UPDATE pm
+               SET pm.home_brand_id = src.home_brand_id,
+                   pm.ew_collection = src.ew_collection,
+                   pm.updated_at = GETDATE()
+              FROM dbo.product_master pm
+              JOIN dbo.purchase_items pi
+                ON pi.product_master_id = pm.product_id
+              JOIN src
+                ON src.item_id = pi.item_id
+             WHERE pi.header_id = @hid;
+          `);
       }
 
       return res.json({ success: true, data: result.recordset && result.recordset[0] });

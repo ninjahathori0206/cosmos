@@ -51,6 +51,7 @@ function notFoundHandler(req, res) {
 
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
+  const isProd = process.env.NODE_ENV === 'production';
   if (process.env.NODE_ENV !== 'test') {
     // eslint-disable-next-line no-console
     console.error('Error:', err.message, err.stack);
@@ -70,9 +71,10 @@ function errorHandler(err, req, res, next) {
 
   return res.status(status).json({
     success: false,
-    message: status === 500 ? 'Internal server error' : (err.message || 'Request failed'),
-    // Include raw error message for diagnostics (avoids needing to open server console)
-    error: err.message || undefined
+    message: status === 500
+      ? 'Internal server error'
+      : (isProd ? 'Request failed' : (err.message || 'Request failed')),
+    ...(isProd ? {} : { error: err.message || undefined })
   });
 }
 
