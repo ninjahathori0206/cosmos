@@ -400,10 +400,10 @@
   .bc-sku-code { font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:11.5px; }
   .bc-sku-info { font-size:11px; color:var(--text2); }
   .bc-label-row { display:flex; gap:4px; margin-bottom:4px; flex-wrap:nowrap; }
-  .bc-label-cell { border:1px dashed #ccc; border-radius:3px; background:#fff; padding:3px 4px; text-align:center; width:72px; flex-shrink:0; overflow:hidden; }
+  .bc-label-cell { border:1px dashed #ccc; border-radius:3px; background:#fff; padding:3px 4px; text-align:center; flex-shrink:0; overflow:hidden; position:relative; }
   .bc-label-cell svg { display:block; margin:0 auto; }
-  .bc-label-code { font-size:5.5px; font-family:'IBM Plex Mono',monospace; margin-top:2px; word-break:break-all; line-height:1.3; color:#333; text-align:center; }
-  .bc-empty-cell { border:1px dashed #eee; border-radius:3px; background:#fafafa; width:72px; flex-shrink:0; height:62px; }
+  .bc-label-code { font-family:'IBM Plex Mono',monospace; margin-top:2px; word-break:break-all; line-height:1.3; color:#333; text-align:center; }
+  .bc-empty-cell { border:1px dashed #eee; border-radius:3px; background:#fafafa; flex-shrink:0; overflow:hidden; position:relative; }
 
   /* STOCK LOCATION BAR */
   .loc-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); }
@@ -1662,7 +1662,7 @@
   <div class="modal" style="max-width:900px;width:96vw;max-height:92vh;overflow:hidden;display:flex;flex-direction:column">
     <div class="mh" style="flex-shrink:0">
       <div class="mt-title">🏷️ Print Barcode Labels</div>
-      <div style="font-size:11px;color:var(--text2);margin-top:2px">TSC P210 · TSPL2 · 15 mm × 15 mm · 6UP layout</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px">TSC P210 · TSPL2 · Custom label geometry (no hardcoding)</div>
       <div class="mc" onclick="closeM('modal-barcode-print')">×</div>
     </div>
     <div class="mb" style="flex:1;overflow-y:auto;padding:16px;display:flex;gap:16px;flex-wrap:wrap">
@@ -1709,13 +1709,75 @@
               <input id="bc-margin-right" type="number" min="0" max="20" step="0.5" value="0" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
             </label>
             <label style="display:flex;flex-direction:column;gap:4px">Row gap
-              <input id="bc-gap-row" type="number" min="0" max="10" step="0.5" value="2" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()" title="Between rows on the roll (TSPL GAP)">
+              <input id="bc-gap-row" type="number" min="0" max="10" step="0.5" value="0" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()" title="Between rows on the roll (TSPL GAP)">
             </label>
             <label style="display:flex;flex-direction:column;gap:4px">Column gap
-              <input id="bc-gap-col" type="number" min="0" max="5" step="0.5" value="0" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()" title="Between adjacent labels in one row">
+              <input id="bc-gap-col" type="number" min="0" max="5" step="0.5" value="3" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()" title="Between adjacent labels in one row">
             </label>
           </div>
           <div style="font-size:10px;color:var(--text2);margin-top:6px">Margins: inset inside each label. Row gap = feed direction between rows (TSPL GAP). Column gap = extra space between QR codes side-by-side. Applied to preview, TSPL, and browser print.</div>
+        </div>
+        <div class="mt3" style="border:1px solid var(--border);border-radius:8px;padding:10px">
+          <div class="section-lbl mb2">Label / QR / Text</div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;align-items:end">
+            <label style="display:flex;flex-direction:column;gap:4px">Label width (mm)
+              <input id="bc-label-width" type="number" min="1" max="100" step="0.5" value="15" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px">Label height (mm)
+              <input id="bc-label-height" type="number" min="1" max="100" step="0.5" value="15" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+
+            <label style="display:flex;flex-direction:column;gap:4px">Labels per row (UP)
+              <input id="bc-labels-per-row" type="number" min="1" max="20" step="1" value="6" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px">Printer dots / mm
+              <input id="bc-dots-per-mm" type="number" min="1" max="30" step="0.5" value="8" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;align-items:end;margin-top:10px">
+            <label style="display:flex;flex-direction:column;gap:4px;display:none">QR cell size (TSPL 1-10)
+              <input id="bc-qr-cell-size" type="number" min="1" max="10" step="1" value="3" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px">QR visual size (mm)
+              <input id="bc-qr-visual-size-mm" type="number" min="1" max="50" step="0.5" value="10.5" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+
+            <label style="display:flex;flex-direction:column;gap:4px;display:none">QR top (ratio in content)
+              <input id="bc-qr-top-ratio" type="number" min="0" max="1" step="0.01" value="0" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;display:none">Text top (ratio in content)
+              <input id="bc-text-top-ratio" type="number" min="0" max="1" step="0.01" value="0.70" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;align-items:end;margin-top:10px">
+            <label style="display:flex;flex-direction:column;gap:4px;display:none">Text TSPL x-mul
+              <input id="bc-text-x-mul" type="number" min="1" max="10" step="1" value="2" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;display:none">Text TSPL y-mul
+              <input id="bc-text-y-mul" type="number" min="1" max="10" step="1" value="2" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+
+            <label style="display:flex;flex-direction:column;gap:4px">Text font (pt for fallback/preview)
+              <input id="bc-text-font-pt" type="number" min="0.5" max="20" step="0.1" value="5" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;display:none">TSPL TEXT font id
+              <input id="bc-text-font-id" type="number" min="0" max="3" step="1" value="2" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
+            </label>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+            <button class="btn btn-sm" type="button" onclick="bcApply7030Preset()" style="display:none">Apply 70/30 Preset</button>
+            <label style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer">
+              <input id="bc-lock-preset" type="checkbox" checked onchange="bcHandlePresetLockChange()">
+              Lock preset values
+            </label>
+          </div>
+          <div style="display:none;font-size:10px;color:var(--text2);margin-top:8px">
+            Tip: TSPL uses QR cell size + text multipliers; browser fallback uses QR visual size (mm) + text font (pt). Lock keeps safe 70/30 values to avoid invalid print setups.
+          </div>
         </div>
         <div id="bc-printer-status" class="mt3" style="font-size:12px;padding:8px 10px;border-radius:6px;background:#f8f8f8;border:1px solid var(--border)">
           <span id="bc-status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ccc;margin-right:6px"></span>
@@ -1724,9 +1786,9 @@
       </div>
 
       <!-- Right: Preview -->
-      <div style="flex:2;min-width:300px">
-        <div class="section-lbl mb2">Label Preview <span style="font-size:10px;color:var(--text2);font-weight:400">(6UP · actual proportions)</span></div>
-        <div id="bc-preview-wrap" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px;min-height:200px;overflow:auto">
+      <div style="flex:2;min-width:300px;position:sticky;top:0;align-self:flex-start">
+        <div class="section-lbl mb2">Label Preview <span style="font-size:10px;color:var(--text2);font-weight:400">(custom · actual proportions)</span></div>
+        <div id="bc-preview-wrap" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px;min-height:200px;max-height:70vh;overflow:auto">
           <div id="bc-preview-rows"></div>
         </div>
         <div id="bc-summary" class="mt2" style="font-size:12px;color:var(--text2)"></div>
@@ -1766,7 +1828,8 @@ function nav(id, el) {
 
 function openM(id) { document.getElementById(id).classList.add('open'); }
 function closeM(id) { document.getElementById(id).classList.remove('open'); }
-document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); }));
+// Keep dialogs stable during setup: do not close on outside click.
+document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) e.stopPropagation(); }));
 
 function switchTab(el, tid) {
   const parent = el.closest('.tabs');

@@ -4163,7 +4163,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // BARCODE PRINT (TSC P210 · TSPL2 · 6UP · 15mm × 15mm)
+  // BARCODE PRINT (TSC P210 · TSPL2 · roll/label geometry is parameterized)
   // ─────────────────────────────────────────────────────────────────────────
 
   let _bcSkus = [];        // current set of SKUs in the modal
@@ -4235,6 +4235,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (copiesEl) copiesEl.value = '';
     const typeEl = document.getElementById('bc-type');
     if (typeEl) typeEl.value = opts.defaultType || 'QR';
+    const lockEl = document.getElementById('bc-lock-preset');
+    // TSPL preset controls are hidden in the QR modal; keep lock off by default
+    // so it doesn't disable margins/gaps while editing.
+    if (lockEl && typeof lockEl.checked === 'boolean') lockEl.checked = false;
+    if (typeof window.bcHandlePresetLockChange === 'function') window.bcHandlePresetLockChange();
 
     openM('modal-barcode-print');
     setTimeout(bcRenderPreview, 100); // wait for modal to render
@@ -4269,6 +4274,60 @@ document.addEventListener('DOMContentLoaded', () => {
     bcRenderPreview();
   };
 
+  function _bcSetInputValue(id, value) {
+    const el = document.getElementById(id)
+    if (!el) return
+    el.value = String(value)
+  }
+
+  function _bcSetInputDisabled(id, disabled) {
+    const el = document.getElementById(id)
+    if (!el) return
+    el.disabled = !!disabled
+  }
+
+  window.bcApply7030Preset = function() {
+    // 15mm label with 70% QR block + 30% text block.
+    _bcSetInputValue('bc-qr-cell-size', 3)
+    _bcSetInputValue('bc-qr-visual-size-mm', 10.5)
+    _bcSetInputValue('bc-qr-top-ratio', 0)
+    _bcSetInputValue('bc-text-top-ratio', 0.70)
+    _bcSetInputValue('bc-text-font-pt', 5)
+    _bcSetInputValue('bc-text-x-mul', 2)
+    _bcSetInputValue('bc-text-y-mul', 2)
+    _bcSetInputValue('bc-text-font-id', 2)
+    _bcSetInputValue('bc-label-width', 15)
+    _bcSetInputValue('bc-label-height', 15)
+    _bcSetInputValue('bc-labels-per-row', 6)
+    _bcSetInputValue('bc-margin-left', 2)
+    _bcSetInputValue('bc-margin-right', 2)
+    _bcSetInputValue('bc-gap-col', 3)
+    _bcSetInputValue('bc-gap-row', 3)
+    bcRenderPreview()
+  }
+
+  window.bcHandlePresetLockChange = function() {
+    const lock = document.getElementById('bc-lock-preset')?.checked === true
+    const lockIds = [
+      'bc-label-width',
+      'bc-label-height',
+      'bc-labels-per-row',
+      'bc-margin-left',
+      'bc-margin-right',
+      'bc-gap-col',
+      'bc-gap-row',
+      'bc-qr-cell-size',
+      'bc-qr-visual-size-mm',
+      'bc-qr-top-ratio',
+      'bc-text-top-ratio',
+      'bc-text-x-mul',
+      'bc-text-y-mul',
+      'bc-text-font-id'
+    ]
+
+    lockIds.forEach((id) => _bcSetInputDisabled(id, lock))
+  }
+
   // Build list of {code (pid for QR), label (sku_code for text), copies}
   function _bcSelectedItems() {
     const items = [];
@@ -4288,6 +4347,50 @@ document.addEventListener('DOMContentLoaded', () => {
     return `/api/qr?data=${encodeURIComponent(code)}&size=${px || 60}`;
   }
 
+  function _bcClamp(n, min, max) {
+    if (!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function _bcReadFloat(id, fallback, min, max) {
+    const v = parseFloat(document.getElementById(id)?.value ?? String(fallback))
+    if (!Number.isFinite(v)) return fallback
+    return _bcClamp(v, min, max)
+  }
+
+  function _bcReadInt(id, fallback, min, max) {
+    const v = parseInt(document.getElementById(id)?.value ?? String(fallback), 10)
+    if (!Number.isFinite(v)) return fallback
+    return Math.round(_bcClamp(v, min, max))
+  }
+
+  function _bcReadLabelGeometryMm() {
+    const labelW = _bcReadFloat('bc-label-width', 15, 1, 200)
+    const labelH = _bcReadFloat('bc-label-height', 15, 1, 200)
+    const cols = _bcReadInt('bc-labels-per-row', 6, 1, 40)
+    return { labelW, labelH, cols }
+  }
+
+  function _bcReadDotsPerMm() {
+    return _bcReadFloat('bc-dots-per-mm', 8, 1, 40)
+  }
+
+  function _bcReadQrConfig() {
+    const qrCellSize = _bcReadInt('bc-qr-cell-size', 3, 1, 10)
+    const qrVisualSizeMm = _bcReadFloat('bc-qr-visual-size-mm', 12, 1, 200)
+    const qrTopRatio = _bcReadFloat('bc-qr-top-ratio', 0.04, 0, 1)
+    return { qrCellSize, qrVisualSizeMm, qrTopRatio }
+  }
+
+  function _bcReadTextConfig() {
+    const textTopRatio = _bcReadFloat('bc-text-top-ratio', 0.75, 0, 1)
+    const textFontPt = _bcReadFloat('bc-text-font-pt', 5, 0.1, 100)
+    const textXMul = _bcReadInt('bc-text-x-mul', 1, 1, 10)
+    const textYMul = _bcReadInt('bc-text-y-mul', 1, 1, 10)
+    const textFontId = _bcReadInt('bc-text-font-id', 1, 0, 3)
+    return { textTopRatio, textFontPt, textXMul, textYMul, textFontId }
+  }
+
   // Render the visual preview of labels in the modal
   window.bcRenderPreview = function() {
     const previewEl = document.getElementById('bc-preview-rows');
@@ -4296,7 +4399,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const mm = _bcReadMarginsMm();
     const gp = _bcReadGapMm();
-    previewEl.style.padding = `${mm.top}mm ${mm.right}mm ${mm.bottom}mm ${mm.left}mm`;
+    const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm, qrTopRatio } = _bcReadQrConfig();
+    const { textTopRatio, textFontPt } = _bcReadTextConfig();
+
+    const contentH = Math.max(0, labelH - mm.top - mm.bottom);
+    const qrTopMm = mm.top + qrTopRatio * contentH;
+    const textTopMm = mm.top + textTopRatio * contentH;
+
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+    previewEl.style.padding = `0mm ${mm.right}mm 0mm ${mm.left}mm`;
     previewEl.style.boxSizing = 'border-box';
 
     const items = _bcSelectedItems();
@@ -4312,9 +4425,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const expanded = [];
     items.forEach(({ code, label, copies }) => { for (let c = 0; c < copies; c++) expanded.push({ code, label }); });
 
-    // Group into rows of 6
+    // Group into rows of `cols`
     const rows = [];
-    for (let i = 0; i < expanded.length; i += 6) rows.push(expanded.slice(i, i + 6));
+    for (let i = 0; i < expanded.length; i += cols) rows.push(expanded.slice(i, i + cols));
 
     // Build HTML — QR encodes pid (code), text below shows sku_code (label)
     const rowGapCss = `${gp.rowGap}mm`;
@@ -4322,19 +4435,29 @@ document.addEventListener('DOMContentLoaded', () => {
     let inner = '';
     rows.forEach((row) => {
       inner += `<div class="bc-label-row" style="display:flex;flex-wrap:nowrap;gap:${colGapCss};align-items:flex-start">`;
-      for (let col = 0; col < 6; col++) {
+      for (let col = 0; col < cols; col++) {
         const item = row[col];
-        if (!item) { inner += '<div class="bc-empty-cell"></div>'; continue; }
+        if (!item) {
+          inner += `<div class="bc-empty-cell" style="width:${labelW}mm;height:${labelH}mm"></div>`
+          continue
+        }
 
         if (type === 'QR') {
-          inner += `<div class="bc-label-cell" style="height:72px">
-            <img src="${_bcQRSrc(item.code, 56)}" style="width:52px;height:52px;display:block;margin:0 auto"
-                 onerror="this.outerHTML='<div style=\\'width:52px;height:52px;background:#fef2f2;display:flex;align-items:center;justify-content:center;font-size:6px;color:#ef4444\\'>QR ERR</div>'">
-            <div class="bc-label-code">${_bcEsc(item.label)}</div>
+          const errFontPt = Math.max(4, Math.round(textFontPt * 0.7))
+          inner += `<div class="bc-label-cell" style="position:relative;width:${labelW}mm;height:${labelH}mm;padding:0;box-sizing:border-box">
+            <img
+              src="${_bcQRSrc(item.code, qrPreviewPx)}"
+              style="position:absolute;left:50%;transform:translateX(-50%);top:${qrTopMm}mm;width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;display:block"
+              onerror="this.outerHTML='<div style=\\'width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;background:#fef2f2;display:flex;align-items:center;justify-content:center;font-size:${errFontPt}pt;color:#ef4444\\'>QR ERR</div>'"
+            >
+            <div class="bc-label-code" style="position:absolute;left:0;right:0;top:${textTopMm}mm;font-size:${textFontPt}pt;font-weight:700;margin-top:0;padding:0;line-height:1.1;white-space:normal;word-break:break-word;overflow-wrap:anywhere;max-height:2.2em;overflow:hidden">${_bcEsc(item.label)}</div>
           </div>`;
         } else {
           const uid = `bc-svg-${Math.random().toString(36).slice(2)}`;
-          inner += `<div class="bc-label-cell"><svg id="${uid}" data-code="${_bcEsc(item.code)}" xmlns="http://www.w3.org/2000/svg"></svg><div class="bc-label-code">${_bcEsc(item.label)}</div></div>`;
+          inner += `<div class="bc-label-cell" style="position:relative;width:${labelW}mm;height:${labelH}mm;padding:0;box-sizing:border-box">
+            <svg id="${uid}" data-code="${_bcEsc(item.code)}" xmlns="http://www.w3.org/2000/svg" style="position:absolute;left:50%;transform:translateX(-50%);top:${qrTopMm}mm"></svg>
+            <div class="bc-label-code" style="position:absolute;left:0;right:0;top:${textTopMm}mm;font-size:${textFontPt}pt;font-weight:700;margin-top:0;padding:0;line-height:1.1;white-space:normal;word-break:break-word;overflow-wrap:anywhere;max-height:2.2em;overflow:hidden">${_bcEsc(item.label)}</div>
+          </div>`;
         }
       }
       inner += '</div>';
@@ -4358,7 +4481,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalLabels = expanded.length;
     const totalRows   = rows.length;
     if (summaryEl) {
-      summaryEl.textContent = `${totalLabels} label${totalLabels !== 1 ? 's' : ''} · ${totalRows} row${totalRows !== 1 ? 's' : ''} of 6 · ${items.length} unique SKU${items.length !== 1 ? 's' : ''}`;
+      summaryEl.textContent = `${totalLabels} label${totalLabels !== 1 ? 's' : ''} · ${totalRows} row${totalRows !== 1 ? 's' : ''} of ${cols} · ${items.length} unique SKU${items.length !== 1 ? 's' : ''}`;
     }
   };
 
@@ -4404,12 +4527,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── TSPL2 Command Generator ────────────────────────────────────────────
-  // Spec: 110mm wide · 15mm×15mm · 6UP · 8 dots/mm
-  // X positions (dots): 32, 168, 304, 440, 576, 712
-  const BC_X_POSITIONS = [32, 168, 304, 440, 576, 712]; // 6 columns
-  const BC_MM_TO_DOT   = 8;
-  const BC_LABEL_H_DOT = 15 * BC_MM_TO_DOT; // 120 dots
-
   function _bcReadMarginsMm() {
     const clip = (v) => Math.max(0, Math.min(20, v));
     const g = (id) => clip(parseFloat(document.getElementById(id)?.value || '0') || 0);
@@ -4425,26 +4542,64 @@ document.addEventListener('DOMContentLoaded', () => {
   function _bcReadGapMm() {
     const elRow = document.getElementById('bc-gap-row');
     const elCol = document.getElementById('bc-gap-col');
-    const rowRaw = parseFloat(elRow?.value ?? '2');
-    const colRaw = parseFloat(elCol?.value ?? '0');
+    const rowRaw = parseFloat(elRow?.value ?? '3');
+    const colRaw = parseFloat(elCol?.value ?? '3');
     const rowGap = Math.max(0, Math.min(10, Number.isFinite(rowRaw) ? rowRaw : 2));
     const colGap = Math.max(0, Math.min(5, Number.isFinite(colRaw) ? colRaw : 0));
     return { rowGap, colGap };
   }
 
-  function _bcMarginsToDots() {
+  function _bcMarginsToDots(dotsPerMm) {
     const m = _bcReadMarginsMm();
     return {
-      top: Math.round(m.top * BC_MM_TO_DOT),
-      bottom: Math.round(m.bottom * BC_MM_TO_DOT),
-      left: Math.round(m.left * BC_MM_TO_DOT),
-      right: Math.round(m.right * BC_MM_TO_DOT),
+      top: Math.round(m.top * dotsPerMm),
+      bottom: Math.round(m.bottom * dotsPerMm),
+      left: Math.round(m.left * dotsPerMm),
+      right: Math.round(m.right * dotsPerMm),
     };
   }
 
   function _bcTsplQuote(s) {
     return String(s == null ? '' : s).replace(/"/g, "'");
   }
+
+function _bcSplitTextForLabel(raw, maxLineLength = 18) {
+  const text = String(raw || '').trim()
+  if (!text) return ['']
+  if (text.length <= maxLineLength) return [text]
+
+  const words = text.split(/\s+/).filter(Boolean)
+  const lines = []
+  let current = ''
+
+  const pushCurrent = () => {
+    if (!current) return
+    lines.push(current)
+    current = ''
+  }
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word
+    if (next.length <= maxLineLength) {
+      current = next
+      continue
+    }
+    pushCurrent()
+
+    if (word.length > maxLineLength) {
+      lines.push(word.slice(0, maxLineLength))
+      current = word.slice(maxLineLength)
+    } else {
+      current = word
+    }
+
+    if (lines.length >= 2) break
+  }
+  pushCurrent()
+
+  if (lines.length === 0) return [text.slice(0, maxLineLength)]
+  return lines.slice(0, 2)
+}
 
   function _bcGenerateTSPL2(labelBatches, labelType) {
     /*
@@ -4453,33 +4608,58 @@ document.addEventListener('DOMContentLoaded', () => {
         label = SKU (stable product identifier, printed as text below QR for search)
       Returns: Uint8Array of TSPL2 command bytes
     */
-    const d = _bcMarginsToDots();
+    const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const marginsMm = _bcReadMarginsMm();
+    const d = _bcMarginsToDots(dotsPerMm);
     const { rowGap, colGap } = _bcReadGapMm();
-    const colGapDots = Math.round(colGap * BC_MM_TO_DOT);
-    const maxXDots = Math.round(106 * BC_MM_TO_DOT);
+
+    const mmToDot = (mm) => Math.round(mm * dotsPerMm);
+    const sheetWidthMm = marginsMm.left + (cols * labelW) + ((cols - 1) * colGap) + marginsMm.right;
+    const maxXDots = mmToDot(sheetWidthMm);
+
+    const { qrCellSize, qrVisualSizeMm, qrTopRatio } = _bcReadQrConfig();
+    const { textTopRatio, textXMul, textYMul, textFontId } = _bcReadTextConfig();
+
+    const contentH = Math.max(0, labelH - marginsMm.top - marginsMm.bottom);
+    const qrTopMm = marginsMm.top + qrTopRatio * contentH;
+    const textTopMm = marginsMm.top + textTopRatio * contentH;
+
+    const qrTopDots = mmToDot(qrTopMm);
+    const textTopDots = mmToDot(textTopMm);
+    const textLineGapDots = Math.max(8, Math.round(2.2 * dotsPerMm * Math.max(1, textYMul)));
+
+    const qrLeftInsetDots = mmToDot(qrLeftInsetMm);
     let cmds = '';
 
     labelBatches.forEach((row) => {
-      cmds += 'SIZE 108 mm, 15 mm\r\n';
+      cmds += `SIZE ${sheetWidthMm} mm, ${labelH} mm\r\n`;
       cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
       cmds += 'DIRECTION 0\r\n';
       cmds += 'CLS\r\n';
 
       row.forEach((item, col) => {
         if (!item) return;
-        let x = BC_X_POSITIONS[col] + d.left - d.right + col * colGapDots;
-        x = Math.min(x, maxXDots);
-        const yQr = Math.max(2, 5 + d.top - d.bottom);
-        const yTx = Math.max(12, 90 + d.top - d.bottom);
+
+        const cellLeftXmm = marginsMm.left + (col * (labelW + colGap));
+        let x = mmToDot(cellLeftXmm) + qrLeftInsetDots;
+        x = Math.max(0, Math.min(x, maxXDots));
+
         const code = _bcTsplQuote(item.code);
-        const label = _bcTsplQuote(item.label);
+        const labelLines = _bcSplitTextForLabel(item.label).map(_bcTsplQuote)
 
         if (labelType === 'QR') {
-          cmds += `QRCODE ${x},${yQr},L,3,A,0,"${code}"\r\n`;
-          cmds += `TEXT ${x},${yTx},"1",0,1,1,"${label}"\r\n`;
+          cmds += `QRCODE ${x},${qrTopDots},L,${qrCellSize},A,0,"${code}"\r\n`;
+          labelLines.forEach((line, idx) => {
+            const y = textTopDots + (idx * textLineGapDots)
+            cmds += `TEXT ${x},${y},"${textFontId}",0,${textXMul},${textYMul},"${line}"\r\n`
+          })
         } else {
-          cmds += `BARCODE ${x},${yQr},"128",60,1,0,2,2,"${code}"\r\n`;
-          cmds += `TEXT ${x},${yTx},"1",0,1,1,"${label}"\r\n`;
+          cmds += `BARCODE ${x},${qrTopDots},"128",60,1,0,2,2,"${code}"\r\n`;
+          labelLines.forEach((line, idx) => {
+            const y = textTopDots + (idx * textLineGapDots)
+            cmds += `TEXT ${x},${y},"${textFontId}",0,${textXMul},${textYMul},"${line}"\r\n`
+          })
         }
       });
 
@@ -4501,9 +4681,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const expanded = [];
     items.forEach(({ code, label, copies }) => { for (let c = 0; c < copies; c++) expanded.push({ code, label }); });
 
-    // Batch into rows of 6
+    const { cols } = _bcReadLabelGeometryMm();
+
+    // Batch into roll rows of `cols`
     const batches = [];
-    for (let i = 0; i < expanded.length; i += 6) batches.push(expanded.slice(i, i + 6));
+    for (let i = 0; i < expanded.length; i += cols) batches.push(expanded.slice(i, i + cols));
 
     if (!_bcUsbDevice) {
       // Fallback: generate printable HTML window if no USB device
@@ -4551,7 +4733,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const pad = _bcReadMarginsMm();
     const gp = _bcReadGapMm();
-    const sheetPad = `${pad.top}mm ${pad.right}mm ${pad.bottom}mm ${pad.left}mm`;
+    const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm, qrTopRatio } = _bcReadQrConfig();
+    const { textTopRatio, textFontPt } = _bcReadTextConfig();
+
+    const contentH = Math.max(0, labelH - pad.top - pad.bottom);
+    const qrTopMm = pad.top + qrTopRatio * contentH;
+    const textTopMm = pad.top + textTopRatio * contentH;
+    const qrLeftInsetMm = Math.max(0, (labelW - qrVisualSizeMm) / 2);
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+
+    // Treat top/bottom as internal offsets (handled via absolute positioning inside each cell).
+    // Left/right still acts as sheet padding.
+    const sheetPad = `0mm ${pad.right}mm 0mm ${pad.left}mm`;
     const tableSpacing = `${gp.colGap}mm ${gp.rowGap}mm`;
 
     const isQR = labelType === 'QR';
@@ -4562,12 +4757,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let labelRows = '';
     batches.forEach((row) => {
       const cells = [];
-      for (let col = 0; col < 6; col++) {
+      for (let col = 0; col < cols; col++) {
         const item = row[col];
         if (!item || !item.code) { cells.push('<td class="empty"></td>'); continue; }
         if (isQR) {
           // QR encodes pid (code); SKU (label) shown as human-readable text below
-          const src = `${origin}/api/qr?data=${encodeURIComponent(item.code)}&size=120`;
+          const src = `${origin}/api/qr?data=${encodeURIComponent(item.code)}&size=${qrPreviewPx}`;
           cells.push(`<td class="label-cell"><img src="${src}" class="qr-img"><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);
         } else {
           const ac = String(item.code || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
@@ -4595,6 +4790,8 @@ document.addEventListener('DOMContentLoaded', () => {
 ${libScript}
 <style>
   * { margin:0;padding:0;box-sizing:border-box; }
+  @page { margin: 0; }
+  html { margin:0; padding:0; }
   body { font-family:'Courier New',monospace; background:#fff; }
   .controls { padding:10px 16px; display:flex; gap:10px; align-items:center; border-bottom:1px solid #ddd; background:#f8f8f8; }
   .controls button { padding:6px 16px; border:1px solid #888; border-radius:4px; cursor:pointer; background:#fff; font-size:13px; }
@@ -4603,18 +4800,44 @@ ${libScript}
   .label-sheet { padding:${sheetPad}; }
   table { border-collapse:separate; border-spacing:${tableSpacing}; }
   td.label-cell {
-    width:15mm; height:18mm; border:0.3pt solid #bbb; border-radius:1mm;
-    text-align:center; vertical-align:middle; padding:1mm; overflow:hidden;
+    width:${labelW}mm; height:${labelH}mm;
+    border:0.3pt solid #bbb; border-radius:1mm;
+    text-align:center; padding:0; overflow:hidden;
+    position:relative; box-sizing:border-box;
   }
-  td.empty { width:15mm; height:18mm; }
-  .qr-img  { width:12mm; height:12mm; display:block; margin:0 auto; }
-  .bc-svg  { width:13mm; height:7mm; display:block; margin:0 auto; }
-  .bc-txt  { font-size:3.5pt; margin-top:0.5mm; word-break:break-all; line-height:1.3; color:#333; text-align:center; }
+  td.empty { width:${labelW}mm; height:${labelH}mm; }
+  .qr-img  {
+    position:absolute;
+    left:50%; transform:translateX(-50%); top:${qrTopMm}mm;
+    width:${qrVisualSizeMm}mm; height:${qrVisualSizeMm}mm;
+    display:block; margin:0;
+  }
+  .bc-svg  {
+    position:absolute;
+    left:50%; transform:translateX(-50%); top:${qrTopMm}mm;
+    display:block; margin:0;
+    max-width:${labelW}mm;
+  }
+  .bc-txt  {
+    position:absolute;
+    left:0; right:0; top:${textTopMm}mm;
+    font-size:${textFontPt}pt;
+    font-weight:700;
+    font-family:Arial, sans-serif;
+    margin:0; padding:0;
+    line-height:1.1;
+    color:#333; text-align:center;
+    white-space:normal;
+    word-break:break-word;
+    overflow-wrap:anywhere;
+    max-height:2.2em;
+    overflow:hidden;
+  }
 </style>
 </head><body>
 <div class="controls">
   <span style="font-size:13px;font-weight:600">🏷️ ${isQR ? 'QR Code' : 'Barcode'} Labels — ${totalLabels} labels · ${batches.length} row(s)</span>
-  <span style="font-size:12px;color:#666">15mm × 15mm · 6UP</span>
+<span style="font-size:12px;color:#666">${labelW}mm × ${labelH}mm · ${cols}UP</span>
   <button class="primary" onclick="window.print()">🖨️ Print</button>
   <button onclick="window.close()">Close</button>
 </div>
