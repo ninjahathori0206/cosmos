@@ -1281,6 +1281,11 @@ window.setSpMlFilter = function (status, btn) {
 window.closeSpMlDetail = function () {
   const d = document.getElementById('sp-ml-detail');
   if (d) d.style.display = 'none';
+
+  // On mobile, the hamburger is controlled by the off-canvas sidebar overlay.
+  // If it's still open when Doc Details closes, it can hide the topbar/hamburger.
+  const overlayEl = document.getElementById('sp-sidebar-overlay')
+  if (overlayEl && overlayEl.classList.contains('open')) closeSidebar()
 };
 
 window.loadSpMovementList = async function () {
@@ -1320,6 +1325,11 @@ window.expandSpMlDoc = async function (docId) {
   const bodyEl  = document.getElementById('sp-ml-detail-body');
   const panEl   = document.getElementById('sp-ml-detail');
   if (!panEl) return;
+
+  // Ensure the off-canvas sidebar isn't covering the header/hamburger.
+  const overlayEl = document.getElementById('sp-sidebar-overlay')
+  if (overlayEl && overlayEl.classList.contains('open')) closeSidebar()
+
   panEl.style.display = '';
   titleEl.textContent = `Transfer Document DOC-${docId}`;
   bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>';
