@@ -118,6 +118,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) btn.disabled = disabled;
   }
 
+  function bindPasswordToggle(inputId, toggleId) {
+    const input = document.getElementById(inputId);
+    const toggle = document.getElementById(toggleId);
+    if (!input || !toggle) return;
+    toggle.addEventListener('click', () => {
+      const showPlain = input.type === 'password';
+      input.type = showPlain ? 'text' : 'password';
+      toggle.textContent = showPlain ? 'Hide' : 'Show';
+      toggle.setAttribute('aria-label', showPlain ? 'Hide password' : 'Show password');
+    });
+  }
+
+  function resetPasswordField(inputId, toggleId) {
+    const input = document.getElementById(inputId);
+    const toggle = document.getElementById(toggleId);
+    if (!input || !toggle) return;
+    input.type = 'password';
+    toggle.textContent = 'Show';
+    toggle.setAttribute('aria-label', 'Show password');
+  }
+
   function val(id) {
     const el = document.getElementById(id);
     return el ? el.value.trim() : '';
@@ -527,6 +548,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ['new-user-fullname','new-user-username','new-user-password','new-user-email','new-user-phone'].forEach((id) => {
         const el = document.getElementById(id); if (el) el.value = '';
       });
+      resetPasswordField('new-user-password', 'new-user-password-toggle');
       await loadUsers();
     } catch (err) {
       showError('new-user-error', err.message || 'Failed to create user');
@@ -545,6 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('edit-user-phone').value = u.phone || '';
     document.getElementById('edit-user-email').value = u.email || '';
     document.getElementById('edit-user-password').value = '';
+    resetPasswordField('edit-user-password', 'edit-user-password-toggle');
     document.getElementById('edit-user-status').value = u.is_active ? '1' : '0';
     const stSel = document.getElementById('edit-user-store');
     if (stSel) {
@@ -1798,6 +1821,8 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('new-user-save-btn', handleCreateUser);
   bind('edit-user-save-btn', handleSaveUserChanges);
   bind('edit-user-deactivate-btn', handleDeactivateUser);
+  bindPasswordToggle('new-user-password', 'new-user-password-toggle');
+  bindPasswordToggle('edit-user-password', 'edit-user-password-toggle');
 
   // Roles
   bind('new-role-save-btn', handleCreateRole);

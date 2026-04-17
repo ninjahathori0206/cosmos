@@ -1355,7 +1355,13 @@
       <div class="form-grid">
         <div class="form-group"><label>Full Name <span class="label-req">*</span></label><input id="new-user-fullname" type="text" placeholder="Full name"></div>
         <div class="form-group"><label>Username <span class="label-req">*</span></label><input id="new-user-username" type="text" placeholder="e.g. talha.junani"></div>
-        <div class="form-group"><label>Password <span class="label-req">*</span></label><input id="new-user-password" type="password" placeholder="Min 6 characters"></div>
+        <div class="form-group">
+          <label>Password <span class="label-req">*</span></label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="new-user-password" type="password" placeholder="Min 6 characters" style="flex:1 1 auto">
+            <button type="button" class="topbar-btn" id="new-user-password-toggle" aria-label="Show password">Show</button>
+          </div>
+        </div>
         <div class="form-group"><label>Role <span class="label-req">*</span></label>
           <select id="new-user-role">
             <option value="">— Select a role —</option>
@@ -1402,7 +1408,13 @@
         </div>
         <div class="form-group"><label>Phone</label><input id="edit-user-phone" type="text"></div>
         <div class="form-group"><label>Email</label><input id="edit-user-email" type="email"></div>
-        <div class="form-group"><label>New Password</label><input id="edit-user-password" type="password" placeholder="Leave blank to keep current"></div>
+        <div class="form-group">
+          <label>New Password</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="edit-user-password" type="password" placeholder="Leave blank to keep current" style="flex:1 1 auto">
+            <button type="button" class="topbar-btn" id="edit-user-password-toggle" aria-label="Show password">Show</button>
+          </div>
+        </div>
         <div class="form-group span2"><label>Store assignment</label>
           <select id="edit-user-store">
             <option value="">— HQ / Global (no single store) —</option>
