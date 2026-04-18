@@ -1,6 +1,6 @@
 /* ─── Finance Prototype — Client JS ─────────────────────────────────────────── */
 
-const FIN_API_KEY = 'CHANGE_ME_API_KEY';
+const FIN_API_KEY = (typeof window !== 'undefined' && window.__COSMOS_API_KEY__) || ''
 
 // ── Auth helpers ───────────────────────────────────────────────────────────────
 function getToken() { return sessionStorage.getItem('cosmos_token') || ''; }

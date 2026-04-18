@@ -90,6 +90,14 @@ app.use(
 // Request logging
 app.use(requestLogger);
 
+// Same-origin script so browser UIs send the same X-API-Key the server expects (see process.env.API_KEY).
+// Registered before express.static so it is not shadowed by a static file of the same name.
+app.get('/cosmos-client-config.js', (req, res) => {
+  res.type('application/javascript');
+  const key = process.env.API_KEY || '';
+  res.send(`window.__COSMOS_API_KEY__=${JSON.stringify(key)};\n`);
+});
+
 // Goods Transfer — destination stores (before static + two paths so old proxies / cached routes still resolve)
 const destinationStoresChain = [apiKeyAuth, authJwt, requireGoodsTransferDestinationStores, handleDestinationStores];
 app.get('/api/stock-transfers/destination-stores', ...destinationStoresChain);

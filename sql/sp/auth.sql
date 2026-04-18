@@ -3,7 +3,8 @@ IF OBJECT_ID('dbo.sp_Auth_Login', 'P') IS NOT NULL
 GO
 
 CREATE PROCEDURE dbo.sp_Auth_Login
-  @username VARCHAR(100)
+  @username VARCHAR(100),
+  @password VARCHAR(200)
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -11,7 +12,6 @@ BEGIN
   SELECT
     u.user_id,
     u.username,
-    u.password,
     u.full_name,
     u.email,
     u.phone,
@@ -22,7 +22,7 @@ BEGIN
   FROM dbo.users u
   LEFT JOIN dbo.stores s ON s.store_id = u.store_id
   WHERE u.username = @username
+    AND u.password = @password
     AND u.is_active = 1;
 END;
 GO
-

@@ -1,4 +1,6 @@
-const API_KEY = 'CHANGE_ME_API_KEY';
+/** Set by /cosmos-client-config.js from server env API_KEY — must match apiKeyAuth middleware */
+const API_KEY =
+  (typeof window !== 'undefined' && window.__COSMOS_API_KEY__) || ''
 
 const LS_USER = 'cosmos_login_username';
 const LS_PASS = 'cosmos_login_password';
@@ -64,6 +66,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value;
     const remember = document.getElementById('login-remember-me')?.checked;
+
+    if (!API_KEY) {
+      errorEl.textContent =
+        'API key is not configured on the server. Set API_KEY in your .env file, restart the app, and reload this page.'
+      btn.disabled = false
+      return
+    }
 
     try {
       const res = await fetch('/api/auth/login', {

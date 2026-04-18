@@ -1,4 +1,4 @@
-const FOUNDRY_API_KEY = 'CHANGE_ME_API_KEY';
+const FOUNDRY_API_KEY = (typeof window !== 'undefined' && window.__COSMOS_API_KEY__) || ''
 
 document.addEventListener('DOMContentLoaded', () => {
   const token = sessionStorage.getItem('cosmos_token');

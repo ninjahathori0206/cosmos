@@ -1,4 +1,4 @@
-const API_KEY = 'CHANGE_ME_API_KEY';
+const API_KEY = (typeof window !== 'undefined' && window.__COSMOS_API_KEY__) || ''
 
 function fmtIstDateTime(v) {
   if (!v) return '—';
