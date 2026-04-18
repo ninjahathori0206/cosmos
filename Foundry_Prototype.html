@@ -1188,9 +1188,12 @@
     <div class="card mb4">
       <div class="ch">
         <div class="ct">Add Items</div>
-        <div style="display:flex;gap:8px;margin-left:auto">
-          <button class="btn sm" id="st-cam-btn" onclick="stToggleCamera()">📷 Scan QR</button>
+        <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end">
+          <input type="file" id="st-qr-file" accept="image/*,.jpg,.jpeg,.png,.webp" style="display:none" aria-label="QR code image from gallery" onchange="stOnQrFileSelected(event)">
+          <button type="button" class="btn sm" id="st-qr-file-btn" onclick="stOpenQrImagePicker()" title="Decode QR from a saved photo (works on HTTP)">🖼 QR from image</button>
+          <button type="button" class="btn sm" id="st-cam-btn" onclick="stToggleCamera()">📷 Scan QR</button>
         </div>
+        <p id="st-qr-http-hint" style="display:none;font-size:11px;color:var(--gold);margin:6px 0 0;text-align:right">Live camera needs HTTPS or localhost. Use <strong>QR from image</strong> or type the SKU below on plain HTTP.</p>
       </div>
       <div class="cb">
         <!-- Camera scanner -->
@@ -1823,6 +1826,9 @@ function nav(id, el) {
   // lazy-load Transfer Requests list when navigating to that page
   if (id === 'transfer-requests' && typeof window.loadTransferRequests === 'function') {
     window.loadTransferRequests();
+  }
+  if (id === 'stock-transfer' && typeof window.stUpdateQrHttpHint === 'function') {
+    window.stUpdateQrHttpHint();
   }
 }
 

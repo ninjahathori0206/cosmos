@@ -68,6 +68,11 @@ function sendCosmosClientConfigJs(req, res) {
 app.get('/cosmos-client-config.js', sendCosmosClientConfigJs);
 app.get('/js/cosmos-client-config.js', sendCosmosClientConfigJs);
 
+// Avoid noisy 404 in dev tools when no favicon is bundled
+app.get('/favicon.ico', (req, res) => {
+  res.status(204).end();
+});
+
 function sendLoginPage(req, res) {
   const loginPath = path.join(__dirname, 'src', 'public', 'login.html');
   let html = fs.readFileSync(loginPath, 'utf8');

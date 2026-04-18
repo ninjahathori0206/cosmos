@@ -5053,6 +5053,69 @@ ${initScript}
     }
 
     // ── Camera scanner ────────────────────────────────────────────────────────
+    /** Browsers only expose getUserMedia on secure contexts (HTTPS, localhost). Plain HTTP on an IP cannot use live camera. */
+    function stIsLiveCameraSupported() {
+      if (typeof window.isSecureContext === 'boolean' && window.isSecureContext) return true;
+      const h = (window.location && window.location.hostname) ? String(window.location.hostname).toLowerCase() : '';
+      return h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+    }
+
+    window.stUpdateQrHttpHint = function stUpdateQrHttpHint() {
+      const hint = document.getElementById('st-qr-http-hint');
+      if (hint) hint.style.display = stIsLiveCameraSupported() ? 'none' : 'block';
+      const camBtn = document.getElementById('st-cam-btn');
+      if (camBtn) {
+        camBtn.title = stIsLiveCameraSupported()
+          ? 'Start live camera QR scanner'
+          : 'Live camera is blocked on plain HTTP — use “QR from image” or HTTPS';
+      }
+    };
+
+    window.stOpenQrImagePicker = function stOpenQrImagePicker() {
+      const el = document.getElementById('st-qr-file');
+      if (el) el.click();
+    };
+
+    window.stOnQrFileSelected = async function stOnQrFileSelected(ev) {
+      const input = ev && ev.target;
+      const file = input && input.files && input.files[0];
+      if (input) input.value = '';
+      if (!file) return;
+      if (!window.Html5Qrcode) {
+        stToast('QR library not loaded', '#e53e3e');
+        return;
+      }
+      if (typeof Html5Qrcode.scanFile !== 'function') {
+        stToast('This page needs html5-qrcode 2.1+ for image scan. Use manual SKU search or HTTPS.', '#e53e3e');
+        return;
+      }
+      try {
+        const text = await Html5Qrcode.scanFile(file, false);
+        await stOnScanSuccess(String(text || '').trim());
+      } catch (e) {
+        stToast('Could not read QR from image: ' + (e && e.message ? e.message : String(e)), '#e53e3e');
+      }
+    };
+
+    function stSwallowScannerStopError(e) {
+      const m = String((e && e.message) || e || '');
+      return /not running|not paused|Cannot stop/i.test(m);
+    }
+
+    function stDisposeReader(reader) {
+      if (!reader) return Promise.resolve();
+      return Promise.resolve()
+        .then(() => reader.stop())
+        .catch((e) => {
+          if (!stSwallowScannerStopError(e)) console.warn('[st QR] stop:', e);
+        })
+        .finally(() => {
+          try {
+            if (typeof reader.clear === 'function') reader.clear();
+          } catch (_) { /* ignore */ }
+        });
+    }
+
     function stResetCameraUi() {
       const btn = document.getElementById('st-cam-btn');
       if (btn) btn.textContent = '📷 Scan QR';
@@ -5063,6 +5126,12 @@ ${initScript}
     }
 
     window.stToggleCamera = function stToggleCamera() {
+      window.stUpdateQrHttpHint();
+      if (!stIsLiveCameraSupported()) {
+        stToast('Live camera is not allowed on plain HTTP. Use “QR from image” or open this site over HTTPS / localhost.', '#ca8a04');
+        window.stOpenQrImagePicker();
+        return;
+      }
       const container = document.getElementById('st-scan-container');
       if (!container) return;
       if (_scanRunning || _scanner) {
@@ -5100,7 +5169,10 @@ ${initScript}
         })
         .catch((err) => {
           stToast('Camera error: ' + (err && err.message ? err.message : err), '#e53e3e');
-          window.stStopCamera();
+          _scanner = null;
+          _scanRunning = false;
+          stResetCameraUi();
+          void stDisposeReader(reader);
         });
     };
 
@@ -5110,18 +5182,10 @@ ${initScript}
       _scanRunning = false;
       stResetCameraUi();
       if (!snap) return;
-      const afterStop = () => {
-        try {
-          if (typeof snap.clear === 'function') snap.clear();
-        } catch (_) { /* ignore */ }
-      };
-      Promise.resolve(snap.stop())
-        .catch((e) => {
-          const m = String((e && e.message) || e || '');
-          if (!/not running|not paused|Cannot stop/i.test(m)) console.warn('[st QR] stop:', e);
-        })
-        .finally(afterStop);
+      void stDisposeReader(snap);
     };
+
+    window.stUpdateQrHttpHint();
 
     let _lastScan = '';
     let _lastScanTs = 0;
