@@ -4873,6 +4873,7 @@ ${initScript}
   {
     let _cart        = [];
     let _scanner     = null;
+    /** True only after Html5Qrcode.start() has resolved — never call stop() before this. */
     let _scanRunning = false;
     let _searchTimer = null;
     let _stLastDocId = null;
@@ -5052,10 +5053,22 @@ ${initScript}
     }
 
     // ── Camera scanner ────────────────────────────────────────────────────────
+    function stResetCameraUi() {
+      const btn = document.getElementById('st-cam-btn');
+      if (btn) btn.textContent = '📷 Scan QR';
+      const container = document.getElementById('st-scan-container');
+      if (container) container.style.display = 'none';
+      const overlay = document.getElementById('st-scan-overlay');
+      if (overlay) overlay.style.display = '';
+    }
+
     window.stToggleCamera = function stToggleCamera() {
       const container = document.getElementById('st-scan-container');
       if (!container) return;
-      if (_scanRunning) { window.stStopCamera(); return; }
+      if (_scanRunning || _scanner) {
+        window.stStopCamera();
+        return;
+      }
       container.style.display = '';
       const overlay = document.getElementById('st-scan-overlay');
       if (overlay) overlay.style.display = 'none';
@@ -5063,43 +5076,51 @@ ${initScript}
         stToast('QR scanner library not loaded', '#e53e3e');
         return;
       }
-      _scanner = new Html5Qrcode('st-reader');
-      _scanRunning = true;
-      document.getElementById('st-cam-btn').textContent = '⏹ Stop Camera';
+      const btn = document.getElementById('st-cam-btn');
+      if (btn) btn.textContent = '⏳ Starting…';
+      const reader = new Html5Qrcode('st-reader');
+      _scanner = reader;
+      _scanRunning = false;
       Html5Qrcode.getCameras()
         .then((devices) => {
+          if (_scanner !== reader) return Promise.resolve();
           const cam = devices.find((d) => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
           const camId = cam ? cam.id : { facingMode: 'environment' };
-          return _scanner.start(
+          return reader.start(
             camId,
             { fps: 10, qrbox: { width: 220, height: 220 } },
             (decodedText) => stOnScanSuccess(decodedText),
             () => {}
           );
         })
+        .then(() => {
+          if (_scanner !== reader) return;
+          _scanRunning = true;
+          if (btn) btn.textContent = '⏹ Stop Camera';
+        })
         .catch((err) => {
-          stToast('Camera error: ' + err, '#e53e3e');
+          stToast('Camera error: ' + (err && err.message ? err.message : err), '#e53e3e');
           window.stStopCamera();
         });
     };
 
     window.stStopCamera = function stStopCamera() {
-      if (_scanner && _scanRunning) {
-        _scanner.stop().catch(() => {}).finally(() => {
-          _scanner = null;
-          _scanRunning = false;
-          const btn = document.getElementById('st-cam-btn');
-          if (btn) btn.textContent = '📷 Scan QR';
-          const container = document.getElementById('st-scan-container');
-          if (container) container.style.display = 'none';
-          const overlay = document.getElementById('st-scan-overlay');
-          if (overlay) overlay.style.display = '';
-        });
-      } else {
-        _scanRunning = false;
-        const container = document.getElementById('st-scan-container');
-        if (container) container.style.display = 'none';
-      }
+      const snap = _scanner;
+      _scanner = null;
+      _scanRunning = false;
+      stResetCameraUi();
+      if (!snap) return;
+      const afterStop = () => {
+        try {
+          if (typeof snap.clear === 'function') snap.clear();
+        } catch (_) { /* ignore */ }
+      };
+      Promise.resolve(snap.stop())
+        .catch((e) => {
+          const m = String((e && e.message) || e || '');
+          if (!/not running|not paused|Cannot stop/i.test(m)) console.warn('[st QR] stop:', e);
+        })
+        .finally(afterStop);
     };
 
     let _lastScan = '';
