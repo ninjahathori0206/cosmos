@@ -1,4 +1,4 @@
-/** Set by /cosmos-client-config.js from server env API_KEY — must match apiKeyAuth middleware */
+/** Set by inline script on login page or /cosmos-client-config.js (must match apiKeyAuth / process.env.API_KEY) */
 const API_KEY =
   (typeof window !== 'undefined' && window.__COSMOS_API_KEY__) || ''
 
@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!API_KEY) {
       errorEl.textContent =
-        'API key is not configured on the server. Set API_KEY in your .env file, restart the app, and reload this page.'
+        'Missing API key in the browser. Ensure the app was restarted after setting API_KEY in .env, open the site from this server (not an old cached login.html), or ask your admin to redeploy the latest app.js.'
       btn.disabled = false
       return
     }

@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+const fs = require('fs');
 const express = require('express');
 const path = require('path');
 const helmet = require('helmet');
@@ -50,6 +51,40 @@ const app = express();
 
 const PORT = process.env.PORT || 4000;
 
+/** Inline + URL variants so login and prototypes always receive a real JS MIME type and never hit a JSON 404. */
+function buildClientConfigInlineScript() {
+  const key = process.env.API_KEY || '';
+  return `<script>window.__COSMOS_API_KEY__=${JSON.stringify(key)};</script>`;
+}
+
+function sendCosmosClientConfigJs(req, res) {
+  const key = process.env.API_KEY || '';
+  res.status(200);
+  res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  res.send(`window.__COSMOS_API_KEY__=${JSON.stringify(key)};\n`);
+}
+
+app.get('/cosmos-client-config.js', sendCosmosClientConfigJs);
+app.get('/js/cosmos-client-config.js', sendCosmosClientConfigJs);
+
+function sendLoginPage(req, res) {
+  const loginPath = path.join(__dirname, 'src', 'public', 'login.html');
+  let html = fs.readFileSync(loginPath, 'utf8');
+  const marker = '<!--COSMOS_CLIENT_CONFIG-->';
+  if (html.includes(marker)) {
+    html = html.replace(marker, buildClientConfigInlineScript());
+  } else {
+    html = html.replace(
+      '<script src="/js/login.js"',
+      `${buildClientConfigInlineScript()}\n  <script src="/js/login.js"`
+    );
+  }
+  res.status(200);
+  res.type('html');
+  res.send(html);
+}
+
 // Security headers via Helmet.
 // Notes:
 //  - contentSecurityPolicy: disabled — prototype UIs use inline scripts/styles
@@ -90,23 +125,14 @@ app.use(
 // Request logging
 app.use(requestLogger);
 
-// Same-origin script so browser UIs send the same X-API-Key the server expects (see process.env.API_KEY).
-// Registered before express.static so it is not shadowed by a static file of the same name.
-app.get('/cosmos-client-config.js', (req, res) => {
-  res.type('application/javascript');
-  const key = process.env.API_KEY || '';
-  res.send(`window.__COSMOS_API_KEY__=${JSON.stringify(key)};\n`);
-});
-
 // Goods Transfer — destination stores (before static + two paths so old proxies / cached routes still resolve)
 const destinationStoresChain = [apiKeyAuth, authJwt, requireGoodsTransferDestinationStores, handleDestinationStores];
 app.get('/api/stock-transfers/destination-stores', ...destinationStoresChain);
 app.get('/api/foundry/destination-stores', ...destinationStoresChain);
 
-// Default route -> login UI
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'src', 'public', 'login.html'));
-});
+// Login UI — inject API key so /cosmos-client-config.js is not required for sign-in
+app.get('/', sendLoginPage);
+app.get('/login.html', sendLoginPage);
 
 // Serve full Command Unit prototype UI
 app.get('/command-unit.html', (req, res) => {
