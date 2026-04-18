@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "restore:cursor-rules": "node scripts/restore-cursor-rules.js",
     "publish:design-local": "node -e \"require('fs').copyFileSync('pencil-new.pen','src/public/design/pencil-local/pencil-new.pen'); console.log('Copied pencil-new.pen → src/public/design/pencil-local/')\""
   },
   "keywords": [
