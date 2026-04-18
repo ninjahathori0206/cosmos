@@ -65,7 +65,7 @@ router.get('/supplier-summary', ...financeView, async (req, res, next) => {
 });
 
 // ── GET /api/finance/supplier/:id/statement ───────────────────────────────────
-router.get('/supplier/:id/statement', async (req, res, next) => {
+router.get('/supplier/:id/statement', ...financeView, async (req, res, next) => {
   try {
     const supplierId = Number(req.params.id);
     const result = await executeStoredProcedure('sp_Finance_SupplierStatement', {
@@ -260,7 +260,7 @@ router.get('/item-finance/filters', ...financeView, async (req, res, next) => {
 });
 
 // ── GET /api/finance/purchase-report/categories ───────────────────────────────
-router.get('/purchase-report/categories', async (req, res, next) => {
+router.get('/purchase-report/categories', ...financeView, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_Finance_PurchaseReport_Categories', {});
     return res.json({ success: true, data: (result.recordset || []).map((r) => r.category) });

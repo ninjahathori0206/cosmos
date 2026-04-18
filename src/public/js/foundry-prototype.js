@@ -13,6 +13,148 @@ function closeSidebar() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Visual-only theme polish for Foundry prototype screens.
+  // Keeps existing behavior and structure intact.
+  (function injectFoundryPrototypeUiPolish() {
+    if (document.getElementById('fy-ui-polish')) return;
+    const style = document.createElement('style');
+    style.id = 'fy-ui-polish';
+    style.textContent = `
+      :root{
+        --bg:#f8fafc;
+        --bg2:#eef2ff;
+        --text:#0f172a;
+        --text2:#334155;
+        --text3:#64748b;
+        --border:#dbe4f0;
+        --acc:#4f46e5;
+        --acc2:#2563eb;
+        --accL:#e0e7ff;
+        --green:#166534;
+        --greenL:#dcfce7;
+        --red:#dc2626;
+        --redL:#fee2e2;
+        --gold:#b45309;
+        --goldL:#fef3c7;
+        --teal:#0f766e;
+        --tealL:#ccfbf1;
+      }
+      body{background:var(--bg)}
+      .sidebar{border-right:1px solid var(--border)}
+      .sidebar-nav .nav-item{
+        border:1px solid transparent;
+        border-radius:10px;
+        margin:2px 6px;
+        transition:background .15s ease,border-color .15s ease,color .15s ease;
+      }
+      .sidebar-nav .nav-item:hover{background:#f1f5f9;border-color:var(--border)}
+      .sidebar-nav .nav-item.active{background:var(--acc2);color:#fff;border-color:var(--acc2)}
+      .card{
+        border:1px solid var(--border) !important;
+        border-radius:12px !important;
+        box-shadow:0 4px 14px rgba(15,23,42,.04);
+      }
+      .ch{border-bottom:1px solid var(--border)}
+      .ct{letter-spacing:.01em}
+      .btn{
+        border-radius:9px !important;
+        border:1px solid transparent;
+        transition:background .15s ease,border-color .15s ease,transform .06s ease;
+      }
+      .btn:hover{transform:translateY(-1px)}
+      .btn.primary{background:var(--acc2) !important}
+      .btn.primary:hover{background:#1d4ed8 !important}
+      .btn.xs,.btn.sm{font-weight:600}
+      input,select,textarea{
+        border:1px solid var(--border) !important;
+        border-radius:9px !important;
+        background:#fff !important;
+        color:var(--text) !important;
+        transition:border-color .15s ease, box-shadow .15s ease;
+      }
+      input:focus,select:focus,textarea:focus{
+        border-color:var(--acc2) !important;
+        box-shadow:0 0 0 2px rgba(37,99,235,.14);
+        outline:none;
+      }
+      .tw table thead th{
+        background:#eef2ff;
+        color:#4338ca;
+      }
+      .tw table tbody tr:hover td{background:#f8fbff}
+      .b{border-radius:999px;padding:2px 8px}
+      .b-green{background:var(--greenL);color:var(--green)}
+      .b-red{background:var(--redL);color:var(--red)}
+      .b-gold{background:var(--goldL);color:var(--gold)}
+      .b-blue{background:#dbeafe;color:#1d4ed8}
+      .b-teal{background:var(--tealL);color:var(--teal)}
+      .digi-media-grid{display:grid;grid-template-columns:100px 1fr;gap:10px;align-items:start}
+      .digi-upload-tile{
+        min-height:92px;border:1.5px dashed #c7d2fe;border-radius:10px;
+        background:#f8faff;color:#4f46e5;display:flex;align-items:center;justify-content:center;
+        text-align:center;font-size:11px;font-weight:600;line-height:1.3;cursor:pointer;padding:8px;
+      }
+      .digi-media-strip{display:flex;gap:8px;flex-wrap:wrap}
+      .digi-media-thumb{
+        width:112px;height:84px;border-radius:8px;border:1px solid var(--border);
+        overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;position:relative;
+      }
+      .digi-media-thumb img,.digi-media-thumb video{width:100%;height:100%;object-fit:cover}
+      .digi-media-actions{display:flex;gap:6px;margin-top:6px}
+      .digi-media-actions .btn{padding:4px 8px !important;font-size:11px}
+      .ml-toolbar{
+        display:flex;gap:10px;align-items:center;justify-content:space-between;
+        padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;margin-bottom:10px;
+      }
+      .ml-toolbar .ml-search{max-width:320px;width:100%}
+      .ml-count{font-size:12px;color:var(--text3);white-space:nowrap}
+      .ml-rows{display:flex;flex-direction:column;gap:8px}
+      .ml-row-dense{
+        display:flex;align-items:center;justify-content:space-between;gap:12px;
+        border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#fff;cursor:pointer;
+      }
+      .ml-row-dense:hover{background:#f8fbff}
+      .ml-pri{font-size:13px;font-weight:600;color:var(--text)}
+      .ml-sec{font-size:12px;color:var(--text3);margin-top:2px}
+      .ml-meta-grid{
+        display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;
+      }
+      .ml-meta-card{border:1px solid var(--border);border-radius:10px;padding:9px 10px;background:#fff}
+      .ml-meta-k{font-size:11px;color:var(--text3);margin-bottom:3px}
+      .ml-meta-v{font-size:13px;font-weight:600;color:var(--text)}
+      .ml-lines-table th{background:#eef2ff;color:#4338ca}
+      .ml-lines-table td,.ml-lines-table th{padding:7px 8px;border-bottom:1px solid var(--border)}
+      .br-summary{
+        display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px
+      }
+      .br-kpi{
+        border:1px solid var(--border);border-radius:10px;padding:8px 10px;background:#fff;min-width:140px
+      }
+      .br-kpi .k{font-size:11px;color:var(--text3);margin-bottom:2px}
+      .br-kpi .v{font-size:13px;font-weight:700;color:var(--text)}
+      .br-item-card{
+        border:1px solid var(--border);border-radius:10px;background:#fff;padding:10px 12px;margin-bottom:10px
+      }
+      .br-item-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px}
+      .br-item-title{font-size:13px;font-weight:700;color:var(--text)}
+      .br-item-sub{font-size:12px;color:var(--text3)}
+      .br-pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--border);background:var(--bg)}
+      .br-meta-strip{
+        display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px
+      }
+      .br-meta-cell{
+        border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:6px 8px;display:flex;gap:6px;align-items:center
+      }
+      .br-meta-cell .k{font-size:11px;color:var(--text3)}
+      .br-meta-cell .v{font-size:12px;font-weight:600;color:var(--text)}
+      .br-table th{background:#f1f5ff;color:#4f46e5;font-size:10px}
+      .br-table td{padding:6px 8px}
+      #branding-receipt-verify-wrap .tw table th{background:#f1f5ff;color:#4f46e5}
+      #branding-receipt-verify-wrap .tw table td,#branding-receipt-verify-wrap .tw table th{padding:6px 8px}
+    `;
+    document.head.appendChild(style);
+  })();
+
   const token = sessionStorage.getItem('cosmos_token');
   const userRaw = sessionStorage.getItem('cosmos_user');
 
@@ -189,6 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let _homeBrands        = [];
   let _allBrandingAgents = [];
   let _itemCount         = 0;
+  window._brandingReceiptDraftByHeader = {};
   window._currentHeaderId = null;
   window._purchaseActiveItemIdx = 1;
   window._purchaseLineModes = {};
@@ -835,8 +978,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // DASHBOARD
   // ─────────────────────────────────────────────────────────────────────────
   async function loadDashboard() {
+    const lowStockTbody = document.getElementById('dash-low-stock');
+    const lowStockCount = document.getElementById('dash-low-stock-count');
+    if (lowStockTbody) {
+      lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>';
+    }
+    if (lowStockCount) {
+      lowStockCount.className = 'b b-gray';
+      lowStockCount.textContent = 'Loading…';
+    }
     try {
-      const data = await apiGet('/api/purchases/dashboard-stats');
+      const [data, availableStock] = await Promise.all([
+        apiGet('/api/purchases/dashboard-stats'),
+        apiGet('/api/stock-transfers/available').catch(() => [])
+      ]);
       const p = data.purchases || {};
       const setV = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v != null ? v : '0'; };
       setV('dash-active', p.active_purchases);
@@ -848,6 +1003,39 @@ document.addEventListener('DOMContentLoaded', () => {
       setV('dash-skus', (data.skus || {}).total_skus);
       setV('dash-stock', (data.stock || {}).warehouse_stock);
       setV('dash-suppliers', (data.suppliers || {}).active_suppliers);
+
+      if (lowStockTbody && lowStockCount) {
+        const safe = (v) => String(v == null ? '' : v)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+        const rows = Array.isArray(availableStock) ? availableStock : [];
+        const lowRows = rows
+          .filter((r) => Number(r.available_qty ?? r.warehouse_qty ?? r.qty ?? 0) <= 5)
+          .sort((a, b) => Number(a.available_qty ?? a.warehouse_qty ?? a.qty ?? 0) - Number(b.available_qty ?? b.warehouse_qty ?? b.qty ?? 0))
+          .slice(0, 8);
+
+        lowStockCount.className = lowRows.length ? 'b b-red' : 'b b-gray';
+        lowStockCount.textContent = lowRows.length ? `${lowRows.length} SKUs` : 'No alerts';
+
+        if (!lowRows.length) {
+          lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">No low stock alerts.</td></tr>';
+        } else {
+          lowStockTbody.innerHTML = lowRows.map((r) => {
+            const qty = Number(r.available_qty ?? r.warehouse_qty ?? r.qty ?? 0);
+            const threshold = Number(r.threshold_qty ?? r.min_qty ?? 5);
+            const qtyColor = qty <= 2 ? 'var(--red)' : 'var(--gold)';
+            return `<tr>
+              <td class="mono xs">${safe(r.sku_code || r.sku || '—')}</td>
+              <td>${safe(r.product_name || r.display_name || r.model_name || '—')}</td>
+              <td class="fw6" style="color:${qtyColor}">${qty}</td>
+              <td class="td2">${threshold}</td>
+            </tr>`;
+          }).join('');
+        }
+      }
     } catch (err) { console.error('loadDashboard:', err); }
   }
 
@@ -1110,9 +1298,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // Recalculate totals for the new card
     calcItemBill(newIdx);
     validateColourQty(newIdx);
-    // Scroll the new card into view
+    // On mobile Chrome, auto-scrolling via scrollIntoView can trigger sticky-header bugs.
+    // Skip scrolling on mobile; on desktop we can still bring it into view.
     const newCard = document.getElementById(`item-card-${newIdx}`);
-    if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (newCard) {
+      const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
+      if (!isMobile) {
+        const ua = navigator.userAgent || ''
+        const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+        // Bring the new card into view on desktop.
+        newCard.scrollIntoView({ behavior: isChromeLike ? 'auto' : 'smooth', block: 'start' })
+      }
+    }
   };
 
   /** Same manufacturer / brand / collection / rate / GST / branding as last item; clear model & qty & colours. */
@@ -1169,7 +1366,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modelEl) modelEl.focus();
 
     const newCard = document.getElementById(`item-card-${newIdx}`);
-    if (newCard) newCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (newCard) {
+      const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
+      if (!isMobile) {
+        const ua = navigator.userAgent || ''
+        const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+        newCard.scrollIntoView({ behavior: isChromeLike ? 'auto' : 'smooth', block: 'start' })
+      }
+    }
   };
 
   let _colourCounters = {};
@@ -1887,6 +2091,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // Build all-items colour table
       let allItemsHtml = '';
       const isPendingDispatch = h.pipeline_status === 'PENDING_BRANDING';
+      const totalItemQty = items.reduce((s, it) => s + Number(it.quantity || 0), 0);
+      const totalColourRows = items.reduce((s, it) => s + ((it.colours || []).length), 0);
+      const brandingRequiredCount = items.filter((it) => !!it.branding_required).length;
       items.forEach((it) => {
         const needsBranding = it.branding_required;
         // Brand selector — shown for items needing branding in PENDING_BRANDING state;
@@ -1941,27 +2148,45 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>`;
         }
 
+        const totalColourQty = (it.colours || []).reduce((s, c) => s + Number(c.quantity || 0), 0);
         allItemsHtml += `
-          <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
-            <div class="fw6 mb1">${it.ew_collection || ''} · ${it.style_model || ''} <span class="xs td2">(${it.quantity} units)</span></div>
+          <div class="br-item-card">
+            <div class="br-item-head">
+              <div>
+                <div class="br-item-title">${it.ew_collection || '—'} · ${it.style_model || '—'}</div>
+                <div class="br-item-sub">Item #${it.item_id || '—'} · ${it.quantity || 0} units</div>
+              </div>
+              <div class="br-pill">${needsBranding ? 'Branding Required' : 'No Branding Needed'}</div>
+            </div>
             ${brandRowHtml}
-            <table style="width:100%;font-size:13px">
+            <div class="br-meta-strip">
+              <div class="br-meta-cell"><span class="k">Colour Lines</span><span class="v">${(it.colours || []).length}</span></div>
+              <div class="br-meta-cell"><span class="k">Total Colour Qty</span><span class="v">${totalColourQty}</span></div>
+            </div>
+            <table class="br-table" style="width:100%;font-size:13px">
               <thead><tr>
-                <th style="padding:6px 8px;font-size:11px;text-transform:uppercase">Colour</th>
-                <th style="padding:6px 8px;font-size:11px;text-transform:uppercase">Code</th>
-                <th style="padding:6px 8px;font-size:11px;text-transform:uppercase;text-align:center">Quantity</th>
+                <th>Colour</th>
+                <th>Code</th>
+                <th style="text-align:center">Quantity</th>
               </tr></thead>
               <tbody>
                 ${(it.colours || []).map((c) => `<tr>
-                  <td style="padding:7px 8px">${c.colour_name}</td>
-                  <td class="mono xs" style="padding:7px 8px">${c.colour_code}</td>
-                  <td style="padding:7px 8px;text-align:center">${c.quantity}</td>
+                  <td>${c.colour_name}</td>
+                  <td class="mono xs">${c.colour_code}</td>
+                  <td style="text-align:center">${c.quantity}</td>
                 </tr>`).join('')}
               </tbody>
             </table>
           </div>`;
       });
-      document.getElementById('branding-items-area').innerHTML = allItemsHtml || '<div class="empty">No items</div>';
+      document.getElementById('branding-items-area').innerHTML = `
+        <div class="br-summary">
+          <div class="br-kpi"><div class="k">Items</div><div class="v">${items.length}</div></div>
+          <div class="br-kpi"><div class="k">Branding Required</div><div class="v">${brandingRequiredCount}</div></div>
+          <div class="br-kpi"><div class="k">Total Qty</div><div class="v">${totalItemQty}</div></div>
+          <div class="br-kpi"><div class="k">Colour Lines</div><div class="v">${totalColourRows}</div></div>
+        </div>
+        ${allItemsHtml || '<div class="empty">No items</div>'}`;
       // Store for print function
       window._currentBrandingData = { header: h, items };
 
@@ -2000,6 +2225,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show assigned branding agent name
         const agentInfo = document.getElementById('branding-dispatched-agent');
         if (agentInfo) agentInfo.textContent = h.branding_agent_name || '—';
+        ensureBrandingReceiptVerificationUI(headerId, items);
       }
 
     } catch (err) { console.error('openBrandingPage:', err); }
@@ -2061,6 +2287,12 @@ document.addEventListener('DOMContentLoaded', () => {
   window.handleBrandingReceive = async function() {
     const headerId = window._currentHeaderId;
     if (!headerId) return;
+    const verify = computeBrandingReceiptMismatches(headerId);
+    renderBrandingReceiptSummary(headerId);
+    if (verify.itemMismatches.length || verify.colourMismatches.length) {
+      alert(`Cannot confirm receipt. Quantity mismatches found (Item: ${verify.itemMismatches.length}, Colour: ${verify.colourMismatches.length}).`);
+      return;
+    }
     const btn = document.getElementById('branding-receive-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Confirming…'; }
     try {
@@ -2069,6 +2301,127 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) { alert(err.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Confirm Receipt → Digitisation'; } }
   };
+
+  function ensureBrandingReceiptDraft(headerId, items) {
+    if (!headerId) return null;
+    const key = String(headerId);
+    let draft = window._brandingReceiptDraftByHeader[key];
+    if (!draft) draft = { items: {}, colours: {} };
+    (items || []).forEach((it, itemIdx) => {
+      const itemId = Number(it.item_id || itemIdx + 1);
+      const itemKey = String(itemId);
+      const expectedItemQty = Number(it.quantity || 0);
+      if (!draft.items[itemKey]) {
+        draft.items[itemKey] = {
+          item_id: itemId,
+          label: it.style_model || `Item #${itemId}`,
+          expected_qty: expectedItemQty,
+          received_qty: expectedItemQty
+        };
+      }
+      (it.colours || []).forEach((c, cIdx) => {
+        const colourId = Number(c.colour_id || cIdx + 1);
+        const colourKey = `${itemKey}:${colourId}`;
+        const expectedColourQty = Number(c.quantity || 0);
+        if (!draft.colours[colourKey]) {
+          draft.colours[colourKey] = {
+            item_id: itemId,
+            colour_id: colourId,
+            item_label: it.style_model || `Item #${itemId}`,
+            colour_label: c.colour_name || `Colour #${colourId}`,
+            expected_qty: expectedColourQty,
+            received_qty: expectedColourQty
+          };
+        }
+      });
+    });
+    window._brandingReceiptDraftByHeader[key] = draft;
+    return draft;
+  }
+
+  function computeBrandingReceiptMismatches(headerId) {
+    const draft = window._brandingReceiptDraftByHeader[String(headerId)] || { items: {}, colours: {} };
+    const itemMismatches = Object.values(draft.items).filter((x) => Number(x.received_qty || 0) !== Number(x.expected_qty || 0));
+    const colourMismatches = Object.values(draft.colours).filter((x) => Number(x.received_qty || 0) !== Number(x.expected_qty || 0));
+    return { itemMismatches, colourMismatches };
+  }
+
+  function renderBrandingReceiptSummary(headerId) {
+    const wrap = document.getElementById('branding-receipt-verify-summary');
+    if (!wrap) return;
+    const { itemMismatches, colourMismatches } = computeBrandingReceiptMismatches(headerId);
+    const total = itemMismatches.length + colourMismatches.length;
+    if (!total) {
+      wrap.innerHTML = `<div class="b b-green">All quantities matched. Confirm Receipt is enabled.</div>`;
+      return;
+    }
+    const itemList = itemMismatches.slice(0, 6).map((m) => `<li>Item ${_mcEsc(m.label || m.item_id)}: expected ${m.expected_qty}, received ${m.received_qty}</li>`).join('');
+    const colourList = colourMismatches.slice(0, 6).map((m) => `<li>${_mcEsc(m.item_label || ('Item #' + m.item_id))} · ${_mcEsc(m.colour_label)}: expected ${m.expected_qty}, received ${m.received_qty}</li>`).join('');
+    wrap.innerHTML = `
+      <div class="b b-red">Mismatches found: ${total} (Items: ${itemMismatches.length}, Colours: ${colourMismatches.length})</div>
+      <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><div class="xs td2" style="margin-bottom:4px">Item-level mismatches</div><ul style="margin:0;padding-left:16px">${itemList || '<li class="td2">None</li>'}</ul></div>
+        <div><div class="xs td2" style="margin-bottom:4px">Colour-level mismatches</div><ul style="margin:0;padding-left:16px">${colourList || '<li class="td2">None</li>'}</ul></div>
+      </div>`;
+  }
+
+  window.handleBrandingReceiptQtyInput = function(headerId, type, key, rawValue) {
+    const draft = window._brandingReceiptDraftByHeader[String(headerId)];
+    if (!draft) return;
+    const valNum = Math.max(0, Number(rawValue || 0));
+    if (type === 'item' && draft.items[key]) draft.items[key].received_qty = valNum;
+    if (type === 'colour' && draft.colours[key]) draft.colours[key].received_qty = valNum;
+    renderBrandingReceiptSummary(headerId);
+  };
+
+  function ensureBrandingReceiptVerificationUI(headerId, items) {
+    const receiptCard = document.getElementById('branding-receipt-card');
+    if (!receiptCard) return;
+    const draft = ensureBrandingReceiptDraft(headerId, items);
+    if (!draft) return;
+    let host = document.getElementById('branding-receipt-verify-wrap');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'branding-receipt-verify-wrap';
+      host.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid var(--border)';
+      receiptCard.appendChild(host);
+    }
+
+    const itemRows = Object.entries(draft.items).map(([k, it]) => `
+      <tr>
+        <td style="padding:6px 8px">${_mcEsc(it.label)}</td>
+        <td class="tc" style="padding:6px 8px">${Number(it.expected_qty || 0)}</td>
+        <td style="padding:6px 8px"><input type="number" min="0" step="1" value="${Number(it.received_qty || 0)}" oninput="handleBrandingReceiptQtyInput(${headerId}, 'item', '${k}', this.value)" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px"></td>
+      </tr>`).join('');
+
+    const colourRows = Object.entries(draft.colours).map(([k, c]) => `
+      <tr>
+        <td style="padding:6px 8px">${_mcEsc(c.item_label)}</td>
+        <td style="padding:6px 8px">${_mcEsc(c.colour_label)}</td>
+        <td class="tc" style="padding:6px 8px">${Number(c.expected_qty || 0)}</td>
+        <td style="padding:6px 8px"><input type="number" min="0" step="1" value="${Number(c.received_qty || 0)}" oninput="handleBrandingReceiptQtyInput(${headerId}, 'colour', '${k}', this.value)" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px"></td>
+      </tr>`).join('');
+
+    host.innerHTML = `
+      <div class="fw6" style="margin-bottom:8px">Receipt Quantity Verification</div>
+      <div class="xs td2" style="margin-bottom:8px">Confirm Receipt is blocked until item-wise and colour-wise received quantities match expected quantities.</div>
+      <div id="branding-receipt-verify-summary" style="margin-bottom:10px"></div>
+      <div style="display:grid;grid-template-columns:1fr;gap:10px">
+        <div class="tw">
+          <table>
+            <thead><tr><th>Item</th><th class="tc">Expected Qty</th><th>Received Qty</th></tr></thead>
+            <tbody>${itemRows || '<tr><td colspan="3" class="tc td2 p12">No items</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Item</th><th>Colour</th><th class="tc">Expected Qty</th><th>Received Qty</th></tr></thead>
+            <tbody>${colourRows || '<tr><td colspan="4" class="tc td2 p12">No colours</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>`;
+    renderBrandingReceiptSummary(headerId);
+  }
 
   window.showBrandingBypassModal = function() {
     const bypassCard = document.getElementById('branding-bypass-card');
@@ -2236,12 +2589,16 @@ document.addEventListener('DOMContentLoaded', () => {
       // Summary bar
       const totalColours = items.reduce((s, it) => s + (it.colours || []).length, 0);
       const doneColours  = skus.length;
+      const pendingColours = Math.max(totalColours - doneColours, 0);
+      const readyPct = totalColours ? Math.round((doneColours / totalColours) * 100) : 0;
       if (summaryBar) {
         summaryBar.innerHTML = `
           <div><div class="xs td2">Purchase</div><div class="fw6">#${h.header_id}</div></div>
           <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
           <div><div class="xs td2">Items</div><div class="fw6">${items.length}</div></div>
-          <div><div class="xs td2">SKUs Generated</div><div class="fw6" style="color:${doneColours===totalColours?'var(--green)':'var(--gold)'}">${doneColours} / ${totalColours}</div></div>`;
+          <div><div class="xs td2">SKUs Generated</div><div class="fw6" style="color:${doneColours===totalColours?'var(--green)':'var(--gold)'}">${doneColours} / ${totalColours}</div></div>
+          <div><div class="xs td2">Pending Colours</div><div class="fw6" style="color:${pendingColours ? 'var(--red)' : 'var(--green)'}">${pendingColours}</div></div>
+          <div><div class="xs td2">Ready %</div><div class="fw6" style="color:${readyPct === 100 ? 'var(--green)' : 'var(--acc2)'}">${readyPct}%</div></div>`;
       }
 
       // Progress label
@@ -2252,15 +2609,33 @@ document.addEventListener('DOMContentLoaded', () => {
       const pstepSub = document.getElementById('digi-pstep-sub');
       if (pstepSub) pstepSub.textContent = `${doneColours} of ${totalColours} SKUs done`;
 
-      // Build item sections with colour tabs
+      // Build item sections with colour tabs + top-level item selector
       if (!container) return;
       container.innerHTML = '';
+      if (items.length > 1) {
+        const itemTabs = items.map((item, idx) => {
+          const label = `${item.ew_collection || 'Item'} · ${item.style_model || `#${idx + 1}`}`;
+          return `<div class="tab${idx === 0 ? ' active' : ''}" data-item-tab="${item.item_id}" onclick="switchDigiItemTab(this, ${item.item_id})">${label}</div>`;
+        }).join('');
+        const tabsWrap = document.createElement('div');
+        tabsWrap.className = 'card mb4';
+        tabsWrap.innerHTML = `
+          <div class="section-lbl mb2">Items</div>
+          <div class="tabs" id="digi-item-tabs">${itemTabs}</div>`;
+        container.appendChild(tabsWrap);
+      }
 
       items.forEach((item, itemIdx) => {
         const colours = item.colours || [];
+        const doneInItem = colours.reduce((acc, c) => acc + (skus.some((sk) => sk.item_colour_id === c.colour_id) ? 1 : 0), 0);
+        const pendingInItem = Math.max(colours.length - doneInItem, 0);
         const section = document.createElement('div');
         section.className = 'card mb4';
         section.id = `digi-item-section-${item.item_id}`;
+        if (itemIdx !== 0) section.style.display = 'none';
+        section.dataset.pending = String(pendingInItem);
+        section.dataset.done = String(doneInItem);
+        section.dataset.search = `${item.ew_collection || ''} ${item.style_model || ''} ${item.brand_name || item.source_brand || ''}`.toLowerCase();
 
         let tabsHtml = '';
         let panelsHtml = '';
@@ -2274,22 +2649,21 @@ document.addEventListener('DOMContentLoaded', () => {
           // Colour-level media — prefer SKU level, fall back to colour record
           const colourImgUrl = (existingSku && existingSku.image_url) || col.image_url || null;
           const colourVidUrl = (existingSku && existingSku.video_url) || col.video_url || null;
-          const currentColourImg = colourImgUrl
-            ? `<div style="width:100%;max-width:200px;height:150px;border-radius:8px;border:1px solid var(--border);overflow:hidden;background:#f7f9fc;margin-bottom:8px">
-                 <img src="${colourImgUrl}" alt="${col.colour_name}"
-                   style="width:100%;height:100%;object-fit:contain;padding:4px"
-                   onerror="this.parentElement.innerHTML='<div style=\'width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:24px\'>📷</div>'">
-               </div>`
-            : `<div style="width:100%;max-width:200px;height:100px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;color:var(--text3);font-size:28px;background:#fafafa">📷
-               <div class="xs td2" style="font-size:11px;margin-top:4px">No photo yet</div></div>`;
-          const currentColourVid = colourVidUrl
-            ? `<div style="width:100%;border-radius:8px;overflow:hidden;margin-bottom:8px">
-                 <video src="${colourVidUrl}" controls style="width:100%;max-height:140px;display:block;border-radius:8px;border:1px solid var(--border)"></video>
-               </div>`
-            : `<div style="width:100%;max-width:200px;height:80px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;color:var(--text3);font-size:24px;background:#fafafa">🎬
-               <div class="xs td2" style="font-size:11px;margin-top:4px">No video yet</div></div>`;
+          const mediaThumbs = [];
+          if (colourImgUrl) {
+            mediaThumbs.push(`<div class="digi-media-thumb">
+              <img src="${colourImgUrl}" alt="${col.colour_name}"
+                onerror="this.parentElement.innerHTML='<span class=\\'xs td2\\'>Image failed</span>'">
+            </div>`);
+          }
+          if (colourVidUrl) {
+            mediaThumbs.push(`<div class="digi-media-thumb"><video src="${colourVidUrl}" controls></video></div>`);
+          }
+          const currentMedia = mediaThumbs.length
+            ? mediaThumbs.join('')
+            : `<div class="digi-media-thumb"><span class="xs td2">No media yet</span></div>`;
 
-          tabsHtml += `<div class="tab${colIdx === 0 ? ' active' : ''}" onclick="switchDigiTab(this, '${tabId}')">
+          tabsHtml += `<div class="tab${colIdx === 0 ? ' active' : ''}" data-digi-status="${isDone ? 'done' : 'pending'}" onclick="switchDigiTab(this, '${tabId}')">
             ${col.colour_name} ${isDone ? '<span class="b b-green xs">Done</span>' : '<span class="b b-gold xs">Pending</span>'}
           </div>`;
 
@@ -2318,47 +2692,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
               </div>
               <div class="col-stack">
-                <div class="card">
-                  <div class="ch"><div class="ct">Product Info</div></div>
-                  <div class="cb">
-                    <div class="fg2">
-                      <div><div class="xs td2">EW Collection</div><div class="fw6">${item.ew_collection || '—'}</div></div>
-                      <div><div class="xs td2">Style</div><div class="fw6">${item.style_model || '—'}</div></div>
-                      <div><div class="xs td2">Brand</div><div class="fw6">${item.brand_name || item.source_brand || '—'}</div></div>
-                      <div><div class="xs td2">Quantity</div><div class="fw6">${item.quantity} units</div></div>
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px">
+                  <div class="section-lbl mb3">${col.colour_name} — Media</div>
+                  <div class="digi-media-grid">
+                    <div class="digi-upload-tile" onclick="document.getElementById('${imgId}-file').click()">
+                      Click to upload<br>or drag and drop
+                    </div>
+                    <div>
+                      <div id="${imgId}-current" class="digi-media-strip">${currentMedia}</div>
+                      <div id="${imgId}-preview" class="digi-media-strip" style="display:none"></div>
+                      <div class="digi-media-actions">
+                        <button type="button" class="btn sm" onclick="document.getElementById('${imgId}-file').click()">Replace</button>
+                        <button type="button" class="btn sm" onclick="clearColourMediaSelection('${imgId}')">Remove</button>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
-                  <div class="section-lbl mb3">${col.colour_name} — Media</div>
-
-                  <!-- Photo -->
-                  <div class="xs fw6 mb1" style="color:var(--text2)">Photo</div>
-                  <div id="${imgId}-current">${currentColourImg}</div>
-                  <div id="${imgId}-preview" style="display:none;margin-bottom:8px"></div>
-                  <label style="display:inline-block;cursor:pointer" title="Choose photo for ${col.colour_name}">
-                    <input type="file" id="${imgId}-file" accept="image/jpeg,image/png,image/webp,image/gif"
-                      style="display:none" onchange="handleColourImagePreview('${imgId}')">
-                    <span class="btn sm" style="pointer-events:none">📷 Choose Photo</span>
-                  </label>
-                  <div class="xs td2 mt1 mb2">JPG, PNG, WebP · Max 5 MB</div>
+                  <input type="file" id="${imgId}-file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/avi,video/x-matroska"
+                    style="display:none" onchange="handleColourMediaPreview('${imgId}')">
+                  <div class="xs td2 mt1 mb2">Upload one file (Photo max 5 MB or Video max 100 MB)</div>
                   <div id="${imgId}-msg" style="display:none;font-size:12px;margin-bottom:6px"></div>
-                  <button class="btn sm" onclick="handleSaveColourMedia(${headerId},${col.colour_id},'${imgId}','image')">💾 Save Photo</button>
-
-                  <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
-
-                  <!-- Video -->
-                  <div class="xs fw6 mb1" style="color:var(--text2)">Product Video</div>
-                  <div id="${imgId}-vid-current">${currentColourVid}</div>
-                  <div id="${imgId}-vid-preview" style="display:none;margin-bottom:8px"></div>
-                  <label style="display:inline-block;cursor:pointer" title="Choose video for ${col.colour_name}">
-                    <input type="file" id="${imgId}-vid-file" accept="video/mp4,video/quicktime,video/webm,video/avi,video/x-matroska"
-                      style="display:none" onchange="handleColourVideoPreview('${imgId}')">
-                    <span class="btn sm" style="pointer-events:none">🎬 Choose Video</span>
-                  </label>
-                  <div class="xs td2 mt1 mb2">MP4, MOV, WebM · Max 100 MB</div>
-                  <div id="${imgId}-vid-msg" style="display:none;font-size:12px;margin-bottom:6px"></div>
-                  <button class="btn sm" onclick="handleSaveColourMedia(${headerId},${col.colour_id},'${imgId}','video')">💾 Save Video</button>
+                  <button id="${imgId}-save-btn" class="btn sm" onclick="handleSaveColourMedia(${headerId},${col.colour_id},'${imgId}')">💾 Save Media</button>
                 </div>
               </div>
             </div>
@@ -2400,7 +2753,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         section.innerHTML = `
           <div class="ch"><div class="ct">${item.ew_collection || ''} · ${item.style_model || ''}</div>
-            <span class="xs td2">${item.quantity} units · ${colours.length} colour${colours.length !== 1 ? 's' : ''}</span>
+            <span class="xs td2">${item.quantity} units · ${doneInItem}/${colours.length} done${pendingInItem ? ` · ${pendingInItem} pending` : ''}</span>
           </div>
           <div class="cb">
             <div class="tabs">${tabsHtml}</div>
@@ -2434,6 +2787,16 @@ document.addEventListener('DOMContentLoaded', () => {
     el.classList.add('active');
     const panel = document.getElementById(panelId);
     if (panel) panel.style.display = '';
+  };
+
+  // Top-level item selector for Digitisation (same UX intent as colour tabs)
+  window.switchDigiItemTab = function(el, itemId) {
+    const tabsWrap = document.getElementById('digi-item-tabs');
+    if (tabsWrap) tabsWrap.querySelectorAll('[data-item-tab]').forEach((t) => t.classList.remove('active'));
+    if (el) el.classList.add('active');
+    document.querySelectorAll('[id^="digi-item-section-"]').forEach((sec) => {
+      sec.style.display = sec.id === `digi-item-section-${itemId}` ? '' : 'none';
+    });
   };
 
   window.handleGenerateSKU = async function(headerId, itemId, colourId) {
@@ -2502,71 +2865,79 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // Preview handler for per-colour image selection
-  window.handleColourImagePreview = function(imgId) {
+  // Unified preview handler for per-colour media selection (image or video)
+  window.handleColourMediaPreview = function(imgId) {
     const fileEl    = document.getElementById(`${imgId}-file`);
     const previewEl = document.getElementById(`${imgId}-preview`);
     const msgEl     = document.getElementById(`${imgId}-msg`);
     if (!fileEl || !fileEl.files[0]) return;
     const file = fileEl.files[0];
-    if (file.size > 5 * 1024 * 1024) {
-      if (msgEl) { msgEl.textContent = '⚠️ File exceeds 5 MB limit.'; msgEl.style.color = 'var(--red)'; msgEl.style.display = ''; }
+    const isVideo = file.type.startsWith('video/');
+    if (!isVideo && !file.type.startsWith('image/')) {
+      if (msgEl) { msgEl.textContent = '⚠️ Unsupported file type.'; msgEl.style.color = 'var(--red)'; msgEl.style.display = ''; }
       fileEl.value = '';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    const maxBytes = isVideo ? (100 * 1024 * 1024) : (5 * 1024 * 1024);
+    if (file.size > maxBytes) {
+      if (msgEl) { msgEl.textContent = `⚠️ File exceeds ${isVideo ? '100 MB' : '5 MB'} limit.`; msgEl.style.color = 'var(--red)'; msgEl.style.display = ''; }
+      fileEl.value = '';
+      return;
+    }
+    if (isVideo) {
+      const objectUrl = URL.createObjectURL(file);
       if (previewEl) {
-        previewEl.innerHTML = `<img src="${e.target.result}"
-          style="max-width:140px;max-height:110px;border-radius:8px;border:1px solid var(--border);object-fit:cover;display:block;margin-bottom:4px">
-          <div class="xs td2" style="color:var(--gold)">⬆ Ready — click Save Photo</div>`;
+        previewEl.innerHTML = `<div class="digi-media-thumb"><video src="${objectUrl}" controls style="width:100%;height:100%;object-fit:cover"></video></div>
+          <div class="xs td2" style="color:var(--gold)">⬆ Ready — click Save Media</div>`;
         previewEl.style.display = '';
       }
-      if (msgEl) msgEl.style.display = 'none';
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Preview handler for per-colour video selection
-  window.handleColourVideoPreview = function(imgId) {
-    const fileEl    = document.getElementById(`${imgId}-vid-file`);
-    const previewEl = document.getElementById(`${imgId}-vid-preview`);
-    const msgEl     = document.getElementById(`${imgId}-vid-msg`);
-    if (!fileEl || !fileEl.files[0]) return;
-    const file = fileEl.files[0];
-    if (file.size > 100 * 1024 * 1024) {
-      if (msgEl) { msgEl.textContent = '⚠️ File exceeds 100 MB limit.'; msgEl.style.color = 'var(--red)'; msgEl.style.display = ''; }
-      fileEl.value = '';
-      return;
-    }
-    const objectUrl = URL.createObjectURL(file);
-    if (previewEl) {
-      previewEl.innerHTML = `<video src="${objectUrl}" controls
-        style="max-width:100%;max-height:120px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:4px"></video>
-        <div class="xs td2" style="color:var(--gold)">⬆ Ready — click Save Video</div>`;
-      previewEl.style.display = '';
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (previewEl) {
+          previewEl.innerHTML = `<div class="digi-media-thumb"><img src="${e.target.result}" style="object-fit:cover"></div>
+            <div class="xs td2" style="color:var(--gold)">⬆ Ready — click Save Media</div>`;
+          previewEl.style.display = '';
+        }
+      };
+      reader.readAsDataURL(file);
     }
     if (msgEl) msgEl.style.display = 'none';
   };
 
-  // Unified upload + persist for photo OR video per colour variant
+  // Backward-compatible wrappers
+  window.handleColourImagePreview = function(imgId) { window.handleColourMediaPreview(imgId); };
+  window.handleColourVideoPreview = function(imgId) { window.handleColourMediaPreview(imgId); };
+
+  window.clearColourMediaSelection = function(imgId) {
+    const fileEl = document.getElementById(`${imgId}-file`);
+    const previewEl = document.getElementById(`${imgId}-preview`);
+    const msgEl = document.getElementById(`${imgId}-msg`);
+    if (fileEl) fileEl.value = '';
+    if (previewEl) { previewEl.innerHTML = ''; previewEl.style.display = 'none'; }
+    if (msgEl) { msgEl.textContent = 'Selection removed.'; msgEl.style.color = 'var(--text3)'; msgEl.style.display = ''; }
+  };
+
+  // Unified upload + persist for selected media per colour variant
   window.handleSaveColourMedia = async function(headerId, colourId, imgId, mediaType) {
-    const isVideo   = mediaType === 'video';
-    const fileKey   = isVideo ? `${imgId}-vid-file`    : `${imgId}-file`;
-    const msgKey    = isVideo ? `${imgId}-vid-msg`      : `${imgId}-msg`;
-    const prevKey   = isVideo ? `${imgId}-vid-preview`  : `${imgId}-preview`;
-    const currKey   = isVideo ? `${imgId}-vid-current`  : `${imgId}-current`;
+    const fileEl = document.getElementById(`${imgId}-file`);
+    const selected = fileEl && fileEl.files && fileEl.files[0] ? fileEl.files[0] : null;
+    const inferredVideo = selected ? selected.type.startsWith('video/') : false;
+    const isVideo = typeof mediaType === 'string' ? mediaType === 'video' : inferredVideo;
+    const fileKey = `${imgId}-file`;
+    const msgKey  = `${imgId}-msg`;
+    const prevKey = `${imgId}-preview`;
+    const currKey = `${imgId}-current`;
     const uploadEp  = isVideo ? '/api/uploads/product-video' : '/api/uploads/product-image';
     const fieldName = isVideo ? 'video' : 'image';
-    const btnLabel  = isVideo ? '💾 Save Video' : '💾 Save Photo';
+    const btnLabel  = '💾 Save Media';
     const sizeLabel = isVideo ? '100 MB' : '5 MB';
 
-    const fileEl = document.getElementById(fileKey);
     const msgEl  = document.getElementById(msgKey);
-    const btn    = document.querySelector(`button[onclick*="handleSaveColourMedia(${headerId},${colourId},'${imgId}','${mediaType}')"]`);
+    const btn    = document.getElementById(`${imgId}-save-btn`) || document.querySelector(`button[onclick*="handleSaveColourMedia(${headerId},${colourId},'${imgId}'"]`);
 
     if (!fileEl || !fileEl.files[0]) {
-      if (msgEl) { msgEl.textContent = `⚠️ Please choose a ${mediaType} first.`; msgEl.style.color = 'var(--gold)'; msgEl.style.display = ''; }
+      if (msgEl) { msgEl.textContent = '⚠️ Please choose a media file first.'; msgEl.style.color = 'var(--gold)'; msgEl.style.display = ''; }
       return;
     }
     if (fileEl.files[0].size > (isVideo ? 100 : 5) * 1024 * 1024) {
@@ -2590,23 +2961,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const payload = isVideo ? { video_url: mediaUrl } : { image_url: mediaUrl };
       await apiPut(`/api/purchases/${headerId}/colours/${colourId}/media`, payload);
 
-      // 3. Refresh the displayed media slot
-      const currentEl = document.getElementById(currKey);
-      if (currentEl) {
-        currentEl.innerHTML = isVideo
-          ? `<div style="width:100%;border-radius:8px;overflow:hidden;margin-bottom:8px">
-               <video src="${mediaUrl}" controls style="width:100%;max-height:140px;display:block;border-radius:8px;border:1px solid var(--border)"></video>
-             </div>`
-          : `<div style="width:100%;max-width:200px;height:150px;border-radius:8px;border:1px solid var(--border);overflow:hidden;background:#f7f9fc;margin-bottom:8px">
-               <img src="${mediaUrl}" style="width:100%;height:100%;object-fit:contain;padding:4px">
-             </div>`;
-      }
+      // 3. Clear local selected preview
       const previewEl = document.getElementById(prevKey);
       if (previewEl) previewEl.style.display = 'none';
       fileEl.value = '';
 
-      if (msgEl) { msgEl.textContent = `✅ ${isVideo ? 'Video' : 'Photo'} saved!`; msgEl.style.color = 'var(--green)'; msgEl.style.display = ''; }
-      setTimeout(() => { if (msgEl) msgEl.style.display = 'none'; }, 3000);
+      if (msgEl) { msgEl.textContent = `✅ ${isVideo ? 'Video' : 'Photo'} saved! Refreshing…`; msgEl.style.color = 'var(--green)'; msgEl.style.display = ''; }
+      await openDigitisationPage(headerId);
     } catch (err) {
       if (msgEl) { msgEl.textContent = '❌ ' + err.message; msgEl.style.color = 'var(--red)'; msgEl.style.display = ''; }
     } finally {
@@ -2749,32 +3110,209 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  let _brandingHistoryDetailCache = {};
+  let _brandingHistoryOpenRowId = null;
+
+  function isBrandingActiveStatus(status) {
+    return ['PENDING_BRANDING', 'BRANDING_DISPATCHED'].includes(status);
+  }
+
+  function isBrandingHistoryStatus(status) {
+    return ['PENDING_DIGITISATION', 'WAREHOUSE_READY'].includes(status);
+  }
+
+  function renderBrandingHistoryDetail(data) {
+    const h = (data && data.header) || {};
+    const items = Array.isArray(data && data.items) ? data.items : [];
+    const brandingItems = items.filter((it) => !!it.branding_required);
+    const totalQty = brandingItems.reduce((sum, it) => sum + Number(it.quantity || 0), 0);
+    const missingBrand = brandingItems.filter((it) => !(it.brand_name || '').trim()).length;
+    const missingCollection = brandingItems.filter((it) => !(it.ew_collection || '').trim()).length;
+
+    const itemRows = brandingItems.length
+      ? brandingItems.map((it, idx) => `<tr>
+          <td class="xs">${idx + 1}</td>
+          <td class="fw6">${_mcEsc(it.style_model || `Item #${it.item_id || idx + 1}`)}</td>
+          <td>${_mcEsc(it.brand_name || '—')}</td>
+          <td>${_mcEsc(it.ew_collection || '—')}</td>
+          <td class="tc">${Number(it.quantity || 0)}</td>
+          <td class="tc">${Array.isArray(it.colours) ? it.colours.length : 0}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="tc td2 p12">No branding-required items in this dispatch</td></tr>';
+
+    return `<div class="card" style="margin:8px 0 12px">
+      <div class="cb" style="padding:12px">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <div class="fw6">Dispatch #${h.header_id || '—'}</div>
+          <div>${stageBadge(h.pipeline_status)}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px">
+          <div class="card" style="padding:8px"><div class="xs td2">Dispatch Date</div><div class="fw6">${fmtDateTime(h.dispatched_at || h.updated_at || h.created_at)}</div></div>
+          <div class="card" style="padding:8px"><div class="xs td2">Receive Date</div><div class="fw6">${fmtDateTime(h.received_at)}</div></div>
+          <div class="card" style="padding:8px"><div class="xs td2">Branding Agent</div><div class="fw6">${_mcEsc(h.branding_agent_name || '—')}</div></div>
+          <div class="card" style="padding:8px"><div class="xs td2">Branding Items / Qty</div><div class="fw6">${brandingItems.length} / ${totalQty}</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+          <div class="card" style="padding:8px"><div class="xs td2">Dispatch Instructions</div><div>${_mcEsc(h.branding_instructions || '—')}</div></div>
+          <div class="card" style="padding:8px"><div class="xs td2">Bypass Reason</div><div>${_mcEsc(h.bypass_reason || '—')}</div></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <span class="b ${missingBrand ? 'b-red' : 'b-green'}">Missing Brand: ${missingBrand}</span>
+          <span class="b ${missingCollection ? 'b-red' : 'b-green'}">Missing Collection: ${missingCollection}</span>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:60px">#</th>
+                <th>Style / Model</th>
+                <th>Brand Name</th>
+                <th>Collection</th>
+                <th class="tc">Qty</th>
+                <th class="tc">Colours</th>
+              </tr>
+            </thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  window.toggleBrandingHistoryDetail = async function toggleBrandingHistoryDetail(headerId) {
+    const detailRow = document.getElementById(`branding-hist-row-${headerId}`);
+    const detailCell = document.getElementById(`branding-hist-cell-${headerId}`);
+    if (!detailRow || !detailCell) return;
+
+    const isOpen = detailRow.style.display !== 'none';
+    if (isOpen) {
+      detailRow.style.display = 'none';
+      _brandingHistoryOpenRowId = null;
+      return;
+    }
+
+    if (_brandingHistoryOpenRowId && _brandingHistoryOpenRowId !== headerId) {
+      const prev = document.getElementById(`branding-hist-row-${_brandingHistoryOpenRowId}`);
+      if (prev) prev.style.display = 'none';
+    }
+
+    _brandingHistoryOpenRowId = headerId;
+    detailRow.style.display = '';
+
+    if (_brandingHistoryDetailCache[headerId]) {
+      detailCell.innerHTML = renderBrandingHistoryDetail(_brandingHistoryDetailCache[headerId]);
+      return;
+    }
+
+    detailCell.innerHTML = '<div class="p12 td2">Loading dispatch details…</div>';
+    try {
+      const data = await apiGet(`/api/purchases/${headerId}`);
+      _brandingHistoryDetailCache[headerId] = data;
+      detailCell.innerHTML = renderBrandingHistoryDetail(data);
+    } catch (err) {
+      detailCell.innerHTML = `<div class="p12" style="color:var(--red)">Could not load dispatch details: ${_mcEsc(err.message || 'Unknown error')}</div>`;
+    }
+  };
+
   async function loadBrandingList() {
     showBrandingList();
     const tb = document.getElementById('branding-list-tbody');
     if (tb) tb.innerHTML = '<tr><td colspan="8" class="tc td2 p12">Loading…</td></tr>';
+    if (typeof window._brandingListMode === 'undefined') window._brandingListMode = 'pending';
+
+    function ensureBrandingHistoryToolbar() {
+      const section = document.getElementById('branding-list-section');
+      if (!section || document.getElementById('branding-list-toolbar')) return;
+      const toolbar = document.createElement('div');
+      toolbar.id = 'branding-list-toolbar';
+      toolbar.className = 'flex ic g2 mb3';
+      toolbar.style.cssText = 'justify-content:space-between;flex-wrap:wrap;gap:8px';
+      toolbar.innerHTML = `
+        <div class="flex ic g2">
+          <button type="button" class="btn sm" id="branding-tab-pending">Pending</button>
+          <button type="button" class="btn sm" id="branding-tab-history">History</button>
+          <button type="button" class="btn sm" id="branding-tab-all">All</button>
+        </div>
+        <div class="xs td2" id="branding-list-mode-note"></div>`;
+      const tableWrap = section.querySelector('.tw') || section.querySelector('table')?.parentElement || null;
+      if (tableWrap && tableWrap.parentNode) {
+        tableWrap.parentNode.insertBefore(toolbar, tableWrap);
+      } else {
+        section.prepend(toolbar);
+      }
+
+      const bind = (id, mode) => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.onclick = () => {
+          window._brandingListMode = mode;
+          loadBrandingList();
+        };
+      };
+      bind('branding-tab-pending', 'pending');
+      bind('branding-tab-history', 'history');
+      bind('branding-tab-all', 'all');
+    }
+
+    function updateBrandingToolbarState(totalPending, totalHistory, visibleRows) {
+      const tabPending = document.getElementById('branding-tab-pending');
+      const tabHistory = document.getElementById('branding-tab-history');
+      const tabAll = document.getElementById('branding-tab-all');
+      [tabPending, tabHistory, tabAll].forEach((b) => { if (b) b.classList.remove('primary'); });
+      if (window._brandingListMode === 'history' && tabHistory) tabHistory.classList.add('primary');
+      else if (window._brandingListMode === 'all' && tabAll) tabAll.classList.add('primary');
+      else if (tabPending) tabPending.classList.add('primary');
+      const note = document.getElementById('branding-list-mode-note');
+      if (note) note.textContent = `Pending: ${totalPending} · History: ${totalHistory} · Showing: ${visibleRows}`;
+    }
+
+    ensureBrandingHistoryToolbar();
     try {
       const all = await apiGet('/api/purchases');
-      const rows = all.filter((r) => ['PENDING_BRANDING','BRANDING_DISPATCHED'].includes(r.pipeline_status));
+      const pendingRows = all.filter((r) => ['PENDING_BRANDING','BRANDING_DISPATCHED'].includes(r.pipeline_status));
+      const historyRows = all.filter((r) => ['PENDING_DIGITISATION','WAREHOUSE_READY'].includes(r.pipeline_status));
+      let rows = pendingRows;
+      if (window._brandingListMode === 'history') rows = historyRows;
+      else if (window._brandingListMode === 'all') rows = [...pendingRows, ...historyRows];
       const cnt = document.getElementById('branding-list-count');
-      if (cnt) cnt.textContent = rows.length + ' pending';
+      if (cnt) {
+        const label = window._brandingListMode === 'history' ? 'history'
+          : (window._brandingListMode === 'all' ? 'total' : 'pending');
+        cnt.textContent = `${rows.length} ${label}`;
+      }
       // Update sidebar badge
       const brandBadge = document.getElementById('branding-nav-badge');
-      if (brandBadge) { brandBadge.textContent = rows.length; brandBadge.style.display = rows.length > 0 ? '' : 'none'; }
+      if (brandBadge) { brandBadge.textContent = pendingRows.length; brandBadge.style.display = pendingRows.length > 0 ? '' : 'none'; }
+      updateBrandingToolbarState(pendingRows.length, historyRows.length, rows.length);
       if (!rows.length) {
-        if (tb) tb.innerHTML = '<tr><td colspan="8" class="tc td2 p12">No bills pending branding</td></tr>';
+        if (tb) tb.innerHTML = `<tr><td colspan="8" class="tc td2 p12">${window._brandingListMode === 'history' ? 'No branding history found' : 'No bills pending branding'}</td></tr>`;
         return;
       }
-      if (tb) tb.innerHTML = rows.map((r) => `<tr>
-        <td class="mono xs fw6">#${r.header_id}</td>
-        <td class="fw6">${r.supplier_name || '—'}</td>
-        <td class="mono xs td2">${r.bill_ref || r.bill_number || '—'}</td>
-        <td class="tc">${r.item_count || 0}</td>
-        <td class="tc">${r.total_qty || 0}</td>
-        <td>${stageBadge(r.pipeline_status)}</td>
-        <td class="xs td2">${fmtDate(r.created_at)}</td>
-        <td><button class="btn xs primary" onclick="openBrandingPage(${r.header_id})">View / Manage</button></td>
-      </tr>`).join('');
+      if (tb) tb.innerHTML = rows.map((r) => {
+        const active = isBrandingActiveStatus(r.pipeline_status);
+        const history = isBrandingHistoryStatus(r.pipeline_status);
+        const actionHtml = active
+          ? `<button class="btn xs primary" onclick="openBrandingPage(${r.header_id})">View / Manage</button>`
+          : (history
+            ? `<button class="btn xs primary" onclick="toggleBrandingHistoryDetail(${r.header_id}); return false;">View Details</button>`
+            : `<button class="btn xs" onclick="openPurchaseView(${r.header_id})">View</button>`);
+        const rowClick = history ? ` onclick="toggleBrandingHistoryDetail(${r.header_id})"` : '';
+        const rowStyle = history ? ' style="cursor:pointer"' : '';
+        const detailRow = history ? `
+          <tr id="branding-hist-row-${r.header_id}" style="display:none;background:#f8fbff">
+            <td colspan="8" id="branding-hist-cell-${r.header_id}" class="p0"></td>
+          </tr>` : '';
+        return `<tr${rowClick}${rowStyle}>
+          <td class="mono xs fw6">#${r.header_id}</td>
+          <td class="fw6">${r.supplier_name || '—'}</td>
+          <td class="mono xs td2">${r.bill_ref || r.bill_number || '—'}</td>
+          <td class="tc">${r.item_count || 0}</td>
+          <td class="tc">${r.total_qty || 0}</td>
+          <td>${stageBadge(r.pipeline_status)}</td>
+          <td class="xs td2">${fmtDate(r.created_at)}</td>
+          <td>${actionHtml}</td>
+        </tr>${detailRow}`;
+      }).join('');
     } catch (err) {
       if (tb) tb.innerHTML = `<tr><td colspan="8" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`;
     }
@@ -3378,6 +3916,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // ─────────────────────────────────────────────────────────────────────────
   let _svSearchTimer = null;
 
+  function svIsAvailable(row, qtyKeys) {
+    if (!row || typeof row !== 'object') return false;
+    if (typeof row.is_available === 'boolean') return row.is_available;
+    const availability = String(row.availability || '').toUpperCase();
+    if (availability === 'AVAILABLE') return true;
+    if (availability === 'NOT_AVAILABLE') return false;
+    const keys = Array.isArray(qtyKeys) ? qtyKeys : [];
+    return keys.some((key) => Number(row[key]) > 0);
+  }
+
   function svShow(id) {
     ['sv-empty-state','sv-distribution-panel','sv-error-state'].forEach((x) => {
       const el = document.getElementById(x);
@@ -3444,11 +3992,17 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     el.innerHTML = rows.map((r) => {
-      const stockBadge = r.total_stock > 0
-        ? `<span style="background:var(--greenL);color:var(--green);padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">${r.total_stock} in stock</span>`
-        : `<span style="background:var(--redL);color:var(--red);padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">Out of stock</span>`;
-      const whBadge = r.warehouse_qty > 0
-        ? `<span style="background:var(--accL);color:var(--acc);padding:1px 6px;border-radius:10px;font-size:10.5px;margin-left:4px">${r.warehouse_qty} WH</span>`
+      const hasTotalQty = r.total_stock != null;
+      const available = svIsAvailable(r, ['total_stock', 'warehouse_qty', 'stock_qty']);
+      const stockBadge = hasTotalQty
+        ? (r.total_stock > 0
+          ? `<span style="background:var(--greenL);color:var(--green);padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">${r.total_stock} in stock</span>`
+          : `<span style="background:var(--redL);color:var(--red);padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">Out of stock</span>`)
+        : `<span style="background:${available ? 'var(--greenL)' : 'var(--redL)'};color:${available ? 'var(--green)' : 'var(--red)'};padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:6px">${available ? 'Available' : 'Out of stock'}</span>`;
+      const whBadge = r.warehouse_qty != null
+        ? (r.warehouse_qty > 0
+          ? `<span style="background:var(--accL);color:var(--acc);padding:1px 6px;border-radius:10px;font-size:10.5px;margin-left:4px">${r.warehouse_qty} WH</span>`
+          : '')
         : '';
       return `<div onclick="svSelectSku(${r.sku_id})"
           style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s"
@@ -3486,6 +4040,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function svRenderDistribution(data) {
     const sku = data.sku;
     const locs = data.locations || [];
+    const hasTotalQty = sku && sku.total_stock != null;
+    const skuAvailable = svIsAvailable(sku, ['total_stock', 'warehouse_qty', 'store_qty']);
+    const locQtyList = locs
+      .map((l) => Number(l.qty))
+      .filter((n) => Number.isFinite(n));
 
     // SKU header
     const headerEl = document.getElementById('sv-sku-header');
@@ -3498,8 +4057,8 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div style="text-align:right">
           <div class="xs td2">Total Stock</div>
-          <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:28px;font-weight:800;color:var(--acc)">${sku.total_stock}</div>
-          <div class="xs td2">units across all locations</div>
+          <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:28px;font-weight:800;color:var(--acc)">${hasTotalQty ? sku.total_stock : (skuAvailable ? 'Available' : 'Not available')}</div>
+          <div class="xs td2">${hasTotalQty ? 'units across all locations' : 'network stock status'}</div>
         </div>`;
     }
 
@@ -3509,7 +4068,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!locs.length) {
         locsEl.innerHTML = '<div style="padding:16px;color:var(--text3);font-size:13px;text-align:center">No stock in any location</div>';
       } else {
-        const maxQty = Math.max(...locs.map((l) => l.qty), 1);
+        const maxQty = locQtyList.length ? Math.max(...locQtyList, 1) : 1;
         const pct = (q) => Math.round((q / maxQty) * 100);
         const locIcon = (t) => t === 'WAREHOUSE' ? '🏭' : t === 'STORE' || t === 'AT_STORE' ? '🏪' : t === 'IN_TRANSIT' ? '🚚' : '📦';
         const locBadge = (t) => {
@@ -3519,7 +4078,8 @@ document.addEventListener('DOMContentLoaded', () => {
           return `<span class="b b-teal xs">${t}</span>`;
         };
 
-        const barPct = pct(locs.reduce((s,l) => s + l.qty, 0) > 0 ? locs[0].qty : 0);
+        const firstLocQty = Number(locs[0] && locs[0].qty);
+        const barPct = Number.isFinite(firstLocQty) ? pct(firstLocQty) : 0;
         locsEl.innerHTML = `
           <div class="pbar-wrap" style="height:8px;margin-bottom:20px">
             <div class="pbar" style="width:${barPct}%;background:linear-gradient(90deg,var(--acc),var(--teal))"></div>
@@ -3532,7 +4092,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="loc-sub">Updated: ${l.last_updated || '—'}</div>
               </div>
               <div style="text-align:right">
-                <div class="loc-units">${l.qty}</div>
+                <div class="loc-units">${l.qty != null ? l.qty : (svIsAvailable(l, ['qty']) ? 'Available' : 'N/A')}</div>
                 ${locBadge(l.location_type)}
               </div>
               ${l.location_type === 'WAREHOUSE' ? `<button class="btn xs primary" onclick="nav('stock-transfer',document.querySelector('.nav-item[onclick*=\\'stock-transfer\\']'))">Transfer</button>` : ''}
@@ -3544,24 +4104,38 @@ document.addEventListener('DOMContentLoaded', () => {
     const accEl = document.getElementById('sv-accounting');
     if (accEl) {
       // Prefer explicit fields from RS1 header (warehouse_qty / store_qty added in SP update)
-      const wqty = sku.warehouse_qty != null ? Number(sku.warehouse_qty) : locs.filter(l => l.location_type === 'WAREHOUSE').reduce((s, l) => s + l.qty, 0);
-      const sqty = sku.store_qty    != null ? Number(sku.store_qty)    : locs.filter(l => l.location_type === 'STORE' || l.location_type === 'AT_STORE').reduce((s, l) => s + l.qty, 0);
-      const tqty = sku.store_qty    != null ? (wqty + sqty)            : sku.total_stock;
+      const hasWarehouseQty = sku.warehouse_qty != null;
+      const hasStoreQty = sku.store_qty != null;
+      const hasAnyBreakdownQty = hasWarehouseQty || hasStoreQty;
+      const wqty = hasWarehouseQty
+        ? Number(sku.warehouse_qty)
+        : locs
+          .filter((l) => l.location_type === 'WAREHOUSE' && l.qty != null)
+          .reduce((s, l) => s + Number(l.qty || 0), 0);
+      const sqty = hasStoreQty
+        ? Number(sku.store_qty)
+        : locs
+          .filter((l) => (l.location_type === 'STORE' || l.location_type === 'AT_STORE') && l.qty != null)
+          .reduce((s, l) => s + Number(l.qty || 0), 0);
+      const tqty = hasAnyBreakdownQty ? (wqty + sqty) : (hasTotalQty ? sku.total_stock : null);
+      const warehouseAvailable = hasAnyBreakdownQty ? wqty > 0 : locs.some((l) => l.location_type === 'WAREHOUSE' && svIsAvailable(l, ['qty']));
+      const storesAvailable = hasAnyBreakdownQty ? sqty > 0 : locs.some((l) => (l.location_type === 'STORE' || l.location_type === 'AT_STORE') && svIsAvailable(l, ['qty']));
+      const totalAvailable = tqty != null ? Number(tqty) > 0 : skuAvailable;
 
       const warehouseRow = `
         <div class="flex ic" style="justify-content:space-between;padding:4px 0">
           <span class="xs td2" style="display:flex;align-items:center;gap:4px">🏭 <span>HQ Warehouse</span></span>
-          <span class="mono fw6" style="color:${wqty > 0 ? 'var(--green)' : 'var(--text3)'}">${wqty}</span>
+          <span class="mono fw6" style="color:${warehouseAvailable ? 'var(--green)' : 'var(--text3)'}">${hasAnyBreakdownQty ? wqty : (warehouseAvailable ? 'Available' : 'N/A')}</span>
         </div>`;
       const storeRow = `
         <div class="flex ic" style="justify-content:space-between;padding:4px 0">
           <span class="xs td2" style="display:flex;align-items:center;gap:4px">🏪 <span>At Stores</span></span>
-          <span class="mono fw6">${sqty}</span>
+          <span class="mono fw6">${hasAnyBreakdownQty ? sqty : (storesAvailable ? 'Available' : 'N/A')}</span>
         </div>`;
 
       accEl.innerHTML = warehouseRow + storeRow + `
         <hr class="sep" style="margin:4px 0">
-        <div class="flex ic" style="justify-content:space-between"><span class="sm-txt fw6">Total</span><span class="mono fw6" style="color:var(--acc)">${tqty}</span></div>
+        <div class="flex ic" style="justify-content:space-between"><span class="sm-txt fw6">Total</span><span class="mono fw6" style="color:var(--acc)">${tqty != null ? tqty : (totalAvailable ? 'Available' : 'Not available')}</span></div>
         <hr class="sep" style="margin:4px 0">
         <div class="flex ic" style="justify-content:space-between"><span class="xs td2">Sale Price</span><span class="mono xs">₹${Number(sku.sale_price||0).toLocaleString('en-IN')}</span></div>
         <div class="flex ic" style="justify-content:space-between"><span class="xs td2">Barcode</span><span class="mono xs">${sku.barcode || '—'}</span></div>`;
@@ -3605,7 +4179,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // BARCODE PRINT (TSC P210 · TSPL2 · 6UP · 15mm × 15mm)
+  // BARCODE PRINT (TSC P210 · TSPL2 · roll/label geometry is parameterized)
   // ─────────────────────────────────────────────────────────────────────────
 
   let _bcSkus = [];        // current set of SKUs in the modal
@@ -3677,6 +4251,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (copiesEl) copiesEl.value = '';
     const typeEl = document.getElementById('bc-type');
     if (typeEl) typeEl.value = opts.defaultType || 'QR';
+    const lockEl = document.getElementById('bc-lock-preset');
+    // TSPL preset controls are hidden in the QR modal; keep lock off by default
+    // so it doesn't disable margins/gaps while editing.
+    if (lockEl && typeof lockEl.checked === 'boolean') lockEl.checked = false;
+    if (typeof window.bcHandlePresetLockChange === 'function') window.bcHandlePresetLockChange();
 
     openM('modal-barcode-print');
     setTimeout(bcRenderPreview, 100); // wait for modal to render
@@ -3711,6 +4290,60 @@ document.addEventListener('DOMContentLoaded', () => {
     bcRenderPreview();
   };
 
+  function _bcSetInputValue(id, value) {
+    const el = document.getElementById(id)
+    if (!el) return
+    el.value = String(value)
+  }
+
+  function _bcSetInputDisabled(id, disabled) {
+    const el = document.getElementById(id)
+    if (!el) return
+    el.disabled = !!disabled
+  }
+
+  window.bcApply7030Preset = function() {
+    // 15mm label with 70% QR block + 30% text block.
+    _bcSetInputValue('bc-qr-cell-size', 3)
+    _bcSetInputValue('bc-qr-visual-size-mm', 10.5)
+    _bcSetInputValue('bc-qr-top-ratio', 0)
+    _bcSetInputValue('bc-text-top-ratio', 0.70)
+    _bcSetInputValue('bc-text-font-pt', 5)
+    _bcSetInputValue('bc-text-x-mul', 2)
+    _bcSetInputValue('bc-text-y-mul', 2)
+    _bcSetInputValue('bc-text-font-id', 2)
+    _bcSetInputValue('bc-label-width', 15)
+    _bcSetInputValue('bc-label-height', 15)
+    _bcSetInputValue('bc-labels-per-row', 6)
+    _bcSetInputValue('bc-margin-left', 2)
+    _bcSetInputValue('bc-margin-right', 2)
+    _bcSetInputValue('bc-gap-col', 3)
+    _bcSetInputValue('bc-gap-row', 3)
+    bcRenderPreview()
+  }
+
+  window.bcHandlePresetLockChange = function() {
+    const lock = document.getElementById('bc-lock-preset')?.checked === true
+    const lockIds = [
+      'bc-label-width',
+      'bc-label-height',
+      'bc-labels-per-row',
+      'bc-margin-left',
+      'bc-margin-right',
+      'bc-gap-col',
+      'bc-gap-row',
+      'bc-qr-cell-size',
+      'bc-qr-visual-size-mm',
+      'bc-qr-top-ratio',
+      'bc-text-top-ratio',
+      'bc-text-x-mul',
+      'bc-text-y-mul',
+      'bc-text-font-id'
+    ]
+
+    lockIds.forEach((id) => _bcSetInputDisabled(id, lock))
+  }
+
   // Build list of {code (pid for QR), label (sku_code for text), copies}
   function _bcSelectedItems() {
     const items = [];
@@ -3730,6 +4363,50 @@ document.addEventListener('DOMContentLoaded', () => {
     return `/api/qr?data=${encodeURIComponent(code)}&size=${px || 60}`;
   }
 
+  function _bcClamp(n, min, max) {
+    if (!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function _bcReadFloat(id, fallback, min, max) {
+    const v = parseFloat(document.getElementById(id)?.value ?? String(fallback))
+    if (!Number.isFinite(v)) return fallback
+    return _bcClamp(v, min, max)
+  }
+
+  function _bcReadInt(id, fallback, min, max) {
+    const v = parseInt(document.getElementById(id)?.value ?? String(fallback), 10)
+    if (!Number.isFinite(v)) return fallback
+    return Math.round(_bcClamp(v, min, max))
+  }
+
+  function _bcReadLabelGeometryMm() {
+    const labelW = _bcReadFloat('bc-label-width', 15, 1, 200)
+    const labelH = _bcReadFloat('bc-label-height', 15, 1, 200)
+    const cols = _bcReadInt('bc-labels-per-row', 6, 1, 40)
+    return { labelW, labelH, cols }
+  }
+
+  function _bcReadDotsPerMm() {
+    return _bcReadFloat('bc-dots-per-mm', 8, 1, 40)
+  }
+
+  function _bcReadQrConfig() {
+    const qrCellSize = _bcReadInt('bc-qr-cell-size', 3, 1, 10)
+    const qrVisualSizeMm = _bcReadFloat('bc-qr-visual-size-mm', 12, 1, 200)
+    const qrTopRatio = _bcReadFloat('bc-qr-top-ratio', 0.04, 0, 1)
+    return { qrCellSize, qrVisualSizeMm, qrTopRatio }
+  }
+
+  function _bcReadTextConfig() {
+    const textTopRatio = _bcReadFloat('bc-text-top-ratio', 0.75, 0, 1)
+    const textFontPt = _bcReadFloat('bc-text-font-pt', 5, 0.1, 100)
+    const textXMul = _bcReadInt('bc-text-x-mul', 1, 1, 10)
+    const textYMul = _bcReadInt('bc-text-y-mul', 1, 1, 10)
+    const textFontId = _bcReadInt('bc-text-font-id', 1, 0, 3)
+    return { textTopRatio, textFontPt, textXMul, textYMul, textFontId }
+  }
+
   // Render the visual preview of labels in the modal
   window.bcRenderPreview = function() {
     const previewEl = document.getElementById('bc-preview-rows');
@@ -3738,7 +4415,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const mm = _bcReadMarginsMm();
     const gp = _bcReadGapMm();
-    previewEl.style.padding = `${mm.top}mm ${mm.right}mm ${mm.bottom}mm ${mm.left}mm`;
+    const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm, qrTopRatio } = _bcReadQrConfig();
+    const { textTopRatio, textFontPt } = _bcReadTextConfig();
+
+    const contentH = Math.max(0, labelH - mm.top - mm.bottom);
+    const qrTopMm = mm.top + qrTopRatio * contentH;
+    const textTopMm = mm.top + textTopRatio * contentH;
+
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+    previewEl.style.padding = `0mm ${mm.right}mm 0mm ${mm.left}mm`;
     previewEl.style.boxSizing = 'border-box';
 
     const items = _bcSelectedItems();
@@ -3754,9 +4441,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const expanded = [];
     items.forEach(({ code, label, copies }) => { for (let c = 0; c < copies; c++) expanded.push({ code, label }); });
 
-    // Group into rows of 6
+    // Group into rows of `cols`
     const rows = [];
-    for (let i = 0; i < expanded.length; i += 6) rows.push(expanded.slice(i, i + 6));
+    for (let i = 0; i < expanded.length; i += cols) rows.push(expanded.slice(i, i + cols));
 
     // Build HTML — QR encodes pid (code), text below shows sku_code (label)
     const rowGapCss = `${gp.rowGap}mm`;
@@ -3764,19 +4451,29 @@ document.addEventListener('DOMContentLoaded', () => {
     let inner = '';
     rows.forEach((row) => {
       inner += `<div class="bc-label-row" style="display:flex;flex-wrap:nowrap;gap:${colGapCss};align-items:flex-start">`;
-      for (let col = 0; col < 6; col++) {
+      for (let col = 0; col < cols; col++) {
         const item = row[col];
-        if (!item) { inner += '<div class="bc-empty-cell"></div>'; continue; }
+        if (!item) {
+          inner += `<div class="bc-empty-cell" style="width:${labelW}mm;height:${labelH}mm"></div>`
+          continue
+        }
 
         if (type === 'QR') {
-          inner += `<div class="bc-label-cell" style="height:72px">
-            <img src="${_bcQRSrc(item.code, 56)}" style="width:52px;height:52px;display:block;margin:0 auto"
-                 onerror="this.outerHTML='<div style=\\'width:52px;height:52px;background:#fef2f2;display:flex;align-items:center;justify-content:center;font-size:6px;color:#ef4444\\'>QR ERR</div>'">
-            <div class="bc-label-code">${_bcEsc(item.label)}</div>
+          const errFontPt = Math.max(4, Math.round(textFontPt * 0.7))
+          inner += `<div class="bc-label-cell" style="position:relative;width:${labelW}mm;height:${labelH}mm;padding:0;box-sizing:border-box">
+            <img
+              src="${_bcQRSrc(item.code, qrPreviewPx)}"
+              style="position:absolute;left:50%;transform:translateX(-50%);top:${qrTopMm}mm;width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;display:block"
+              onerror="this.outerHTML='<div style=\\'width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;background:#fef2f2;display:flex;align-items:center;justify-content:center;font-size:${errFontPt}pt;color:#ef4444\\'>QR ERR</div>'"
+            >
+            <div class="bc-label-code" style="position:absolute;left:0;right:0;top:${textTopMm}mm;font-size:${textFontPt}pt;font-weight:700;margin-top:0;padding:0;line-height:1.1;white-space:normal;word-break:break-word;overflow-wrap:anywhere;max-height:2.2em;overflow:hidden">${_bcEsc(item.label)}</div>
           </div>`;
         } else {
           const uid = `bc-svg-${Math.random().toString(36).slice(2)}`;
-          inner += `<div class="bc-label-cell"><svg id="${uid}" data-code="${_bcEsc(item.code)}" xmlns="http://www.w3.org/2000/svg"></svg><div class="bc-label-code">${_bcEsc(item.label)}</div></div>`;
+          inner += `<div class="bc-label-cell" style="position:relative;width:${labelW}mm;height:${labelH}mm;padding:0;box-sizing:border-box">
+            <svg id="${uid}" data-code="${_bcEsc(item.code)}" xmlns="http://www.w3.org/2000/svg" style="position:absolute;left:50%;transform:translateX(-50%);top:${qrTopMm}mm"></svg>
+            <div class="bc-label-code" style="position:absolute;left:0;right:0;top:${textTopMm}mm;font-size:${textFontPt}pt;font-weight:700;margin-top:0;padding:0;line-height:1.1;white-space:normal;word-break:break-word;overflow-wrap:anywhere;max-height:2.2em;overflow:hidden">${_bcEsc(item.label)}</div>
+          </div>`;
         }
       }
       inner += '</div>';
@@ -3800,7 +4497,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalLabels = expanded.length;
     const totalRows   = rows.length;
     if (summaryEl) {
-      summaryEl.textContent = `${totalLabels} label${totalLabels !== 1 ? 's' : ''} · ${totalRows} row${totalRows !== 1 ? 's' : ''} of 6 · ${items.length} unique SKU${items.length !== 1 ? 's' : ''}`;
+      summaryEl.textContent = `${totalLabels} label${totalLabels !== 1 ? 's' : ''} · ${totalRows} row${totalRows !== 1 ? 's' : ''} of ${cols} · ${items.length} unique SKU${items.length !== 1 ? 's' : ''}`;
     }
   };
 
@@ -3846,12 +4543,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── TSPL2 Command Generator ────────────────────────────────────────────
-  // Spec: 110mm wide · 15mm×15mm · 6UP · 8 dots/mm
-  // X positions (dots): 32, 168, 304, 440, 576, 712
-  const BC_X_POSITIONS = [32, 168, 304, 440, 576, 712]; // 6 columns
-  const BC_MM_TO_DOT   = 8;
-  const BC_LABEL_H_DOT = 15 * BC_MM_TO_DOT; // 120 dots
-
   function _bcReadMarginsMm() {
     const clip = (v) => Math.max(0, Math.min(20, v));
     const g = (id) => clip(parseFloat(document.getElementById(id)?.value || '0') || 0);
@@ -3867,26 +4558,64 @@ document.addEventListener('DOMContentLoaded', () => {
   function _bcReadGapMm() {
     const elRow = document.getElementById('bc-gap-row');
     const elCol = document.getElementById('bc-gap-col');
-    const rowRaw = parseFloat(elRow?.value ?? '2');
-    const colRaw = parseFloat(elCol?.value ?? '0');
+    const rowRaw = parseFloat(elRow?.value ?? '3');
+    const colRaw = parseFloat(elCol?.value ?? '3');
     const rowGap = Math.max(0, Math.min(10, Number.isFinite(rowRaw) ? rowRaw : 2));
     const colGap = Math.max(0, Math.min(5, Number.isFinite(colRaw) ? colRaw : 0));
     return { rowGap, colGap };
   }
 
-  function _bcMarginsToDots() {
+  function _bcMarginsToDots(dotsPerMm) {
     const m = _bcReadMarginsMm();
     return {
-      top: Math.round(m.top * BC_MM_TO_DOT),
-      bottom: Math.round(m.bottom * BC_MM_TO_DOT),
-      left: Math.round(m.left * BC_MM_TO_DOT),
-      right: Math.round(m.right * BC_MM_TO_DOT),
+      top: Math.round(m.top * dotsPerMm),
+      bottom: Math.round(m.bottom * dotsPerMm),
+      left: Math.round(m.left * dotsPerMm),
+      right: Math.round(m.right * dotsPerMm),
     };
   }
 
   function _bcTsplQuote(s) {
     return String(s == null ? '' : s).replace(/"/g, "'");
   }
+
+function _bcSplitTextForLabel(raw, maxLineLength = 18) {
+  const text = String(raw || '').trim()
+  if (!text) return ['']
+  if (text.length <= maxLineLength) return [text]
+
+  const words = text.split(/\s+/).filter(Boolean)
+  const lines = []
+  let current = ''
+
+  const pushCurrent = () => {
+    if (!current) return
+    lines.push(current)
+    current = ''
+  }
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word
+    if (next.length <= maxLineLength) {
+      current = next
+      continue
+    }
+    pushCurrent()
+
+    if (word.length > maxLineLength) {
+      lines.push(word.slice(0, maxLineLength))
+      current = word.slice(maxLineLength)
+    } else {
+      current = word
+    }
+
+    if (lines.length >= 2) break
+  }
+  pushCurrent()
+
+  if (lines.length === 0) return [text.slice(0, maxLineLength)]
+  return lines.slice(0, 2)
+}
 
   function _bcGenerateTSPL2(labelBatches, labelType) {
     /*
@@ -3895,33 +4624,58 @@ document.addEventListener('DOMContentLoaded', () => {
         label = SKU (stable product identifier, printed as text below QR for search)
       Returns: Uint8Array of TSPL2 command bytes
     */
-    const d = _bcMarginsToDots();
+    const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const marginsMm = _bcReadMarginsMm();
+    const d = _bcMarginsToDots(dotsPerMm);
     const { rowGap, colGap } = _bcReadGapMm();
-    const colGapDots = Math.round(colGap * BC_MM_TO_DOT);
-    const maxXDots = Math.round(106 * BC_MM_TO_DOT);
+
+    const mmToDot = (mm) => Math.round(mm * dotsPerMm);
+    const sheetWidthMm = marginsMm.left + (cols * labelW) + ((cols - 1) * colGap) + marginsMm.right;
+    const maxXDots = mmToDot(sheetWidthMm);
+
+    const { qrCellSize, qrVisualSizeMm, qrTopRatio } = _bcReadQrConfig();
+    const { textTopRatio, textXMul, textYMul, textFontId } = _bcReadTextConfig();
+
+    const contentH = Math.max(0, labelH - marginsMm.top - marginsMm.bottom);
+    const qrTopMm = marginsMm.top + qrTopRatio * contentH;
+    const textTopMm = marginsMm.top + textTopRatio * contentH;
+
+    const qrTopDots = mmToDot(qrTopMm);
+    const textTopDots = mmToDot(textTopMm);
+    const textLineGapDots = Math.max(8, Math.round(2.2 * dotsPerMm * Math.max(1, textYMul)));
+
+    const qrLeftInsetDots = mmToDot(qrLeftInsetMm);
     let cmds = '';
 
     labelBatches.forEach((row) => {
-      cmds += 'SIZE 108 mm, 15 mm\r\n';
+      cmds += `SIZE ${sheetWidthMm} mm, ${labelH} mm\r\n`;
       cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
       cmds += 'DIRECTION 0\r\n';
       cmds += 'CLS\r\n';
 
       row.forEach((item, col) => {
         if (!item) return;
-        let x = BC_X_POSITIONS[col] + d.left - d.right + col * colGapDots;
-        x = Math.min(x, maxXDots);
-        const yQr = Math.max(2, 5 + d.top - d.bottom);
-        const yTx = Math.max(12, 90 + d.top - d.bottom);
+
+        const cellLeftXmm = marginsMm.left + (col * (labelW + colGap));
+        let x = mmToDot(cellLeftXmm) + qrLeftInsetDots;
+        x = Math.max(0, Math.min(x, maxXDots));
+
         const code = _bcTsplQuote(item.code);
-        const label = _bcTsplQuote(item.label);
+        const labelLines = _bcSplitTextForLabel(item.label).map(_bcTsplQuote)
 
         if (labelType === 'QR') {
-          cmds += `QRCODE ${x},${yQr},L,3,A,0,"${code}"\r\n`;
-          cmds += `TEXT ${x},${yTx},"1",0,1,1,"${label}"\r\n`;
+          cmds += `QRCODE ${x},${qrTopDots},L,${qrCellSize},A,0,"${code}"\r\n`;
+          labelLines.forEach((line, idx) => {
+            const y = textTopDots + (idx * textLineGapDots)
+            cmds += `TEXT ${x},${y},"${textFontId}",0,${textXMul},${textYMul},"${line}"\r\n`
+          })
         } else {
-          cmds += `BARCODE ${x},${yQr},"128",60,1,0,2,2,"${code}"\r\n`;
-          cmds += `TEXT ${x},${yTx},"1",0,1,1,"${label}"\r\n`;
+          cmds += `BARCODE ${x},${qrTopDots},"128",60,1,0,2,2,"${code}"\r\n`;
+          labelLines.forEach((line, idx) => {
+            const y = textTopDots + (idx * textLineGapDots)
+            cmds += `TEXT ${x},${y},"${textFontId}",0,${textXMul},${textYMul},"${line}"\r\n`
+          })
         }
       });
 
@@ -3943,9 +4697,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const expanded = [];
     items.forEach(({ code, label, copies }) => { for (let c = 0; c < copies; c++) expanded.push({ code, label }); });
 
-    // Batch into rows of 6
+    const { cols } = _bcReadLabelGeometryMm();
+
+    // Batch into roll rows of `cols`
     const batches = [];
-    for (let i = 0; i < expanded.length; i += 6) batches.push(expanded.slice(i, i + 6));
+    for (let i = 0; i < expanded.length; i += cols) batches.push(expanded.slice(i, i + cols));
 
     if (!_bcUsbDevice) {
       // Fallback: generate printable HTML window if no USB device
@@ -3993,7 +4749,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const pad = _bcReadMarginsMm();
     const gp = _bcReadGapMm();
-    const sheetPad = `${pad.top}mm ${pad.right}mm ${pad.bottom}mm ${pad.left}mm`;
+    const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm, qrTopRatio } = _bcReadQrConfig();
+    const { textTopRatio, textFontPt } = _bcReadTextConfig();
+
+    const contentH = Math.max(0, labelH - pad.top - pad.bottom);
+    const qrTopMm = pad.top + qrTopRatio * contentH;
+    const textTopMm = pad.top + textTopRatio * contentH;
+    const qrLeftInsetMm = Math.max(0, (labelW - qrVisualSizeMm) / 2);
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+
+    // Treat top/bottom as internal offsets (handled via absolute positioning inside each cell).
+    // Left/right still acts as sheet padding.
+    const sheetPad = `0mm ${pad.right}mm 0mm ${pad.left}mm`;
     const tableSpacing = `${gp.colGap}mm ${gp.rowGap}mm`;
 
     const isQR = labelType === 'QR';
@@ -4004,12 +4773,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let labelRows = '';
     batches.forEach((row) => {
       const cells = [];
-      for (let col = 0; col < 6; col++) {
+      for (let col = 0; col < cols; col++) {
         const item = row[col];
         if (!item || !item.code) { cells.push('<td class="empty"></td>'); continue; }
         if (isQR) {
           // QR encodes pid (code); SKU (label) shown as human-readable text below
-          const src = `${origin}/api/qr?data=${encodeURIComponent(item.code)}&size=120`;
+          const src = `${origin}/api/qr?data=${encodeURIComponent(item.code)}&size=${qrPreviewPx}`;
           cells.push(`<td class="label-cell"><img src="${src}" class="qr-img"><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);
         } else {
           const ac = String(item.code || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
@@ -4037,6 +4806,8 @@ document.addEventListener('DOMContentLoaded', () => {
 ${libScript}
 <style>
   * { margin:0;padding:0;box-sizing:border-box; }
+  @page { margin: 0; }
+  html { margin:0; padding:0; }
   body { font-family:'Courier New',monospace; background:#fff; }
   .controls { padding:10px 16px; display:flex; gap:10px; align-items:center; border-bottom:1px solid #ddd; background:#f8f8f8; }
   .controls button { padding:6px 16px; border:1px solid #888; border-radius:4px; cursor:pointer; background:#fff; font-size:13px; }
@@ -4045,18 +4816,44 @@ ${libScript}
   .label-sheet { padding:${sheetPad}; }
   table { border-collapse:separate; border-spacing:${tableSpacing}; }
   td.label-cell {
-    width:15mm; height:18mm; border:0.3pt solid #bbb; border-radius:1mm;
-    text-align:center; vertical-align:middle; padding:1mm; overflow:hidden;
+    width:${labelW}mm; height:${labelH}mm;
+    border:0.3pt solid #bbb; border-radius:1mm;
+    text-align:center; padding:0; overflow:hidden;
+    position:relative; box-sizing:border-box;
   }
-  td.empty { width:15mm; height:18mm; }
-  .qr-img  { width:12mm; height:12mm; display:block; margin:0 auto; }
-  .bc-svg  { width:13mm; height:7mm; display:block; margin:0 auto; }
-  .bc-txt  { font-size:3.5pt; margin-top:0.5mm; word-break:break-all; line-height:1.3; color:#333; text-align:center; }
+  td.empty { width:${labelW}mm; height:${labelH}mm; }
+  .qr-img  {
+    position:absolute;
+    left:50%; transform:translateX(-50%); top:${qrTopMm}mm;
+    width:${qrVisualSizeMm}mm; height:${qrVisualSizeMm}mm;
+    display:block; margin:0;
+  }
+  .bc-svg  {
+    position:absolute;
+    left:50%; transform:translateX(-50%); top:${qrTopMm}mm;
+    display:block; margin:0;
+    max-width:${labelW}mm;
+  }
+  .bc-txt  {
+    position:absolute;
+    left:0; right:0; top:${textTopMm}mm;
+    font-size:${textFontPt}pt;
+    font-weight:700;
+    font-family:Arial, sans-serif;
+    margin:0; padding:0;
+    line-height:1.1;
+    color:#333; text-align:center;
+    white-space:normal;
+    word-break:break-word;
+    overflow-wrap:anywhere;
+    max-height:2.2em;
+    overflow:hidden;
+  }
 </style>
 </head><body>
 <div class="controls">
   <span style="font-size:13px;font-weight:600">🏷️ ${isQR ? 'QR Code' : 'Barcode'} Labels — ${totalLabels} labels · ${batches.length} row(s)</span>
-  <span style="font-size:12px;color:#666">15mm × 15mm · 6UP</span>
+<span style="font-size:12px;color:#666">${labelW}mm × ${labelH}mm · ${cols}UP</span>
   <button class="primary" onclick="window.print()">🖨️ Print</button>
   <button onclick="window.close()">Close</button>
 </div>
@@ -4639,10 +5436,22 @@ ${initScript}
     const body  = document.getElementById('ftr-detail-body');
     const title = document.getElementById('ftr-detail-title');
     if (!card) return;
+
+    // If the mobile sidebar overlay is left open, it can hide the topbar/hamburger.
+    // Also, Chrome mobile can behave badly with sticky headers when we auto-scroll.
+    const overlayEl = document.getElementById('fy-sidebar-overlay')
+    const sidebarEl = document.querySelector('.sidebar')
+    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+    const isBodyLocked = document.body.style.overflow === 'hidden'
+    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
+
     if (title) title.textContent = `Request #${requestId}`;
     if (body)  body.innerHTML = '<div style="padding:16px;color:var(--text3)">Loading…</div>';
     card.style.display = '';
-    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const ua = navigator.userAgent || ''
+    const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+    if (!isChromeLike) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     try {
       const req  = await apiGet(`/api/transfer-requests/${requestId}`);
@@ -4815,6 +5624,14 @@ ${initScript}
     const card = document.getElementById('ftr-detail-card');
     if (card) card.style.display = 'none';
     _trExpanded = null;
+
+    // Clear any accidental sidebar overlay/body lock state.
+    const overlayEl = document.getElementById('fy-sidebar-overlay')
+    const sidebarEl = document.querySelector('.sidebar')
+    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+    const isBodyLocked = document.body.style.overflow === 'hidden'
+    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
   };
 
   // Quick approve from the list row (no qty adjustment)
@@ -5001,6 +5818,8 @@ ${initScript}
   // MOVEMENT LIST  (Store Connect › Movement List)
   // ─────────────────────────────────────────────────────────────────────────
   let _mlFilter = '';
+  let _mlSearch = '';
+  let _mlDocsCache = [];
 
   window.setMlFilter = function (status, btn) {
     _mlFilter = status;
@@ -5009,9 +5828,76 @@ ${initScript}
     loadMovementList();
   };
 
+  function mlStatusBadge(s) {
+    const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
+    return map[s] || `<span class="badge">${s}</span>`;
+  }
+
+  function filterMovementDocs(docs, query) {
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter((d) => {
+      const hay = [
+        d.doc_id,
+        d.doc_type,
+        d.source_request_id,
+        d.store_name,
+        d.to_store_id,
+        d.status
+      ].join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  function renderMovementList(docs) {
+    const wrap = document.getElementById('ml-list');
+    if (!wrap) return;
+
+    const filtered = filterMovementDocs(docs, _mlSearch);
+    const toolbarHtml = `
+      <div class="ml-toolbar">
+        <input id="ml-search" class="ml-search" placeholder="Search doc id, store, type, status..." value="${trEsc(_mlSearch)}">
+        <div class="ml-count">${filtered.length} document${filtered.length !== 1 ? 's' : ''}</div>
+      </div>`;
+
+    if (!docs.length) {
+      wrap.innerHTML = `${toolbarHtml}<div class="empty-state"><div class="ei">📋</div><div class="et">No transfer documents found</div><div class="es">Dispatch a Goods Transfer to see records here.</div></div>`;
+    } else if (!filtered.length) {
+      wrap.innerHTML = `${toolbarHtml}<div class="empty-state"><div class="ei">🔎</div><div class="et">No matching movement documents</div><div class="es">Try a different search term.</div></div>`;
+    } else {
+      wrap.innerHTML = `${toolbarHtml}<div class="ml-rows" id="ml-rows">
+        ${filtered.map(d => `
+          <div class="ml-row-dense" onclick="expandMlDoc(${d.doc_id})">
+            <div style="flex:1;min-width:0">
+              <div class="ml-pri">Doc #${d.doc_id} — ${d.doc_type === 'DIRECT' ? 'Goods Transfer' : 'From Request #' + d.source_request_id}</div>
+              <div class="ml-sec">To ${trEsc(d.store_name || 'Store #' + d.to_store_id)} · ${fmtDateTime(d.dispatched_at)}</div>
+            </div>
+            <div>${mlStatusBadge(d.status)}</div>
+          </div>`).join('')}
+      </div>`;
+    }
+
+    const searchEl = document.getElementById('ml-search');
+    if (searchEl) {
+      searchEl.addEventListener('input', (e) => {
+        _mlSearch = e.target.value || '';
+        renderMovementList(_mlDocsCache);
+      });
+    }
+  }
+
   window.closeMlDetail = function () {
     const d = document.getElementById('ml-detail');
     if (d) d.style.display = 'none';
+
+    // On mobile, the hamburger is controlled by the off-canvas sidebar overlay.
+    // If it's still open when Doc Details closes, it can hide the topbar/hamburger.
+    const overlayEl = document.getElementById('fy-sidebar-overlay')
+    const sidebarEl = document.querySelector('.sidebar')
+    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+    const isBodyLocked = document.body.style.overflow === 'hidden'
+    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
   };
 
   window.loadMovementList = async function () {
@@ -5023,22 +5909,8 @@ ${initScript}
     try {
       const qs   = _mlFilter ? `?status=${_mlFilter}` : '';
       const docs = await apiGet('/api/stock-transfer-docs' + qs);
-      if (!docs.length) {
-        wrap.innerHTML = '<div class="empty-state"><div class="ei">📋</div><div class="et">No transfer documents found</div><div class="es">Dispatch a Goods Transfer to see records here.</div></div>';
-        return;
-      }
-      const statusBadge = s => {
-        const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
-        return map[s] || `<span class="badge">${s}</span>`;
-      };
-      wrap.innerHTML = docs.map(d => `
-        <div class="list-row" onclick="expandMlDoc(${d.doc_id})" style="cursor:pointer">
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;margin-bottom:2px">Doc #${d.doc_id} — ${d.doc_type === 'DIRECT' ? '📦 Goods Transfer' : '📬 From Request #' + d.source_request_id}</div>
-            <div style="font-size:12px;color:var(--text3)">→ ${d.store_name || 'Store #' + d.to_store_id} &nbsp;·&nbsp; ${fmtDateTime(d.dispatched_at)}</div>
-          </div>
-          <div>${statusBadge(d.status)}</div>
-        </div>`).join('');
+      _mlDocsCache = docs || [];
+      renderMovementList(_mlDocsCache);
     } catch (e) {
       if (errEl) { errEl.textContent = 'Failed to load: ' + e.message; errEl.style.display = ''; }
       if (wrap)  wrap.innerHTML = '';
@@ -5050,17 +5922,27 @@ ${initScript}
     const bodyEl  = document.getElementById('ml-detail-body');
     const panEl   = document.getElementById('ml-detail');
     if (!panEl) return;
+
+    // Ensure the off-canvas sidebar isn't covering the header/hamburger.
+    const overlayEl = document.getElementById('fy-sidebar-overlay')
+    const sidebarEl = document.querySelector('.sidebar')
+    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+    const isBodyLocked = document.body.style.overflow === 'hidden'
+    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
+
     panEl.style.display = '';
     titleEl.textContent = `Transfer Document #${docId}`;
     bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>';
-    panEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // Chrome/mobile has an issue where `position: sticky` headers can "disappear"
+    // when `scrollIntoView()` runs inside an overflow scrolling container.
+    // Safari works fine, so skip auto-scroll for Chrome and let the user scroll naturally.
+    const ua = navigator.userAgent || ''
+    const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+    if (!isChromeLike) panEl.scrollIntoView({ behavior: 'auto', block: 'nearest' });
     try {
       const doc = await apiGet(`/api/stock-transfer-docs/${docId}`);
       const fmtDt = dt => dt ? fmtDateTime(dt) : '—';
-      const statusBadge = s => {
-        const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
-        return map[s] || `<span class="badge">${s}</span>`;
-      };
       const lines = (doc.lines || []).map(l => `
         <tr>
           <td>${l.sku_code || l.sku_id}</td>
@@ -5069,21 +5951,21 @@ ${initScript}
           <td style="text-align:center">${l.qty_received != null ? l.qty_received : '—'}</td>
         </tr>`).join('');
       bodyEl.innerHTML = `
-        <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px">
-          <div><span style="color:var(--text3);font-size:12px">Type</span><br>${doc.doc_type === 'DIRECT' ? 'Goods Transfer (Direct)' : 'From Request #' + doc.source_request_id}</div>
-          <div><span style="color:var(--text3);font-size:12px">Status</span><br>${statusBadge(doc.status)}</div>
-          <div><span style="color:var(--text3);font-size:12px">To Store</span><br>${doc.store_name || 'Store #' + doc.to_store_id}</div>
-          <div><span style="color:var(--text3);font-size:12px">Dispatched</span><br>${fmtDt(doc.dispatched_at)}</div>
-          ${doc.accepted_at ? `<div><span style="color:var(--text3);font-size:12px">Accepted</span><br>${fmtDt(doc.accepted_at)}</div>` : ''}
-          ${doc.stocked_at  ? `<div><span style="color:var(--text3);font-size:12px">Stocked</span><br>${fmtDt(doc.stocked_at)}</div>` : ''}
+        <div class="ml-meta-grid">
+          <div class="ml-meta-card"><div class="ml-meta-k">Type</div><div class="ml-meta-v">${doc.doc_type === 'DIRECT' ? 'Goods Transfer (Direct)' : 'From Request #' + doc.source_request_id}</div></div>
+          <div class="ml-meta-card"><div class="ml-meta-k">Status</div><div class="ml-meta-v">${mlStatusBadge(doc.status)}</div></div>
+          <div class="ml-meta-card"><div class="ml-meta-k">To Store</div><div class="ml-meta-v">${doc.store_name || 'Store #' + doc.to_store_id}</div></div>
+          <div class="ml-meta-card"><div class="ml-meta-k">Dispatched</div><div class="ml-meta-v">${fmtDt(doc.dispatched_at)}</div></div>
+          ${doc.accepted_at ? `<div class="ml-meta-card"><div class="ml-meta-k">Accepted</div><div class="ml-meta-v">${fmtDt(doc.accepted_at)}</div></div>` : ''}
+          ${doc.stocked_at  ? `<div class="ml-meta-card"><div class="ml-meta-k">Stocked</div><div class="ml-meta-v">${fmtDt(doc.stocked_at)}</div></div>` : ''}
         </div>
         ${doc.notes ? `<div style="margin-bottom:14px;color:var(--text2);font-size:13px">📝 ${doc.notes}</div>` : ''}
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="border-bottom:1px solid var(--border)">
-            <th style="text-align:left;padding:6px 8px;color:var(--text3)">SKU</th>
-            <th style="text-align:left;padding:6px 8px;color:var(--text3)">Description</th>
-            <th style="text-align:center;padding:6px 8px;color:var(--text3)">Sent</th>
-            <th style="text-align:center;padding:6px 8px;color:var(--text3)">Received</th>
+        <table class="ml-lines-table" style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr>
+            <th style="text-align:left">SKU</th>
+            <th style="text-align:left">Description</th>
+            <th style="text-align:center">Sent</th>
+            <th style="text-align:center">Received</th>
           </tr></thead>
           <tbody>${lines}</tbody>
         </table>`;

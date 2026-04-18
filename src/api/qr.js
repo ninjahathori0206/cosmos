@@ -20,6 +20,7 @@ const qrLimiter = rateLimit({
 router.get('/', qrLimiter, async (req, res) => {
   const { data, size } = req.query;
   if (!data) return res.status(400).send('Missing ?data= parameter');
+  if (String(data).length > 512) return res.status(400).send('QR data too long (max 512 chars).');
 
   // Clamp size: 40–400 px
   const px = Math.min(400, Math.max(40, parseInt(size, 10) || 120));
@@ -36,7 +37,7 @@ router.get('/', qrLimiter, async (req, res) => {
     res.set('Cache-Control', 'public, max-age=86400'); // browser caches for 1 day
     res.send(buf);
   } catch (err) {
-    res.status(500).send('QR generation failed: ' + err.message);
+    res.status(500).send('QR generation failed.');
   }
 });
 

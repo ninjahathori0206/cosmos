@@ -2,18 +2,95 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
-const { requireModule, requirePermission } = require('../middleware/authorize');
+const {
+  requireModule,
+  requirePermission,
+  requireAnyModule,
+  hasPermission,
+  isSuperAdmin
+} = require('../middleware/authorize');
 
 const router = express.Router();
 
-const foundryStockView = [
-  requireModule('foundry'),
-  requirePermission('foundry.stock.view')
+const stockReadAccess = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('storepilot.catalogue.view', 'foundry.catalogue.view', 'foundry.stock.view')
+];
+const transferCreateStockAccess = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('storepilot.transfers.create', 'foundry.transfers.create', 'storepilot.catalogue.view', 'foundry.catalogue.view', 'foundry.stock.view')
+];
+const transferHistoryViewAccess = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('storepilot.transfers.view', 'foundry.transfers.view', 'foundry.stock.view')
+];
+const storeCatalogueViewAccess = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('storepilot.catalogue.view', 'foundry.catalogue.view', 'foundry.stock.view')
 ];
 const foundryStockCreate = [
   requireModule('foundry'),
   requirePermission('foundry.stock.create')
 ];
+
+const WAREHOUSE_STOCK_VISIBILITY_PERMISSIONS = [
+  'foundry.stock.view',
+  'foundry.transfers.create',
+  'foundry.transfers.view'
+];
+
+function canViewExactNetworkStock(req) {
+  if (isSuperAdmin(req)) return true;
+  return WAREHOUSE_STOCK_VISIBILITY_PERMISSIONS.some((key) => hasPermission(req, key));
+}
+
+function toAvailabilityLabel(qty) {
+  return Number(qty) > 0 ? 'AVAILABLE' : 'NOT_AVAILABLE';
+}
+
+function maskStockSearchRow(row) {
+  const totalQty = Number(row.total_stock) || 0;
+  return {
+    ...row,
+    total_stock: null,
+    availability: toAvailabilityLabel(totalQty),
+    is_available: totalQty > 0
+  };
+}
+
+function maskStockDistributionPayload(payload) {
+  const sku = payload.sku || {};
+  const locations = Array.isArray(payload.locations) ? payload.locations : [];
+  const totalQty = Number(sku.total_stock) || 0;
+  const maskedSku = {
+    ...sku,
+    total_stock: null,
+    availability: toAvailabilityLabel(totalQty),
+    is_available: totalQty > 0
+  };
+  const maskedLocations = locations.map((location) => {
+    const qty = Number(location.qty) || 0;
+    return {
+      ...location,
+      qty: null,
+      availability: toAvailabilityLabel(qty),
+      is_available: qty > 0
+    };
+  });
+  return { sku: maskedSku, locations: maskedLocations };
+}
+
+function maskAvailableStockRows(rows) {
+  return (rows || []).map((row) => {
+    const warehouseQty = Number(row.warehouse_qty) || 0;
+    return {
+      ...row,
+      warehouse_qty: null,
+      availability: toAvailabilityLabel(warehouseQty),
+      is_available: warehouseQty > 0
+    };
+  });
+}
 
 // ── Validation ─────────────────────────────────────────────────────────────────
 
@@ -33,7 +110,7 @@ const transferSchema = Joi.object({
 
 // ── GET /api/stock-transfers/distribution/search?q=&limit= ───────────────────
 // Full-text search across live SKUs for the Stock Distribution picker.
-router.get('/distribution/search', ...foundryStockView, async (req, res, next) => {
+router.get('/distribution/search', ...stockReadAccess, async (req, res, next) => {
   try {
     const { q, limit } = req.query;
     const maxLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
@@ -41,7 +118,11 @@ router.get('/distribution/search', ...foundryStockView, async (req, res, next) =
       q:     { type: sql.VarChar(200), value: q || null },
       top_n: { type: sql.Int,          value: maxLimit }
     });
-    return res.json({ success: true, data: result.recordset || [] });
+    const rows = result.recordset || [];
+    if (canViewExactNetworkStock(req)) {
+      return res.json({ success: true, data: rows });
+    }
+    return res.json({ success: true, data: rows.map(maskStockSearchRow) });
   } catch (err) {
     return next(err);
   }
@@ -49,7 +130,7 @@ router.get('/distribution/search', ...foundryStockView, async (req, res, next) =
 
 // ── GET /api/stock-transfers/distribution/:sku_id ─────────────────────────────
 // Returns SKU header + per-location stock breakdown for one SKU.
-router.get('/distribution/:sku_id', ...foundryStockView, async (req, res, next) => {
+router.get('/distribution/:sku_id', ...stockReadAccess, async (req, res, next) => {
   try {
     const skuId = Number(req.params.sku_id);
     if (!Number.isFinite(skuId) || skuId <= 0) {
@@ -63,7 +144,13 @@ router.get('/distribution/:sku_id', ...foundryStockView, async (req, res, next) 
       return res.status(404).json({ success: false, message: 'SKU not found' });
     }
     const locations = (result.recordsets && result.recordsets[1]) || [];
-    return res.json({ success: true, data: { sku, locations } });
+    if (canViewExactNetworkStock(req)) {
+      return res.json({ success: true, data: { sku, locations } });
+    }
+    return res.json({
+      success: true,
+      data: maskStockDistributionPayload({ sku, locations })
+    });
   } catch (err) {
     return next(err);
   }
@@ -72,7 +159,7 @@ router.get('/distribution/:sku_id', ...foundryStockView, async (req, res, next) 
 // ── GET /api/stock-transfers/available ────────────────────────────────────────
 // Returns warehouse-stock SKUs that can be transferred.
 // Query params: q (search), brand_id, product_type
-router.get('/available', ...foundryStockView, async (req, res, next) => {
+router.get('/available', ...transferCreateStockAccess, async (req, res, next) => {
   try {
     const { q, brand_id, product_type } = req.query;
     const result = await executeStoredProcedure('sp_StockTransfer_ListAvailable', {
@@ -80,7 +167,11 @@ router.get('/available', ...foundryStockView, async (req, res, next) => {
       brand_id:     { type: sql.Int,          value: brand_id     ? Number(brand_id) : null },
       product_type: { type: sql.VarChar(50),  value: product_type || null }
     });
-    return res.json({ success: true, data: result.recordset || [] });
+    const rows = result.recordset || [];
+    if (canViewExactNetworkStock(req)) {
+      return res.json({ success: true, data: rows });
+    }
+    return res.json({ success: true, data: maskAvailableStockRows(rows) });
   } catch (err) {
     return next(err);
   }
@@ -89,7 +180,7 @@ router.get('/available', ...foundryStockView, async (req, res, next) => {
 // ── GET /api/stock-transfers/lookup ──────────────────────────────────────────
 // Resolves a scanned QR / barcode / SKU code to a transferable SKU row.
 // Query param: q (sku_code or barcode)
-router.get('/lookup', ...foundryStockView, async (req, res, next) => {
+router.get('/lookup', ...stockReadAccess, async (req, res, next) => {
   try {
     const { q } = req.query;
     if (!q || !q.trim()) {
@@ -111,7 +202,7 @@ router.get('/lookup', ...foundryStockView, async (req, res, next) => {
 // ── GET /api/stock-transfers/history ─────────────────────────────────────────
 // Returns recent HQ-to-store movements.
 // Query params: to_store_id (optional), top_n (default 100)
-router.get('/history', ...foundryStockView, async (req, res, next) => {
+router.get('/history', ...transferHistoryViewAccess, async (req, res, next) => {
   try {
     const { to_store_id, top_n } = req.query;
     const result = await executeStoredProcedure('sp_StockTransfer_History', {
@@ -127,7 +218,7 @@ router.get('/history', ...foundryStockView, async (req, res, next) => {
 // ── GET /api/stock-transfers/store-catalogue ─────────────────────────────────
 // Returns SKUs with qty > 0 at a specific store, for the StorePilot Store Catalogue page.
 // Query params: store_id (required), q (optional search)
-router.get('/store-catalogue', async (req, res, next) => {
+router.get('/store-catalogue', ...storeCatalogueViewAccess, async (req, res, next) => {
   try {
     const { store_id, q } = req.query;
     const storeId = Number(store_id);

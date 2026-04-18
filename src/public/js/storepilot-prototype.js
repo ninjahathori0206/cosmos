@@ -70,6 +70,15 @@ function showErr(id, msg) {
   el.style.display = msg ? 'block' : 'none';
 }
 
+function isStockAvailable(row, qtyKeys = []) {
+  if (!row || typeof row !== 'object') return false
+  if (typeof row.is_available === 'boolean') return row.is_available
+  const availability = String(row.availability || '').toUpperCase()
+  if (availability === 'AVAILABLE') return true
+  if (availability === 'NOT_AVAILABLE') return false
+  return qtyKeys.some((key) => Number(row[key]) > 0)
+}
+
 // ── Module state ───────────────────────────────────────────────────────────────
 let _storeId         = null;
 let _storeName       = null;
@@ -79,6 +88,19 @@ let _scDebounce      = null;
 let _dashTimer       = null;
 let _tcDebounce      = null;
 let _transferCart    = [];
+let _spPermissions   = [];
+let _spNoAccess      = false;
+
+const SP_MENU_PERM_MAP = {
+  dashboard: ['storepilot.dashboard.view'],
+  'stock-browse': ['storepilot.catalogue.view', 'foundry.catalogue.view'],
+  'store-catalogue': ['storepilot.catalogue.view', 'foundry.catalogue.view'],
+  'transfers-create': ['storepilot.transfers.create', 'foundry.transfers.create'],
+  'incoming-transfers': ['storepilot.transfers.view', 'foundry.transfers.view'],
+  'movement-list': ['storepilot.transfers.view', 'foundry.transfers.view'],
+  'transfers-history': ['storepilot.transfers.view', 'foundry.transfers.view'],
+  reports: ['storepilot.reports.view']
+};
 
 // ── Breadcrumb map ─────────────────────────────────────────────────────────────
 const spBcMap = {
@@ -94,6 +116,11 @@ const spBcMap = {
 
 // ── Navigation ─────────────────────────────────────────────────────────────────
 window.spNav = function (id, el) {
+  if (_spNoAccess) return;
+  if (!canAccessSpView(id)) {
+    renderNoAccessState('menu_access_denied');
+    return;
+  }
   document.querySelectorAll('.main .page').forEach((p) => p.classList.remove('active'));
   document.querySelectorAll('.sidebar-nav .nav-item').forEach((n) => n.classList.remove('active'));
   const page = document.getElementById('page-' + id);
@@ -116,9 +143,69 @@ function loadStorePilotPage(id) {
   if (id === 'movement-list')      loadSpMovementList();
 }
 
+function hasAnyPermission(list) {
+  if (!Array.isArray(list) || !list.length) return true;
+  return list.some((perm) => _spPermissions.includes(perm));
+}
+
+function canAccessSpView(id) {
+  const perms = SP_MENU_PERM_MAP[id] || [];
+  return hasAnyPermission(perms);
+}
+
+function applyStorepilotPermissionNav() {
+  const nav = document.querySelector('.sidebar-nav');
+  if (!nav) return [];
+
+  const visibleMenuIds = [];
+  nav.querySelectorAll('.nav-item[data-storepilot-menu]').forEach((item) => {
+    const menuId = item.getAttribute('data-storepilot-menu');
+    const perms = (item.getAttribute('data-storepilot-permission') || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const allowed = hasAnyPermission(perms);
+    item.style.display = allowed ? '' : 'none';
+    if (allowed && menuId) visibleMenuIds.push(menuId);
+  });
+
+  nav.querySelectorAll('.nav-group').forEach((group) => {
+    const items = [];
+    let sibling = group.nextElementSibling;
+    while (sibling && !sibling.classList.contains('nav-group') && sibling.id !== 'sp-switch-module-wrap') {
+      if (sibling.classList.contains('nav-item') && sibling.hasAttribute('data-storepilot-menu')) items.push(sibling);
+      sibling = sibling.nextElementSibling;
+    }
+    const hasVisible = items.some((el) => el.style.display !== 'none');
+    group.style.display = hasVisible ? '' : 'none';
+  });
+
+  return visibleMenuIds;
+}
+
+function renderNoAccessState(reasonKey) {
+  const main = document.querySelector('.main');
+  const topbar = document.querySelector('.topbar');
+  if (topbar) topbar.style.display = 'none';
+  document.querySelectorAll('.main .page').forEach((p) => p.classList.remove('active'));
+  if (!main) return;
+  let box = document.getElementById('sp-no-access');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'sp-no-access';
+    box.style.cssText = 'padding:40px 24px';
+    main.appendChild(box);
+  }
+  const msg = reasonKey === 'menu_access_denied'
+    ? 'You do not have permission for this menu.'
+    : 'You do not have any StorePilot menu permissions.';
+  box.innerHTML = `<div class="card"><div class="cb"><div style="font-weight:700;color:var(--text1);margin-bottom:6px">No access</div><div style="color:var(--text2)">${msg} Please contact administrator.</div></div></div>`;
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadUser();
+  if (_spNoAccess) return;
   loadDashboard();
   startDashRefresh();
 });
@@ -154,10 +241,24 @@ function loadUser() {
     if (av) av.textContent = initials;
     if (nm) nm.textContent = name;
     if (rl) rl.textContent = ROLE_LABELS[u.role] || u.role || 'Store Pilot';
+    _spPermissions = Array.isArray(u.permissions) ? u.permissions : [];
     _storeId   = u.store_id   || null;
     _storeName = u.store_name || null;
     if (typeof window.applyCosmosModuleSwitchNav === 'function') {
       window.applyCosmosModuleSwitchNav('sp-switch-module-wrap', u);
+    }
+    const visibleMenuIds = applyStorepilotPermissionNav();
+    if (!visibleMenuIds.length) {
+      _spNoAccess = true;
+      renderNoAccessState('no_menu_permissions');
+      return;
+    }
+    const activeItem = document.querySelector('.sidebar-nav .nav-item.active[data-storepilot-menu]');
+    const activeMenuId = activeItem ? activeItem.getAttribute('data-storepilot-menu') : null;
+    if (!activeMenuId || !visibleMenuIds.includes(activeMenuId)) {
+      const firstId = visibleMenuIds[0];
+      const firstEl = document.querySelector(`.sidebar-nav .nav-item[data-storepilot-menu="${firstId}"]`);
+      if (firstId) window.spNav(firstId, firstEl || null);
     }
   } catch (_) {}
 }
@@ -268,11 +369,15 @@ async function doFStockSearch(q) {
       return;
     }
     resultsEl.innerHTML = rows.map((r) => {
-      const badge = r.total_stock > 10
-        ? `<span class="b b-green">${r.total_stock} in stock</span>`
-        : r.total_stock > 0
-          ? `<span class="b b-gold">${r.total_stock} in stock</span>`
-          : `<span class="b b-red">Out of stock</span>`;
+      const canSeeQty = r.total_stock != null
+      const isAvailable = isStockAvailable(r, ['total_stock'])
+      const badge = canSeeQty
+        ? (r.total_stock > 10
+          ? `<span class="b b-green">${r.total_stock} in stock</span>`
+          : r.total_stock > 0
+            ? `<span class="b b-gold">${r.total_stock} in stock</span>`
+            : `<span class="b b-red">Out of stock</span>`)
+        : `<span class="b ${isAvailable ? 'b-green' : 'b-red'}">${isAvailable ? 'Available' : 'Out of stock'}</span>`
       return `
         <div class="result-row" onclick="loadStockDetail(${r.sku_id}, this)" data-sku-id="${r.sku_id}">
           <div>
@@ -304,17 +409,23 @@ window.loadStockDetail = async function (skuId, rowEl) {
 
     if (!sku) { wrap.innerHTML = '<div class="empty-state"><div class="et">SKU not found</div></div>'; return; }
 
-    const stockColor = sku.total_stock > 10 ? 'var(--green)' : sku.total_stock > 0 ? 'var(--gold)' : 'var(--red)';
+    const hasTotalQty = sku.total_stock != null;
+    const skuAvailable = isStockAvailable(sku, ['total_stock']);
+    const stockColor = hasTotalQty
+      ? (sku.total_stock > 10 ? 'var(--green)' : sku.total_stock > 0 ? 'var(--gold)' : 'var(--red)')
+      : (skuAvailable ? 'var(--green)' : 'var(--red)');
     const locRows = locs.length
       ? locs.map((l) => {
+          const hasQty = l.qty != null;
           const qty = Number(l.qty) || 0;
+          const available = isStockAvailable(l, ['qty']);
           return `
             <div class="loc-row">
               <div>
                 <div class="loc-name">${escHtml(l.location_name || l.location_type)}</div>
                 <div class="loc-type">${escHtml(l.location_type || '')} ${l.store_name ? '· ' + escHtml(l.store_name) : ''}</div>
               </div>
-              <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:${qty > 0 ? 'var(--text1)' : 'var(--text3)'}">${qty}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:${available ? 'var(--text1)' : 'var(--text3)'}">${hasQty ? qty : (available ? 'Available' : 'Not available')}</span>
             </div>`;
         }).join('')
       : '<div class="loc-row" style="color:var(--text3);font-size:13px">No stock in any location</div>';
@@ -325,8 +436,8 @@ window.loadStockDetail = async function (skuId, rowEl) {
           <div class="detail-sku">${escHtml(sku.sku_code)}</div>
           <div class="detail-desc">${escHtml(sku.description || sku.brand_name || '')}</div>
           <div style="display:flex;align-items:baseline;gap:10px;margin-top:10px">
-            <div class="detail-total" style="color:${stockColor}">${sku.total_stock || 0}</div>
-            <div style="font-size:12px;color:var(--text3)">total units across network</div>
+            <div class="detail-total" style="color:${stockColor}">${hasTotalQty ? (sku.total_stock || 0) : (skuAvailable ? 'Available' : 'Not Available')}</div>
+            <div style="font-size:12px;color:var(--text3)">${hasTotalQty ? 'total units across network' : 'network stock status'}</div>
           </div>
         </div>
         ${locRows}
@@ -422,7 +533,7 @@ window.toggleSkuLocations = async function (btn, skuId) {
       locsEl.innerHTML = locs.map((l) => `
         <div class="sku-loc-row">
           <span class="sku-loc-name">${escHtml(l.location_name || l.location_type)}</span>
-          <span class="b ${l.qty > 0 ? 'b-green' : 'b-gray'}">${l.qty}</span>
+          <span class="b ${isStockAvailable(l, ['qty']) ? 'b-green' : 'b-gray'}">${l.qty != null ? l.qty : (isStockAvailable(l, ['qty']) ? 'Available' : 'N/A')}</span>
         </div>`).join('');
     }
     locsEl.classList.add('open');
@@ -467,7 +578,10 @@ window.loadBrowseCatalogue = async function (q = '') {
       const type      = r.product_type || '';
       const colour    = r.colour_name  ? ` · ${r.colour_name}` : '';
       const whQty     = r.warehouse_qty != null ? Number(r.warehouse_qty) : (r.stock_qty != null ? Number(r.stock_qty) : null);
-      const whBadge   = whQty === null ? '' : `<span class="b ${whQty > 0 ? 'b-green' : 'b-red'}">${whQty} WH</span>`;
+      const whAvailable = isStockAvailable(r, ['warehouse_qty', 'stock_qty']);
+      const whBadge   = whQty !== null
+        ? `<span class="b ${whQty > 0 ? 'b-green' : 'b-red'}">${whQty} WH</span>`
+        : `<span class="b ${whAvailable ? 'b-green' : 'b-red'}">${whAvailable ? 'WH Available' : 'WH Unavailable'}</span>`;
       const desc      = name + colour;
       return `
         <div class="sku-card" data-sku-id="${skuId}">
@@ -507,9 +621,11 @@ window.onStoreCatalogueSearch = function (q) {
 window.loadStoreCatalogue = async function (q = '') {
   const grid = document.getElementById('sc-grid');
   const spin = document.getElementById('sc-spin');
+  const summary = document.getElementById('sc-summary');
   showErr('sc-err', '');
   if (spin) spin.style.display = 'inline';
   if (grid) grid.innerHTML = `<div style="grid-column:1/-1"><div class="empty-state"><div class="ei">⏳</div><div class="et">Loading store stock…</div></div></div>`;
+  if (summary) summary.innerHTML = '';
 
   if (!_storeId) {
     if (grid) grid.innerHTML = `<div style="grid-column:1/-1"><div class="empty-state"><div class="ei">🏪</div><div class="et">No store assigned to your account.</div></div></div>`;
@@ -522,6 +638,48 @@ window.loadStoreCatalogue = async function (q = '') {
     if (q) qs.set('q', q);
     const data = await apiGet('/api/stock-transfers/store-catalogue?' + qs.toString());
     const rows = data.data || [];
+    const liveStockTotal = rows.reduce((sum, row) => sum + Math.max(0, Number(row.store_qty) || 0), 0);
+    const brandTotals = {};
+    const categoryTotals = {};
+
+    rows.forEach((row) => {
+      const rowQty = Math.max(0, Number(row.store_qty) || 0);
+      const brandKey = (row.brand_name || 'Unbranded').trim();
+      const categoryKey = (row.product_type || 'Uncategorized').trim();
+      brandTotals[brandKey] = (brandTotals[brandKey] || 0) + rowQty;
+      categoryTotals[categoryKey] = (categoryTotals[categoryKey] || 0) + rowQty;
+    });
+
+    const toSortedList = (totalsObj) => Object.entries(totalsObj)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, qty]) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">${escHtml(label)}</span><span class="b ${qty > 0 ? 'b-green' : 'b-gray'}">${qty}</span></div>`)
+      .join('');
+
+    if (summary) {
+      summary.innerHTML = `
+        <div class="sc" style="--sc-color:var(--acc)">
+          <div class="sl">Total SKU</div>
+          <div class="sv">${rows.length}</div>
+          <div class="sm">Distinct SKUs currently in this store</div>
+        </div>
+        <div class="sc" style="--sc-color:var(--green)">
+          <div class="sl">Live Stock</div>
+          <div class="sv">${liveStockTotal}</div>
+          <div class="sm">Total units available in this store</div>
+        </div>
+        <div class="sc" style="--sc-color:var(--gold)">
+          <div class="sl">Brand Wise Stock</div>
+          <div class="sm" style="margin:0">
+            ${toSortedList(brandTotals) || '<span style="color:var(--text3)">No brand stock found</span>'}
+          </div>
+        </div>
+        <div class="sc" style="--sc-color:var(--blue)">
+          <div class="sl">Categories Wise Stock</div>
+          <div class="sm" style="margin:0">
+            ${toSortedList(categoryTotals) || '<span style="color:var(--text3)">No category stock found</span>'}
+          </div>
+        </div>`;
+    }
 
     if (!rows.length) {
       grid.innerHTML = `<div style="grid-column:1/-1"><div class="empty-state"><div class="ei">📦</div><div class="et">No items in stock at your store${q ? ' matching "' + escHtml(q) + '"' : ''}</div></div></div>`;
@@ -559,6 +717,7 @@ window.loadStoreCatalogue = async function (q = '') {
   } catch (err) {
     showErr('sc-err', 'Failed to load store catalogue: ' + err.message);
     if (grid) grid.innerHTML = `<div style="grid-column:1/-1"><div class="empty-state"><div class="et" style="color:var(--red)">Error — see above</div></div></div>`;
+    if (summary) summary.innerHTML = '';
   } finally {
     if (spin) spin.style.display = 'none';
   }
@@ -749,16 +908,18 @@ async function doTransferSearch(q) {
     resultsEl.innerHTML = rows.map((r) => {
       const inCart    = _transferCart.some((c) => c.sku_id === r.sku_id);
       // API returns warehouse_qty from sp_StockTransfer_ListAvailable
-      const warehouseQty = r.warehouse_qty != null ? Number(r.warehouse_qty) : 0;
+      const hasWarehouseQty = r.warehouse_qty != null;
+      const warehouseQty = hasWarehouseQty ? Number(r.warehouse_qty) : (isStockAvailable(r, ['warehouse_qty']) ? 1 : 0);
       const displayName  = r.product_name  || r.description || r.brand_name || '';
       const colourPart   = r.colour_name   ? ` — ${r.colour_name}` : '';
+      const availLabel = hasWarehouseQty ? `${warehouseQty} in Warehouse` : (warehouseQty > 0 ? 'Warehouse Available' : 'Warehouse Unavailable');
       return `
         <div class="avail-row">
           <div style="flex:1;min-width:0">
             <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--acc)">${escHtml(r.sku_code)}</div>
             <div style="font-size:12.5px;color:var(--text2);margin-top:2px">${escHtml(displayName + colourPart)}</div>
           </div>
-          <span class="b ${warehouseQty > 0 ? 'b-green' : 'b-red'}" style="white-space:nowrap">${warehouseQty} in Warehouse</span>
+          <span class="b ${warehouseQty > 0 ? 'b-green' : 'b-red'}" style="white-space:nowrap">${availLabel}</span>
           <button class="btn sm ${inCart ? '' : 'primary'}" style="min-width:64px"
             data-sku-id="${r.sku_id}"
             data-sku-code="${escHtml(r.sku_code)}"
@@ -986,6 +1147,48 @@ function loadReports() {
 // ── Incoming Transfers ─────────────────────────────────────────────────────────
 
 let _incFilter = '';
+let _incQrVerificationByDoc = {};
+let _incDocLinesByDoc = {};
+let _incCameraStream = null;
+let _incCameraRafId = null;
+let _incCameraDocId = null;
+let _incCameraDetector = null;
+let _incCameraDecodeMode = null;
+let _incCameraCanvas = null;
+let _incCameraCanvasCtx = null;
+
+function _isCameraSecureOrigin() {
+  const host = window.location && window.location.hostname ? window.location.hostname.toLowerCase() : ''
+  const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
+  return !!window.isSecureContext || isLocalHost
+}
+
+function _getCameraStartBlockedReason() {
+  if (!_isCameraSecureOrigin()) {
+    return 'Camera requires HTTPS or localhost. Open this app on secure URL and retry. Use scanner input as fallback.'
+  }
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+    return 'Camera API is unavailable in this browser. Use scanner input to verify SKUs.'
+  }
+  return ''
+}
+
+function _getCameraErrorMessage(err) {
+  const errName = err && err.name ? err.name : ''
+  if (errName === 'NotAllowedError' || errName === 'SecurityError') {
+    return 'Camera permission denied or blocked. Allow camera for this site and ensure you are on HTTPS or localhost.'
+  }
+  if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+    return 'No camera device found. Connect a camera or use scanner input.'
+  }
+  if (errName === 'NotReadableError' || errName === 'TrackStartError') {
+    return 'Camera is busy in another app/tab. Close it there and retry.'
+  }
+  if (errName === 'OverconstrainedError' || errName === 'ConstraintNotSatisfiedError') {
+    return 'Requested camera settings are unsupported on this device. Try another browser/device or scanner input.'
+  }
+  return 'Unable to start camera scanner. Check permissions and secure origin (HTTPS/localhost).'
+}
 
 const INC_STATUS_BADGE = {
   DISPATCHED: '<span class="b b-orange">Dispatched</span>',
@@ -1047,10 +1250,23 @@ window.expandIncTransfer = async function (docId) {
   const titleEl  = document.getElementById('sp-inc-detail-title');
   const bodyEl   = document.getElementById('sp-inc-detail-body');
   if (!detailEl || !bodyEl) return;
+  stopIncQrCamera();
 
   detailEl.style.display = '';
   bodyEl.innerHTML = '<div style="padding:20px;color:var(--text3)">Loading…</div>';
-  detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // If mobile sidebar overlay is left open, it can hide the hamburger/topbar.
+  // Also, Chrome mobile can mis-handle sticky headers when auto-scrolling.
+  const overlayEl = document.getElementById('sp-sidebar-overlay')
+  const sidebarEl = document.querySelector('.sidebar')
+  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+  const isBodyLocked = document.body.style.overflow === 'hidden'
+  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
+
+  const ua = navigator.userAgent || ''
+  const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+  if (!isChromeLike) detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
     const data = await apiGet(`/api/stock-transfer-docs/${docId}`);
@@ -1060,6 +1276,10 @@ window.expandIncTransfer = async function (docId) {
     const lines      = doc.lines || [];
     const isDispatched = doc.status === 'DISPATCHED';
     const isAccepted   = doc.status === 'ACCEPTED';
+    _incDocLinesByDoc[docId] = lines;
+    const verifiedLines = _incQrVerificationByDoc[docId] || {};
+    const lineIds = lines.map((l) => l.line_id);
+    const allQrVerified = isAccepted ? lineIds.every((lineId) => verifiedLines[lineId]) : true;
 
     const lineRows = lines.map((l) => `
       <div class="inc-verify-line">
@@ -1068,6 +1288,7 @@ window.expandIncTransfer = async function (docId) {
           <div style="font-size:12px;color:var(--text2)">${escHtml(l.product_name)}${l.colour_name ? ' — ' + escHtml(l.colour_name) : ''}</div>
         </div>
         <span style="font-size:12px;color:var(--text3);white-space:nowrap">Sent: <strong>${l.qty_sent}</strong></span>
+        ${isAccepted ? `<span id="sp-qr-v-${l.line_id}" class="b ${verifiedLines[l.line_id] ? 'b-green' : 'b-gray'}" style="white-space:nowrap">${verifiedLines[l.line_id] ? 'QR Verified' : 'Pending QR'}</span>` : ''}
         ${isAccepted ? `
           <input type="number" id="sp-recv-${l.line_id}" class="qty-input" min="0" max="${l.qty_sent}"
             value="${l.qty_received != null ? l.qty_received : l.qty_sent}"
@@ -1085,21 +1306,71 @@ window.expandIncTransfer = async function (docId) {
         </div>
         <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">Items (${lines.length})</div>
         <div>${lineRows}</div>
+        ${isAccepted ? `
+          <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:10px;background:#F8FAFC">
+            <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Stock Verification via Scan QR</div>
+            <div id="sp-inc-camera-hint" style="display:none;font-size:11px;color:var(--gold);margin-bottom:8px"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input
+                id="sp-inc-qr-input"
+                type="text"
+                class="qty-input"
+                style="width:280px;text-align:left"
+                placeholder="Scan/paste SKU QR payload or SKU code"
+                onkeydown="if(event.key==='Enter'){ incVerifyQr(${doc.doc_id}) }"
+              >
+              <button class="btn sm" onclick="incVerifyQr(${doc.doc_id})">Verify Scan</button>
+              <button id="sp-inc-camera-start-btn" class="btn sm" onclick="startIncQrCamera(${doc.doc_id})">Scan with Camera</button>
+              <button class="btn sm" onclick="stopIncQrCamera()">Stop Camera</button>
+              <button class="btn sm" onclick="incResetQrVerification(${doc.doc_id})">Reset</button>
+            </div>
+            <div id="sp-inc-camera-wrap" style="display:none;margin-top:10px">
+              <video id="sp-inc-camera-video" autoplay playsinline muted style="width:100%;max-width:420px;border:1px solid var(--border);border-radius:8px;background:#000"></video>
+              <div style="font-size:11px;color:var(--text3);margin-top:6px">Point camera at item QR code to auto-verify line.</div>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:6px">
+              Scan each item QR once. Stocking is enabled after all lines show <strong>QR Verified</strong>.
+            </div>
+          </div>
+        ` : ''}
         <div id="sp-inc-action-msg" style="font-size:12px;min-height:16px;margin-top:10px"></div>
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
           ${isDispatched ? `<button class="btn primary" onclick="incAccept(${doc.doc_id})">✓ Accept Transfer</button>` : ''}
-          ${isAccepted   ? `<button class="btn primary" onclick="incStock(${doc.doc_id},[${lines.map(l => l.line_id).join(',')}])">📦 Verify &amp; Stock</button>` : ''}
+          ${isAccepted   ? `<button id="sp-inc-stock-btn" class="btn primary" onclick="incStock(${doc.doc_id},[${lineIds.join(',')}])" ${allQrVerified ? '' : 'disabled'}>📦 Verify &amp; Stock</button>` : ''}
           ${doc.status === 'STOCKED' ? `<span style="color:var(--green);font-size:13px;font-weight:600">✓ Stock credited on ${fmtDate(doc.stocked_at)}</span>` : ''}
         </div>
       </div>`;
+
+    if (isAccepted) {
+      const cameraHintEl = document.getElementById('sp-inc-camera-hint')
+      const cameraStartBtnEl = document.getElementById('sp-inc-camera-start-btn')
+      const blockedReason = _getCameraStartBlockedReason()
+      if (cameraHintEl) {
+        cameraHintEl.textContent = blockedReason || ''
+        cameraHintEl.style.display = blockedReason ? '' : 'none'
+      }
+      if (cameraStartBtnEl) {
+        cameraStartBtnEl.disabled = !!blockedReason
+        cameraStartBtnEl.title = blockedReason || 'Start camera QR scanner'
+      }
+    }
   } catch (err) {
     bodyEl.innerHTML = `<div style="padding:20px;color:var(--red)">Error: ${escHtml(err.message)}</div>`;
   }
 };
 
 window.closeIncDetail = function () {
+  stopIncQrCamera();
   const el = document.getElementById('sp-inc-detail');
   if (el) el.style.display = 'none';
+
+  // Clear any accidental sidebar overlay/body lock state.
+  const overlayEl = document.getElementById('sp-sidebar-overlay')
+  const sidebarEl = document.querySelector('.sidebar')
+  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+  const isBodyLocked = document.body.style.overflow === 'hidden'
+  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
 };
 
 window.incAccept = async function (docId) {
@@ -1110,6 +1381,7 @@ window.incAccept = async function (docId) {
 
   try {
     await apiPut(`/api/stock-transfer-docs/${docId}/accept`, {});
+    _incQrVerificationByDoc[docId] = {};
     if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Accepted. Enter received quantities and click Verify & Stock.'; }
     await expandIncTransfer(docId);
     loadIncomingTransfers();
@@ -1119,9 +1391,222 @@ window.incAccept = async function (docId) {
   }
 };
 
+window.incVerifyQr = function (docId) {
+  const msgEl = document.getElementById('sp-inc-action-msg');
+  const inputEl = document.getElementById('sp-inc-qr-input');
+  const rawValue = inputEl ? String(inputEl.value || '').trim() : '';
+  if (!rawValue) {
+    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Scan or enter a QR/SKU value first.'; }
+    return;
+  }
+  const isVerified = _incProcessScannedQr(docId, rawValue);
+  if (isVerified && inputEl) inputEl.value = '';
+};
+
+function _incProcessScannedQr(docId, rawValue) {
+  const msgEl = document.getElementById('sp-inc-action-msg');
+  const lines = _incDocLinesByDoc[docId] || [];
+  if (!lines.length) {
+    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Document lines are not loaded yet.'; }
+    return false;
+  }
+
+  let scannedSkuCode = String(rawValue || '').trim();
+  if (!scannedSkuCode) return false;
+
+  if (scannedSkuCode.startsWith('{') && scannedSkuCode.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(scannedSkuCode);
+      scannedSkuCode = String(parsed.sku_code || parsed.sku || parsed.code || '').trim() || scannedSkuCode;
+    } catch (_) {}
+  }
+
+  const normalizedScannedCode = scannedSkuCode.toUpperCase();
+  const matchedLine = lines.find((line) => String(line.sku_code || '').trim().toUpperCase() === normalizedScannedCode);
+  if (!matchedLine) {
+    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = `Scanned code ${scannedSkuCode} is not part of this transfer.`; }
+    return false;
+  }
+
+  const lineId = matchedLine.line_id;
+  _incQrVerificationByDoc[docId] = _incQrVerificationByDoc[docId] || {};
+  _incQrVerificationByDoc[docId][lineId] = true;
+
+  const badgeEl = document.getElementById(`sp-qr-v-${lineId}`);
+  if (badgeEl) {
+    badgeEl.className = 'b b-green';
+    badgeEl.textContent = 'QR Verified';
+  }
+
+  const stockBtn = document.getElementById('sp-inc-stock-btn');
+  const lineIds = lines.map((line) => line.line_id);
+  const allQrVerified = lineIds.every((id) => _incQrVerificationByDoc[docId][id]);
+  if (stockBtn) stockBtn.disabled = !allQrVerified;
+
+  if (msgEl) {
+    msgEl.style.color = 'var(--green)';
+    msgEl.textContent = allQrVerified
+      ? '✓ All lines verified by QR. You can now Verify & Stock.'
+      : `✓ ${scannedSkuCode} verified. Continue scanning remaining SKUs.`;
+  }
+  return true;
+}
+
+window.startIncQrCamera = async function (docId) {
+  const msgEl = document.getElementById('sp-inc-action-msg');
+  const wrapEl = document.getElementById('sp-inc-camera-wrap');
+  const videoEl = document.getElementById('sp-inc-camera-video');
+  const lines = _incDocLinesByDoc[docId] || [];
+  if (!lines.length || !videoEl || !wrapEl) {
+    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Open an accepted transfer with lines to start camera scan.'; }
+    return;
+  }
+  const blockedReason = _getCameraStartBlockedReason()
+  if (blockedReason) {
+    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = blockedReason; }
+    return;
+  }
+
+  try {
+    stopIncQrCamera();
+    _incCameraDocId = docId;
+    _incCameraDecodeMode = null;
+    _incCameraDetector = null;
+    _incCameraCanvas = null;
+    _incCameraCanvasCtx = null;
+
+    if ('BarcodeDetector' in window) {
+      _incCameraDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      _incCameraDecodeMode = 'native';
+    } else {
+      if (!window.jsQR) await _incLoadJsQrDecoder();
+      if (!window.jsQR) throw new Error('QR decoder unavailable on this browser');
+      _incCameraDecodeMode = 'jsqr';
+      _incCameraCanvas = document.createElement('canvas');
+      _incCameraCanvasCtx = _incCameraCanvas.getContext('2d', { willReadFrequently: true });
+      if (!_incCameraCanvasCtx) throw new Error('Unable to initialise camera decoder');
+    }
+
+    _incCameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    });
+    videoEl.srcObject = _incCameraStream;
+    wrapEl.style.display = '';
+    const scanFrame = async () => {
+      if (!_incCameraStream || _incCameraDocId !== docId) return;
+      try {
+        let scannedValue = '';
+        if (_incCameraDecodeMode === 'native' && _incCameraDetector) {
+          const codes = await _incCameraDetector.detect(videoEl);
+          scannedValue = codes && codes.length && codes[0].rawValue ? codes[0].rawValue : '';
+        } else if (_incCameraDecodeMode === 'jsqr' && _incCameraCanvas && _incCameraCanvasCtx && window.jsQR && videoEl.readyState >= 2) {
+          const w = videoEl.videoWidth || 0;
+          const h = videoEl.videoHeight || 0;
+          if (w > 0 && h > 0) {
+            _incCameraCanvas.width = w;
+            _incCameraCanvas.height = h;
+            _incCameraCanvasCtx.drawImage(videoEl, 0, 0, w, h);
+            const imageData = _incCameraCanvasCtx.getImageData(0, 0, w, h);
+            const code = window.jsQR(imageData.data, w, h, { inversionAttempts: 'dontInvert' });
+            scannedValue = code && code.data ? code.data : '';
+          }
+        }
+        if (scannedValue) {
+          const isVerified = _incProcessScannedQr(docId, scannedValue);
+          if (isVerified) {
+            const inputEl = document.getElementById('sp-inc-qr-input');
+            if (inputEl) inputEl.value = '';
+          }
+        }
+      } catch (_) {}
+      _incCameraRafId = requestAnimationFrame(scanFrame);
+    };
+    _incCameraRafId = requestAnimationFrame(scanFrame);
+    if (msgEl) {
+      msgEl.style.color = 'var(--green)';
+      msgEl.textContent = _incCameraDecodeMode === 'native'
+        ? 'Camera scanner started. Point camera at item QR code.'
+        : 'Camera scanner started (compatibility mode). Point camera at item QR code.';
+    }
+  } catch (err) {
+    stopIncQrCamera();
+    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = _getCameraErrorMessage(err); }
+  }
+};
+
+async function _incLoadJsQrDecoder() {
+  if (window.jsQR) return;
+  if (window.__incJsQrLoadingPromise) {
+    await window.__incJsQrLoadingPromise;
+    return;
+  }
+  window.__incJsQrLoadingPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector('script[data-sp-jsqr="1"]');
+    if (existingScript) {
+      existingScript.addEventListener('load', resolve, { once: true });
+      existingScript.addEventListener('error', () => reject(new Error('Failed to load QR decoder script')), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+    script.async = true;
+    script.dataset.spJsqr = '1';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load QR decoder script'));
+    document.head.appendChild(script);
+  });
+  try {
+    await window.__incJsQrLoadingPromise;
+  } finally {
+    window.__incJsQrLoadingPromise = null;
+  }
+}
+
+window.stopIncQrCamera = function () {
+  if (_incCameraRafId) {
+    cancelAnimationFrame(_incCameraRafId);
+    _incCameraRafId = null;
+  }
+  if (_incCameraStream) {
+    _incCameraStream.getTracks().forEach((track) => track.stop());
+    _incCameraStream = null;
+  }
+  _incCameraDocId = null;
+  _incCameraDetector = null;
+  _incCameraDecodeMode = null;
+  _incCameraCanvas = null;
+  _incCameraCanvasCtx = null;
+  const wrapEl = document.getElementById('sp-inc-camera-wrap');
+  const videoEl = document.getElementById('sp-inc-camera-video');
+  if (wrapEl) wrapEl.style.display = 'none';
+  if (videoEl) videoEl.srcObject = null;
+};
+
+window.incResetQrVerification = function (docId) {
+  _incQrVerificationByDoc[docId] = {};
+  const lines = _incDocLinesByDoc[docId] || [];
+  lines.forEach((line) => {
+    const badgeEl = document.getElementById(`sp-qr-v-${line.line_id}`);
+    if (!badgeEl) return;
+    badgeEl.className = 'b b-gray';
+    badgeEl.textContent = 'Pending QR';
+  });
+  const stockBtn = document.getElementById('sp-inc-stock-btn');
+  if (stockBtn) stockBtn.disabled = true;
+  const msgEl = document.getElementById('sp-inc-action-msg');
+  if (msgEl) { msgEl.style.color = 'var(--text2)'; msgEl.textContent = 'QR verification reset. Scan all items again.'; }
+};
+
 window.incStock = async function (docId, lineIds) {
   const msgEl = document.getElementById('sp-inc-action-msg');
   if (msgEl) msgEl.textContent = '';
+  const verifiedLines = _incQrVerificationByDoc[docId] || {};
+  const allQrVerified = lineIds.every((lineId) => verifiedLines[lineId]);
+  if (!allQrVerified) {
+    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Please verify all lines by scanning QR before stocking.'; }
+    return;
+  }
 
   const lines = lineIds.map((lid) => {
     const input = document.getElementById(`sp-recv-${lid}`);
@@ -1133,6 +1618,7 @@ window.incStock = async function (docId, lineIds) {
 
   try {
     await apiPut(`/api/stock-transfer-docs/${docId}/stock`, { lines });
+    delete _incQrVerificationByDoc[docId];
     if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Stock credited to your store balance.'; }
     await expandIncTransfer(docId);
     loadIncomingTransfers();
@@ -1165,6 +1651,15 @@ window.setSpMlFilter = function (status, btn) {
 window.closeSpMlDetail = function () {
   const d = document.getElementById('sp-ml-detail');
   if (d) d.style.display = 'none';
+
+  // On mobile, the hamburger is controlled by the off-canvas sidebar overlay.
+  // If it's still open when Doc Details closes, it can hide the topbar/hamburger.
+  const overlayEl = document.getElementById('sp-sidebar-overlay')
+  const sidebarEl = document.querySelector('.sidebar')
+  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+  const isBodyLocked = document.body.style.overflow === 'hidden'
+  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
 };
 
 window.loadSpMovementList = async function () {
@@ -1204,10 +1699,24 @@ window.expandSpMlDoc = async function (docId) {
   const bodyEl  = document.getElementById('sp-ml-detail-body');
   const panEl   = document.getElementById('sp-ml-detail');
   if (!panEl) return;
+
+  // Ensure the off-canvas sidebar isn't covering the header/hamburger.
+  const overlayEl = document.getElementById('sp-sidebar-overlay')
+  const sidebarEl = document.querySelector('.sidebar')
+  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
+  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
+  const isBodyLocked = document.body.style.overflow === 'hidden'
+  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
+
   panEl.style.display = '';
   titleEl.textContent = `Transfer Document DOC-${docId}`;
   bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>';
-  panEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Chrome/mobile has an issue with `position: sticky` headers when calling
+  // `scrollIntoView()` inside overflow containers. Safari works fine.
+  // Skip auto-scroll for Chrome-like user agents and let the user scroll.
+  const ua = navigator.userAgent || ''
+  const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
+  if (!isChromeLike) panEl.scrollIntoView({ behavior: 'auto', block: 'nearest' });
   try {
     const doc = await apiGet(`/api/stock-transfer-docs/${docId}`);
     const fmtDt = dt => dt ? new Date(dt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '—';

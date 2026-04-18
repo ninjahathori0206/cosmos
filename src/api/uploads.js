@@ -48,7 +48,7 @@ const videoUpload = multer({
 });
 
 // POST /api/uploads/product-image
-router.post('/product-image', imageUpload.single('image'), (req, res, next) => {
+router.post('/product-image', ...digitisationUpload, imageUpload.single('image'), (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No image file uploaded.' });
     const url = `/uploads/products/${req.file.filename}`;

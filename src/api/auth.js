@@ -2,7 +2,9 @@ const express = require('express');
 const sql = require('mssql');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
-const { executeStoredProcedure } = require('../config/db');
+const bcrypt = require('bcryptjs');
+const { executeStoredProcedure, getPool } = require('../config/db');
+const { authJwt } = require('../middleware/authJwt');
 
 const router = express.Router();
 
@@ -10,6 +12,10 @@ const loginSchema = Joi.object({
   username: Joi.string().max(100).required(),
   password: Joi.string().min(4).max(200).required()
 });
+
+function looksLikeBcryptHash(v) {
+  return /^\$2[abxy]\$\d{2}\$/.test(String(v || ''));
+}
 
 router.post('/login', async (req, res, next) => {
   try {
@@ -38,7 +44,30 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
-    if (password !== user.password) {
+    const storedPassword = user.password || '';
+    let isValidPassword = false;
+
+    if (looksLikeBcryptHash(storedPassword)) {
+      isValidPassword = await bcrypt.compare(password, storedPassword);
+    } else {
+      // Legacy plaintext fallback during migration window.
+      isValidPassword = password === storedPassword;
+      if (isValidPassword) {
+        try {
+          const hashed = await bcrypt.hash(password, 12);
+          const pool = await getPool();
+          await pool.request()
+            .input('uid', sql.Int, user.user_id)
+            .input('pwd', sql.VarChar(200), hashed)
+            .query('UPDATE dbo.users SET password = @pwd WHERE user_id = @uid');
+        } catch (rehashErr) {
+          // Non-fatal: login should still succeed; next login will retry migration.
+          console.warn('[auth/login] password rehash failed:', rehashErr.message);
+        }
+      }
+    }
+
+    if (!isValidPassword) {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -108,14 +137,7 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
-router.get('/me', (req, res) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Not authenticated'
-    });
-  }
-
+router.get('/me', authJwt, (req, res) => {
   return res.json({
     success: true,
     data: req.user

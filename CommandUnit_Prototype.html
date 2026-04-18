@@ -559,30 +559,30 @@
   <!-- ═══ PAGE: DASHBOARD ═══ -->
   <div class="page active" id="page-dashboard">
     <div class="page-header">
-      <div class="page-title">Good morning, Talha 👋</div>
+      <div class="page-title">Loading dashboard…</div>
       <div class="page-subtitle"></div>
     </div>
 
     <div class="stats-grid">
       <div class="stat-card" style="--accent-color:#6C3FC5">
         <div class="stat-label">Network Revenue Today</div>
-        <div class="stat-value">₹1,84,250</div>
-        <div class="stat-meta"><span class="stat-up">↑ 12%</span> vs yesterday</div>
+        <div class="stat-value">—</div>
+        <div class="stat-meta">Loading…</div>
       </div>
       <div class="stat-card" style="--accent-color:#059669">
         <div class="stat-label">Active Stores</div>
-        <div class="stat-value">14</div>
-        <div class="stat-meta">2 coming soon · 1 inactive</div>
+        <div class="stat-value">—</div>
+        <div class="stat-meta">Loading…</div>
       </div>
       <div class="stat-card" style="--accent-color:#F0A500">
         <div class="stat-label">Total Active Users</div>
-        <div class="stat-value">87</div>
-        <div class="stat-meta">Across all modules</div>
+        <div class="stat-value">—</div>
+        <div class="stat-meta">Loading…</div>
       </div>
       <div class="stat-card" style="--accent-color:#DC2626">
         <div class="stat-label">Pending Approvals</div>
-        <div class="stat-value">5</div>
-        <div class="stat-meta"><span class="stat-down">3 bill discrepancies</span> · 2 leaves</div>
+        <div class="stat-value">—</div>
+        <div class="stat-meta">Loading…</div>
       </div>
     </div>
 
@@ -598,12 +598,8 @@
           <div class="table-wrap">
             <table>
               <thead><tr><th>SKU</th><th>Product</th><th>Units Sold</th><th>Revenue</th><th>Stock</th></tr></thead>
-              <tbody>
-                <tr><td class="font-mono text-xs">RB-AVTR-BLKGLD</td><td>Ray-Ban Aviator Black Gold</td><td>12</td><td>₹71,400</td><td><span class="badge badge-green">In Stock</span></td></tr>
-                <tr><td class="font-mono text-xs">EWS-BOTAN-TRNBLU</td><td>EW Studio Botanica Transparent Blue</td><td>9</td><td>₹26,100</td><td><span class="badge badge-gold">Low Stock</span></td></tr>
-                <tr><td class="font-mono text-xs">TT-CLASS-SLVR</td><td>Titan Classic Silver</td><td>7</td><td>₹24,500</td><td><span class="badge badge-green">In Stock</span></td></tr>
-                <tr><td class="font-mono text-xs">EWS-CSTAL-MTTBLU</td><td>EW Studio Coastal Matte Blue</td><td>6</td><td>₹17,400</td><td><span class="badge badge-red">Out of Stock</span></td></tr>
-                <tr><td class="font-mono text-xs">WW-VTGRD-BLKGLD</td><td>WoodWear Vintage Round Black Gold</td><td>5</td><td>₹21,750</td><td><span class="badge badge-green">In Stock</span></td></tr>
+              <tbody id="cu-dash-top-skus">
+                <tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -613,17 +609,13 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">Attendance Rate — Network Today</div>
-            <span class="badge badge-green">86% present</span>
+            <span class="badge badge-gray" id="cu-dash-attendance-badge">Loading…</span>
           </div>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Store</th><th>Expected</th><th>Present</th><th>Late</th><th>Absent</th><th>Rate</th></tr></thead>
-              <tbody>
-                <tr><td>Surat Main</td><td>8</td><td>7</td><td>1</td><td>0</td><td><span class="badge badge-green">87.5%</span></td></tr>
-                <tr><td>Bharuch Centre</td><td>5</td><td>5</td><td>0</td><td>0</td><td><span class="badge badge-green">100%</span></td></tr>
-                <tr><td>Vadodara Mall</td><td>6</td><td>4</td><td>2</td><td>0</td><td><span class="badge badge-gold">66.7%</span></td></tr>
-                <tr><td>Anand</td><td>4</td><td>4</td><td>0</td><td>0</td><td><span class="badge badge-green">100%</span></td></tr>
-                <tr><td>Navsari</td><td>4</td><td>3</td><td>0</td><td>1</td><td><span class="badge badge-gold">75%</span></td></tr>
+              <tbody id="cu-dash-attendance">
+                <tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -637,49 +629,10 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">Pending Approvals</div>
-            <span class="badge badge-red">5</span>
+            <span class="badge badge-gray" id="cu-dash-pending-count">—</span>
           </div>
-          <div class="card-body">
-            <div class="pending-item">
-              <div class="pending-icon" style="background:#FEE2E2">🧾</div>
-              <div class="pending-info">
-                <div class="pending-title">Bill Discrepancy — ₹340</div>
-                <div class="pending-sub">Optics Bazaar · Surat Main · 2h ago</div>
-              </div>
-              <button class="topbar-btn primary" style="padding:5px 10px;font-size:12px">Review</button>
-            </div>
-            <div class="pending-item">
-              <div class="pending-icon" style="background:#FEE2E2">🧾</div>
-              <div class="pending-info">
-                <div class="pending-title">Bill Discrepancy — ₹120</div>
-                <div class="pending-sub">Vision Mart · Bharuch · 4h ago</div>
-              </div>
-              <button class="topbar-btn primary" style="padding:5px 10px;font-size:12px">Review</button>
-            </div>
-            <div class="pending-item">
-              <div class="pending-icon" style="background:#FEE2E2">🧾</div>
-              <div class="pending-info">
-                <div class="pending-title">Bill Discrepancy — ₹80</div>
-                <div class="pending-sub">ABC Optics · Vadodara · 5h ago</div>
-              </div>
-              <button class="topbar-btn primary" style="padding:5px 10px;font-size:12px">Review</button>
-            </div>
-            <div class="pending-item">
-              <div class="pending-icon" style="background:#DBEAFE">📅</div>
-              <div class="pending-info">
-                <div class="pending-title">Leave Request — Rahul Shah</div>
-                <div class="pending-sub">Casual Leave · 2 days · Surat Main</div>
-              </div>
-              <button class="topbar-btn" style="padding:5px 10px;font-size:12px">View</button>
-            </div>
-            <div class="pending-item">
-              <div class="pending-icon" style="background:#DBEAFE">📅</div>
-              <div class="pending-info">
-                <div class="pending-title">Leave Request — Priya Mehta</div>
-                <div class="pending-sub">Sick Leave · 1 day · Bharuch</div>
-              </div>
-              <button class="topbar-btn" style="padding:5px 10px;font-size:12px">View</button>
-            </div>
+          <div class="card-body" id="cu-dash-pending">
+            <div class="td-muted" style="padding:4px 0">Loading…</div>
           </div>
         </div>
 
@@ -689,39 +642,8 @@
             <div class="card-title">Recent Audit Activity</div>
             <span class="badge badge-gray" onclick="showPage('audit', document.querySelector('[onclick*=audit]'))" style="cursor:pointer">View all →</span>
           </div>
-          <div class="card-body">
-            <div class="audit-item">
-              <div class="audit-dot"></div>
-              <div class="audit-content">
-                <div class="audit-action">Purchase registered — EW Studio Botanica</div>
-                <div class="audit-meta">Procurement Mgr · Surat Main</div>
-              </div>
-              <div class="audit-time">09:42</div>
-            </div>
-            <div class="audit-item">
-              <div class="audit-dot" style="background:var(--red)"></div>
-              <div class="audit-content">
-                <div class="audit-action">Bill discrepancy flagged — ₹340</div>
-                <div class="audit-meta">System · Foundry</div>
-              </div>
-              <div class="audit-time">09:38</div>
-            </div>
-            <div class="audit-item">
-              <div class="audit-dot" style="background:var(--green)"></div>
-              <div class="audit-content">
-                <div class="audit-action">New store activated — Anand</div>
-                <div class="audit-meta">Talha Junani · Command Unit</div>
-              </div>
-              <div class="audit-time">08:15</div>
-            </div>
-            <div class="audit-item">
-              <div class="audit-dot"></div>
-              <div class="audit-content">
-                <div class="audit-action">User created — Meera Patel (Store Mgr)</div>
-                <div class="audit-meta">HR Admin · Army</div>
-              </div>
-              <div class="audit-time">07:55</div>
-            </div>
+          <div class="card-body" id="cu-dash-audit">
+            <div class="td-muted" style="padding:4px 0">Loading…</div>
           </div>
         </div>
       </div>
@@ -739,10 +661,10 @@
     </div>
 
     <div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
-      <div class="stat-card" style="--accent-color:#059669"><div class="stat-label">Active</div><div class="stat-value">14</div></div>
-      <div class="stat-card" style="--accent-color:#F0A500"><div class="stat-label">Coming Soon</div><div class="stat-value">2</div></div>
-      <div class="stat-card" style="--accent-color:#94A3B8"><div class="stat-label">Inactive</div><div class="stat-value">1</div></div>
-      <div class="stat-card" style="--accent-color:#6C3FC5"><div class="stat-label">Total</div><div class="stat-value">17</div></div>
+      <div class="stat-card" style="--accent-color:#059669"><div class="stat-label">Active</div><div class="stat-value">—</div></div>
+      <div class="stat-card" style="--accent-color:#F0A500"><div class="stat-label">Coming Soon</div><div class="stat-value">—</div></div>
+      <div class="stat-card" style="--accent-color:#94A3B8"><div class="stat-label">Inactive</div><div class="stat-value">—</div></div>
+      <div class="stat-card" style="--accent-color:#6C3FC5"><div class="stat-label">Total</div><div class="stat-value">—</div></div>
     </div>
 
     <div class="card">
@@ -771,66 +693,7 @@
         <table>
           <thead><tr><th>Store</th><th>Code</th><th>Format</th><th>City</th><th>GSTIN</th><th>Modules</th><th>Status</th><th></th></tr></thead>
           <tbody>
-            <tr>
-              <td><div class="fw-600">Eyewoot Surat Main</div><div class="td-muted">Ring Road, Surat</div></td>
-              <td class="font-mono text-xs">EW-SRT-01</td>
-              <td><span class="badge badge-purple">Eyewoot-Owned</span></td>
-              <td>Surat, GJ</td>
-              <td class="font-mono text-xs">24AABCE1234F1Z5</td>
-              <td><span class="badge badge-green">All 6</span></td>
-              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
-              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px" onclick="openModal('modal-store-detail')">Edit</button></td>
-            </tr>
-            <tr>
-              <td><div class="fw-600">Franchise — Bharuch Centre</div><div class="td-muted">Station Road, Bharuch</div></td>
-              <td class="font-mono text-xs">EW-BRC-01</td>
-              <td><span class="badge badge-blue">Franchise</span></td>
-              <td>Bharuch, GJ</td>
-              <td class="font-mono text-xs">24BBBCE5678F1Z2</td>
-              <td><span class="badge badge-blue">POS · Foundry · Army</span></td>
-              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
-              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
-            </tr>
-            <tr>
-              <td><div class="fw-600">Franchise — Vadodara Mall</div><div class="td-muted">Inorbit Mall, Vadodara</div></td>
-              <td class="font-mono text-xs">EW-VDR-01</td>
-              <td><span class="badge badge-blue">Franchise</span></td>
-              <td>Vadodara, GJ</td>
-              <td class="font-mono text-xs">24CCCCE9012F1Z8</td>
-              <td><span class="badge badge-blue">POS · Foundry · Army</span></td>
-              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
-              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
-            </tr>
-            <tr>
-              <td><div class="fw-600">Eyewoot Anand</div><div class="td-muted">Anand-Vidyanagar Road</div></td>
-              <td class="font-mono text-xs">EW-AND-01</td>
-              <td><span class="badge badge-purple">Eyewoot-Owned</span></td>
-              <td>Anand, GJ</td>
-              <td class="font-mono text-xs">24DDDCE3456F1Z1</td>
-              <td><span class="badge badge-green">All 6</span></td>
-              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
-              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
-            </tr>
-            <tr>
-              <td><div class="fw-600">Kiosk — Amroli</div><div class="td-muted">Amroli Arcade, Surat</div></td>
-              <td class="font-mono text-xs">EW-SRT-K1</td>
-              <td><span class="badge badge-gold">Kiosk / Pop-up</span></td>
-              <td>Surat, GJ</td>
-              <td class="font-mono text-xs">24AABCE1234F1Z5</td>
-              <td><span class="badge badge-gray">POS only</span></td>
-              <td><span class="badge badge-gold"><span class="badge-dot"></span>Coming Soon</span></td>
-              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
-            </tr>
-            <tr>
-              <td><div class="fw-600">Eyewoot Go — D2C Online</div><div class="td-muted">Virtual · HQ operated</div></td>
-              <td class="font-mono text-xs">EW-D2C-01</td>
-              <td><span class="badge badge-gray">Online / D2C</span></td>
-              <td>— (HQ)</td>
-              <td class="font-mono text-xs">24AABCE1234F1Z5</td>
-              <td><span class="badge badge-gray">Foundry · Go</span></td>
-              <td><span class="badge badge-green"><span class="badge-dot"></span>Active</span></td>
-              <td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
-            </tr>
+            <tr><td colspan="8" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -1492,7 +1355,13 @@
       <div class="form-grid">
         <div class="form-group"><label>Full Name <span class="label-req">*</span></label><input id="new-user-fullname" type="text" placeholder="Full name"></div>
         <div class="form-group"><label>Username <span class="label-req">*</span></label><input id="new-user-username" type="text" placeholder="e.g. talha.junani"></div>
-        <div class="form-group"><label>Password <span class="label-req">*</span></label><input id="new-user-password" type="password" placeholder="Min 6 characters"></div>
+        <div class="form-group">
+          <label>Password <span class="label-req">*</span></label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="new-user-password" type="password" placeholder="Min 6 characters" style="flex:1 1 auto">
+            <button type="button" class="topbar-btn" id="new-user-password-toggle" aria-label="Show password">Show</button>
+          </div>
+        </div>
         <div class="form-group"><label>Role <span class="label-req">*</span></label>
           <select id="new-user-role">
             <option value="">— Select a role —</option>
@@ -1539,7 +1408,13 @@
         </div>
         <div class="form-group"><label>Phone</label><input id="edit-user-phone" type="text"></div>
         <div class="form-group"><label>Email</label><input id="edit-user-email" type="email"></div>
-        <div class="form-group"><label>New Password</label><input id="edit-user-password" type="password" placeholder="Leave blank to keep current"></div>
+        <div class="form-group">
+          <label>New Password</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="edit-user-password" type="password" placeholder="Leave blank to keep current" style="flex:1 1 auto">
+            <button type="button" class="topbar-btn" id="edit-user-password-toggle" aria-label="Show password">Show</button>
+          </div>
+        </div>
         <div class="form-group span2"><label>Store assignment</label>
           <select id="edit-user-store">
             <option value="">— HQ / Global (no single store) —</option>

@@ -118,6 +118,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) btn.disabled = disabled;
   }
 
+  function bindPasswordToggle(inputId, toggleId) {
+    const input = document.getElementById(inputId);
+    const toggle = document.getElementById(toggleId);
+    if (!input || !toggle) return;
+    toggle.addEventListener('click', () => {
+      const showPlain = input.type === 'password';
+      input.type = showPlain ? 'text' : 'password';
+      toggle.textContent = showPlain ? 'Hide' : 'Show';
+      toggle.setAttribute('aria-label', showPlain ? 'Hide password' : 'Show password');
+    });
+  }
+
+  function resetPasswordField(inputId, toggleId) {
+    const input = document.getElementById(inputId);
+    const toggle = document.getElementById(toggleId);
+    if (!input || !toggle) return;
+    input.type = 'password';
+    toggle.textContent = 'Show';
+    toggle.setAttribute('aria-label', 'Show password');
+  }
+
   function val(id) {
     const el = document.getElementById(id);
     return el ? el.value.trim() : '';
@@ -527,6 +548,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ['new-user-fullname','new-user-username','new-user-password','new-user-email','new-user-phone'].forEach((id) => {
         const el = document.getElementById(id); if (el) el.value = '';
       });
+      resetPasswordField('new-user-password', 'new-user-password-toggle');
       await loadUsers();
     } catch (err) {
       showError('new-user-error', err.message || 'Failed to create user');
@@ -545,6 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('edit-user-phone').value = u.phone || '';
     document.getElementById('edit-user-email').value = u.email || '';
     document.getElementById('edit-user-password').value = '';
+    resetPasswordField('edit-user-password', 'edit-user-password-toggle');
     document.getElementById('edit-user-status').value = u.is_active ? '1' : '0';
     const stSel = document.getElementById('edit-user-store');
     if (stSel) {
@@ -665,6 +688,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ]},
     { group: 'StorePilot (Showroom)', perms: [
       { key: 'storepilot.dashboard.view',           label: 'Dashboard — View' },
+      { key: 'storepilot.catalogue.view',           label: 'Catalogue — View' },
       { key: 'storepilot.floor.view',               label: 'Floor & Displays — View' },
       { key: 'storepilot.floor.create',             label: 'Floor & Displays — Create' },
       { key: 'storepilot.floor.edit',               label: 'Floor & Displays — Edit' },
@@ -677,6 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { key: 'storepilot.handoffs.create',          label: 'POS Handoffs — Create' },
       { key: 'storepilot.reports.view',             label: 'Reports — View' },
       { key: 'storepilot.transfers.view',           label: 'Transfers — View' },
+      { key: 'storepilot.transfers.create',         label: 'Transfers — Create' },
       { key: 'storepilot.transfers.edit',           label: 'Transfers — Accept / Stock' },
     ]},
     { group: 'Store OS (POS)', perms: [
@@ -1627,13 +1652,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ─── DASHBOARD ────────────────────────────────────────────────────────────
 
+  function renderDashboardLoadingState() {
+    const set = (id, html) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = html;
+    };
+    const attendanceBadge = document.getElementById('cu-dash-attendance-badge');
+    const pendingCount = document.getElementById('cu-dash-pending-count');
+    if (attendanceBadge) {
+      attendanceBadge.className = 'badge badge-gray';
+      attendanceBadge.textContent = 'Loading…';
+    }
+    if (pendingCount) {
+      pendingCount.className = 'badge badge-gray';
+      pendingCount.textContent = '—';
+    }
+    set('cu-dash-top-skus', '<tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>');
+    set('cu-dash-attendance', '<tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>');
+    set('cu-dash-pending', '<div class="td-muted" style="padding:4px 0">Loading…</div>');
+    set('cu-dash-audit', '<div class="td-muted" style="padding:4px 0">Loading…</div>');
+  }
+
   async function loadDashboard() {
+    renderDashboardLoadingState();
     try {
-      const [stores, brands, suppliers, purchases] = await Promise.all([
+      const [stores, brands, suppliers, purchases, logs] = await Promise.all([
         apiGet('/api/stores'),
         apiGet('/api/home-brands'),
         apiGet('/api/suppliers'),
-        apiGet('/api/purchases')
+        apiGet('/api/purchases'),
+        apiGet('/api/audit-logs?top=4').catch(() => [])
       ]);
 
       const cards = document.querySelectorAll('#page-dashboard .stats-grid .stat-card');
@@ -1665,8 +1713,99 @@ document.addEventListener('DOMContentLoaded', () => {
         const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
         titleEl.textContent = `${greeting}, ${user.full_name || user.username || 'User'} 👋`;
       }
+
+      const topSkuTbody = document.getElementById('cu-dash-top-skus');
+      if (topSkuTbody) {
+        const recent = (purchases || []).slice(0, 5);
+        if (!recent.length) {
+          topSkuTbody.innerHTML = '<tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px">No purchase lines available yet.</td></tr>';
+        } else {
+          topSkuTbody.innerHTML = recent.map((row) => {
+            const qty = Number(row.total_qty || row.qty || 0);
+            const rate = Number(row.rate || row.purchase_rate || 0);
+            const amount = qty * rate;
+            const stage = String(row.stage_label || row.stage_code || row.stage || 'Unknown');
+            return `<tr>
+              <td class="font-mono text-xs">${escHtml(row.bill_ref || row.purchase_id || '—')}</td>
+              <td>${escHtml(row.collection_name || row.brand_name || row.supplier_name || 'Purchase item')}</td>
+              <td>${qty}</td>
+              <td>${amount > 0 ? `₹${amount.toLocaleString('en-IN')}` : '—'}</td>
+              <td><span class="badge badge-gray">${escHtml(stage || 'Unknown')}</span></td>
+            </tr>`;
+          }).join('');
+        }
+      }
+
+      const attendanceTbody = document.getElementById('cu-dash-attendance');
+      const attendanceBadge = document.getElementById('cu-dash-attendance-badge');
+      if (attendanceBadge) {
+        attendanceBadge.className = 'badge badge-gray';
+        attendanceBadge.textContent = 'Not connected';
+      }
+      if (attendanceTbody) {
+        attendanceTbody.innerHTML = '<tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px">Attendance API is not connected in Command Unit yet.</td></tr>';
+      }
+
+      const pendingBody = document.getElementById('cu-dash-pending');
+      const pendingCount = document.getElementById('cu-dash-pending-count');
+      if (pendingBody) {
+        const pending = (purchases || []).filter((p) => String(p.stage_label || p.stage_code || p.stage || '').toUpperCase().includes('DISCREPANCY')).slice(0, 5);
+        if (pendingCount) {
+          pendingCount.className = pending.length ? 'badge badge-red' : 'badge badge-gray';
+          pendingCount.textContent = String(pending.length);
+        }
+        if (!pending.length) {
+          pendingBody.innerHTML = '<div class="td-muted" style="padding:4px 0">No pending approvals.</div>';
+        } else {
+          pendingBody.innerHTML = pending.map((p) => `
+            <div class="pending-item">
+              <div class="pending-icon" style="background:#FEE2E2">🧾</div>
+              <div class="pending-info">
+                <div class="pending-title">Bill discrepancy — ${escHtml(p.bill_ref || `Purchase #${p.purchase_id || '—'}`)}</div>
+                <div class="pending-sub">${escHtml(p.supplier_name || 'Supplier')} · ${escHtml(p.stage_code || p.stage || 'Under review')}</div>
+              </div>
+              <button class="topbar-btn primary" style="padding:5px 10px;font-size:12px" onclick="showPage('audit', document.querySelector('[onclick*=audit]'))">Review</button>
+            </div>
+          `).join('');
+        }
+      }
+
+      const auditBody = document.getElementById('cu-dash-audit');
+      if (auditBody) {
+        if (!Array.isArray(logs) || !logs.length) {
+          auditBody.innerHTML = '<div class="td-muted" style="padding:4px 0">No recent audit activity.</div>';
+        } else {
+          auditBody.innerHTML = logs.slice(0, 4).map((log) => `
+            <div class="audit-item">
+              <div class="audit-dot"></div>
+              <div class="audit-content">
+                <div class="audit-action">${escHtml(log.action || 'Activity')}</div>
+                <div class="audit-meta">${escHtml(log.module_key || 'Command Unit')} · ${escHtml(log.actor_name || log.actor_user || 'System')}</div>
+              </div>
+              <div class="audit-time">${escHtml(fmtIstDateTime(log.at || log.created_at))}</div>
+            </div>
+          `).join('');
+        }
+      }
     } catch {
-      // Keep placeholder if dashboard APIs fail
+      const pendingCount = document.getElementById('cu-dash-pending-count');
+      if (pendingCount) {
+        pendingCount.className = 'badge badge-gray';
+        pendingCount.textContent = '—';
+      }
+      const titleEl = document.querySelector('#page-dashboard .page-title');
+      if (titleEl) titleEl.textContent = 'Dashboard unavailable';
+      const setError = (id, col) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = `<tr><td colspan="${col}" class="td-muted" style="text-align:center;padding:24px;color:#b91c1c">Failed to load data.</td></tr>`;
+      };
+      setError('cu-dash-top-skus', 5);
+      setError('cu-dash-attendance', 6);
+      const pending = document.getElementById('cu-dash-pending');
+      if (pending) pending.innerHTML = '<div class="td-muted" style="padding:4px 0;color:#b91c1c">Failed to load pending approvals.</div>';
+      const audit = document.getElementById('cu-dash-audit');
+      if (audit) audit.innerHTML = '<div class="td-muted" style="padding:4px 0;color:#b91c1c">Failed to load audit activity.</div>';
     }
   }
 
@@ -1682,6 +1821,8 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('new-user-save-btn', handleCreateUser);
   bind('edit-user-save-btn', handleSaveUserChanges);
   bind('edit-user-deactivate-btn', handleDeactivateUser);
+  bindPasswordToggle('new-user-password', 'new-user-password-toggle');
+  bindPasswordToggle('edit-user-password', 'edit-user-password-toggle');
 
   // Roles
   bind('new-role-save-btn', handleCreateRole);
