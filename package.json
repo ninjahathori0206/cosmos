@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "migrate:passwords": "node scripts/migrate-passwords.js",
     "publish:design-local": "node -e \"require('fs').copyFileSync('pencil-new.pen','src/public/design/pencil-local/pencil-new.pen'); console.log('Copied pencil-new.pen → src/public/design/pencil-local/')\""
   },
   "keywords": [
@@ -21,19 +22,23 @@
   "license": "UNLICENSED",
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.0.0",
+    "ioredis": "^5.10.1",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
     "mssql": "^10.0.2",
     "multer": "^1.4.5-lts.1",
     "qrcode": "^1.5.4",
+    "rate-limit-redis": "^4.3.1",
     "sharp": "^0.33.4",
     "uuid": "^9.0.1",
-    "winston": "^3.13.0"
+    "winston": "^3.13.0",
+    "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

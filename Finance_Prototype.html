@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Finance — Cosmos ERP</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/fonts.css">
 <style>
   :root {
     --navy:    #0B1F35;
@@ -30,13 +30,13 @@
     --sidebar: 252px;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'DM Sans',sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; display:flex; overflow:hidden; }
+  body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; display:flex; overflow:hidden; }
 
   /* SIDEBAR */
   .sidebar { width:var(--sidebar); background:var(--navy); height:100vh; display:flex; flex-direction:column; flex-shrink:0; position:fixed; left:0; top:0; z-index:100; }
   .sidebar-logo { padding:20px 20px 16px; border-bottom:1px solid rgba(255,255,255,0.08); }
-  .cosmos-tag { font-family:'Syne',sans-serif; font-size:10px; font-weight:700; letter-spacing:3px; color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:3px; }
-  .module-name { font-family:'Syne',sans-serif; font-size:18px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; }
+  .cosmos-tag { font-family:'Inter',sans-serif; font-size:10px; font-weight:700; letter-spacing:3px; color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:3px; }
+  .module-name { font-family:'Inter',sans-serif; font-size:18px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; }
   .mod-dot { width:8px; height:8px; border-radius:50%; background:var(--acc2); box-shadow:0 0 8px var(--acc2); }
   .sidebar-nav { flex:1; padding:10px 0; overflow-y:auto; }
   .nav-group { font-size:10px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,0.22); padding:14px 20px 5px; }
@@ -45,7 +45,7 @@
   .nav-item.active { background:rgba(20,163,119,0.18); color:#fff; border-left-color:var(--acc2); font-weight:500; }
   .nav-item .ic { font-size:15px; width:20px; text-align:center; }
   .sidebar-user { padding:14px 20px; border-top:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; gap:10px; }
-  .u-av { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; font-family:'Syne',sans-serif; flex-shrink:0; }
+  .u-av { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; font-family:'Inter',sans-serif; flex-shrink:0; }
   .u-name { font-size:12.5px; font-weight:500; color:#fff; }
   .u-role { font-size:11px; color:rgba(255,255,255,0.35); }
 
@@ -59,7 +59,7 @@
   .tb-actions { display:flex; align-items:center; gap:10px; }
 
   /* BUTTONS */
-  .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; border:1.5px solid var(--border); background:var(--card); font-size:13px; font-weight:500; cursor:pointer; color:var(--text1); transition:all .15s; font-family:'DM Sans',sans-serif; white-space:nowrap; }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; border:1.5px solid var(--border); background:var(--card); font-size:13px; font-weight:500; cursor:pointer; color:var(--text1); transition:all .15s; font-family:'Inter',sans-serif; white-space:nowrap; }
   .btn:hover { border-color:var(--acc2); color:var(--acc); }
   .btn.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
   .btn.primary:hover { background:var(--accD); }
@@ -73,7 +73,7 @@
 
   /* PAGE HEADER */
   .ph { margin-bottom:22px; }
-  .pt { font-family:'Syne',sans-serif; font-size:20px; font-weight:700; color:var(--text1); }
+  .pt { font-family:'Inter',sans-serif; font-size:20px; font-weight:700; color:var(--text1); }
   .ps { font-size:13px; color:var(--text2); margin-top:3px; }
 
   /* STAT CARDS */
@@ -115,7 +115,7 @@
   .fgrp label { font-size:12px; font-weight:600; color:var(--text2); }
   .fgrp input, .fgrp select, .fgrp textarea {
     padding:8px 11px; border:1.5px solid var(--border); border-radius:8px;
-    font-size:13px; font-family:'DM Sans',sans-serif; background:var(--card);
+    font-size:13px; font-family:'Inter',sans-serif; background:var(--card);
     color:var(--text1); outline:none; transition:border-color .15s;
   }
   .fgrp input:focus, .fgrp select:focus, .fgrp textarea:focus { border-color:var(--acc2); }

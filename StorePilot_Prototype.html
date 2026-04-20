@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Store Pilot — Cosmos ERP</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/fonts.css">
 <style>
   :root {
     --navy:    #0B1F33;
@@ -35,8 +35,8 @@
   /* ── SIDEBAR ──────────────────────────────────────────────────────────────── */
   .sidebar { width:var(--sidebar); background:var(--navy); height:100vh; display:flex; flex-direction:column; flex-shrink:0; position:fixed; left:0; top:0; z-index:100; }
   .sidebar-logo { padding:20px 20px 16px; border-bottom:1px solid rgba(255,255,255,0.08); }
-  .cosmos-tag { font-family:'Plus Jakarta Sans',sans-serif; font-size:10px; font-weight:700; letter-spacing:3px; color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:3px; }
-  .module-name { font-family:'Plus Jakarta Sans',sans-serif; font-size:18px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; }
+  .cosmos-tag { font-family:'Inter',sans-serif; font-size:10px; font-weight:700; letter-spacing:3px; color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:3px; }
+  .module-name { font-family:'Inter',sans-serif; font-size:18px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; }
   .mod-dot { width:8px; height:8px; border-radius:50%; background:var(--acc2); box-shadow:0 0 8px var(--acc2); }
   .sidebar-nav { flex:1; padding:10px 0; overflow-y:auto; }
   .nav-group { font-size:10px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,0.22); padding:14px 20px 5px; }
@@ -45,7 +45,7 @@
   .nav-item.active { background:rgba(43,140,255,0.2); color:#fff; border-left-color:var(--acc2); font-weight:500; }
   .nav-item .ic { font-size:15px; width:20px; text-align:center; }
   .sidebar-user { padding:14px 20px; border-top:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; gap:10px; }
-  .u-av { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; font-family:'Plus Jakarta Sans',sans-serif; flex-shrink:0; }
+  .u-av { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; font-family:'Inter',sans-serif; flex-shrink:0; }
   .u-name { font-size:12.5px; font-weight:500; color:#fff; }
   .u-role { font-size:11px; color:rgba(255,255,255,0.35); }
 
@@ -59,7 +59,7 @@
   .page { display:none; padding:26px; }
   .page.active { display:block; }
   .ph { margin-bottom:22px; }
-  .pt { font-family:'Plus Jakarta Sans',sans-serif; font-size:20px; font-weight:700; color:var(--text1); }
+  .pt { font-family:'Inter',sans-serif; font-size:20px; font-weight:700; color:var(--text1); }
   .ps { font-size:13px; color:var(--text2); margin-top:3px; }
 
   /* ── STAT CARDS ───────────────────────────────────────────────────────────── */
@@ -67,7 +67,7 @@
   @media (max-width:1100px) { .sg4 { grid-template-columns:repeat(2,1fr); } }
   .sc { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:18px 20px; border-top:3px solid var(--sc-color,var(--acc)); }
   .sl { font-size:11.5px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
-  .sv { font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:500; color:var(--text1); }
+  .sv { font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:500; color:var(--text1); }
   .sm { font-size:11.5px; color:var(--text3); margin-top:3px; }
 
   /* ── CARD ─────────────────────────────────────────────────────────────────── */
@@ -84,7 +84,7 @@
   td { padding:10px 14px; border-bottom:1px solid var(--border); color:var(--text1); vertical-align:middle; }
   tr:last-child td { border-bottom:none; }
   tr:hover td { background:rgba(43,140,255,0.025); }
-  .mono { font-family:'IBM Plex Mono',monospace; font-size:12px; }
+  .mono { font-family:'JetBrains Mono',monospace; font-size:12px; }
 
   /* ── BADGES ───────────────────────────────────────────────────────────────── */
   .b { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap; }
@@ -122,9 +122,9 @@
   /* ── STOCK DETAIL PANEL ───────────────────────────────────────────────────── */
   .detail-panel { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:0; overflow:hidden; }
   .detail-header { padding:16px 18px; border-bottom:1px solid var(--border); background:linear-gradient(135deg,rgba(29,111,212,0.06),rgba(43,140,255,0.04)); }
-  .detail-sku { font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; color:var(--acc); }
+  .detail-sku { font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:600; color:var(--acc); }
   .detail-desc { font-size:13px; color:var(--text2); margin-top:3px; }
-  .detail-total { font-family:'Plus Jakarta Sans',sans-serif; font-size:28px; font-weight:800; color:var(--text1); }
+  .detail-total { font-family:'Inter',sans-serif; font-size:28px; font-weight:800; color:var(--text1); }
   .loc-row { display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-bottom:1px solid var(--border); font-size:13px; }
   .loc-row:last-child { border-bottom:none; }
   .loc-name { font-weight:500; color:var(--text1); }
@@ -135,7 +135,7 @@
   .result-row:last-child { border-bottom:none; }
   .result-row:hover { background:rgba(43,140,255,0.04); }
   .result-row.selected { background:rgba(43,140,255,0.08); }
-  .rr-code { font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; color:var(--acc); }
+  .rr-code { font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:600; color:var(--acc); }
   .rr-desc { font-size:12.5px; color:var(--text2); margin-top:2px; }
 
   /* ── AVAILABLE ROWS (transfer search) ────────────────────────────────────── */
@@ -158,7 +158,7 @@
   .sku-card { background:var(--card); border:1.5px solid var(--border); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; transition:border-color .15s, box-shadow .15s; }
   .sku-card:hover { border-color:var(--acc2); box-shadow:0 2px 12px rgba(43,140,255,0.09); }
   .sku-card-head { padding:13px 15px 10px; border-bottom:1px solid var(--border); }
-  .sku-card-code { font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; color:var(--acc); letter-spacing:.5px; }
+  .sku-card-code { font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:600; color:var(--acc); letter-spacing:.5px; }
   .sku-card-brand { font-size:12px; color:var(--text2); margin-top:2px; }
   .sku-card-name { font-size:13px; font-weight:500; color:var(--text1); margin-top:5px; line-height:1.35; }
   .sku-card-body { padding:10px 15px; flex:1; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -575,7 +575,7 @@
       .inc-tr-row:last-child { border-bottom:none }
       .inc-tr-row:hover { background:var(--hover) }
       .inc-tr-meta { flex:1;min-width:0 }
-      .inc-tr-id   { font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--acc) }
+      .inc-tr-id   { font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--acc) }
       .inc-tr-sub  { font-size:12px;color:var(--text2);margin-top:2px }
       .inc-verify-line { display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border) }
       .inc-verify-line:last-child { border-bottom:none }

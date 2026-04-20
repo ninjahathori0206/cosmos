@@ -2,6 +2,7 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const { withCache, clearCacheByPrefix } = require('../cache/ttlCache');
 const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
@@ -20,14 +21,10 @@ router.get(
   '/',
   requireModule('command_unit'),
   requirePermission('command_unit.roles.view'),
-  async (req, res, next) => {
-    try {
-      const result = await executeStoredProcedure('sp_Role_GetAll', {});
-      return res.json({ success: true, data: result.recordset || [] });
-    } catch (err) {
-      return next(err);
-    }
-  }
+  withCache('roles:all', 5 * 60 * 1000, async () => {
+    const result = await executeStoredProcedure('sp_Role_GetAll', {});
+    return { success: true, data: result.recordset || [] };
+  })
 );
 
 router.post(
@@ -45,6 +42,7 @@ router.post(
         role_key:     { type: sql.VarChar(50),  value: value.role_key },
         display_name: { type: sql.VarChar(200), value: value.display_name }
       });
+      clearCacheByPrefix('roles:');
 
       return res.status(201).json({ success: true, data: result.recordset && result.recordset[0] });
     } catch (err) {
@@ -69,6 +67,7 @@ router.put(
         role_key:     { type: sql.VarChar(50),  value: roleKey },
         display_name: { type: sql.VarChar(200), value: value.display_name }
       });
+      clearCacheByPrefix('roles:');
 
       return res.json({ success: true, data: result.recordset && result.recordset[0] });
     } catch (err) {
@@ -87,6 +86,7 @@ router.delete(
       const result = await executeStoredProcedure('sp_Role_Delete', {
         role_key: { type: sql.VarChar(50), value: roleKey }
       });
+      clearCacheByPrefix('roles:');
 
       return res.json({ success: true, data: result.recordset && result.recordset[0] });
     } catch (err) {

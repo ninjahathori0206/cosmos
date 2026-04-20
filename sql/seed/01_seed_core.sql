@@ -32,7 +32,7 @@ BEGIN
   )
   VALUES (
     'admin',
-    'Admin@123',
+    '$2a$12$9Hpst9HG4XqtWDhz6w0be.bZro2ubloedc2AIXxudZqBsWczWvC06',
     'System Administrator',
     'admin@eyewoot.com',
     '+91 00000 00000',

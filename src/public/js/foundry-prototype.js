@@ -1618,13 +1618,13 @@ document.addEventListener('DOMContentLoaded', () => {
       tb.innerHTML = rows.map((r) => {
         const actions = [];
         if (r.pipeline_status === 'PENDING_BILL_VERIFICATION')
-          actions.push(`<button class="btn xs primary" onclick="openBillVerifyPage(${r.header_id})">Verify Bill</button>`);
+          actions.push(`<button class="btn xs primary" data-action="open-bill-verify" data-id="${r.header_id}">Verify Bill</button>`);
         else if (['PENDING_BRANDING','BRANDING_DISPATCHED'].includes(r.pipeline_status))
-          actions.push(`<button class="btn xs primary" onclick="openBrandingPage(${r.header_id})">Branding</button>`);
+          actions.push(`<button class="btn xs primary" data-action="open-branding" data-id="${r.header_id}">Branding</button>`);
         else if (r.pipeline_status === 'PENDING_DIGITISATION')
-          actions.push(`<button class="btn xs primary" onclick="openDigitisationPage(${r.header_id})">Digitise</button>`);
+          actions.push(`<button class="btn xs primary" data-action="open-digitisation" data-id="${r.header_id}">Digitise</button>`);
         else if (r.pipeline_status === 'WAREHOUSE_READY')
-          actions.push(`<button class="btn xs" onclick="openPurchaseView(${r.header_id})">View</button>`);
+          actions.push(`<button class="btn xs" data-action="open-purchase-view" data-id="${r.header_id}">View</button>`);
 
         return `<tr>
           <td class="mono xs">#${r.header_id}</td>
@@ -3103,7 +3103,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="tc">${r.total_qty || 0}</td>
         <td class="mono xs">${inrD(r.expected_bill_amt)}</td>
         <td class="xs td2">${fmtDate(r.created_at)}</td>
-        <td><button class="btn xs primary" onclick="openBillVerifyPage(${r.header_id})">Verify Bill</button></td>
+        <td><button class="btn xs primary" data-action="open-bill-verify" data-id="${r.header_id}">Verify Bill</button></td>
       </tr>`).join('');
     } catch (err) {
       if (tb) tb.innerHTML = `<tr><td colspan="8" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`;
@@ -3292,17 +3292,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const active = isBrandingActiveStatus(r.pipeline_status);
         const history = isBrandingHistoryStatus(r.pipeline_status);
         const actionHtml = active
-          ? `<button class="btn xs primary" onclick="openBrandingPage(${r.header_id})">View / Manage</button>`
+          ? `<button class="btn xs primary" data-action="open-branding" data-id="${r.header_id}">View / Manage</button>`
           : (history
-            ? `<button class="btn xs primary" onclick="toggleBrandingHistoryDetail(${r.header_id}); return false;">View Details</button>`
-            : `<button class="btn xs" onclick="openPurchaseView(${r.header_id})">View</button>`);
-        const rowClick = history ? ` onclick="toggleBrandingHistoryDetail(${r.header_id})"` : '';
+            ? `<button class="btn xs primary" data-action="toggle-branding-history" data-id="${r.header_id}">View Details</button>`
+            : `<button class="btn xs" data-action="open-purchase-view" data-id="${r.header_id}">View</button>`);
+        const rowAction = history ? ` data-action="toggle-branding-history" data-id="${r.header_id}"` : '';
         const rowStyle = history ? ' style="cursor:pointer"' : '';
         const detailRow = history ? `
           <tr id="branding-hist-row-${r.header_id}" style="display:none;background:#f8fbff">
             <td colspan="8" id="branding-hist-cell-${r.header_id}" class="p0"></td>
           </tr>` : '';
-        return `<tr${rowClick}${rowStyle}>
+        return `<tr${rowAction}${rowStyle}>
           <td class="mono xs fw6">#${r.header_id}</td>
           <td class="fw6">${r.supplier_name || '—'}</td>
           <td class="mono xs td2">${r.bill_ref || r.bill_number || '—'}</td>
@@ -3340,7 +3340,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="tc">${r.item_count || 0}</td>
         <td class="tc">${r.total_qty || 0}</td>
         <td class="xs td2">${fmtDate(r.created_at)}</td>
-        <td><button class="btn xs primary" onclick="openDigitisationPage(${r.header_id})">Digitise</button></td>
+        <td><button class="btn xs primary" data-action="open-digitisation" data-id="${r.header_id}">Digitise</button></td>
       </tr>`).join('');
     } catch (err) {
       if (tb) tb.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`;
@@ -4187,6 +4187,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // TSC P210 USB vendor/product IDs (TSC Auto ID)
   const TSC_VENDOR_ID = 0x0EB8;
+  let _jsBarcodeLoader = null;
+  let _html5QrLoader = null;
+
+  function _loadScriptOnce(src, attrs, stateKey) {
+    if (window[stateKey]) return Promise.resolve();
+    if (attrs.loaderRef.current) return attrs.loaderRef.current;
+    attrs.loaderRef.current = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      if (attrs.integrity) script.integrity = attrs.integrity;
+      if (attrs.crossorigin) script.crossOrigin = attrs.crossorigin;
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(script);
+    }).finally(() => {
+      attrs.loaderRef.current = null;
+    });
+    return attrs.loaderRef.current;
+  }
+
+  function loadJsBarcodeLib() {
+    return _loadScriptOnce(
+      'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js',
+      {
+        integrity: 'sha384-Kk5SjBOKprEnGfyBWfD2zROFd1Cu8kwOXxG2GIhYPcoDL2rBJS9P8Ud1ZMy4412a',
+        crossorigin: 'anonymous',
+        loaderRef: {
+          get current() { return _jsBarcodeLoader; },
+          set current(v) { _jsBarcodeLoader = v; }
+        }
+      },
+      'JsBarcode'
+    );
+  }
+
+  function loadHtml5QrLib() {
+    return _loadScriptOnce(
+      'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
+      {
+        integrity: 'sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+',
+        crossorigin: 'anonymous',
+        loaderRef: {
+          get current() { return _html5QrLoader; },
+          set current(v) { _html5QrLoader = v; }
+        }
+      },
+      'Html5Qrcode'
+    );
+  }
 
   function _bcEsc(s) {
     if (s == null) return '';
@@ -4207,9 +4257,15 @@ document.addEventListener('DOMContentLoaded', () => {
     return sku;
   }
 
-  window.openBarcodeModal = function(skus, opts) {
+  window.openBarcodeModal = async function(skus, opts) {
     opts = opts || {};
     if (!skus || !skus.length) { alert('No SKUs available to print.'); return; }
+    try {
+      await loadJsBarcodeLib();
+    } catch (err) {
+      alert(err.message || 'Failed to load barcode library.');
+      return;
+    }
     _bcSkus = skus;
     _bcUsbDevice = null;
     _bcUpdatePrinterStatus(null);
@@ -5052,7 +5108,7 @@ ${initScript}
     }
 
     // ── Camera scanner ────────────────────────────────────────────────────────
-    window.stToggleCamera = function stToggleCamera() {
+    window.stToggleCamera = async function stToggleCamera() {
       const container = document.getElementById('st-scan-container');
       if (!container) return;
       if (_scanRunning) { window.stStopCamera(); return; }
@@ -5060,8 +5116,12 @@ ${initScript}
       const overlay = document.getElementById('st-scan-overlay');
       if (overlay) overlay.style.display = 'none';
       if (!window.Html5Qrcode) {
-        stToast('QR scanner library not loaded', '#e53e3e');
-        return;
+        try {
+          await loadHtml5QrLib();
+        } catch (err) {
+          stToast('QR scanner library failed to load', '#e53e3e');
+          return;
+        }
       }
       _scanner = new Html5Qrcode('st-reader');
       _scanRunning = true;
@@ -5974,9 +6034,47 @@ ${initScript}
     }
   };
 
+  function bindDelegatedTableActions() {
+    const handler = (event) => {
+      const actionEl = event.target.closest('[data-action]');
+      if (!actionEl) return;
+      const action = actionEl.dataset.action;
+      const id = Number(actionEl.dataset.id);
+      if (!action) return;
+
+      if (action === 'open-bill-verify' && id) {
+        openBillVerifyPage(id);
+        return;
+      }
+      if (action === 'open-branding' && id) {
+        openBrandingPage(id);
+        return;
+      }
+      if (action === 'open-digitisation' && id) {
+        openDigitisationPage(id);
+        return;
+      }
+      if (action === 'open-purchase-view' && id) {
+        openPurchaseView(id);
+        return;
+      }
+      if (action === 'toggle-branding-history' && id) {
+        toggleBrandingHistoryDetail(id);
+      }
+    };
+
+    ['purchases-tbody', 'bv-list-tbody', 'branding-list-tbody', 'digi-list-tbody'].forEach((id) => {
+      const tableBody = document.getElementById(id);
+      if (!tableBody || tableBody.dataset.delegateBound === '1') return;
+      tableBody.dataset.delegateBound = '1';
+      tableBody.addEventListener('click', handler);
+    });
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // INIT
   // ─────────────────────────────────────────────────────────────────────────
+  bindDelegatedTableActions();
   loadFormData();
   loadDashboard();
   loadPurchases();

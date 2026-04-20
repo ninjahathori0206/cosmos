@@ -1,0 +1,7 @@
+/* Shared Cosmos UI primitives */
+* { box-sizing: border-box }
+table { width: 100%; border-collapse: collapse }
+input, select, textarea, button { font: inherit }
+.btn, .topbar-btn { cursor: pointer; transition: all .15s }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 11px }
+.b { display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px; border-radius: 5px; font-size: 11.5px; font-weight: 500; white-space: nowrap }

@@ -3,8 +3,12 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const helmet = require('helmet');
+const zlib = require('zlib');
+const compression = require('compression');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const Redis = require('ioredis');
+const { RedisStore } = require('rate-limit-redis');
 
 const { requestLogger } = require('./src/middleware/requestLogger');
 const { apiKeyAuth } = require('./src/middleware/apiKeyAuth');
@@ -33,7 +37,7 @@ const financeRouter        = require('./src/api/finance');
 const stockTransfersRouter     = require('./src/api/stockTransfers');
 const transferRequestsRouter   = require('./src/api/transferRequests');
 const stockTransferDocsRouter  = require('./src/api/stockTransferDocs');
-const { executeStoredProcedure } = require('./src/config/db');
+const { executeStoredProcedure, healthCheck } = require('./src/config/db');
 const { requireGoodsTransferDestinationStores } = require('./src/middleware/authorize');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 
@@ -47,8 +51,41 @@ async function handleDestinationStores(req, res, next) {
 }
 
 const app = express();
+const protectedApiRouter = express.Router();
 
 const PORT = process.env.PORT || 4000;
+const PROTOTYPE_HTML_MAX_AGE_MS = Number(process.env.PROTOTYPE_HTML_MAX_AGE_MS || 10 * 60 * 1000);
+const API_RATE_LIMIT_WINDOW_MS = Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
+const API_RATE_LIMIT_MAX = Number(process.env.API_RATE_LIMIT_MAX || 1000);
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:4000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+let apiRateLimitStore;
+if (process.env.RATE_LIMIT_REDIS_URL || process.env.REDIS_URL) {
+  const redisClient = new Redis(process.env.RATE_LIMIT_REDIS_URL || process.env.REDIS_URL, {
+    maxRetriesPerRequest: 1,
+    enableReadyCheck: true
+  });
+  redisClient.on('error', (err) => {
+    // eslint-disable-next-line no-console
+    console.warn('[rate-limit] redis unavailable, limiter store may fallback at runtime:', err.message);
+  });
+  apiRateLimitStore = new RedisStore({
+    sendCommand: (...args) => redisClient.call(...args)
+  });
+}
+
+app.set('etag', 'strong');
+
+function sendPrototypeHtml(res, absolutePath) {
+  return res.sendFile(absolutePath, {
+    maxAge: PROTOTYPE_HTML_MAX_AGE_MS,
+    lastModified: true,
+    cacheControl: true
+  });
+}
 
 // Security headers via Helmet.
 // Notes:
@@ -66,29 +103,54 @@ app.use(
   })
 );
 
-// CORS (can be tightened later)
+// HTTP compression for JSON/HTML/static responses (gzip + Brotli when supported).
 app.use(
-  cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key']
+  compression({
+    level: 6,
+    threshold: 1024,
+    brotli: {
+      enabled: true,
+      zlib: {
+        params: {
+          [zlib.constants.BROTLI_PARAM_QUALITY]: 4
+        }
+      }
+    }
   })
 );
 
-// JSON body parsing
-app.use(express.json({ limit: '1mb' }));
+// CORS (can be tightened later)
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error('CORS not allowed'));
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+    maxAge: 86400
+  })
+);
+
+// Body parsing
+// Keep uploads on multer routes; allow larger metadata payloads on JSON/urlencoded endpoints.
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Simple rate limiter for all APIs
 app.use(
   '/api',
   rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 1000
+    windowMs: API_RATE_LIMIT_WINDOW_MS,
+    max: API_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...(apiRateLimitStore ? { store: apiRateLimitStore } : {})
   })
 );
 
-// Request logging
-app.use(requestLogger);
+// Request logging (API only; skip static asset noise)
+app.use('/api', requestLogger);
 
 // Goods Transfer — destination stores (before static + two paths so old proxies / cached routes still resolve)
 const destinationStoresChain = [apiKeyAuth, authJwt, requireGoodsTransferDestinationStores, handleDestinationStores];
@@ -102,26 +164,46 @@ app.get('/', (req, res) => {
 
 // Serve full Command Unit prototype UI
 app.get('/command-unit.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'CommandUnit_Prototype.html'));
+  return sendPrototypeHtml(res, path.join(__dirname, 'CommandUnit_Prototype.html'));
 });
 
 // Serve full Foundry prototype UI
 app.get('/foundry.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'Foundry_Prototype.html'));
+  return sendPrototypeHtml(res, path.join(__dirname, 'Foundry_Prototype.html'));
 });
 
 // Serve Finance prototype UI
 app.get('/finance.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'Finance_Prototype.html'));
+  return sendPrototypeHtml(res, path.join(__dirname, 'Finance_Prototype.html'));
 });
 
 // StorePilot — showroom / store management (separate from POS)
 app.get('/storepilot.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'StorePilot_Prototype.html'));
+  return sendPrototypeHtml(res, path.join(__dirname, 'StorePilot_Prototype.html'));
 });
 
-// Static assets (images, JS, CSS for login + any new pages)
-app.use(express.static(path.join(__dirname, 'src', 'public')));
+// Self-hosted fonts: long cache lifetime + immutable.
+app.use(
+  '/fonts',
+  express.static(path.join(__dirname, 'src', 'public', 'fonts'), {
+    maxAge: '365d',
+    immutable: true
+  })
+);
+
+// Static assets
+// - Cache CSS/JS/media for faster repeat visits
+// - Keep HTML non-cached so deployments/pages refresh immediately
+app.use(
+  express.static(path.join(__dirname, 'src', 'public'), {
+    maxAge: '7d',
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+    }
+  })
+);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -134,9 +216,6 @@ app.get('/health', (req, res) => {
 
 // DB health check
 app.get('/health/db', async (req, res, next) => {
-  // Lazy require to avoid circular deps at startup
-  // eslint-disable-next-line global-require
-  const { healthCheck } = require('./src/config/db');
   try {
     const result = await healthCheck();
     if (!result.ok) {
@@ -155,31 +234,34 @@ app.get('/health/db', async (req, res, next) => {
   }
 });
 
-// Protected API routes use API key + JWT
+// Auth/public routes that do not use grouped protected router.
 app.use('/api/auth', apiKeyAuth, authRouter);
-app.use('/api/stores', apiKeyAuth, authJwt, storesRouter);
-app.use('/api/users', apiKeyAuth, authJwt, usersRouter);
-app.use('/api/home-brands', apiKeyAuth, authJwt, homeBrandsRouter);
-app.use('/api/suppliers', apiKeyAuth, authJwt, suppliersRouter);
-app.use('/api/products', apiKeyAuth, authJwt, productsRouter);
-app.use('/api/purchases', apiKeyAuth, authJwt, purchasesRouter);
-app.use('/api/roles', apiKeyAuth, authJwt, rolesRouter);
-app.use('/api/settings', apiKeyAuth, authJwt, settingsRouter);
-app.use('/api/audit-logs', apiKeyAuth, authJwt, auditLogsRouter);
-app.use('/api/store-modules', apiKeyAuth, authJwt, moduleAccessRouter);
-app.use('/api/user-modules', apiKeyAuth, authJwt, userModuleAccessRouter);
-app.use('/api/role-modules', apiKeyAuth, authJwt, roleModuleAccessRouter);
-app.use('/api/foundry-lookups', apiKeyAuth, authJwt, foundryLookupsRouter);
-app.use('/api/maker-master',      apiKeyAuth, authJwt, makerMasterRouter);
-app.use('/api/branding-agents',  apiKeyAuth, authJwt, brandingAgentsRouter);
-app.use('/api/skus',          apiKeyAuth, authJwt, skusRouter);
-app.use('/api/uploads',      apiKeyAuth, authJwt, uploadsRouter);
-app.use('/api/qr',           qrRouter); // public — <img> tags cannot send auth headers; QR data is non-sensitive
-app.use('/api/finance',          apiKeyAuth, authJwt, financeRouter);
+app.use('/api/qr', qrRouter); // public — <img> tags cannot send auth headers; QR data is non-sensitive
 
-app.use('/api/stock-transfers',     apiKeyAuth, authJwt, stockTransfersRouter);
-app.use('/api/transfer-requests',  apiKeyAuth, authJwt, transferRequestsRouter);
-app.use('/api/stock-transfer-docs', apiKeyAuth, authJwt, stockTransferDocsRouter);
+// Apply API key + JWT once for all protected /api mounts below.
+protectedApiRouter.use(apiKeyAuth, authJwt);
+protectedApiRouter.use('/stores', storesRouter);
+protectedApiRouter.use('/users', usersRouter);
+protectedApiRouter.use('/home-brands', homeBrandsRouter);
+protectedApiRouter.use('/suppliers', suppliersRouter);
+protectedApiRouter.use('/products', productsRouter);
+protectedApiRouter.use('/purchases', purchasesRouter);
+protectedApiRouter.use('/roles', rolesRouter);
+protectedApiRouter.use('/settings', settingsRouter);
+protectedApiRouter.use('/audit-logs', auditLogsRouter);
+protectedApiRouter.use('/store-modules', moduleAccessRouter);
+protectedApiRouter.use('/user-modules', userModuleAccessRouter);
+protectedApiRouter.use('/role-modules', roleModuleAccessRouter);
+protectedApiRouter.use('/foundry-lookups', foundryLookupsRouter);
+protectedApiRouter.use('/maker-master', makerMasterRouter);
+protectedApiRouter.use('/branding-agents', brandingAgentsRouter);
+protectedApiRouter.use('/skus', skusRouter);
+protectedApiRouter.use('/uploads', uploadsRouter);
+protectedApiRouter.use('/finance', financeRouter);
+protectedApiRouter.use('/stock-transfers', stockTransfersRouter);
+protectedApiRouter.use('/transfer-requests', transferRequestsRouter);
+protectedApiRouter.use('/stock-transfer-docs', stockTransferDocsRouter);
+app.use('/api', protectedApiRouter);
 
 // 404 + error handling
 app.use(notFoundHandler);

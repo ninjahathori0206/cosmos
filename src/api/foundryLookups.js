@@ -2,6 +2,7 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
+const { withCache, clearCacheByPrefix } = require('../cache/ttlCache');
 const {
   isSuperAdmin,
   hasModuleAccess,
@@ -64,10 +65,12 @@ const updateSchema = Joi.object({
 
 // GET /api/foundry-lookups?type=source_type  — active values for one type
 // GET /api/foundry-lookups                   — all values (all types, for admin)
-router.get('/', foundryLookupListAuth, async (req, res, next) => {
-  try {
+router.get(
+  '/',
+  foundryLookupListAuth,
+  withCache((req) => `foundry-lookups:${String(req.query.type || 'all').toLowerCase()}`, 5 * 60 * 1000, async (req) => {
     const { type } = req.query;
-    let result;
+    let result
     if (type) {
       result = await executeStoredProcedure('sp_FoundryLookup_GetByType', {
         lookup_type: { type: sql.VarChar(50), value: type }
@@ -75,11 +78,9 @@ router.get('/', foundryLookupListAuth, async (req, res, next) => {
     } else {
       result = await executeStoredProcedure('sp_FoundryLookup_GetAll', {});
     }
-    return res.json({ success: true, data: result.recordset || [] });
-  } catch (err) {
-    return next(err);
-  }
-});
+    return { success: true, data: result.recordset || [] }
+  })
+);
 
 // POST /api/foundry-lookups
 router.post(
@@ -100,6 +101,7 @@ router.post(
         description:   { type: sql.VarChar(500), value: value.description || null },
         display_order: { type: sql.Int,          value: value.display_order || 0 }
       });
+      clearCacheByPrefix('foundry-lookups:');
 
       return res.status(201).json({ success: true, data: result.recordset && result.recordset[0] });
     } catch (err) {
@@ -129,6 +131,7 @@ router.put(
         display_order: { type: sql.Int,          value: value.display_order ?? 0 },
         is_active:     { type: sql.Bit,          value: value.is_active !== false ? 1 : 0 }
       });
+      clearCacheByPrefix('foundry-lookups:');
 
       return res.json({ success: true, data: result.recordset && result.recordset[0] });
     } catch (err) {
@@ -149,6 +152,7 @@ router.delete(
       const result = await executeStoredProcedure('sp_FoundryLookup_Delete', {
         lookup_id: { type: sql.Int, value: lookupId }
       });
+      clearCacheByPrefix('foundry-lookups:');
       return res.json({ success: true, data: result.recordset && result.recordset[0] });
     } catch (err) {
       if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });

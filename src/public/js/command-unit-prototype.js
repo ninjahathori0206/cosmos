@@ -513,13 +513,6 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.appendChild(tr);
       });
 
-      document.querySelectorAll('.user-edit-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          const id = Number(e.target.closest('tr').dataset.userId);
-          openEditUserModal(id);
-        });
-      });
-
       refreshStoreDropdowns();
     } catch (err) {
       tbody.innerHTML = `<tr><td colspan="8" class="td-muted">Error: ${err.message}</td></tr>`;
@@ -1813,6 +1806,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function bind(id, fn) { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
 
+  function bindTableDelegation() {
+    const usersTbody = document.getElementById('users-tbody');
+    if (usersTbody && usersTbody.dataset.delegateBound !== '1') {
+      usersTbody.dataset.delegateBound = '1';
+      usersTbody.addEventListener('click', (event) => {
+        const btn = event.target.closest('.user-edit-btn');
+        if (!btn) return;
+        const row = btn.closest('tr');
+        const id = Number(row && row.dataset.userId);
+        if (!id) return;
+        openEditUserModal(id);
+      });
+    }
+  }
+
   // Stores
   bind('new-store-save-btn', handleCreateStore);
   bind('edit-store-save-btn', handleSaveStoreChanges);
@@ -1823,6 +1831,7 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('edit-user-deactivate-btn', handleDeactivateUser);
   bindPasswordToggle('new-user-password', 'new-user-password-toggle');
   bindPasswordToggle('edit-user-password', 'edit-user-password-toggle');
+  bindTableDelegation();
 
   // Roles
   bind('new-role-save-btn', handleCreateRole);
