@@ -94,14 +94,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       /** First app this deployment serves; missing key = allowed (legacy). Explicit false = deny. */
       const LANDING = [
-        ['command_unit', '/command-unit.html'],
-        ['foundry', '/foundry.html'],
-        ['finance', '/finance.html'],
-        ['storepilot', '/storepilot.html']
+        ['command_unit', '/command-unit/dashboard'],
+        ['foundry', '/foundry/dashboard'],
+        ['finance', '/finance/dashboard'],
+        ['storepilot', '/storepilot/dashboard']
       ];
 
       function pickLanding() {
-        if (!hasMap) return '/command-unit.html';
+        if (!hasMap) return '/command-unit/dashboard';
         for (const [key, path] of LANDING) {
           if (mods[key] !== false) return path;
         }

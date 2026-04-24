@@ -1,5 +1,35 @@
 const API_KEY = 'CHANGE_ME_API_KEY';
 
+const COMMAND_UNIT_PAGE_PATHS = {
+  dashboard: '/command-unit/dashboard',
+  stores: '/command-unit/stores',
+  users: '/command-unit/users',
+  roles: '/command-unit/roles',
+  modules: '/command-unit/modules',
+  homebrands: '/command-unit/homebrands',
+  locations: '/command-unit/locations',
+  settings: '/command-unit/settings',
+  membership: '/command-unit/membership',
+  leavetypes: '/command-unit/leavetypes',
+  'foundry-settings': '/command-unit/foundry-settings',
+  'cu-suppliers': '/command-unit/cu-suppliers',
+  'cu-maker-master': '/command-unit/cu-maker-master',
+  'cu-branding-agents': '/command-unit/cu-branding-agents',
+  audit: '/command-unit/audit'
+}
+
+function getCommandUnitPageFromPath(pathname) {
+  const normalized = String(pathname || '').replace(/\/+$/, '') || '/command-unit'
+  const exact = Object.entries(COMMAND_UNIT_PAGE_PATHS).find(([, route]) => route === normalized)
+  if (exact) return exact[0]
+  if (normalized === '/command-unit') return 'dashboard'
+  return 'dashboard'
+}
+
+function getCommandUnitNavEl(id) {
+  return document.querySelector(`.sidebar-nav .nav-item[onclick*="showPage('${id}'"]`) || null
+}
+
 function fmtIstDateTime(v) {
   if (!v) return '—';
   const d = new Date(v);
@@ -33,9 +63,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (!cosmosModuleAllowed('command_unit')) {
-    if (cosmosModuleAllowed('foundry')) window.location.href = '/foundry.html';
-    else if (cosmosModuleAllowed('finance')) window.location.href = '/finance.html';
-    else if (cosmosModuleAllowed('storepilot')) window.location.href = '/storepilot.html';
+    if (cosmosModuleAllowed('foundry')) window.location.href = '/foundry/dashboard';
+    else if (cosmosModuleAllowed('finance')) window.location.href = '/finance/dashboard';
+    else if (cosmosModuleAllowed('storepilot')) window.location.href = '/storepilot/dashboard';
     else {
       sessionStorage.removeItem('cosmos_token');
       sessionStorage.removeItem('cosmos_user');
@@ -61,6 +91,26 @@ document.addEventListener('DOMContentLoaded', () => {
   if (sidebarAvatar && user.full_name) {
     sidebarAvatar.textContent = user.full_name.split(' ').filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
   }
+
+  const baseShowPage = window.showPage
+  if (typeof baseShowPage === 'function') {
+    window.showPage = function(id, el, options) {
+      const showOptions = options || {}
+      baseShowPage(id, el)
+      const nextPath = COMMAND_UNIT_PAGE_PATHS[id] || '/command-unit/dashboard'
+      if (!showOptions.fromHistory && window.location.pathname !== nextPath) {
+        window.history.pushState({ module: 'command-unit', page: id }, '', nextPath)
+      }
+    }
+    const pageId = getCommandUnitPageFromPath(window.location.pathname)
+    window.showPage(pageId, getCommandUnitNavEl(pageId), { fromHistory: true })
+  }
+
+  window.addEventListener('popstate', () => {
+    if (typeof window.showPage !== 'function') return
+    const pageId = getCommandUnitPageFromPath(window.location.pathname)
+    window.showPage(pageId, getCommandUnitNavEl(pageId), { fromHistory: true })
+  })
 
   // ─── HTTP helpers ──────────────────────────────────────────────────────────
 

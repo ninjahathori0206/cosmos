@@ -80,10 +80,34 @@ let _ledgerRows = [];        // full supplier-summary rows
 let _statementSupplierId = null;
 let _pendingStatementBills = [];  // bills from statement for allocation
 
+const FINANCE_PAGE_PATHS = {
+  dashboard: '/finance/dashboard',
+  'supplier-master': '/finance/supplier-master',
+  'supplier-ledger': '/finance/supplier-ledger',
+  payments: '/finance/payments',
+  'purchase-reports': '/finance/purchase-reports',
+  'item-finance': '/finance/item-finance'
+}
+
+function getFinancePageFromPath(pathname) {
+  const normalized = String(pathname || '').replace(/\/+$/, '') || '/finance'
+  const exact = Object.entries(FINANCE_PAGE_PATHS).find(([, route]) => route === normalized)
+  if (exact) return exact[0]
+  if (normalized === '/finance') return 'dashboard'
+  return 'dashboard'
+}
+
+function getFinanceNavEl(id) {
+  return document.querySelector(`.nav-item[onclick*="nav('${id}'"]`) || null
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadUser();
-  loadDashboard();
+  if (typeof window.nav === 'function') {
+    const pageId = getFinancePageFromPath(window.location.pathname)
+    window.nav(pageId, getFinanceNavEl(pageId), { fromHistory: true })
+  }
   setDefaultPayDate();
 });
 
@@ -97,9 +121,9 @@ function loadUser() {
     const mods = u.modules;
     const hasMap = mods && typeof mods === 'object' && Object.keys(mods).length > 0;
     if (hasMap && mods.finance === false) {
-      if (mods.command_unit !== false) window.location.href = '/command-unit.html';
-      else if (mods.foundry !== false) window.location.href = '/foundry.html';
-      else if (mods.storepilot !== false) window.location.href = '/storepilot.html';
+      if (mods.command_unit !== false) window.location.href = '/command-unit/dashboard';
+      else if (mods.foundry !== false) window.location.href = '/foundry/dashboard';
+      else if (mods.storepilot !== false) window.location.href = '/storepilot/dashboard';
       else window.location.href = '/';
       return;
     }
@@ -286,8 +310,13 @@ const _origNav = window.nav ? window.nav : null;
   if (!origNav) return;
   let _prInited = false;
   let _ifInited = false;
-  window.nav = function(id, el) {
+  window.nav = function(id, el, options) {
+    const navOptions = options || {}
     origNav(id, el);
+    const nextPath = FINANCE_PAGE_PATHS[id] || '/finance/dashboard'
+    if (!navOptions.fromHistory && window.location.pathname !== nextPath) {
+      window.history.pushState({ module: 'finance', page: id }, '', nextPath)
+    }
     if (id === 'supplier-ledger')  loadLedger();
     if (id === 'supplier-master')  loadSupplierMaster();
     if (id === 'payments')         loadPaymentSuppliers();
@@ -299,6 +328,12 @@ const _origNav = window.nav ? window.nav : null;
     }
   };
 })();
+
+window.addEventListener('popstate', () => {
+  if (typeof window.nav !== 'function') return
+  const pageId = getFinancePageFromPath(window.location.pathname)
+  window.nav(pageId, getFinanceNavEl(pageId), { fromHistory: true })
+})
 
 // ── Supplier Statement Modal ────────────────────────────────────────────────────
 window.openStatement = async function openStatement(supplierId) {

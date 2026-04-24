@@ -33,7 +33,8 @@ router.post('/login', async (req, res, next) => {
     // For now we read directly from users table instead of SP until SPs are added.
     // This can be switched to sp_Auth_Login later without changing the API.
     const result = await executeStoredProcedure('sp_Auth_Login', {
-      username: { type: sql.VarChar(100), value: username }
+      username: { type: sql.VarChar(100), value: username },
+      password: { type: sql.VarChar(200), value: password }
     });
 
     const user = result.recordset && result.recordset[0];

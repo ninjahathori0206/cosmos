@@ -3,7 +3,8 @@ IF OBJECT_ID('dbo.sp_Auth_Login', 'P') IS NOT NULL
 GO
 
 CREATE PROCEDURE dbo.sp_Auth_Login
-  @username VARCHAR(100)
+  @username VARCHAR(100),
+  @password VARCHAR(200)
 AS
 BEGIN
   SET NOCOUNT ON;

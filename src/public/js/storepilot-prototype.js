@@ -114,8 +114,32 @@ const spBcMap = {
   reports:                'Store Reports'
 };
 
+const SP_PAGE_PATHS = {
+  dashboard: '/storepilot/dashboard',
+  'stock-browse': '/storepilot/stock-browse',
+  'store-catalogue': '/storepilot/store-catalogue',
+  'transfers-history': '/storepilot/transfers-history',
+  'transfers-create': '/storepilot/transfers-create',
+  reports: '/storepilot/reports',
+  'incoming-transfers': '/storepilot/incoming-transfers',
+  'movement-list': '/storepilot/movement-list'
+};
+
+function getStorepilotPageFromPath(pathname) {
+  const normalized = String(pathname || '').replace(/\/+$/, '') || '/storepilot';
+  const exact = Object.entries(SP_PAGE_PATHS).find(([, route]) => route === normalized);
+  if (exact) return exact[0];
+  if (normalized === '/storepilot') return 'dashboard';
+  return 'dashboard';
+}
+
+function getStorepilotNavEl(id) {
+  return document.querySelector(`.sidebar-nav .nav-item[onclick*="spNav('${id}'"]`) || null;
+}
+
 // ── Navigation ─────────────────────────────────────────────────────────────────
-window.spNav = function (id, el) {
+window.spNav = function (id, el, options) {
+  const navOptions = options || {};
   if (_spNoAccess) return;
   if (!canAccessSpView(id)) {
     renderNoAccessState('menu_access_denied');
@@ -128,9 +152,22 @@ window.spNav = function (id, el) {
   if (el) el.classList.add('active');
   const bc = document.getElementById('sp-bc');
   if (bc) bc.textContent = spBcMap[id] || id;
+  const nextPath = SP_PAGE_PATHS[id] || '/storepilot/dashboard';
+  if (!navOptions.fromHistory && window.location.pathname !== nextPath) {
+    window.history.pushState({ module: 'storepilot', page: id }, '', nextPath);
+  }
   closeSidebar();
   loadStorePilotPage(id);
 };
+
+function applyStorepilotRouteFromPath() {
+  const pageId = getStorepilotPageFromPath(window.location.pathname);
+  window.spNav(pageId, getStorepilotNavEl(pageId), { fromHistory: true });
+}
+
+window.addEventListener('popstate', () => {
+  applyStorepilotRouteFromPath();
+});
 
 function loadStorePilotPage(id) {
   if (id === 'dashboard')          loadDashboard();
@@ -227,9 +264,9 @@ function loadUser() {
     const mods = u.modules;
     const hasMap = mods && typeof mods === 'object' && Object.keys(mods).length > 0;
     if (hasMap && mods.storepilot === false) {
-      if (mods.command_unit !== false) window.location.href = '/command-unit.html';
-      else if (mods.foundry !== false) window.location.href = '/foundry.html';
-      else if (mods.finance !== false) window.location.href = '/finance.html';
+      if (mods.command_unit !== false) window.location.href = '/command-unit/dashboard';
+      else if (mods.foundry !== false) window.location.href = '/foundry/dashboard';
+      else if (mods.finance !== false) window.location.href = '/finance/dashboard';
       else window.location.href = '/';
       return;
     }
@@ -251,6 +288,11 @@ function loadUser() {
     if (!visibleMenuIds.length) {
       _spNoAccess = true;
       renderNoAccessState('no_menu_permissions');
+      return;
+    }
+    const routeMenuId = getStorepilotPageFromPath(window.location.pathname);
+    if (visibleMenuIds.includes(routeMenuId)) {
+      window.spNav(routeMenuId, getStorepilotNavEl(routeMenuId), { fromHistory: true });
       return;
     }
     const activeItem = document.querySelector('.sidebar-nav .nav-item.active[data-storepilot-menu]');
