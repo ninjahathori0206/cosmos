@@ -12,7 +12,7 @@
   crossorigin="anonymous"
 >
 <link rel="preload" href="/js/cosmos-module-switch.js" as="script">
-<link rel="preload" href="/js/foundry-prototype.js" as="script">
+<link rel="preload" href="/js/foundry-prototype.js?v=20260423-sku-edit-removed" as="script">
 <link rel="preload" href="/css/cosmos-ui.css" as="style">
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/foundry-prototype.css">
@@ -54,9 +54,9 @@
 
     <div id="fd-switch-module-wrap">
       <div class="nav-group">System</div>
-      <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
-      <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🏬</span> StorePilot</div>
-      <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit.html'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
+      <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
+      <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🏬</span> StorePilot</div>
+      <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
     </div>
     <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.3);font-size:12px"><span class="ic">🚪</span> Sign Out</div>
   </nav>
@@ -428,8 +428,10 @@
           <div class="ch"><div class="ct">Branding Receipt &amp; Verification</div><span class="b b-blue">Awaiting Return</span></div>
           <div class="cb">
             <div class="alert alert-gold" id="branding-dispatch-info"><span>⚠️</span><div>Dispatched on <span id="branding-dispatched-date">—</span> to <strong id="branding-dispatched-agent">—</strong>. Confirm receipt when all items are returned.</div></div>
-            <button class="btn primary w100 mt4" id="branding-receive-btn" style="justify-content:center" onclick="handleBrandingReceive()">Confirm Receipt → Digitisation</button>
-            <div style="margin-top:10px"><button class="btn sm w100" id="branding-bypass-btn" style="justify-content:center;color:var(--text3)" onclick="showBrandingBypassModal()">Bypass Branding (skip to Digitisation)</button></div>
+            <div class="branding-receipt-actions">
+              <button class="btn primary w100 mt4" id="branding-receive-btn" style="justify-content:center" onclick="handleBrandingReceive()">Confirm Receipt → Digitisation</button>
+              <button class="btn sm w100 branding-bypass-btn" id="branding-bypass-btn" style="justify-content:center" onclick="showBrandingBypassModal()">Bypass Branding (skip to Digitisation)</button>
+            </div>
           </div>
         </div>
         <div class="card" id="branding-bypass-card" style="display:none">
@@ -1329,7 +1331,7 @@ function addColour() {
   crossorigin="anonymous"
 ></script>
 <script src="/js/cosmos-module-switch.js" defer></script>
-<script src="/js/foundry-prototype.js" defer></script>
+<script src="/js/foundry-prototype.js?v=20260423-sku-edit-removed" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)
 document.addEventListener('DOMContentLoaded', function() {

@@ -87,6 +87,18 @@ function sendPrototypeHtml(res, absolutePath) {
   });
 }
 
+const MODULE_SHELLS = {
+  foundry: path.join(__dirname, 'Foundry_Prototype.html'),
+  storepilot: path.join(__dirname, 'StorePilot_Prototype.html'),
+  finance: path.join(__dirname, 'Finance_Prototype.html'),
+  'command-unit': path.join(__dirname, 'CommandUnit_Prototype.html')
+};
+
+function sendModuleShell(res, moduleKey) {
+  const shellPath = MODULE_SHELLS[moduleKey];
+  return sendPrototypeHtml(res, shellPath);
+}
+
 // Security headers via Helmet.
 // Notes:
 //  - contentSecurityPolicy: disabled — prototype UIs use inline scripts/styles
@@ -162,25 +174,11 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'src', 'public', 'login.html'));
 });
 
-// Serve full Command Unit prototype UI
-app.get('/command-unit.html', (req, res) => {
-  return sendPrototypeHtml(res, path.join(__dirname, 'CommandUnit_Prototype.html'));
-});
-
-// Serve full Foundry prototype UI
-app.get('/foundry.html', (req, res) => {
-  return sendPrototypeHtml(res, path.join(__dirname, 'Foundry_Prototype.html'));
-});
-
-// Serve Finance prototype UI
-app.get('/finance.html', (req, res) => {
-  return sendPrototypeHtml(res, path.join(__dirname, 'Finance_Prototype.html'));
-});
-
-// StorePilot — showroom / store management (separate from POS)
-app.get('/storepilot.html', (req, res) => {
-  return sendPrototypeHtml(res, path.join(__dirname, 'StorePilot_Prototype.html'));
-});
+// Legacy .html entries -> clean module URLs (hard switch).
+app.get('/foundry.html', (req, res) => res.redirect(302, '/foundry/dashboard'));
+app.get('/storepilot.html', (req, res) => res.redirect(302, '/storepilot/dashboard'));
+app.get('/finance.html', (req, res) => res.redirect(302, '/finance/dashboard'));
+app.get('/command-unit.html', (req, res) => res.redirect(302, '/command-unit/dashboard'));
 
 // Self-hosted fonts: long cache lifetime + immutable.
 app.use(
@@ -194,16 +192,28 @@ app.use(
 // Static assets
 // - Cache CSS/JS/media for faster repeat visits
 // - Keep HTML non-cached so deployments/pages refresh immediately
+const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
 app.use(
   express.static(path.join(__dirname, 'src', 'public'), {
     maxAge: '7d',
     setHeaders: (res, filePath) => {
       if (filePath.endsWith('.html')) {
         res.setHeader('Cache-Control', 'no-cache');
+        return;
+      }
+      // In development, always revalidate JS/CSS so UI edits appear immediately.
+      if (!isProductionEnv && /\.(js|css)$/i.test(filePath)) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       }
     }
   })
 );
+
+// Clean URL module shells (History API SPA routing with server fallback).
+app.get(['/foundry', '/foundry/*'], (req, res) => sendModuleShell(res, 'foundry'));
+app.get(['/storepilot', '/storepilot/*'], (req, res) => sendModuleShell(res, 'storepilot'));
+app.get(['/finance', '/finance/*'], (req, res) => sendModuleShell(res, 'finance'));
+app.get(['/command-unit', '/command-unit/*'], (req, res) => sendModuleShell(res, 'command-unit'));
 
 // Health check
 app.get('/health', (req, res) => {
