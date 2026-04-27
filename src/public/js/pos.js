@@ -1087,20 +1087,47 @@
       const order = detail.order
       const payments = detail.payments || []
       const total = Number(order.total_amount)
-      const pct = Number(order.lab_advance_pct_snapshot) || 40
-      const advanceTarget = Math.round(total * (pct / 100) * 100) / 100
-      let advPaid = 0
-      for (let i = 0; i < payments.length; i++) {
-        if (payments[i].stage === 'ADVANCE') advPaid += Number(payments[i].amount) || 0
-      }
-      advPaid = Math.round(advPaid * 100) / 100
+      const ps = detail.payment_summary
       const labLike = order.order_kind === 'LAB' || order.order_kind === 'MIXED'
-      const advanceRemaining = Math.max(0, Math.round((advanceTarget - advPaid) * 100) / 100)
-      const balanceRemaining = Math.max(0, Math.round((total - advPaid) * 100) / 100)
+      let advanceRemaining = 0
+      let balanceRemaining = 0
+      if (ps) {
+        advanceRemaining = Number(ps.advance_remaining) || 0
+        balanceRemaining = Number(ps.amount_remaining) || 0
+      } else {
+        const pct = Number(order.lab_advance_pct_snapshot) || 40
+        const advanceTarget = Math.round(total * (pct / 100) * 100) / 100
+        let advPaid = 0
+        for (let i = 0; i < payments.length; i++) {
+          if (payments[i].stage === 'ADVANCE') advPaid += Number(payments[i].amount) || 0
+        }
+        advPaid = Math.round(advPaid * 100) / 100
+        advanceRemaining = Math.max(0, Math.round((advanceTarget - advPaid) * 100) / 100)
+        let paidAll = 0
+        for (let j = 0; j < payments.length; j++) {
+          paidAll += Number(payments[j].amount) || 0
+        }
+        paidAll = Math.round(paidAll * 100) / 100
+        balanceRemaining = Math.max(0, Math.round((total - paidAll) * 100) / 100)
+      }
       if (labLike && advanceRemaining > 0.009) {
         paySessionSnapshot = { stage: 'ADVANCE', amount: advanceRemaining }
       } else {
         paySessionSnapshot = { stage: 'FULL', amount: balanceRemaining }
+      }
+      let pctAdvDisplay = Number(order.lab_advance_pct_snapshot) || 40
+      let advanceTargetDisplay = 0
+      let advPaidDisplay = 0
+      if (ps) {
+        pctAdvDisplay = Number(ps.lab_advance_pct) || pctAdvDisplay
+        advanceTargetDisplay = Number(ps.advance_target) || 0
+        advPaidDisplay = Number(ps.paid_advance) || 0
+      } else {
+        advanceTargetDisplay = Math.round(total * (pctAdvDisplay / 100) * 100) / 100
+        for (let k = 0; k < payments.length; k++) {
+          if (payments[k].stage === 'ADVANCE') advPaidDisplay += Number(payments[k].amount) || 0
+        }
+        advPaidDisplay = Math.round(advPaidDisplay * 100) / 100
       }
       let subHint = ''
       const subs = detail.sub_orders || []
@@ -1113,7 +1140,7 @@
         '<div>Order <strong>' + order.order_no + '</strong> · ' + order.order_kind + '</div>' +
         '<div>Order total (incl. GST): <strong>' + formatRupees(total) + '</strong></div>' +
         (labLike
-          ? '<div>Lab advance (' + pct + '%): target ' + formatRupees(advanceTarget) + ', paid ' + formatRupees(advPaid) + '</div>'
+          ? '<div>Lab advance (' + pctAdvDisplay + '%): target ' + formatRupees(advanceTargetDisplay) + ', paid ' + formatRupees(advPaidDisplay) + '</div>'
           : '') +
         '<div style="margin-top:10px">Collecting: <strong>' + paySessionSnapshot.stage + '</strong> — <strong>' + formatRupees(paySessionSnapshot.amount) + '</strong></div>' +
         subHint
@@ -1365,15 +1392,27 @@
     await loadPosBootstrap(session)
     const lines = obCart.map(function (line) {
       const b = line.lens_bundle
-      return {
-        sku_id: line.sku_id,
-        qty: line.qty,
-        unit_price: line.frame_unit_price,
-        product_type: line.product_type,
-        fulfillment: line.fulfillment,
+      const qty = Math.max(1, parseInt(String(line.qty), 10) || 1)
+      const unitPrice = Math.max(0, Number(line.frame_unit_price) || 0)
+      const out = {
+        sku_id: Number(line.sku_id),
+        qty: qty,
+        unit_price: unitPrice,
+        product_type: String(line.product_type || '').trim(),
+        fulfillment: line.fulfillment === 'LAB' ? 'LAB' : 'INSTANT',
         line_key: cartLineKey(line),
-        lens_bundle: line.fulfillment === 'LAB' ? b : null
+        lens_bundle: null
       }
+      if (out.fulfillment === 'LAB' && b && b.package_id) {
+        out.lens_bundle = {
+          category_id: b.category_id != null ? Number(b.category_id) : null,
+          package_id: Number(b.package_id),
+          addon_ids: Array.isArray(b.addon_ids) ? b.addon_ids.map(function (x) { return Number(x) }) : [],
+          package_price: Number(b.package_price) || 0,
+          addon_prices: Array.isArray(b.addon_prices) ? b.addon_prices.map(function (x) { return Number(x) || 0 }) : []
+        }
+      }
+      return out
     })
     const rxSnap = needRx ? collectRxSnapshot() : null
     if (btnObProceed && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btnObProceed)

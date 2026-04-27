@@ -23,7 +23,12 @@ const POS_TABLE_FILES = [
   path.join('sql', 'tables', '08_pos_orders.sql'),
   path.join('sql', 'tables', '09_pos_payments.sql'),
   path.join('sql', 'tables', '10_pos_points.sql'),
-  path.join('sql', 'tables', '11_pos_advanced.sql')
+  path.join('sql', 'tables', '11_pos_advanced.sql'),
+  path.join('sql', 'tables', '12_order_engine.sql')
+]
+
+const POS_MIGRATION_FILES = [
+  path.join('sql', 'migrations', 'migrate_pos_to_oe_orders.sql')
 ]
 
 async function runBatches(pool, relativeSqlPath, label) {
@@ -48,6 +53,9 @@ async function run() {
     await runBatches(pool, rel, rel.replace(/\\/g, '/'))
   }
   await runBatches(pool, path.join('sql', 'sp', 'pos.sql'), 'sp/pos')
+  for (const rel of POS_MIGRATION_FILES) {
+    await runBatches(pool, rel, rel.replace(/\\/g, '/'))
+  }
 
   console.log('[deploy_pos_sql] completed successfully.')
   await pool.close()
