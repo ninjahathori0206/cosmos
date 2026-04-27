@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Store OS — Cosmos ERP</title>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css">
+<link rel="stylesheet" href="/css/pos.css">
+<script src="/js/cosmos-ui-polish.js" defer></script>
+<script src="/js/pos.js" defer></script>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 1 — Staff PIN Login
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-login" class="pos-screen">
+  <div class="pos-login-card">
+
+    <!-- Branding -->
+    <div class="pos-branding">
+      <div class="pos-logo-row">
+        <div class="pos-logo-icon">✦</div>
+        <span class="pos-app-name">Cosmos ERP</span>
+      </div>
+      <span class="pos-module-badge">STORE OS</span>
+    </div>
+
+    <div class="pos-divider"></div>
+
+    <!-- Store selector -->
+    <div class="pos-store-section">
+      <div class="pos-field-label">STORE</div>
+      <div class="pos-store-dropdown-wrap">
+        <button
+          id="store-selector-btn"
+          class="pos-store-selector"
+          aria-haspopup="listbox"
+          aria-expanded="false"
+          aria-label="Select store"
+          tabindex="0"
+        >
+          <div class="pos-store-left">
+            <div class="pos-store-icon">🏪</div>
+            <span id="store-selector-name" class="pos-store-name">Select a store</span>
+          </div>
+          <span class="pos-chevron" aria-hidden="true">⌄</span>
+        </button>
+
+        <div id="store-dropdown" class="pos-store-dropdown" role="listbox" aria-label="Store list">
+          <!-- Populated by pos.js -->
+        </div>
+      </div>
+    </div>
+
+    <div class="pos-divider"></div>
+
+    <!-- PIN entry -->
+    <div class="pos-pin-section">
+      <span class="pos-pin-label">Enter Staff PIN</span>
+      <div class="pos-pin-dots" role="img" aria-label="PIN input progress">
+        <div class="pos-pin-dot" data-idx="0"></div>
+        <div class="pos-pin-dot" data-idx="1"></div>
+        <div class="pos-pin-dot" data-idx="2"></div>
+        <div class="pos-pin-dot" data-idx="3"></div>
+      </div>
+      <div id="pin-error" class="pos-pin-error" role="alert" aria-live="polite"></div>
+    </div>
+
+    <!-- Number pad -->
+    <div class="pos-numpad" id="pos-numpad">
+      <div class="pos-numpad-row">
+        <button class="pos-numpad-btn" data-digit="1" aria-label="1" tabindex="0">
+          <span class="pos-numpad-num">1</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="2" aria-label="2 ABC" tabindex="0">
+          <span class="pos-numpad-num">2</span>
+          <span class="pos-numpad-sub">ABC</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="3" aria-label="3 DEF" tabindex="0">
+          <span class="pos-numpad-num">3</span>
+          <span class="pos-numpad-sub">DEF</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button class="pos-numpad-btn" data-digit="4" aria-label="4 GHI" tabindex="0">
+          <span class="pos-numpad-num">4</span>
+          <span class="pos-numpad-sub">GHI</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="5" aria-label="5 JKL" tabindex="0">
+          <span class="pos-numpad-num">5</span>
+          <span class="pos-numpad-sub">JKL</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="6" aria-label="6 MNO" tabindex="0">
+          <span class="pos-numpad-num">6</span>
+          <span class="pos-numpad-sub">MNO</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button class="pos-numpad-btn" data-digit="7" aria-label="7 PQRS" tabindex="0">
+          <span class="pos-numpad-num">7</span>
+          <span class="pos-numpad-sub">PQRS</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="8" aria-label="8 TUV" tabindex="0">
+          <span class="pos-numpad-num">8</span>
+          <span class="pos-numpad-sub">TUV</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="9" aria-label="9 WXYZ" tabindex="0">
+          <span class="pos-numpad-num">9</span>
+          <span class="pos-numpad-sub">WXYZ</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button class="pos-numpad-btn ghost" aria-hidden="true" tabindex="-1"></button>
+        <button class="pos-numpad-btn" data-digit="0" aria-label="0" tabindex="0">
+          <span class="pos-numpad-num">0</span>
+        </button>
+        <button class="pos-numpad-btn" id="btn-backspace" aria-label="Delete" tabindex="0">
+          <span class="pos-numpad-num" style="font-size:20px">⌫</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="pos-divider"></div>
+
+    <!-- Footer / login button -->
+    <div class="pos-card-footer">
+      <button
+        id="btn-unlock-pos"
+        class="pos-login-btn"
+        aria-label="Unlock Store OS"
+        tabindex="0"
+      >
+        Unlock POS
+      </button>
+      <span class="pos-hint-text">Each tablet logs in independently per shift</span>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 2 — Login Success
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-login-success" class="pos-screen">
+  <div class="pos-success-card">
+    <div class="pos-check-circle" aria-hidden="true">✓</div>
+    <span class="pos-welcome-txt">Welcome back!</span>
+    <span id="success-staff-name" class="pos-staff-name"></span>
+    <span id="success-role-badge" class="pos-role-badge"></span>
+
+    <div id="success-store-box" class="pos-store-info-box">
+      <span class="pos-store-info-icon">🏪</span>
+      <span id="success-store-name" class="pos-store-info-name"></span>
+    </div>
+
+    <div class="pos-success-divider"></div>
+
+    <div class="pos-session-row">
+      <span class="pos-session-lbl">Session started</span>
+      <span id="success-session-time" class="pos-session-time"></span>
+    </div>
+
+    <button
+      id="btn-enter-pos"
+      class="pos-enter-btn"
+      aria-label="Enter Store OS"
+      tabindex="0"
+    >
+      Enter Store OS
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 3 — Product Catalogue
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-catalogue" class="pos-screen">
+  <div class="pos-catalogue-shell">
+    <header class="pos-catalogue-header">
+      <div class="pos-catalogue-brand">
+        <div class="pos-logo-row">
+          <div class="pos-logo-icon">✦</div>
+          <span class="pos-app-name">Store OS</span>
+        </div>
+        <span class="pos-module-badge">PRODUCT SELECTION</span>
+      </div>
+      <div class="pos-catalogue-session">
+        <span id="pos-catalogue-staff" class="pos-catalogue-session-item"></span>
+        <span id="pos-catalogue-store" class="pos-catalogue-session-item"></span>
+      </div>
+    </header>
+
+    <section class="pos-catalogue-controls">
+      <div class="pos-catalogue-toggle" role="group" aria-label="Catalogue view">
+        <button id="btn-scope-store" class="pos-scope-btn active" data-scope="store" aria-pressed="true" tabindex="0">
+          Store Catalogue
+        </button>
+        <button id="btn-scope-global" class="pos-scope-btn" data-scope="global" aria-pressed="false" tabindex="0">
+          Global Catalogue
+        </button>
+      </div>
+
+      <div class="pos-search-row">
+        <label for="pos-search-code" class="pos-search-label">Search by code</label>
+        <div class="pos-search-input-wrap">
+          <input id="pos-search-code" class="pos-search-input" type="text" inputmode="search" autocomplete="off" placeholder="SKU / Barcode / Code" aria-label="Search product by code">
+          <button id="btn-pos-search" class="pos-search-btn" aria-label="Search products" tabindex="0">Search</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="pos-catalogue-results-wrap">
+      <div id="pos-catalogue-meta" class="pos-catalogue-meta"></div>
+      <div id="pos-catalogue-results" class="pos-catalogue-results" role="list" aria-live="polite"></div>
+    </section>
+
+    <section id="pos-catalogue-selection" class="pos-catalogue-selection" aria-live="polite">
+      <div class="pos-selection-copy">
+        <div class="pos-selection-title">No product selected</div>
+        <div class="pos-selection-sub">Select a product to continue to order creation.</div>
+      </div>
+      <button id="btn-pos-next-order" class="pos-next-btn" aria-label="Continue to order creation" tabindex="0" disabled>
+        Continue
+      </button>
+    </section>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 4 — Order Builder
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-order-builder" class="pos-screen">
+  <div class="pos-ob-shell">
+
+    <!-- Header -->
+    <header class="pos-ob-header">
+      <button id="btn-ob-back" class="pos-ob-back-btn" aria-label="Back to catalogue" tabindex="0">
+        ‹ Catalogue
+      </button>
+      <div class="pos-ob-header-title">Order Builder</div>
+      <div class="pos-ob-header-session">
+        <span id="pos-ob-staff" class="pos-catalogue-session-item"></span>
+        <span id="pos-ob-store" class="pos-catalogue-session-item"></span>
+      </div>
+    </header>
+
+    <!-- Order type toggle -->
+    <section class="pos-ob-section">
+      <div class="pos-ob-section-label">ORDER TYPE</div>
+      <div class="pos-ob-type-toggle" role="group" aria-label="Order type">
+        <button id="btn-type-instant" class="pos-ob-type-btn active" data-type="INSTANT" aria-pressed="true" tabindex="0">
+          <span class="pos-ob-type-ic">⚡</span>
+          <span class="pos-ob-type-name">Instant</span>
+          <span class="pos-ob-type-sub">Same day, full payment</span>
+        </button>
+        <button id="btn-type-lab" class="pos-ob-type-btn" data-type="LAB" aria-pressed="false" tabindex="0">
+          <span class="pos-ob-type-ic">🔬</span>
+          <span class="pos-ob-type-name">Lab Order</span>
+          <span class="pos-ob-type-sub">2–7 days, advance payment</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Cart -->
+    <section class="pos-ob-section">
+      <div class="pos-ob-section-label">CART</div>
+      <div id="pos-ob-cart" class="pos-ob-cart" aria-live="polite">
+        <!-- Lines rendered by JS -->
+      </div>
+      <button id="btn-ob-add-more" class="pos-ob-add-more-btn" aria-label="Add more products" tabindex="0">
+        + Add another product
+      </button>
+    </section>
+
+    <!-- Prescription (Lab only) -->
+    <section id="pos-ob-rx-section" class="pos-ob-section pos-ob-rx-section" aria-hidden="true">
+      <div class="pos-ob-section-label">PRESCRIPTION (Rx)</div>
+      <div class="pos-ob-rx-grid">
+        <div class="pos-ob-rx-eye-label">RIGHT EYE (OD)</div>
+        <div class="pos-ob-rx-eye-label">LEFT EYE (OS)</div>
+
+        <div class="pos-ob-rx-fields">
+          <div class="pos-ob-rx-field-wrap">
+            <label class="pos-ob-rx-lbl" for="rx-r-sph">SPH</label>
+            <input id="rx-r-sph" class="pos-ob-rx-input" type="text" inputmode="decimal" placeholder="+0.00" aria-label="Right eye SPH">
+          </div>
+          <div class="pos-ob-rx-field-wrap">
+            <label class="pos-ob-rx-lbl" for="rx-r-cyl">CYL</label>
+            <input id="rx-r-cyl" class="pos-ob-rx-input" type="text" inputmode="decimal" placeholder="−0.00" aria-label="Right eye CYL">
+          </div>
+          <div class="pos-ob-rx-field-wrap">
+            <label class="pos-ob-rx-lbl" for="rx-r-axis">AXIS</label>
+            <input id="rx-r-axis" class="pos-ob-rx-input" type="text" inputmode="numeric" placeholder="0°" aria-label="Right eye AXIS">
+          </div>
+        </div>
+
+        <div class="pos-ob-rx-fields">
+          <div class="pos-ob-rx-field-wrap">
+            <label class="pos-ob-rx-lbl" for="rx-l-sph">SPH</label>
+            <input id="rx-l-sph" class="pos-ob-rx-input" type="text" inputmode="decimal" placeholder="+0.00" aria-label="Left eye SPH">
+          </div>
+          <div class="pos-ob-rx-field-wrap">
+            <label class="pos-ob-rx-lbl" for="rx-l-cyl">CYL</label>
+            <input id="rx-l-cyl" class="pos-ob-rx-input" type="text" inputmode="decimal" placeholder="−0.00" aria-label="Left eye CYL">
+          </div>
+          <div class="pos-ob-rx-field-wrap">
+            <label class="pos-ob-rx-lbl" for="rx-l-axis">AXIS</label>
+            <input id="rx-l-axis" class="pos-ob-rx-input" type="text" inputmode="numeric" placeholder="0°" aria-label="Left eye AXIS">
+          </div>
+        </div>
+      </div>
+      <div class="pos-ob-rx-doctor-row">
+        <div class="pos-ob-rx-field-wrap" style="flex:1">
+          <label class="pos-ob-rx-lbl" for="rx-doctor">DOCTOR</label>
+          <input id="rx-doctor" class="pos-ob-rx-input" type="text" placeholder="Doctor name (optional)" aria-label="Prescribing doctor name">
+        </div>
+      </div>
+    </section>
+
+    <!-- Order summary + proceed -->
+    <section class="pos-ob-summary-strip">
+      <div class="pos-ob-summary-lines">
+        <div class="pos-ob-summary-row">
+          <span class="pos-ob-summary-lbl">Subtotal</span>
+          <span id="pos-ob-subtotal" class="pos-ob-summary-val">₹0</span>
+        </div>
+        <div class="pos-ob-summary-row">
+          <span class="pos-ob-summary-lbl">GST (est.)</span>
+          <span id="pos-ob-gst" class="pos-ob-summary-val">₹0</span>
+        </div>
+        <div class="pos-ob-summary-row total">
+          <span class="pos-ob-summary-lbl">Total</span>
+          <span id="pos-ob-total" class="pos-ob-summary-val">₹0</span>
+        </div>
+      </div>
+      <button id="btn-ob-proceed" class="pos-ob-proceed-btn" aria-label="Proceed to payment" tabindex="0">
+        Proceed to Payment
+      </button>
+    </section>
+
+  </div>
+</div>
+
+</body>
+</html>

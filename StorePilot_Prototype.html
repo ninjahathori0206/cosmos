@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Store Pilot — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/fonts.css">
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css">
+<script src="/js/cosmos-ui-polish.js" defer></script>
 <style>
   :root {
     --navy:    #0B1F33;
@@ -258,6 +260,7 @@
       <div class="nav-group">Switch Module</div>
       <div class="nav-item" data-cosmos-module="foundry" onclick="window.location.href='/foundry/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🔩</span> Full Foundry</div>
       <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
+      <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/pos/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🧾</span> Store OS (POS)</div>
       <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
     </div>
     <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.3);font-size:12px"><span class="ic">🚪</span> Sign Out</div>

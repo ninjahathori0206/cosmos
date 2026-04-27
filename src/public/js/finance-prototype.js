@@ -234,7 +234,8 @@ async function loadDashPayments() {
 // ── Supplier Ledger ────────────────────────────────────────────────────────────
 window.loadLedger = async function loadLedger() {
   const tbody = document.getElementById('ledger-body');
-  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">Loading...</td></tr>';
+  if (window.cosmosSkeletonTable) window.cosmosSkeletonTable('ledger-body', 8, 6);
+  else tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">Loading...</td></tr>';
   try {
     const res = await apiGet('/api/finance/supplier-summary');
     _ledgerRows = res.data || [];

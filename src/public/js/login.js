@@ -97,7 +97,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ['command_unit', '/command-unit/dashboard'],
         ['foundry', '/foundry/dashboard'],
         ['finance', '/finance/dashboard'],
-        ['storepilot', '/storepilot/dashboard']
+        ['storepilot', '/storepilot/dashboard'],
+        ['pos', '/pos/login']
       ];
 
       function pickLanding() {
@@ -111,13 +112,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const dest = pickLanding();
       if (!dest) {
         throw new Error(
-          'No web module is enabled for your account (Command Unit, Foundry, Finance, StorePilot are all off). ' +
+          'No web module is enabled for your account (Command Unit, Foundry, Finance, StorePilot, Store OS are all off). ' +
             'Ask an administrator to turn on at least one module for your role in Roles → Module access, then try again.'
         );
       }
 
       sessionStorage.setItem('cosmos_token', data.data.token);
       sessionStorage.setItem('cosmos_user', JSON.stringify(data.data.user));
+      sessionStorage.setItem('cosmos_api_key', API_KEY);
       window.location.href = dest;
     } catch (err) {
       errorEl.textContent = err.message || 'Login failed';

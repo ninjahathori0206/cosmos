@@ -37,6 +37,7 @@ const financeRouter        = require('./src/api/finance');
 const stockTransfersRouter     = require('./src/api/stockTransfers');
 const transferRequestsRouter   = require('./src/api/transferRequests');
 const stockTransferDocsRouter  = require('./src/api/stockTransferDocs');
+const posRouter                = require('./src/api/pos');
 const { executeStoredProcedure, healthCheck } = require('./src/config/db');
 const { requireGoodsTransferDestinationStores } = require('./src/middleware/authorize');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
@@ -91,7 +92,8 @@ const MODULE_SHELLS = {
   foundry: path.join(__dirname, 'Foundry_Prototype.html'),
   storepilot: path.join(__dirname, 'StorePilot_Prototype.html'),
   finance: path.join(__dirname, 'Finance_Prototype.html'),
-  'command-unit': path.join(__dirname, 'CommandUnit_Prototype.html')
+  'command-unit': path.join(__dirname, 'CommandUnit_Prototype.html'),
+  pos: path.join(__dirname, 'POS_Prototype.html'),
 };
 
 function sendModuleShell(res, moduleKey) {
@@ -179,7 +181,6 @@ app.get('/foundry.html', (req, res) => res.redirect(302, '/foundry/dashboard'));
 app.get('/storepilot.html', (req, res) => res.redirect(302, '/storepilot/dashboard'));
 app.get('/finance.html', (req, res) => res.redirect(302, '/finance/dashboard'));
 app.get('/command-unit.html', (req, res) => res.redirect(302, '/command-unit/dashboard'));
-
 // Self-hosted fonts: long cache lifetime + immutable.
 app.use(
   '/fonts',
@@ -214,7 +215,7 @@ app.get(['/foundry', '/foundry/*'], (req, res) => sendModuleShell(res, 'foundry'
 app.get(['/storepilot', '/storepilot/*'], (req, res) => sendModuleShell(res, 'storepilot'));
 app.get(['/finance', '/finance/*'], (req, res) => sendModuleShell(res, 'finance'));
 app.get(['/command-unit', '/command-unit/*'], (req, res) => sendModuleShell(res, 'command-unit'));
-
+app.get(['/pos', '/pos/*'], (req, res) => sendModuleShell(res, 'pos'));
 // Health check
 app.get('/health', (req, res) => {
   res.json({
@@ -246,8 +247,10 @@ app.get('/health/db', async (req, res, next) => {
 
 // Auth/public routes that do not use grouped protected router.
 app.use('/api/auth', apiKeyAuth, authRouter);
+// POS router: no apiKeyAuth — tablet boots before any session exists.
+// Public routes (staff-login, stores) need no auth. Protected routes handle authJwt internally.
+app.use('/api/pos', posRouter);
 app.use('/api/qr', qrRouter); // public — <img> tags cannot send auth headers; QR data is non-sensitive
-
 // Apply API key + JWT once for all protected /api mounts below.
 protectedApiRouter.use(apiKeyAuth, authJwt);
 protectedApiRouter.use('/stores', storesRouter);

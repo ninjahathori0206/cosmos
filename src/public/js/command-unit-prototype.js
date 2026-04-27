@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cosmosModuleAllowed('foundry')) window.location.href = '/foundry/dashboard';
     else if (cosmosModuleAllowed('finance')) window.location.href = '/finance/dashboard';
     else if (cosmosModuleAllowed('storepilot')) window.location.href = '/storepilot/dashboard';
+    else if (cosmosModuleAllowed('pos')) window.location.href = '/pos/dashboard';
     else {
       sessionStorage.removeItem('cosmos_token');
       sessionStorage.removeItem('cosmos_user');
@@ -1710,10 +1711,20 @@ document.addEventListener('DOMContentLoaded', () => {
       pendingCount.className = 'badge badge-gray';
       pendingCount.textContent = '—';
     }
-    set('cu-dash-top-skus', '<tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>');
-    set('cu-dash-attendance', '<tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>');
-    set('cu-dash-pending', '<div class="td-muted" style="padding:4px 0">Loading…</div>');
-    set('cu-dash-audit', '<div class="td-muted" style="padding:4px 0">Loading…</div>');
+    if (window.cosmosSkeletonTable) {
+      window.cosmosSkeletonTable('cu-dash-top-skus', 5, 5);
+      window.cosmosSkeletonTable('cu-dash-attendance', 6, 5);
+    } else {
+      set('cu-dash-top-skus', '<tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>');
+      set('cu-dash-attendance', '<tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>');
+    }
+    if (window.cosmosSkeletonRows) {
+      window.cosmosSkeletonRows('cu-dash-pending', 4);
+      window.cosmosSkeletonRows('cu-dash-audit', 4);
+    } else {
+      set('cu-dash-pending', '<div class="td-muted" style="padding:4px 0">Loading…</div>');
+      set('cu-dash-audit', '<div class="td-muted" style="padding:4px 0">Loading…</div>');
+    }
   }
 
   async function loadDashboard() {

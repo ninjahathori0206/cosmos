@@ -7,6 +7,7 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "migrate:passwords": "node scripts/migrate-passwords.js",
+    "deploy:pos-sql": "node scripts/deploy_pos_sql.js",
     "publish:design-local": "node -e \"require('fs').copyFileSync('pencil-new.pen','src/public/design/pencil-local/pencil-new.pen'); console.log('Copied pencil-new.pen → src/public/design/pencil-local/')\""
   },
   "keywords": [

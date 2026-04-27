@@ -599,7 +599,10 @@ window.loadBrowseCatalogue = async function (q = '') {
   const spin = document.getElementById('bc-spin');
   showErr('bc-err', '');
   if (spin) spin.style.display = 'inline';
-  if (grid) grid.innerHTML = `<div style="grid-column:1/-1"><div class="empty-state"><div class="ei">⏳</div><div class="et">Loading catalogue…</div></div></div>`;
+  if (grid) {
+    if (window.cosmosSkeletonCards) window.cosmosSkeletonCards('bc-grid', 6);
+    else grid.innerHTML = `<div style="grid-column:1/-1"><div class="empty-state"><div class="ei">⏳</div><div class="et">Loading catalogue…</div></div></div>`;
+  }
 
   try {
     const qs = new URLSearchParams({ status: 'LIVE' });
@@ -1149,7 +1152,7 @@ function loadReports() {
         <div class="sc" style="--sc-color:#94A3B8;opacity:0.75">
           <div class="sl">Revenue this month</div>
           <div class="sv" style="color:var(--text3)">—</div>
-          <div class="sm" style="color:var(--text3)">Requires POS</div>
+          <div class="sm" style="color:var(--text3)">Not available</div>
         </div>`;
     }
 

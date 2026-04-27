@@ -982,7 +982,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const lowStockTbody = document.getElementById('dash-low-stock');
     const lowStockCount = document.getElementById('dash-low-stock-count');
     if (lowStockTbody) {
-      lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>';
+      if (window.cosmosSkeletonTable) window.cosmosSkeletonTable('dash-low-stock', 4, 4);
+      else lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>';
     }
     if (lowStockCount) {
       lowStockCount.className = 'b b-gray';
@@ -994,7 +995,18 @@ document.addEventListener('DOMContentLoaded', () => {
         apiGet('/api/stock-transfers/available').catch(() => [])
       ]);
       const p = data.purchases || {};
-      const setV = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v != null ? v : '0'; };
+      const setV = (id, v, asCurrency) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const num = Number(v != null ? v : 0);
+        if (window.cosmosCountUp && Number.isFinite(num)) {
+          if (asCurrency) el.dataset.format = 'currency';
+          else delete el.dataset.format;
+          window.cosmosCountUp(el, num, 600);
+          return;
+        }
+        el.textContent = num;
+      };
       setV('dash-active', p.active_purchases);
       setV('dash-pending-bill', p.pending_bill);
       setV('dash-branding', p.in_branding);
@@ -1002,7 +1014,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setV('dash-warehouse', p.warehouse_ready);
       setV('dash-discrepancy', p.bill_discrepancy);
       setV('dash-skus', (data.skus || {}).total_skus);
-      setV('dash-stock', (data.stock || {}).warehouse_stock);
+      setV('dash-stock', (data.stock || {}).warehouse_stock, true);
       setV('dash-suppliers', (data.suppliers || {}).active_suppliers);
 
       if (lowStockTbody && lowStockCount) {
@@ -3735,7 +3747,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (q) params.set('q', q);
     const qs = params.toString();
 
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="tc td2 p12">Loading…</td></tr>';
+    if (tbody) {
+      if (window.cosmosSkeletonTable) window.cosmosSkeletonTable('mc-tbody', 7, 6);
+      else tbody.innerHTML = '<tr><td colspan="7" class="tc td2 p12">Loading…</td></tr>';
+    }
 
     try {
       const rows = await apiGet(`/api/products${qs ? `?${qs}` : ''}`);
@@ -3828,8 +3843,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (brandId)     qs += `&brand_id=${encodeURIComponent(brandId)}`;
     if (productType) qs += `&product_type=${encodeURIComponent(productType)}`;
 
-    if (grid)  grid.innerHTML  = '<div class="empty"><div class="empty-ic">⏳</div><div>Loading…</div></div>';
-    if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="tc td2 p12">Loading…</td></tr>';
+    if (grid) {
+      if (window.cosmosSkeletonCards) window.cosmosSkeletonCards('sku-cat-grid', 6);
+      else grid.innerHTML = '<div class="empty"><div class="empty-ic">⏳</div><div>Loading…</div></div>';
+    }
+    if (tbody) {
+      if (window.cosmosSkeletonTable) window.cosmosSkeletonTable('sku-cat-tbody', 10, 6);
+      else tbody.innerHTML = '<tr><td colspan="10" class="tc td2 p12">Loading…</td></tr>';
+    }
 
     try {
       const rows = await apiGet(`/api/skus?${qs}`);

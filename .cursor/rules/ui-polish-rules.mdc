@@ -1,0 +1,305 @@
+---
+description: UI Polish & Perceived Performance — Skeleton Loaders, Animations, Toast, Button States, Field Validation
+globs: ["**/*.html", "**/public/**/*.js", "**/public/**/*.css", "**/src/public/**/*.js", "**/src/public/**/*.css"]
+alwaysApply: true
+---
+
+# Cosmos UI Polish Rules
+## Applies to all vanilla JS + CSS frontend work in this project
+
+These rules define the minimum quality bar for every piece of frontend UI written in this codebase.
+They exist because the app uses vanilla JS with no framework — Cursor must apply these patterns manually.
+Do not skip these. Do not defer them. They apply to every screen, every list, every button, every form.
+
+---
+
+## 1. NEVER use raw "Loading…" text
+
+### ❌ Forbidden patterns — never write these:
+```js
+tbody.innerHTML = '<tr><td colspan="5">Loading…</td></tr>'
+wrap.innerHTML  = '<div style="text-align:center;padding:40px">Loading…</div>'
+el.innerHTML    = '⏳ Loading data…'
+container.innerHTML = ''   // leaving a container blank while fetching
+```
+
+### ✅ Required replacement — always use skeleton loaders:
+```js
+// Before every await apiGet() / await apiPost() that populates a list or table:
+cosmosSkeletonTable('my-tbody-id', numberOfColumns)   // for <tbody> elements
+cosmosSkeletonCards('my-container-id', numberOfCards) // for stat card grids
+cosmosSkeletonRows('my-container-id', numberOfRows)   // for generic list containers
+```
+
+These functions are defined in `src/public/js/cosmos-ui-polish.js`.
+They are available on `window` — call them directly, no import needed.
+Call them immediately before the fetch, not inside a setTimeout.
+
+---
+
+## 2. NEVER use alert() for errors or success messages
+
+### ❌ Forbidden:
+```js
+alert(err.message)
+alert('Saved successfully')
+alert('Please fill all fields')
+```
+
+### ✅ Required:
+```js
+cosmosToastError('Message here')     // stays until dismissed — use for API errors
+cosmosToastSuccess('Message here')   // auto-dismisses at 3.5s — use for successful saves
+cosmosToastWarn('Message here')      // auto-dismisses at 5s — use for warnings
+cosmosToastInfo('Message here')      // auto-dismisses at 3s — use for neutral info
+```
+
+These functions are defined in `src/public/js/cosmos-ui-polish.js`.
+The toast container is injected automatically — no HTML required.
+
+**Exception:** `showErr()` inline banners on forms are acceptable for form-level validation summaries.
+But `alert()` is never acceptable anywhere.
+
+---
+
+## 3. ALWAYS use button loading states for async actions
+
+### ❌ Forbidden:
+```js
+btn.disabled = true
+btn.textContent = 'Saving…'
+btn.textContent = 'Confirming…'
+btn.textContent = 'Loading…'
+```
+
+### ✅ Required:
+```js
+// Before the await:
+cosmosBtnLoading(btn)
+
+try {
+  const result = await apiPost('/api/something', body)
+  cosmosBtnSuccess(btn)   // green flash, then resets automatically
+} catch (err) {
+  cosmosBtnDone(btn)      // resets to original state
+  cosmosToastError(err.message)
+} finally {
+  // cosmosBtnDone() is called inside cosmosBtnSuccess() — no double-call needed
+  // Only call cosmosBtnDone() in finally if you did NOT call cosmosBtnSuccess()
+}
+```
+
+These functions are defined in `src/public/js/cosmos-ui-polish.js`.
+`cosmosBtnLoading()` shows a spinner inside the button and hides the label.
+`cosmosBtnSuccess()` shows a green flash, then restores the original button state.
+`cosmosBtnDone()` restores button to original state with no animation.
+
+---
+
+## 4. ALWAYS mark clickable table rows with .tr-link
+
+### ❌ Forbidden:
+```js
+tr.style.cursor = 'pointer'
+tr.addEventListener('click', () => openDetail(id))
+// no class added
+```
+
+### ✅ Required:
+```js
+tr.classList.add('tr-link')
+tr.addEventListener('click', () => openDetail(id))
+```
+
+The class `.tr-link` is defined in `cosmos-ui-polish.css`.
+It adds: `cursor: pointer`, blue hover background, and a `›` arrow on the right that appears on hover.
+Never add custom hover styles to rows — use this class instead.
+
+---
+
+## 5. ALWAYS use field-level validation on forms
+
+### ❌ Forbidden — only showing a banner, no field highlighting:
+```js
+if (!billNum) return showErr('bill-verify-error', 'Enter Bill Number.')
+if (!actual || actual <= 0) return showErr('form-error', 'Amount required.')
+```
+
+### ✅ Required — mark the specific field red AND show banner if needed:
+```js
+if (!billNum) {
+  cosmosFieldError(document.getElementById('bill-number-input'), 'Required')
+  return
+}
+if (!actual || actual <= 0) {
+  cosmosFieldError(document.getElementById('actual-bill'), 'Enter a valid amount')
+  return
+}
+```
+
+Clear field errors when the user starts fixing them:
+```js
+document.getElementById('bill-number-input').addEventListener('input', function() {
+  cosmosFieldClear(this)
+})
+```
+
+These functions are defined in `src/public/js/cosmos-ui-polish.js`:
+- `cosmosFieldError(inputEl, message)` — red border + error text below field
+- `cosmosFieldClear(inputEl)` — removes error state
+- `cosmosFieldOk(inputEl)` — green border (for live validation)
+
+---
+
+## 6. ALWAYS animate stat card numbers with countUp
+
+### ❌ Forbidden:
+```js
+document.getElementById('stat-total-skus').textContent = data.totalSkus
+statEl.innerHTML = `<div class="sv">${count}</div>`
+```
+
+### ✅ Required — for integer and currency dashboard stats:
+```js
+const el = document.getElementById('stat-total-skus').querySelector('.sv')
+cosmosCountUp(el, data.totalSkus)
+
+// For currency values, add data-format="currency" to the element in HTML:
+// <div class="sv" data-format="currency"></div>
+// Then:
+cosmosCountUp(currencyEl, data.totalRevenue)  // will prefix ₹ automatically
+```
+
+`cosmosCountUp()` is defined in `src/public/js/cosmos-ui-polish.js`.
+Only apply to integer and currency `.sv` elements.
+Do not apply to text values, percentages, or status badges.
+
+---
+
+## 7. Page and modal animations are automatic — do not fight them
+
+The CSS in `cosmos-ui-polish.css` automatically applies:
+- **Page fade-in** — any `.page` element that gets `.active` added will fade in over 180ms
+- **Modal entry** — any `.overlay` that gets `.open` added will slide the `.modal` up over 200ms
+- **Overlay fade** — backdrop fades in over 150ms
+
+These are pure CSS — no JS needed. Do not add `transition` or `animation` manually to `.page` or `.modal` elements — it will conflict.
+
+If a page is not animating, check that:
+1. `cosmos-ui-polish.css` is linked in the HTML file
+2. The element uses the class `.page` and navigation adds `.active` to it
+3. There is no `display:none !important` overriding the CSS
+
+---
+
+## 8. Required file links in every HTML page
+
+Every HTML page served from `src/public/` MUST include these two lines before `</head>`:
+
+```html
+<link  rel="stylesheet" href="/css/cosmos-ui-polish.css">
+<script src="/js/cosmos-ui-polish.js" defer></script>
+```
+
+This applies to:
+- `src/public/foundry.html`
+- `src/public/command-unit.html`
+- `src/public/login.html`
+- Any new HTML page created in `src/public/`
+
+And to the root-level prototype files used in development:
+- `Foundry_Prototype.html`
+- `StorePilot_Prototype.html`
+- `CommandUnit_Prototype.html`
+- `Finance_Prototype.html`
+
+If you create a new HTML page and forget to add these links, none of the polish rules will work.
+
+---
+
+## 9. CSS variable usage — never hardcode colours
+
+### ❌ Forbidden:
+```js
+el.style.background = '#dcfce7'
+el.style.color = '#065f46'
+el.style.borderColor = '#6ee7b7'
+```
+
+```css
+.my-element { color: #1E40AF; background: #EFF6FF; }
+```
+
+### ✅ Required — always use the design system variables:
+```css
+.my-element { color: var(--acc2); background: var(--accL); }
+```
+
+Available variables (defined in `foundry-prototype.css`):
+```
+--acc, --acc2, --accL, --accD          ← blues
+--green, --greenL                       ← greens
+--red, --redL                           ← reds
+--gold, --goldL                         ← ambers
+--teal, --tealL                         ← teals
+--orange, --orangeL                     ← oranges
+--border, --card, --bg                  ← surfaces
+--text1, --text2, --text3               ← text hierarchy
+--navy, --navy2                         ← sidebar dark
+```
+
+---
+
+## 10. Empty states must have an action
+
+### ❌ Forbidden — emoji + text only:
+```html
+<div class="empty">
+  <div class="empty-ic">📦</div>
+  <div>No items found</div>
+</div>
+```
+
+### ✅ Required — icon + headline + subtext + action button where relevant:
+```html
+<div class="empty">
+  <div class="empty-ic">📦</div>
+  <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No purchases yet</div>
+  <div style="font-size:13px;color:var(--text2);margin-bottom:16px">Register your first purchase to get started.</div>
+  <button class="btn primary" onclick="openM('modal-new-purchase')">+ New Purchase</button>
+</div>
+```
+
+If there is no meaningful action for an empty state (e.g. audit logs with no records), the button is optional.
+The headline and subtext are always required.
+
+---
+
+## 11. Tech stack constraints — read before writing any code
+
+This project uses **vanilla JS and CSS only**. No React, Vue, Angular, or any frontend framework.
+
+- All JS files are loaded with plain `<script>` tags — **no ES module syntax**
+- Use `window.functionName = function() {}` for shared utilities — not `export`
+- Do not `import` anything — there is no bundler
+- Do not install npm packages for frontend features — only backend dependencies use npm
+- Do not use GSAP, Framer Motion, Animate.css, or any animation library
+- All CSS animations must be `@keyframes` in plain CSS files
+
+All polish utility functions (`cosmosToast*`, `cosmosBtnLoading`, `cosmosSkeleton*`, etc.) are on `window` and available globally in every JS file once `cosmos-ui-polish.js` is loaded.
+
+---
+
+## 12. New feature checklist — before marking any UI feature as done
+
+Before saying a UI feature is complete, verify all of the following:
+
+- [ ] All data fetches show skeleton loaders — no blank states, no "Loading…" text
+- [ ] All async buttons use `cosmosBtnLoading()` / `cosmosBtnDone()` / `cosmosBtnSuccess()`
+- [ ] All API errors show `cosmosToastError()` — no `alert()` anywhere
+- [ ] All form required fields use `cosmosFieldError()` on failed validation
+- [ ] Clickable table rows have `.tr-link` class
+- [ ] Dashboard stat numbers use `cosmosCountUp()`
+- [ ] Empty states have headline, subtext, and action button where applicable
+- [ ] No hardcoded hex colours — CSS variables only
+- [ ] `cosmos-ui-polish.css` and `cosmos-ui-polish.js` are linked in the HTML file
