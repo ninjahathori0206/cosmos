@@ -173,3 +173,135 @@ BEGIN
   ORDER BY brand_name, pm.product_type, sk.sku_code;
 END;
 GO
+
+-- ─── sp_POS_GetStartupConfig ─────────────────────────────────────────────────
+-- Returns three result sets: product type rules, POS lookup rows, lab transitions.
+-- Consumed by GET /api/pos/startup-config (POS tablet boot).
+CREATE OR ALTER PROCEDURE dbo.sp_POS_GetStartupConfig
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  SELECT
+    product_type_key AS product_type_key,
+    fulfillment_mode,
+    rx_required,
+    allow_qty_gt_1
+  FROM dbo.pos_product_type_config
+  WHERE is_active = 1
+  ORDER BY product_type_key;
+
+  SELECT
+    lookup_type,
+    lookup_key   AS lookup_key,
+    lookup_label AS lookup_label,
+    display_order
+  FROM dbo.foundry_lookup_values
+  WHERE lookup_type IN (
+    N'pos_qc_fail_reason',
+    N'pos_call_outcome',
+    N'pos_payment_method',
+    N'pos_order_source'
+  )
+    AND is_active = 1
+  ORDER BY lookup_type, display_order, lookup_key;
+
+  SELECT
+    from_status,
+    to_status,
+    actor_role,
+    requires_note
+  FROM dbo.pos_lab_transitions
+  ORDER BY id;
+END;
+GO
+
+-- ─── sp_POS_GetLensCatalog ───────────────────────────────────────────────────
+-- Four result sets: categories, packages, addons, package–addon links.
+CREATE OR ALTER PROCEDURE dbo.sp_POS_GetLensCatalog
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SELECT id, name, sort_order
+  FROM dbo.pos_lens_categories
+  WHERE is_active = 1
+  ORDER BY sort_order, id;
+
+  SELECT id, category_id, name, price, sort_order
+  FROM dbo.pos_lens_packages
+  WHERE is_active = 1
+  ORDER BY category_id, sort_order, id;
+
+  SELECT id, name, price, sort_order
+  FROM dbo.pos_lens_addons
+  WHERE is_active = 1
+  ORDER BY sort_order, id;
+
+  SELECT package_id, addon_id
+  FROM dbo.pos_lens_pkg_addons;
+END;
+GO
+
+-- ─── sp_POS_CustomerSearch ───────────────────────────────────────────────────
+CREATE OR ALTER PROCEDURE dbo.sp_POS_CustomerSearch
+  @q NVARCHAR(200) = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  DECLARE @search NVARCHAR(202) =
+    CASE WHEN ISNULL(LTRIM(RTRIM(@q)), N'') = N'' THEN NULL
+         ELSE N'%' + LTRIM(RTRIM(@q)) + N'%' END;
+
+  SELECT TOP 50
+    customer_id,
+    full_name,
+    phone,
+    email,
+    home_store_id,
+    is_active,
+    created_at
+  FROM dbo.pos_customers
+  WHERE is_active = 1
+    AND (
+      @search IS NULL
+      OR phone     LIKE @search
+      OR full_name LIKE @search
+      OR email     LIKE @search
+    )
+  ORDER BY updated_at DESC, customer_id DESC;
+END;
+GO
+
+-- ─── sp_POS_CustomerCreate ───────────────────────────────────────────────────
+CREATE OR ALTER PROCEDURE dbo.sp_POS_CustomerCreate
+  @full_name     NVARCHAR(200),
+  @phone         NVARCHAR(20),
+  @email         NVARCHAR(200) = NULL,
+  @home_store_id INT           = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  INSERT INTO dbo.pos_customers (full_name, phone, email, home_store_id)
+  VALUES (@full_name, @phone, @email, @home_store_id);
+
+  SELECT CAST(SCOPE_IDENTITY() AS INT) AS customer_id;
+END;
+GO
+
+-- ─── sp_POS_ValidateLabTransition ────────────────────────────────────────────
+CREATE OR ALTER PROCEDURE dbo.sp_POS_ValidateLabTransition
+  @from_status VARCHAR(30),
+  @to_status   VARCHAR(30),
+  @actor_role  VARCHAR(50)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SELECT
+    COUNT(*) AS transition_count,
+    MAX(CASE WHEN requires_note = 1 THEN 1 ELSE 0 END) AS requires_note
+  FROM dbo.pos_lab_transitions
+  WHERE from_status = @from_status
+    AND to_status   = @to_status
+    AND actor_role  = @actor_role;
+END;
+GO

@@ -1,5 +1,5 @@
 /**
- * Deploy POS stored procedures to MSSQL.
+ * Deploy POS table scripts (05–11) then stored procedures.
  * Usage: node scripts/deploy_pos_sql.js
  */
 require('dotenv').config()
@@ -16,20 +16,40 @@ const config = {
   options:  { encrypt: false, trustServerCertificate: true }
 }
 
-async function run() {
-  const pool = await sql.connect(config)
+const POS_TABLE_FILES = [
+  path.join('sql', 'tables', '05_pos_config.sql'),
+  path.join('sql', 'tables', '06_pos_lens_catalog.sql'),
+  path.join('sql', 'tables', '07_pos_customers.sql'),
+  path.join('sql', 'tables', '08_pos_orders.sql'),
+  path.join('sql', 'tables', '09_pos_payments.sql'),
+  path.join('sql', 'tables', '10_pos_points.sql'),
+  path.join('sql', 'tables', '11_pos_advanced.sql')
+]
 
-  const file   = path.join(__dirname, '..', 'sql', 'sp', 'pos.sql')
+async function runBatches(pool, relativeSqlPath, label) {
+  const file = path.join(__dirname, '..', relativeSqlPath)
+  if (!fs.existsSync(file)) {
+    console.warn(`[deploy_pos_sql] skip missing file: ${relativeSqlPath}`)
+    return 0
+  }
   const source = fs.readFileSync(file, 'utf8')
-
-  // Split on GO statements (case-insensitive, optional whitespace)
   const batches = source.split(/^\s*GO\s*$/im).map(b => b.trim()).filter(Boolean)
-
   for (const batch of batches) {
     await pool.request().query(batch)
   }
+  console.log(`[deploy_pos_sql] ${label}: ${batches.length} batch(es)`)
+  return batches.length
+}
 
-  console.log(`[deploy_pos_sql] ${batches.length} batch(es) executed successfully.`)
+async function run() {
+  const pool = await sql.connect(config)
+
+  for (const rel of POS_TABLE_FILES) {
+    await runBatches(pool, rel, rel.replace(/\\/g, '/'))
+  }
+  await runBatches(pool, path.join('sql', 'sp', 'pos.sql'), 'sp/pos')
+
+  console.log('[deploy_pos_sql] completed successfully.')
   await pool.close()
 }
 

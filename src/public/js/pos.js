@@ -54,9 +54,13 @@
   // ── SPA routing ──────────────────────────────────────────────────────────
   const POS_ROUTES = {
     LOGIN:     '/pos/login',
+    DASHBOARD: '/pos/dashboard',
     SESSION:   '/pos/session',
     CATALOGUE: '/pos/catalogue',
-    ORDER:     '/pos/order'
+    CUSTOMER:  '/pos/customer',
+    ORDER:     '/pos/order',
+    LENS:      '/pos/lens-config',
+    PAYMENT:   '/pos/payment'
   }
 
   function navigate(path) {
@@ -75,16 +79,47 @@
     const session = getPosSession()
     const valid = isSessionValid(session)
 
+    // Alias dashboard deep links to the live catalogue screen.
+    if (path === POS_ROUTES.DASHBOARD) {
+      navigate(POS_ROUTES.CATALOGUE)
+      return
+    }
+
     if (path === POS_ROUTES.CATALOGUE) {
       if (!valid) { navigate(POS_ROUTES.LOGIN); return }
-      showCatalogueScreen(session)
+      void showCatalogueScreen(session)
+      return
+    }
+
+    if (path === POS_ROUTES.CUSTOMER) {
+      if (!valid) { navigate(POS_ROUTES.LOGIN); return }
+      showCustomerScreen(session)
       return
     }
 
     if (path === POS_ROUTES.ORDER) {
       if (!valid) { navigate(POS_ROUTES.LOGIN); return }
+      if (pendingResumeOrder) {
+        pendingResumeOrder = false
+        showOrderBuilderScreenResume(session)
+        return
+      }
       if (!pendingOrderSelection) { navigate(POS_ROUTES.CATALOGUE); return }
       showOrderBuilderScreen(session, pendingOrderSelection)
+      return
+    }
+
+    if (path === POS_ROUTES.LENS) {
+      if (!valid) { navigate(POS_ROUTES.LOGIN); return }
+      if (lensWizardLineIdx < 0) { navigate(POS_ROUTES.ORDER); return }
+      void showLensWizardScreen(session)
+      return
+    }
+
+    if (path === POS_ROUTES.PAYMENT) {
+      if (!valid) { navigate(POS_ROUTES.LOGIN); return }
+      if (!lastCreatedOrder) { navigate(POS_ROUTES.ORDER); return }
+      void showPaymentScreen(session)
       return
     }
 
@@ -133,10 +168,16 @@
   let selectedProductId = null
   let searchDebounceTimer = null
   let pendingOrderSelection = null
+  let pendingResumeOrder = false
+  let posSelectedCustomerId = null
+  let posSettings = { gst_rate: 0.05, lab_advance_pct: 40 }
+  let lensCatalogData = null
+  let lensWizardLineIdx = -1
+  let lensWizard = { step: 0, category: null, pkg: null, addonIds: [] }
+  let lastCreatedOrder = null
+  let paySessionSnapshot = { stage: 'FULL', amount: 0 }
 
   // ── Order Builder state ──────────────────────────────────────────────────
-  const GST_RATE = 0.05
-  let obOrderType = 'INSTANT'
   let obCart = []
 
   // ── Colour code → hex mapping (DB stores short codes, not hex values) ───────
@@ -193,12 +234,12 @@
   const catalogueResults  = document.getElementById('pos-catalogue-results')
   const selectionPanel    = document.getElementById('pos-catalogue-selection')
   const btnNextOrder      = document.getElementById('btn-pos-next-order')
+  const btnPosCustomer    = document.getElementById('btn-pos-customer')
 
   // ── Order Builder DOM refs ───────────────────────────────────────────────
   const btnObBack         = document.getElementById('btn-ob-back')
   const btnObAddMore      = document.getElementById('btn-ob-add-more')
-  const btnTypeInstant    = document.getElementById('btn-type-instant')
-  const btnTypeLab        = document.getElementById('btn-type-lab')
+  const obKindChip        = document.getElementById('pos-ob-kind-chip')
   const obCart_el         = document.getElementById('pos-ob-cart')
   const obRxSection       = document.getElementById('pos-ob-rx-section')
   const obSubtotal        = document.getElementById('pos-ob-subtotal')
@@ -207,6 +248,131 @@
   const btnObProceed      = document.getElementById('btn-ob-proceed')
   const obStaffEl         = document.getElementById('pos-ob-staff')
   const obStoreEl         = document.getElementById('pos-ob-store')
+  const rxPlanoOd         = document.getElementById('rx-plano-od')
+  const rxPlanoOs         = document.getElementById('rx-plano-os')
+  const rxPd              = document.getElementById('rx-pd')
+
+  // ── POS config (from API) ────────────────────────────────────────────────
+  async function loadPosBootstrap(session) {
+    if (!session || !session.token) return
+    if (window.posConfig && window.posConfig.__loaded && window.__posSettingsLoaded) return
+    try {
+      const cfg = await apiGet('/api/pos/startup-config', session.token)
+      window.posConfig = Object.assign({}, cfg, { __loaded: true })
+      const st = await apiGet('/api/pos/settings', session.token)
+      posSettings = st || posSettings
+      window.posSettings = posSettings
+      window.__posSettingsLoaded = true
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+  }
+
+  function getTypeRule(productTypeKey) {
+    const cfg = window.posConfig
+    if (!cfg || !cfg.productTypeConfig) return null
+    const raw = String(productTypeKey || '').trim().toUpperCase()
+    return cfg.productTypeConfig.find(function (r) { return r.key === raw }) || null
+  }
+
+  function defaultFulfillmentForRule(rule) {
+    if (!rule) return 'INSTANT'
+    if (rule.fulfillment_mode === 'LAB') return 'LAB'
+    if (rule.fulfillment_mode === 'INSTANT') return 'INSTANT'
+    return 'INSTANT'
+  }
+
+  function deriveOrderKind(cart) {
+    if (!cart.length) return 'INSTANT'
+    let hasLab = false
+    let hasIns = false
+    for (let i = 0; i < cart.length; i++) {
+      if (cart[i].fulfillment === 'LAB') hasLab = true
+      if (cart[i].fulfillment === 'INSTANT') hasIns = true
+    }
+    if (hasLab && hasIns) return 'MIXED'
+    if (hasLab) return 'LAB'
+    return 'INSTANT'
+  }
+
+  function cartLineKey(line) {
+    if (line.fulfillment === 'INSTANT') return String(line.sku_id) + ':INSTANT'
+    const pkg = line.lens_bundle && line.lens_bundle.package_id
+    const ids = (line.lens_bundle && line.lens_bundle.addon_ids) ? line.lens_bundle.addon_ids.slice().sort(function (a, b) { return a - b }) : []
+    return String(line.sku_id) + ':LAB:' + (pkg || '0') + ':' + ids.join(',')
+  }
+
+  function updateKindChip() {
+    if (!obKindChip) return
+    const kind = deriveOrderKind(obCart)
+    obKindChip.textContent = kind === 'MIXED' ? 'Mixed' : (kind === 'LAB' ? 'Lab' : 'Instant')
+    obKindChip.classList.remove('kind-mixed', 'kind-lab')
+    if (kind === 'MIXED') obKindChip.classList.add('kind-mixed')
+    if (kind === 'LAB') obKindChip.classList.add('kind-lab')
+  }
+
+  function computeLineDisplayUnit(line) {
+    let u = Number(line.frame_unit_price) || 0
+    if (line.fulfillment === 'LAB' && line.lens_bundle && line.lab_status === 'complete') {
+      const b = line.lens_bundle
+      u += Number(b.package_price) || 0
+      const ap = b.addon_prices || []
+      for (let i = 0; i < ap.length; i++) u += Number(ap[i]) || 0
+    }
+    return u
+  }
+
+  function syncRxSectionVisibility() {
+    const need = obCart.some(function (l) { return l.fulfillment === 'LAB' && l.rx_required })
+    const hide = !need
+    obRxSection.setAttribute('aria-hidden', hide ? 'true' : 'false')
+  }
+
+  function collectRxSnapshot() {
+    function eye(axisPrefix, planoElId) {
+      const pe = document.getElementById(planoElId)
+      return {
+        plano: pe ? pe.checked : false,
+        sph: document.getElementById('rx-' + axisPrefix + '-sph') ? document.getElementById('rx-' + axisPrefix + '-sph').value : '',
+        cyl: document.getElementById('rx-' + axisPrefix + '-cyl') ? document.getElementById('rx-' + axisPrefix + '-cyl').value : '',
+        axis: document.getElementById('rx-' + axisPrefix + '-axis') ? document.getElementById('rx-' + axisPrefix + '-axis').value : ''
+      }
+    }
+    return {
+      od: eye('r', 'rx-plano-od'),
+      os: eye('l', 'rx-plano-os'),
+      pd: rxPd ? rxPd.value : '',
+      doctor: document.getElementById('rx-doctor') ? document.getElementById('rx-doctor').value : ''
+    }
+  }
+
+  function rxMeetsRequirement() {
+    const s = collectRxSnapshot()
+    if (s.od.plano && s.os.plano) return true
+    if (s.od.plano || s.os.plano) return true
+    const odOk = (s.od.sph && String(s.od.sph).trim()) || (s.od.cyl && String(s.od.cyl).trim())
+    const osOk = (s.os.sph && String(s.os.sph).trim()) || (s.os.cyl && String(s.os.cyl).trim())
+    return Boolean(odOk || osOk)
+  }
+
+  function bindRxPlanoHandlers() {
+    function toggleEye(prefix, checked) {
+      const sph = document.getElementById('rx-' + prefix + '-sph')
+      const cyl = document.getElementById('rx-' + prefix + '-cyl')
+      const ax = document.getElementById('rx-' + prefix + '-axis')
+      ;[sph, cyl, ax].forEach(function (el) {
+        if (!el) return
+        el.disabled = checked
+        if (checked) el.value = ''
+      })
+    }
+    if (rxPlanoOd) {
+      rxPlanoOd.addEventListener('change', function () { toggleEye('r', rxPlanoOd.checked) })
+    }
+    if (rxPlanoOs) {
+      rxPlanoOs.addEventListener('change', function () { toggleEye('l', rxPlanoOs.checked) })
+    }
+  }
 
   // ── Load stores ──────────────────────────────────────────────────────────
   async function loadStores() {
@@ -653,9 +819,14 @@
       pendingOrderSelection = { colour, product }
       navigate(POS_ROUTES.ORDER)
     })
+
+    if (btnPosCustomer) {
+      btnPosCustomer.addEventListener('click', () => navigate(POS_ROUTES.CUSTOMER))
+    }
   }
 
-  function showCatalogueScreen(session) {
+  async function showCatalogueScreen(session) {
+    await loadPosBootstrap(session)
     catalogueStaff.textContent = session.name + ' • ' + formatRole(session.role)
     catalogueStore.textContent = session.store_name
     updateScopeButtons()
@@ -663,6 +834,337 @@
     searchInput.value = ''
     triggerCatalogueSearch()
     showScreen('screen-pos-catalogue')
+  }
+
+  function showCustomerScreen(session) {
+    const banner = document.getElementById('cust-selected-banner')
+    if (banner) {
+      banner.textContent = posSelectedCustomerId
+        ? ('Selected customer id: ' + posSelectedCustomerId)
+        : 'No customer selected — optional for walk-in.'
+    }
+    showScreen('screen-pos-customer')
+  }
+
+  async function runCustomerSearch() {
+    const input = document.getElementById('cust-search-input')
+    const wrap = document.getElementById('cust-results')
+    const q = input ? input.value.trim() : ''
+    const session = getPosSession()
+    if (!session || !session.token) return
+    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('cust-results', 4)
+    try {
+      const rows = await apiGet('/api/pos/customer-search?q=' + encodeURIComponent(q), session.token)
+      if (!wrap) return
+      wrap.innerHTML = ''
+      if (!rows.length) {
+        wrap.innerHTML = '<div class="pos-empty-sub">No customers found.</div>'
+        return
+      }
+      rows.forEach(function (r) {
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.className = 'pos-cust-row'
+        btn.innerHTML = '<span>' + (r.full_name || '') + '</span><span>' + (r.phone || '') + '</span>'
+        btn.addEventListener('click', function () {
+          posSelectedCustomerId = r.customer_id
+          const b = document.getElementById('cust-selected-banner')
+          if (b) b.textContent = 'Selected: ' + (r.full_name || '') + ' (' + (r.phone || '') + ')'
+          cosmosToastSuccess('Customer selected')
+        })
+        wrap.appendChild(btn)
+      })
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+  }
+
+  async function handleCustomerCreate() {
+    const session = getPosSession()
+    if (!session || !session.token) return
+    const nameEl = document.getElementById('cust-new-name')
+    const phoneEl = document.getElementById('cust-new-phone')
+    const emailEl = document.getElementById('cust-new-email')
+    const name = nameEl ? nameEl.value.trim() : ''
+    const phone = phoneEl ? phoneEl.value.trim() : ''
+    if (!name) {
+      if (nameEl && typeof cosmosFieldError === 'function') cosmosFieldError(nameEl, 'Required')
+      return
+    }
+    if (!phone) {
+      if (phoneEl && typeof cosmosFieldError === 'function') cosmosFieldError(phoneEl, 'Required')
+      return
+    }
+    const btn = document.getElementById('btn-cust-create')
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      const res = await apiPost('/api/pos/customer', {
+        full_name: name,
+        phone: phone,
+        email: emailEl && emailEl.value ? emailEl.value.trim() : null
+      }, session.token)
+      posSelectedCustomerId = res.data.customer_id
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+      const b = document.getElementById('cust-selected-banner')
+      if (b) b.textContent = 'Created and selected: ' + name
+      cosmosToastSuccess('Customer created')
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+  }
+
+  function bindCustomerLensPayEvents() {
+    const btnBack = document.getElementById('btn-cust-back')
+    if (btnBack) btnBack.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
+    const btnS = document.getElementById('btn-cust-search')
+    if (btnS) btnS.addEventListener('click', () => { void runCustomerSearch() })
+    const btnC = document.getElementById('btn-cust-create')
+    if (btnC) btnC.addEventListener('click', () => { void handleCustomerCreate() })
+
+    const btnLensBack = document.getElementById('btn-lens-back')
+    if (btnLensBack) {
+      btnLensBack.addEventListener('click', () => {
+        pendingResumeOrder = true
+        navigate(POS_ROUTES.ORDER)
+      })
+    }
+    const btnLensPrev = document.getElementById('btn-lens-prev')
+    const btnLensNext = document.getElementById('btn-lens-next')
+    if (btnLensPrev) btnLensPrev.addEventListener('click', lensWizardPrev)
+    if (btnLensNext) btnLensNext.addEventListener('click', lensWizardNext)
+
+    const btnPayBack = document.getElementById('btn-pay-back')
+    if (btnPayBack) btnPayBack.addEventListener('click', () => navigate(POS_ROUTES.ORDER))
+    const btnPaySubmit = document.getElementById('btn-pay-submit')
+    if (btnPaySubmit) btnPaySubmit.addEventListener('click', () => { void submitPayment() })
+  }
+
+  function lensWizardPrev() {
+    if (lensWizard.step > 0) {
+      lensWizard.step -= 1
+      renderLensStep()
+    }
+  }
+
+  function lensWizardNext() {
+    const body = document.getElementById('lens-step-body')
+    if (lensWizard.step === 0 && !lensWizard.category) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Pick a category.')
+      return
+    }
+    if (lensWizard.step === 1 && !lensWizard.pkg) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Pick a package.')
+      return
+    }
+    if (lensWizard.step < 2) {
+      lensWizard.step += 1
+      renderLensStep()
+      return
+    }
+    if (lensWizard.step === 2) {
+      confirmLensWizard()
+    }
+  }
+
+  function renderLensStep() {
+    const nextBtn = document.getElementById('btn-lens-next')
+    if (nextBtn && lensWizard.step < 2) nextBtn.textContent = 'Next'
+    const ind = document.getElementById('lens-step-indicator')
+    const body = document.getElementById('lens-step-body')
+    if (!body || !lensCatalogData) return
+    const cats = lensCatalogData.categories || []
+    if (lensWizard.step === 0) {
+      if (ind) ind.textContent = 'Step 1 — Category'
+      body.innerHTML = '<div class="pos-lens-pick" id="lens-pick-cat"></div>'
+      const pick = document.getElementById('lens-pick-cat')
+      cats.forEach(function (c) {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'pos-lens-opt' + (lensWizard.category && lensWizard.category.id === c.id ? ' selected' : '')
+        b.textContent = c.name
+        b.addEventListener('click', function () {
+          lensWizard.category = c
+          lensWizard.pkg = null
+          lensWizard.addonIds = []
+          renderLensStep()
+        })
+        pick.appendChild(b)
+      })
+      return
+    }
+    if (lensWizard.step === 1) {
+      if (ind) ind.textContent = 'Step 2 — Package'
+      const pkgs = (lensWizard.category && lensWizard.category.packages) ? lensWizard.category.packages : []
+      body.innerHTML = '<div class="pos-lens-pick" id="lens-pick-pkg"></div>'
+      const pick = document.getElementById('lens-pick-pkg')
+      pkgs.forEach(function (p) {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'pos-lens-opt' + (lensWizard.pkg && lensWizard.pkg.id === p.id ? ' selected' : '')
+        b.textContent = p.name + ' — ' + inrFormat(p.price)
+        b.addEventListener('click', function () {
+          lensWizard.pkg = p
+          lensWizard.addonIds = []
+          renderLensStep()
+        })
+        pick.appendChild(b)
+      })
+      return
+    }
+    if (lensWizard.step === 2) {
+      if (ind) ind.textContent = 'Step 3 — Add-ons'
+      const addons = (lensWizard.pkg && lensWizard.pkg.addons) ? lensWizard.pkg.addons : []
+      body.innerHTML = '<div class="pos-lens-pick" id="lens-pick-addon"></div>'
+      const pick = document.getElementById('lens-pick-addon')
+      addons.forEach(function (a) {
+        const b = document.createElement('button')
+        b.type = 'button'
+        const on = lensWizard.addonIds.indexOf(a.id) >= 0
+        b.className = 'pos-lens-opt' + (on ? ' selected' : '')
+        b.textContent = a.name + ' +' + inrFormat(a.price)
+        b.addEventListener('click', function () {
+          const ix = lensWizard.addonIds.indexOf(a.id)
+          if (ix >= 0) lensWizard.addonIds.splice(ix, 1)
+          else lensWizard.addonIds.push(a.id)
+          renderLensStep()
+        })
+        pick.appendChild(b)
+      })
+      const next = document.getElementById('btn-lens-next')
+      if (next) next.textContent = 'Confirm'
+    }
+  }
+
+  function confirmLensWizard() {
+    const line = obCart[lensWizardLineIdx]
+    if (!line || !lensWizard.pkg || !lensWizard.category) return
+    const selAddons = (lensWizard.pkg.addons || []).filter(function (a) {
+      return lensWizard.addonIds.indexOf(a.id) >= 0
+    })
+    const addonPrices = selAddons.map(function (a) { return Number(a.price) || 0 })
+    line.lens_bundle = {
+      category_id: lensWizard.category.id,
+      package_id: lensWizard.pkg.id,
+      addon_ids: lensWizard.addonIds.slice(),
+      package_price: Number(lensWizard.pkg.price) || 0,
+      addon_prices: addonPrices
+    }
+    line.lab_status = 'complete'
+    line.fulfillment = 'LAB'
+    lensWizardLineIdx = -1
+    pendingResumeOrder = true
+    navigate(POS_ROUTES.ORDER)
+    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Lenses configured')
+  }
+
+  async function showLensWizardScreen(session) {
+    await loadPosBootstrap(session)
+    const sessionTok = session.token
+    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('lens-step-body', 4)
+    try {
+      lensCatalogData = await apiGet('/api/pos/lens-catalog', sessionTok)
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+      navigate(POS_ROUTES.ORDER)
+      return
+    }
+    lensWizard = { step: 0, category: null, pkg: null, addonIds: [] }
+    const next = document.getElementById('btn-lens-next')
+    if (next) next.textContent = 'Next'
+    renderLensStep()
+    showScreen('screen-pos-lens')
+  }
+
+  async function showPaymentScreen(session) {
+    const el = document.getElementById('pay-summary')
+    showScreen('screen-pos-payment')
+    if (!el || !lastCreatedOrder || !session || !session.token) return
+    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pay-summary', 4)
+    paySessionSnapshot = { stage: 'FULL', amount: Number(lastCreatedOrder.total_amount) || 0 }
+    try {
+      const detail = await apiGet('/api/pos/orders/' + lastCreatedOrder.order_id, session.token)
+      const order = detail.order
+      const payments = detail.payments || []
+      const total = Number(order.total_amount)
+      const pct = Number(order.lab_advance_pct_snapshot) || 40
+      const advanceTarget = Math.round(total * (pct / 100) * 100) / 100
+      let advPaid = 0
+      for (let i = 0; i < payments.length; i++) {
+        if (payments[i].stage === 'ADVANCE') advPaid += Number(payments[i].amount) || 0
+      }
+      advPaid = Math.round(advPaid * 100) / 100
+      const labLike = order.order_kind === 'LAB' || order.order_kind === 'MIXED'
+      const advanceRemaining = Math.max(0, Math.round((advanceTarget - advPaid) * 100) / 100)
+      const balanceRemaining = Math.max(0, Math.round((total - advPaid) * 100) / 100)
+      if (labLike && advanceRemaining > 0.009) {
+        paySessionSnapshot = { stage: 'ADVANCE', amount: advanceRemaining }
+      } else {
+        paySessionSnapshot = { stage: 'FULL', amount: balanceRemaining }
+      }
+      let subHint = ''
+      const subs = detail.sub_orders || []
+      for (let j = 0; j < subs.length; j++) {
+        if (subs[j].fulfillment === 'LAB') {
+          subHint += '<div>Lab sub-order #' + subs[j].sub_order_id + ' — ' + (subs[j].lab_workflow_status || '') + '</div>'
+        }
+      }
+      el.innerHTML =
+        '<div>Order <strong>' + order.order_no + '</strong> · ' + order.order_kind + '</div>' +
+        '<div>Order total (incl. GST): <strong>' + formatRupees(total) + '</strong></div>' +
+        (labLike
+          ? '<div>Lab advance (' + pct + '%): target ' + formatRupees(advanceTarget) + ', paid ' + formatRupees(advPaid) + '</div>'
+          : '') +
+        '<div style="margin-top:10px">Collecting: <strong>' + paySessionSnapshot.stage + '</strong> — <strong>' + formatRupees(paySessionSnapshot.amount) + '</strong></div>' +
+        subHint
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+      el.innerHTML =
+        '<div>Order <strong>' + lastCreatedOrder.order_no + '</strong></div>' +
+        '<div>Total: <strong>' + formatRupees(lastCreatedOrder.total_amount) + '</strong></div>' +
+        '<div>Could not load order detail — using totals from checkout.</div>'
+      paySessionSnapshot = { stage: 'FULL', amount: Number(lastCreatedOrder.total_amount) || 0 }
+    }
+  }
+
+  async function submitPayment() {
+    const session = getPosSession()
+    if (!session || !session.token || !lastCreatedOrder) return
+    const methodEl = document.getElementById('pay-method')
+    const tenderEl = document.getElementById('pay-tendered')
+    const method = methodEl ? methodEl.value : 'CASH'
+    const tendered = tenderEl && tenderEl.value ? Number(tenderEl.value) : null
+    const btn = document.getElementById('btn-pay-submit')
+    const amt = Math.max(0, Number(paySessionSnapshot.amount) || 0)
+    if (amt <= 0) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Nothing to collect — return to catalogue or refresh payment.')
+      return
+    }
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      await apiPost('/api/pos/payment', {
+        order_id: lastCreatedOrder.order_id,
+        stage: paySessionSnapshot.stage,
+        method: method,
+        amount: amt,
+        tendered: method === 'CASH' ? tendered : null
+      }, session.token)
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Payment recorded')
+      if (paySessionSnapshot.stage === 'ADVANCE') {
+        if (typeof cosmosToastInfo === 'function') {
+          cosmosToastInfo('Advance saved. Collect balance when the order is ready.')
+        }
+        void showPaymentScreen(session)
+        return
+      }
+      lastCreatedOrder = null
+      paySessionSnapshot = { stage: 'FULL', amount: 0 }
+      navigate(POS_ROUTES.CATALOGUE)
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -674,9 +1176,12 @@
   }
 
   function obRecalcTotals() {
-    const subtotal = obCart.reduce((sum, line) => sum + line.unit_price * line.qty, 0)
-    const gst = Math.round(subtotal * GST_RATE)
-    const total = subtotal + gst
+    const gstRate = Number(posSettings.gst_rate) || 0.05
+    const subtotal = obCart.reduce(function (sum, line) {
+      return sum + computeLineDisplayUnit(line) * line.qty
+    }, 0)
+    const gst = Math.round(subtotal * gstRate * 100) / 100
+    const total = Math.round((subtotal + gst) * 100) / 100
     obSubtotal.textContent = formatRupees(subtotal)
     obGst.textContent = formatRupees(gst)
     obTotal.textContent = formatRupees(total)
@@ -685,6 +1190,7 @@
 
   function obRenderCart() {
     obCart_el.innerHTML = ''
+    updateKindChip()
     if (obCart.length === 0) {
       obCart_el.innerHTML = `
         <div class="pos-empty">
@@ -693,19 +1199,42 @@
         </div>
       `
       obRecalcTotals()
+      syncRxSectionVisibility()
       return
     }
-    obCart.forEach((line, idx) => {
+    obCart.forEach(function (line, idx) {
+      const rule = getTypeRule(line.product_type)
+      const isDual = rule && rule.fulfillment_mode === 'DUAL'
       const lineEl = document.createElement('div')
       lineEl.className = 'pos-ob-cart-line'
+      let fulfillHtml = ''
+      if (isDual) {
+        fulfillHtml =
+          '<div class="pos-ob-line-fulfill">' +
+          '<button type="button" class="pos-ob-mini-btn' + (line.fulfillment === 'INSTANT' ? ' active' : '') + '" data-action="set-instant" data-idx="' + idx + '">Frame only</button>' +
+          '<button type="button" class="pos-ob-mini-btn' + (line.fulfillment === 'LAB' ? ' active' : '') + '" data-action="set-lab" data-idx="' + idx + '">With lenses</button>' +
+          '</div>'
+      }
+      let labBadge = ''
+      if (line.fulfillment === 'LAB') {
+        labBadge = line.lab_status === 'complete'
+          ? '<div class="pos-ob-lab-badge">Lenses configured</div>'
+          : '<div class="pos-ob-lab-badge">Configure lenses</div>'
+      }
+      const du = computeLineDisplayUnit(line)
       lineEl.innerHTML = `
         <div class="pos-ob-cart-line-info">
           <div class="pos-ob-cart-code">${line.sku_code}</div>
           <div class="pos-ob-cart-name">${line.product_name}</div>
           <div class="pos-ob-cart-sub">${line.brand_name} • ${line.colour_name}</div>
+          ${fulfillHtml}
+          ${labBadge}
+          ${line.fulfillment === 'LAB' && line.lab_status !== 'complete'
+            ? '<button type="button" class="pos-ob-mini-btn" data-action="configure-lens" data-idx="' + idx + '">Open lens wizard</button>'
+            : ''}
         </div>
         <div class="pos-ob-cart-line-right">
-          <div class="pos-ob-cart-price">${formatRupees(line.unit_price * line.qty)}</div>
+          <div class="pos-ob-cart-price">${formatRupees(du * line.qty)}</div>
           <div class="pos-ob-qty-ctrl" aria-label="Quantity for ${line.product_name}">
             <button class="pos-ob-qty-btn" data-action="dec" data-idx="${idx}" aria-label="Decrease quantity" tabindex="0" ${line.qty <= 1 ? 'disabled' : ''}>−</button>
             <span class="pos-ob-qty-val">${line.qty}</span>
@@ -717,6 +1246,7 @@
       obCart_el.appendChild(lineEl)
     })
     obRecalcTotals()
+    syncRxSectionVisibility()
   }
 
   function obHandleCartClick(e) {
@@ -725,42 +1255,63 @@
     const action = btn.dataset.action
     const idx = Number(btn.dataset.idx)
     if (action === 'inc') {
+      const rule = getTypeRule(obCart[idx].product_type)
+      if (rule && !rule.allow_qty_gt_1 && obCart[idx].qty >= 1) return
       obCart[idx].qty += 1
     } else if (action === 'dec') {
       if (obCart[idx].qty > 1) obCart[idx].qty -= 1
     } else if (action === 'remove') {
       obCart.splice(idx, 1)
+    } else if (action === 'set-instant') {
+      obCart[idx].fulfillment = 'INSTANT'
+      obCart[idx].lab_status = null
+      obCart[idx].lens_bundle = null
+    } else if (action === 'set-lab') {
+      obCart[idx].fulfillment = 'LAB'
+      obCart[idx].lab_status = 'incomplete'
+      obCart[idx].lens_bundle = null
+      lensWizardLineIdx = idx
+      pendingResumeOrder = true
+      navigate(POS_ROUTES.LENS)
+      return
+    } else if (action === 'configure-lens') {
+      lensWizardLineIdx = idx
+      pendingResumeOrder = true
+      navigate(POS_ROUTES.LENS)
+      return
     }
     obRenderCart()
   }
 
-  function obUpdateOrderType(type) {
-    obOrderType = type
-    const isInstant = type === 'INSTANT'
-    btnTypeInstant.classList.toggle('active', isInstant)
-    btnTypeInstant.setAttribute('aria-pressed', isInstant ? 'true' : 'false')
-    btnTypeLab.classList.toggle('active', !isInstant)
-    btnTypeLab.setAttribute('aria-pressed', isInstant ? 'false' : 'true')
-    obRxSection.setAttribute('aria-hidden', isInstant ? 'true' : 'false')
-  }
-
   function addToCart(selection) {
-    const { colour, product } = selection || {}
+    const colour = selection && selection.colour
+    const product = selection && selection.product
     if (!colour || !product) return
-    const existing = obCart.find(line => line.sku_id === colour.sku_id)
+    const rule = getTypeRule(product.product_type)
+    const fulfillment = defaultFulfillmentForRule(rule)
+    const candidate = {
+      product_id: product.product_id,
+      sku_id: colour.sku_id,
+      sku_code: colour.sku_code,
+      product_name: product.product_name,
+      brand_name: product.brand_name,
+      colour_name: colour.colour_name,
+      product_type: product.product_type || '',
+      frame_unit_price: colour.sale_price || 0,
+      qty: 1,
+      fulfillment: fulfillment,
+      lab_status: fulfillment === 'LAB' ? 'incomplete' : null,
+      rx_required: rule ? rule.rx_required : false,
+      lens_bundle: null
+    }
+    const key = cartLineKey(candidate)
+    const existing = obCart.find(function (line) { return cartLineKey(line) === key })
     if (existing) {
+      const r = getTypeRule(existing.product_type)
+      if (r && !r.allow_qty_gt_1) return
       existing.qty += 1
     } else {
-      obCart.push({
-        product_id:   product.product_id,
-        sku_id:       colour.sku_id,
-        sku_code:     colour.sku_code,
-        product_name: product.product_name,
-        brand_name:   product.brand_name,
-        colour_name:  colour.colour_name,
-        unit_price:   colour.sale_price || 0,
-        qty:          1
-      })
+      obCart.push(candidate)
     }
   }
 
@@ -769,7 +1320,17 @@
     obStoreEl.textContent = session.store_name
     obCart = []
     if (selection) addToCart(selection)
-    obUpdateOrderType('INSTANT')
+    updateKindChip()
+    syncRxSectionVisibility()
+    obRenderCart()
+    showScreen('screen-pos-order-builder')
+  }
+
+  function showOrderBuilderScreenResume(session) {
+    obStaffEl.textContent = session.name + ' • ' + formatRole(session.role)
+    obStoreEl.textContent = session.store_name
+    updateKindChip()
+    syncRxSectionVisibility()
     obRenderCart()
     showScreen('screen-pos-order-builder')
   }
@@ -778,24 +1339,65 @@
     btnObBack.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
     btnObAddMore.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
 
-    btnTypeInstant.addEventListener('click', () => obUpdateOrderType('INSTANT'))
-    btnTypeLab.addEventListener('click', () => obUpdateOrderType('LAB'))
-
     obCart_el.addEventListener('click', obHandleCartClick)
 
-    btnObProceed.addEventListener('click', () => {
-      if (obCart.length === 0) {
-        cosmosToastWarn('Your cart is empty.')
+    btnObProceed.addEventListener('click', () => { void handleProceedToPayment() })
+  }
+
+  async function handleProceedToPayment() {
+    if (obCart.length === 0) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Your cart is empty.')
+      return
+    }
+    for (let i = 0; i < obCart.length; i++) {
+      if (obCart[i].fulfillment === 'LAB' && obCart[i].lab_status !== 'complete') {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Finish lens configuration for all lab lines.')
         return
       }
-      const subtotal = obCart.reduce((sum, line) => sum + line.unit_price * line.qty, 0)
-      cosmosToastInfo('Next step: payment screen — ' + obOrderType + ' order, total ' + formatRupees(subtotal + Math.round(subtotal * GST_RATE)))
+    }
+    const needRx = obCart.some(function (l) { return l.fulfillment === 'LAB' && l.rx_required })
+    if (needRx && !rxMeetsRequirement()) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Enter prescription or mark Plano for required eyes.')
+      return
+    }
+    const session = getPosSession()
+    if (!session || !session.token) return
+    await loadPosBootstrap(session)
+    const lines = obCart.map(function (line) {
+      const b = line.lens_bundle
+      return {
+        sku_id: line.sku_id,
+        qty: line.qty,
+        unit_price: line.frame_unit_price,
+        product_type: line.product_type,
+        fulfillment: line.fulfillment,
+        line_key: cartLineKey(line),
+        lens_bundle: line.fulfillment === 'LAB' ? b : null
+      }
     })
+    const rxSnap = needRx ? collectRxSnapshot() : null
+    if (btnObProceed && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btnObProceed)
+    try {
+      const res = await apiPost('/api/pos/orders', {
+        customer_id: posSelectedCustomerId,
+        order_source: 'POS',
+        rx_snapshot: rxSnap,
+        lines: lines
+      }, session.token)
+      lastCreatedOrder = res.data
+      if (btnObProceed && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnObProceed)
+      navigate(POS_ROUTES.PAYMENT)
+    } catch (err) {
+      if (btnObProceed && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnObProceed)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
   }
 
   // ── Boot ─────────────────────────────────────────────────────────────────
   ;(function boot() {
+    bindRxPlanoHandlers()
     bindCatalogueEvents()
+    bindCustomerLensPayEvents()
     bindOrderBuilderEvents()
     resolve()
   })()

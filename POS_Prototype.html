@@ -188,6 +188,9 @@
       <div class="pos-catalogue-session">
         <span id="pos-catalogue-staff" class="pos-catalogue-session-item"></span>
         <span id="pos-catalogue-store" class="pos-catalogue-session-item"></span>
+        <button type="button" id="btn-pos-customer" class="pos-header-link-btn" aria-label="Customer lookup" tabindex="0">
+          Customer
+        </button>
       </div>
     </header>
 
@@ -245,20 +248,12 @@
       </div>
     </header>
 
-    <!-- Order type toggle -->
+    <!-- Derived order kind (read-only chip from cart lines) -->
     <section class="pos-ob-section">
-      <div class="pos-ob-section-label">ORDER TYPE</div>
-      <div class="pos-ob-type-toggle" role="group" aria-label="Order type">
-        <button id="btn-type-instant" class="pos-ob-type-btn active" data-type="INSTANT" aria-pressed="true" tabindex="0">
-          <span class="pos-ob-type-ic">⚡</span>
-          <span class="pos-ob-type-name">Instant</span>
-          <span class="pos-ob-type-sub">Same day, full payment</span>
-        </button>
-        <button id="btn-type-lab" class="pos-ob-type-btn" data-type="LAB" aria-pressed="false" tabindex="0">
-          <span class="pos-ob-type-ic">🔬</span>
-          <span class="pos-ob-type-name">Lab Order</span>
-          <span class="pos-ob-type-sub">2–7 days, advance payment</span>
-        </button>
+      <div class="pos-ob-section-label">ORDER KIND</div>
+      <div id="pos-ob-kind-wrap" class="pos-ob-kind-wrap">
+        <span id="pos-ob-kind-chip" class="pos-ob-kind-chip" aria-live="polite">Instant</span>
+        <span class="pos-ob-kind-hint">Based on items in cart</span>
       </div>
     </section>
 
@@ -310,6 +305,20 @@
           </div>
         </div>
       </div>
+      <div class="pos-ob-rx-plano-row">
+        <label class="pos-ob-rx-check">
+          <input id="rx-plano-od" type="checkbox" tabindex="0" aria-label="Right eye Plano">
+          <span>Plano OD</span>
+        </label>
+        <label class="pos-ob-rx-check">
+          <input id="rx-plano-os" type="checkbox" tabindex="0" aria-label="Left eye Plano">
+          <span>Plano OS</span>
+        </label>
+        <div class="pos-ob-rx-field-wrap pos-ob-rx-pd-wrap">
+          <label class="pos-ob-rx-lbl" for="rx-pd">PD (mm)</label>
+          <input id="rx-pd" class="pos-ob-rx-input" type="text" inputmode="decimal" placeholder="e.g. 63" aria-label="Pupillary distance millimeters">
+        </div>
+      </div>
       <div class="pos-ob-rx-doctor-row">
         <div class="pos-ob-rx-field-wrap" style="flex:1">
           <label class="pos-ob-rx-lbl" for="rx-doctor">DOCTOR</label>
@@ -339,6 +348,82 @@
       </button>
     </section>
 
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN — Customer lookup
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-customer" class="pos-screen">
+  <div class="pos-cust-shell">
+    <header class="pos-ob-header">
+      <button type="button" id="btn-cust-back" class="pos-ob-back-btn" aria-label="Back" tabindex="0">‹ Back</button>
+      <div class="pos-ob-header-title">Customer</div>
+      <div class="pos-ob-header-session"></div>
+    </header>
+    <section class="pos-cust-section">
+      <label class="pos-field-label" for="cust-search-input">Search phone or name</label>
+      <div class="pos-search-input-wrap">
+        <input id="cust-search-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Phone / name" aria-label="Search customers">
+        <button type="button" id="btn-cust-search" class="pos-search-btn" tabindex="0">Search</button>
+      </div>
+      <div id="cust-results" class="pos-cust-results" role="list" aria-live="polite"></div>
+    </section>
+    <section class="pos-cust-section">
+      <div class="pos-ob-section-label">NEW WALK-IN</div>
+      <div class="pos-cust-form">
+        <label class="pos-field-label" for="cust-new-name">Full name</label>
+        <input id="cust-new-name" class="pos-search-input" type="text" autocomplete="name" aria-label="Customer full name">
+        <label class="pos-field-label" for="cust-new-phone">Phone</label>
+        <input id="cust-new-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" aria-label="Customer phone">
+        <label class="pos-field-label" for="cust-new-email">Email (optional)</label>
+        <input id="cust-new-email" class="pos-search-input" type="email" autocomplete="email" aria-label="Customer email">
+        <button type="button" id="btn-cust-create" class="pos-next-btn" tabindex="0">Create customer</button>
+      </div>
+    </section>
+    <div id="cust-selected-banner" class="pos-cust-banner" aria-live="polite"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN — Lens configuration wizard
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-lens" class="pos-screen">
+  <div class="pos-lens-shell">
+    <header class="pos-ob-header">
+      <button type="button" id="btn-lens-back" class="pos-ob-back-btn" aria-label="Back" tabindex="0">‹ Back</button>
+      <div class="pos-ob-header-title">Lens setup</div>
+      <div class="pos-ob-header-session"></div>
+    </header>
+    <div id="lens-step-indicator" class="pos-lens-steps" aria-live="polite">Step 1 — Category</div>
+    <div id="lens-step-body" class="pos-lens-body"></div>
+    <div class="pos-lens-actions">
+      <button type="button" id="btn-lens-prev" class="pos-scope-btn" tabindex="0">Previous</button>
+      <button type="button" id="btn-lens-next" class="pos-next-btn" tabindex="0">Next</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN — Payment
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-payment" class="pos-screen">
+  <div class="pos-pay-shell">
+    <header class="pos-ob-header">
+      <button type="button" id="btn-pay-back" class="pos-ob-back-btn" aria-label="Back" tabindex="0">‹ Order</button>
+      <div class="pos-ob-header-title">Payment</div>
+      <div class="pos-ob-header-session"></div>
+    </header>
+    <div id="pay-summary" class="pos-pay-summary" aria-live="polite"></div>
+    <label class="pos-field-label" for="pay-method">Method</label>
+    <select id="pay-method" class="pos-search-input" aria-label="Payment method">
+      <option value="CASH">Cash</option>
+      <option value="CARD">Card</option>
+      <option value="UPI">UPI</option>
+    </select>
+    <label class="pos-field-label" for="pay-tendered">Tendered (cash)</label>
+    <input id="pay-tendered" class="pos-search-input" type="text" inputmode="decimal" placeholder="Amount received" aria-label="Cash tendered">
+    <button type="button" id="btn-pay-submit" class="pos-ob-proceed-btn" tabindex="0">Record payment</button>
   </div>
 </div>
 
