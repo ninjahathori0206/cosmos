@@ -62,7 +62,8 @@ GO
 -- Used for Store Catalogue scope on POS tablet.
 CREATE OR ALTER PROCEDURE dbo.sp_POS_StoreCatalogue
   @store_id INT,
-  @q        NVARCHAR(200) = NULL
+  @q        NVARCHAR(200) = NULL,
+  @brand    NVARCHAR(200) = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -71,12 +72,18 @@ BEGIN
     CASE WHEN ISNULL(LTRIM(RTRIM(@q)), '') = '' THEN NULL
          ELSE '%' + LTRIM(RTRIM(@q)) + '%' END;
 
+  DECLARE @brand_filter NVARCHAR(200) =
+    CASE WHEN ISNULL(LTRIM(RTRIM(@brand)), '') = '' THEN NULL
+         ELSE LOWER(LTRIM(RTRIM(@brand))) END;
+
   SELECT
     pm.product_id,
     sk.sku_id,
     sk.sku_code,
     ISNULL(sk.barcode, '')                                          AS barcode,
     ISNULL(hb.brand_name, ISNULL(mm.maker_name, ''))               AS brand_name,
+    ISNULL(pm.ew_collection, '')                                   AS collection_name,
+    ISNULL(pm.style_model, '')                                     AS model_number,
     ISNULL(pm.ew_collection, '') + ' · ' + ISNULL(pm.style_model, '') AS product_name,
     ISNULL(pm.product_type, '')                                     AS product_type,
     ISNULL(pm.frame_material, '')                                   AS frame_material,
@@ -96,6 +103,10 @@ BEGIN
   WHERE sb.location_type = 'STORE'
     AND sb.location_id   = @store_id
     AND sb.qty           > 0
+    AND (
+      @brand_filter IS NULL
+      OR LOWER(LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, ''))))) = @brand_filter
+    )
     AND (
       @search IS NULL
       OR sk.sku_code                        LIKE @search
@@ -121,7 +132,8 @@ GO
 -- Used for Global Catalogue scope — enables lab orders for non-stocked items.
 CREATE OR ALTER PROCEDURE dbo.sp_POS_GlobalCatalogue
   @store_id INT,
-  @q        NVARCHAR(200) = NULL
+  @q        NVARCHAR(200) = NULL,
+  @brand    NVARCHAR(200) = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -130,12 +142,18 @@ BEGIN
     CASE WHEN ISNULL(LTRIM(RTRIM(@q)), '') = '' THEN NULL
          ELSE '%' + LTRIM(RTRIM(@q)) + '%' END;
 
+  DECLARE @brand_filter NVARCHAR(200) =
+    CASE WHEN ISNULL(LTRIM(RTRIM(@brand)), '') = '' THEN NULL
+         ELSE LOWER(LTRIM(RTRIM(@brand))) END;
+
   SELECT
     pm.product_id,
     sk.sku_id,
     sk.sku_code,
     ISNULL(sk.barcode, '')                                          AS barcode,
     ISNULL(hb.brand_name, ISNULL(mm.maker_name, ''))               AS brand_name,
+    ISNULL(pm.ew_collection, '')                                   AS collection_name,
+    ISNULL(pm.style_model, '')                                     AS model_number,
     ISNULL(pm.ew_collection, '') + ' · ' + ISNULL(pm.style_model, '') AS product_name,
     ISNULL(pm.product_type, '')                                     AS product_type,
     ISNULL(pm.frame_material, '')                                   AS frame_material,
@@ -156,6 +174,10 @@ BEGIN
         AND sb_store.location_id   = @store_id
   WHERE sk.status IN ('LIVE', 'ACTIVE')
     AND (
+      @brand_filter IS NULL
+      OR LOWER(LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, ''))))) = @brand_filter
+    )
+    AND (
       @search IS NULL
       OR sk.sku_code                        LIKE @search
       OR ISNULL(sk.barcode, '')             LIKE @search
@@ -171,6 +193,43 @@ BEGIN
       OR ISNULL(pic.colour_code, '')        LIKE @search
     )
   ORDER BY brand_name, pm.product_type, sk.sku_code;
+END;
+GO
+
+-- ─── sp_POS_CatalogueBrands ────────────────────────────────────────────────────
+-- Distinct display brand names for POS filter (store = in-stock at store; global = all live SKUs).
+CREATE OR ALTER PROCEDURE dbo.sp_POS_CatalogueBrands
+  @store_id INT,
+  @scope    NVARCHAR(20) = N'store'
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF LOWER(LTRIM(RTRIM(@scope))) = N'global'
+  BEGIN
+    SELECT DISTINCT LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, '')))) AS brand_name
+    FROM dbo.skus sk
+    JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
+    LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
+    LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
+    WHERE sk.status IN (N'LIVE', N'ACTIVE')
+      AND LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, '')))) <> N''
+    ORDER BY brand_name;
+  END
+  ELSE
+  BEGIN
+    SELECT DISTINCT LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, '')))) AS brand_name
+    FROM dbo.stock_balances sb
+    JOIN dbo.skus sk ON sk.sku_id = sb.sku_id AND sk.status IN (N'LIVE', N'ACTIVE')
+    JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
+    LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
+    LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
+    WHERE sb.location_type = N'STORE'
+      AND sb.location_id = @store_id
+      AND sb.qty > 0
+      AND LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, '')))) <> N''
+    ORDER BY brand_name;
+  END
 END;
 GO
 

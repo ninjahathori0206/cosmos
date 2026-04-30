@@ -619,6 +619,211 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
   return { message: 'Status updated.', from_status: fromStatus, to_status: toStatus }
 }
 
+/**
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function fetchAllOrders(pool, mode, { search, statusFilter, limit = 100 }) {
+  const t = tableNames(mode)
+  
+  let query = `
+    SELECT o.order_id, o.store_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at,
+           c.full_name as customer_name, c.phone as customer_phone,
+           s.store_name
+    FROM ${t.orders} o
+    LEFT JOIN dbo.pos_customers c ON o.customer_id = c.customer_id
+    LEFT JOIN dbo.stores s ON o.store_id = s.store_id
+    WHERE 1=1
+  `
+  
+  if (statusFilter) {
+    query += ` AND o.status = @status `
+  }
+  
+  if (search) {
+    query += ` AND (o.order_no LIKE @search OR c.full_name LIKE @search OR c.phone LIKE @search OR s.store_name LIKE @search) `
+  }
+  
+  query += ` ORDER BY o.created_at DESC OFFSET 0 ROWS FETCH NEXT @limit ROWS ONLY `
+  
+  const req = pool.request()
+    .input('limit', sql.Int, limit)
+    
+  if (statusFilter) {
+    req.input('status', sql.NVarChar(30), statusFilter)
+  }
+  if (search) {
+    req.input('search', sql.NVarChar(200), '%' + search + '%')
+  }
+  
+  const result = await req.query(query)
+  
+  return (result.recordset || []).map(row => ({
+    order_id: row.order_id,
+    store_id: row.store_id,
+    store_name: row.store_name || 'Unknown Store',
+    order_no: row.order_no,
+    status: row.status,
+    order_kind: row.order_kind,
+    total_amount: Number(row.total_amount),
+    subtotal_amount: Number(row.subtotal_amount),
+    gst_amount: Number(row.gst_amount),
+    created_at: row.created_at,
+    customer_name: row.customer_name || 'Walk-in Customer',
+    customer_phone: row.customer_phone || ''
+  }))
+}
+
+/**
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function fetchStoreOrders(pool, storeId, mode, { search, statusFilter, limit = 50 }) {
+  const t = tableNames(mode)
+  
+  let query = `
+    SELECT o.order_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at,
+           c.full_name as customer_name, c.phone as customer_phone
+    FROM ${t.orders} o
+    LEFT JOIN dbo.pos_customers c ON o.customer_id = c.customer_id
+    WHERE o.store_id = @sid
+  `
+  
+  if (statusFilter) {
+    query += ` AND o.status = @status `
+  }
+  
+  if (search) {
+    query += ` AND (o.order_no LIKE @search OR c.full_name LIKE @search OR c.phone LIKE @search) `
+  }
+  
+  query += ` ORDER BY o.created_at DESC OFFSET 0 ROWS FETCH NEXT @limit ROWS ONLY `
+  
+  const req = pool.request()
+    .input('sid', sql.Int, storeId)
+    .input('limit', sql.Int, limit)
+    
+  if (statusFilter) {
+    req.input('status', sql.NVarChar(30), statusFilter)
+  }
+  if (search) {
+    req.input('search', sql.NVarChar(200), '%' + search + '%')
+  }
+  
+  const result = await req.query(query)
+  
+  return (result.recordset || []).map(row => ({
+    order_id: row.order_id,
+    order_no: row.order_no,
+    status: row.status,
+    order_kind: row.order_kind,
+    total_amount: Number(row.total_amount),
+    subtotal_amount: Number(row.subtotal_amount),
+    gst_amount: Number(row.gst_amount),
+    created_at: row.created_at,
+    customer_name: row.customer_name || 'Walk-in Customer',
+    customer_phone: row.customer_phone || ''
+  }))
+}
+
+/**
+ * CX dashboard aggregates (all stores). Uses active customer count from pos_customers.
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function fetchCxSummary(pool, mode) {
+  const t = tableNames(mode)
+  const q = `
+    SELECT
+      (SELECT COUNT(*) FROM dbo.pos_customers WHERE is_active = 1) AS total_customers,
+      (SELECT COUNT(*) FROM ${t.orders}) AS total_orders,
+      (SELECT ISNULL(SUM(total_amount), 0) FROM ${t.orders}) AS total_revenue,
+      (SELECT COUNT(DISTINCT customer_id) FROM ${t.orders} WHERE customer_id IS NOT NULL) AS customers_with_orders
+  `
+  const result = await pool.request().query(q)
+  const row = (result.recordset && result.recordset[0]) || {}
+  const totalOrders = Number(row.total_orders) || 0
+  const totalRevenue = Number(row.total_revenue) || 0
+  const avgOrderValue = totalOrders > 0 ? roundMoney(totalRevenue / totalOrders) : 0
+  return {
+    total_customers: Number(row.total_customers) || 0,
+    total_orders: totalOrders,
+    total_revenue: roundMoney(totalRevenue),
+    customers_with_orders: Number(row.customers_with_orders) || 0,
+    avg_order_value: avgOrderValue
+  }
+}
+
+/**
+ * Revenue rollup by store (for CX dashboard).
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function fetchCxRevenueByStore(pool, mode, { limit = 30 } = {}) {
+  const t = tableNames(mode)
+  const lim = Math.min(500, Math.max(1, Number(limit) || 30))
+  const q = `
+    SELECT s.store_id,
+           ISNULL(s.store_name, N'') AS store_name,
+           COUNT(o.order_id) AS order_count,
+           ISNULL(SUM(o.total_amount), 0) AS revenue
+    FROM ${t.orders} o
+    INNER JOIN dbo.stores s ON o.store_id = s.store_id
+    GROUP BY s.store_id, s.store_name
+    ORDER BY revenue DESC
+    OFFSET 0 ROWS FETCH NEXT @lim ROWS ONLY
+  `
+  const result = await pool.request().input('lim', sql.Int, lim).query(q)
+  return (result.recordset || []).map((r) => ({
+    store_id: r.store_id,
+    store_name: r.store_name || 'Store',
+    order_count: Number(r.order_count) || 0,
+    revenue: roundMoney(Number(r.revenue) || 0)
+  }))
+}
+
+/**
+ * All registered POS customers with lifetime order stats (LEFT JOIN orders).
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function fetchCxCustomerRollup(pool, mode, { search, limit = 100 } = {}) {
+  const t = tableNames(mode)
+  const lim = Math.min(500, Math.max(1, Number(limit) || 100))
+  let query = `
+    SELECT c.customer_id,
+           c.full_name,
+           c.phone,
+           ISNULL(c.email, N'') AS email,
+           c.home_store_id,
+           ISNULL(st.store_name, N'') AS home_store_name,
+           COUNT(o.order_id) AS order_count,
+           ISNULL(SUM(o.total_amount), 0) AS lifetime_revenue,
+           MAX(o.created_at) AS last_order_at
+    FROM dbo.pos_customers c
+    LEFT JOIN ${t.orders} o ON o.customer_id = c.customer_id
+    LEFT JOIN dbo.stores st ON c.home_store_id = st.store_id
+    WHERE c.is_active = 1
+  `
+  const req = pool.request().input('lim', sql.Int, lim)
+  if (search) {
+    query += ` AND (c.full_name LIKE @search OR c.phone LIKE @search OR ISNULL(c.email, N'') LIKE @search) `
+    req.input('search', sql.NVarChar(200), '%' + search + '%')
+  }
+  query += `
+    GROUP BY c.customer_id, c.full_name, c.phone, c.email, c.home_store_id, st.store_name
+    ORDER BY lifetime_revenue DESC, c.full_name ASC
+    OFFSET 0 ROWS FETCH NEXT @lim ROWS ONLY
+  `
+  const result = await req.query(query)
+  return (result.recordset || []).map((row) => ({
+    customer_id: row.customer_id,
+    full_name: row.full_name || '',
+    phone: row.phone || '',
+    email: row.email || '',
+    home_store_id: row.home_store_id,
+    home_store_name: row.home_store_name || '',
+    order_count: Number(row.order_count) || 0,
+    lifetime_revenue: roundMoney(Number(row.lifetime_revenue) || 0),
+    last_order_at: row.last_order_at || null
+  }))
+}
+
 module.exports = {
   getOrdersEngineMode,
   ORDERS_ENGINE_MODE_KEY,
@@ -629,5 +834,10 @@ module.exports = {
   mapOrderRowForApi,
   createOrderInTransaction,
   recordPayment,
-  updateLabSubOrderStatus
+  updateLabSubOrderStatus,
+  fetchStoreOrders,
+  fetchAllOrders,
+  fetchCxSummary,
+  fetchCxRevenueByStore,
+  fetchCxCustomerRollup
 }

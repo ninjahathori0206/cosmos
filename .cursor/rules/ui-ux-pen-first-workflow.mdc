@@ -1,0 +1,54 @@
+---
+description: UI/UX requests — design in .pen first (Pencil MCP), user approves, then implement in HTML/CSS/JS
+globs: ["**/*.pen", "**/*Prototype*.html", "**/src/public/**/*.html", "**/src/public/css/**/*.css", "**/src/public/js/**/*.js"]
+alwaysApply: true
+---
+
+# UI/UX change workflow — Pencil first, then code
+
+When the **user’s request is about UI, UX, layout, visuals, components, spacing, tablet/mobile behaviour, or screen structure** for Cosmos (prototypes or `src/public`), follow this order **unless** they explicitly waive it (e.g. “skip Pencil, code only” or “hotfix, no design”).
+
+---
+
+## 1. Update the design source (`.pen`)
+
+- Primary Store OS / POS design file: **`pencil-new.pen`** at repo root (and keep **`src/public/design/pencil-local/pencil-new.pen`** in sync when you finish, if that copy exists).
+- **Only** modify `.pen` files through the **Pencil MCP** (`batch_get`, `batch_design`, etc.) — do **not** edit `.pen` with Read/Write/grep.
+- Follow **`.cursor/rules/pencil-mcp-no-notes.mdc`** — **never** add **`type: "note"`** documentation boxes on screens unless the user explicitly requests a note.
+- Match the affected **screen/frame** to the real app (see `.cursor/rules/pencil-pos-url-mapping.mdc` for path labels on frames).
+- Apply **Cosmos UI polish** principles in the implementation phase; in Pencil, aim for the same hierarchy and density the user asked for.
+
+---
+
+## 2. Pause for user approval
+
+- After the `.pen` update, **do not** implement in HTML/CSS/JS in the **same turn** unless the user has **already approved** the design.
+- Ask the user to **approve** the Pencil change (e.g. review in Pencil, or request a **`get_screenshot`** / export of the relevant node if helpful).
+- If they request tweaks, adjust **`.pen` first** again, then re-seek approval.
+
+---
+
+## 3. Implement in the actual app
+
+**Only after approval:**
+
+- Update the real files: e.g. `POS_Prototype.html`, `src/public/css/pos.css`, `src/public/css/lenskart-pos.css`, `src/public/js/pos.js`, etc.
+- Follow **`.cursor/rules/ui-polish-rules.mdc`** (skeletons, toasts, `cosmosBtn*`, no raw “Loading…”, no `alert`, CSS variables, `.tr-link`, etc.).
+- Keep parity with the **approved** Pencil layout; if code constraints differ, say so briefly and stay as close as possible.
+
+---
+
+## 4. Exceptions (narrow)
+
+- **No visual or layout change** (e.g. fixing a JS error, API message, copy typo inside existing copy) → **Pencil step optional**; say you’re skipping Pencil and why.
+- User explicitly says **to skip design** or **only change code** → follow their instruction.
+
+---
+
+## Checklist before marking UI work done
+
+- [ ] `.pen` updated via Pencil MCP (or exception documented)
+- [ ] User **approved** the design direction
+- [ ] HTML/CSS/JS updated and aligned with approval
+- [ ] UI polish rules satisfied
+- [ ] `pencil-local` copy updated if the repo uses it

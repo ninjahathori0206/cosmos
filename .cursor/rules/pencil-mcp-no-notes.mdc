@@ -1,0 +1,24 @@
+---
+description: Pencil MCP — never add note boxes on screens; document via frame names or UI copy only
+globs: ["**/*.pen"]
+alwaysApply: true
+---
+
+# Pencil MCP — no note boxes on screens
+
+When using **Pencil MCP** (`batch_design`, `batch_get`, `export_nodes`, etc.) on **`*.pen`** files in this repo:
+
+## Forbidden by default
+
+- **Do not** insert **`type: "note"`** nodes for documentation, URLs, theme summaries, API reminders, workflow text, or “States: Loading…” callouts **unless** the user **explicitly** asks for a note on that screen.
+- Notes are **not** part of the customer-visible UI spec and clutter exports, screenshots, and handoffs.
+
+## What to use instead
+
+- **Routes / deep links:** encode them on the **screen frame `name`** (see **`.cursor/rules/pencil-pos-url-mapping.mdc`**).
+- **Design rationale:** put it in the **chat reply**, repo README the user owns, or **layer/frame descriptions** if Pencil exposes non-note metadata — **not** as canvas notes.
+
+## Housekeeping
+
+- If you are already editing a frame subtree and find **orphan `note`** nodes from older passes, **delete** them with **`D(nodeId)`** in `batch_design` (same MCP session).
+- **Exception:** user says clearly **“add a Pencil note for…”** → then one targeted note is allowed.

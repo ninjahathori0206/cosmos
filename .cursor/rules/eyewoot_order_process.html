@@ -1,0 +1,429 @@
+
+<style>
+  :root{--acc:#6C63FF;--acc-d:rgba(108,99,255,.13);--green:#10B981;--green-d:rgba(16,185,129,.12);--amber:#F59E0B;--amber-d:rgba(245,158,11,.12);--red:#EF4444;--red-d:rgba(239,68,68,.12);--blue:#3B82F6;--blue-d:rgba(59,130,246,.12);--r:10px;--r-sm:7px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans,'system-ui');color:var(--color-text-primary);font-size:14px}
+  .root{padding:1rem 0}
+
+  /* TAB BAR */
+  .tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+  .tab{padding:7px 14px;border-radius:20px;border:0.5px solid var(--color-border-tertiary);font-size:13px;cursor:pointer;transition:all .15s;background:transparent;color:var(--color-text-secondary)}
+  .tab.active{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
+
+  /* SECTIONS */
+  .section{display:none}.section.active{display:block}
+
+  /* ORDER TYPE CARDS */
+  .type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+  .type-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--r);padding:14px;cursor:pointer;transition:all .15s;background:var(--color-background-primary)}
+  .type-card:hover{border-color:var(--color-border-secondary)}
+  .type-card.selected-instant{border-color:var(--blue);background:var(--blue-d)}
+  .type-card.selected-lab{border-color:var(--acc);background:var(--acc-d)}
+  .type-card.selected-mixed{border-color:var(--amber);background:var(--amber-d)}
+  .type-icon{font-size:20px;margin-bottom:8px}
+  .type-name{font-size:13px;font-weight:500;margin-bottom:4px}
+  .type-desc{font-size:11px;color:var(--color-text-secondary);line-height:1.5}
+
+  /* FLOW STEPS */
+  .flow{display:flex;flex-direction:column;gap:0}
+  .step{display:grid;grid-template-columns:32px 1fr auto;gap:10px;align-items:stretch;cursor:pointer}
+  .step-line{display:flex;flex-direction:column;align-items:center}
+  .step-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;border:1.5px solid transparent;transition:all .15s}
+  .step-connector{width:2px;flex:1;background:var(--color-border-tertiary);margin:3px 0}
+  .step:last-child .step-connector{display:none}
+  .step-body{padding:0 0 14px 0}
+  .step-header{display:flex;align-items:center;gap:8px;padding:4px 0 6px;min-height:28px}
+  .step-name{font-size:13px;font-weight:500}
+  .step-role{font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap}
+  .step-detail{font-size:12px;color:var(--color-text-secondary);line-height:1.6;padding:8px 12px;border-radius:var(--r-sm);border:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary)}
+  .step-detail.hidden{display:none}
+  .step-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+  .badge{font-size:10px;font-weight:500;padding:2px 7px;border-radius:6px;border:0.5px solid transparent}
+  .badge-auto{background:var(--green-d);color:var(--green);border-color:var(--green)}
+  .badge-manual{background:var(--amber-d);color:var(--amber);border-color:var(--amber)}
+  .badge-payment{background:var(--blue-d);color:var(--blue);border-color:var(--blue)}
+  .badge-critical{background:var(--red-d);color:var(--red);border-color:var(--red)}
+
+  /* STEP COLORS */
+  .dot-pos{background:var(--blue-d);border-color:var(--blue);color:var(--blue)}
+  .dot-lab{background:var(--acc-d);border-color:var(--acc);color:var(--acc)}
+  .dot-qc{background:var(--amber-d);border-color:var(--amber);color:var(--amber)}
+  .dot-store{background:var(--green-d);border-color:var(--green);color:var(--green)}
+  .dot-system{background:var(--color-background-secondary);border-color:var(--color-border-secondary);color:var(--color-text-secondary)}
+
+  .role-pos{background:var(--blue-d);color:var(--blue)}
+  .role-lab{background:var(--acc-d);color:var(--acc)}
+  .role-qc{background:var(--amber-d);color:var(--amber)}
+  .role-store{background:var(--green-d);color:var(--green)}
+  .role-system{background:var(--color-background-secondary);color:var(--color-text-secondary)}
+
+  /* PAYMENT SECTION */
+  .pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .pay-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--r);padding:14px;background:var(--color-background-primary)}
+  .pay-card.highlight{border-color:var(--acc);background:var(--acc-d)}
+  .pay-type{font-size:12px;font-weight:500;margin-bottom:8px}
+  .pay-row{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:0.5px solid var(--color-border-tertiary);color:var(--color-text-secondary)}
+  .pay-row:last-child{border-bottom:none}
+  .pay-row strong{color:var(--color-text-primary)}
+
+  /* INFO CALLOUTS */
+  .callout{border-left:3px solid;padding:10px 14px;border-radius:0;margin:10px 0;font-size:12px;line-height:1.6}
+  .callout-blue{border-color:var(--blue);background:var(--blue-d);color:var(--color-text-primary)}
+  .callout-amber{border-color:var(--amber);background:var(--amber-d);color:var(--color-text-primary)}
+  .callout-green{border-color:var(--green);background:var(--green-d);color:var(--color-text-primary)}
+  .callout-red{border-color:var(--red);background:var(--red-d);color:var(--color-text-primary)}
+  .callout strong{font-weight:500}
+
+  /* DATA TABLE */
+  .dtable{width:100%;border-collapse:collapse;font-size:12px}
+  .dtable th{text-align:left;padding:8px 10px;background:var(--color-background-secondary);color:var(--color-text-secondary);font-weight:500;border-bottom:0.5px solid var(--color-border-tertiary)}
+  .dtable td{padding:8px 10px;border-bottom:0.5px solid var(--color-border-tertiary);vertical-align:top}
+  .dtable tr:last-child td{border-bottom:none}
+  .dtable tr:hover td{background:var(--color-background-secondary)}
+
+  /* SECTION LABEL */
+  .slabel{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-secondary);margin-bottom:10px}
+
+  /* EXPAND HINT */
+  .expand-hint{font-size:11px;color:var(--color-text-secondary);align-self:center;flex-shrink:0;padding-top:4px;transition:transform .15s}
+  .expand-hint.open{transform:rotate(180deg)}
+
+  /* DIVIDER */
+  .div{border:none;border-top:0.5px solid var(--color-border-tertiary);margin:16px 0}
+
+  /* QC FAIL PANEL */
+  .qc-split{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+  .qc-path{border-radius:var(--r-sm);padding:10px;border:0.5px solid var(--color-border-tertiary);font-size:12px;line-height:1.5}
+  .qc-pass{border-color:var(--green);background:var(--green-d)}
+  .qc-fail{border-color:var(--red);background:var(--red-d)}
+  .qc-path strong{display:block;margin-bottom:4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+  .qc-pass strong{color:var(--green)}
+  .qc-fail strong{color:var(--red)}
+
+  /* SOURCE TOGGLE */
+  .source-toggle{display:flex;gap:8px;margin-bottom:12px}
+  .src-btn{padding:6px 12px;border-radius:20px;border:0.5px solid var(--color-border-tertiary);font-size:12px;cursor:pointer;background:transparent;color:var(--color-text-secondary);transition:all .15s}
+  .src-btn.active{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
+</style>
+
+<div class="root">
+  <div class="tabs">
+    <button class="tab active" onclick="showSection('overview')">Overview</button>
+    <button class="tab" onclick="showSection('instant')">Instant order</button>
+    <button class="tab" onclick="showSection('lab')">Lab order</button>
+    <button class="tab" onclick="showSection('mixed')">Mixed order</button>
+    <button class="tab" onclick="showSection('payment')">Payment flow</button>
+    <button class="tab" onclick="showSection('stock')">Stock & procurement</button>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div class="section active" id="s-overview">
+    <p class="slabel">Three order types — click to explore</p>
+    <div class="type-grid">
+      <div class="type-card" id="tc-instant" onclick="showSection('instant');setTypeActive('instant')">
+        <div class="type-icon">⚡</div>
+        <div class="type-name">Instant order</div>
+        <div class="type-desc">Customer walks out same visit. No lab needed. Full payment at billing.</div>
+        <div class="step-badges" style="margin-top:8px">
+          <span class="badge badge-payment">Full payment</span>
+          <span class="badge badge-auto">Same day</span>
+        </div>
+      </div>
+      <div class="type-card" id="tc-lab" onclick="showSection('lab');setTypeActive('lab')">
+        <div class="type-icon">🔬</div>
+        <div class="type-name">Lab order</div>
+        <div class="type-desc">Spectacle glasses. 9-stage lifecycle. Advance + balance payment.</div>
+        <div class="step-badges" style="margin-top:8px">
+          <span class="badge badge-manual">Advance + balance</span>
+          <span class="badge" style="background:var(--acc-d);color:var(--acc);border-color:var(--acc)">2–7 days</span>
+        </div>
+      </div>
+      <div class="type-card" id="tc-mixed" onclick="showSection('mixed');setTypeActive('mixed')">
+        <div class="type-icon">🔀</div>
+        <div class="type-name">Mixed order</div>
+        <div class="type-desc">Instant + lab items together. One invoice, two sub-orders, two timelines.</div>
+        <div class="step-badges" style="margin-top:8px">
+          <span class="badge badge-payment">Split payment</span>
+          <span class="badge badge-manual">Two tracks</span>
+        </div>
+      </div>
+    </div>
+
+    <hr class="div">
+    <p class="slabel">What can be ordered</p>
+    <table class="dtable">
+      <thead><tr><th>Product type</th><th>Order type</th><th>Lens processing</th><th>Stock source</th><th>Freebies from</th></tr></thead>
+      <tbody>
+        <tr><td>Sunglasses / zero-power frames</td><td><span class="badge badge-auto">Always instant</span></td><td>None</td><td>Store (mode A) or HQ (mode B)</td><td>Store stock</td></tr>
+        <tr><td>Spectacle glasses (prescription)</td><td><span class="badge" style="background:var(--acc-d);color:var(--acc);border-color:var(--acc)">Always lab</span></td><td>Foundry HQ — always</td><td>Frame: mode A or B · Lenses: always HQ</td><td>Lab packs</td></tr>
+        <tr><td>Contact lenses (in stock)</td><td><span class="badge badge-auto">Instant</span></td><td>None</td><td>Store stock</td><td>Store stock</td></tr>
+        <tr><td>Contact lenses (out of stock)</td><td><span class="badge badge-manual">Lab / procurement</span></td><td>Sourced by HQ</td><td>HQ procurement</td><td>Lab packs</td></tr>
+        <tr><td>Contact lenses (partial stock)</td><td><span class="badge badge-manual">Split</span></td><td>Partial only</td><td>Available qty: store · Remaining: HQ</td><td>Split by sub-order</td></tr>
+        <tr><td>Accessories / cases</td><td><span class="badge badge-auto">Always instant</span></td><td>None</td><td>Store stock</td><td>Store stock</td></tr>
+        <tr><td>Freebies (auto-added by package)</td><td>Depends on parent order</td><td>N/A</td><td>Defined in package_freebies catalogue</td><td>Lab (lab order) / Store (instant)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout-blue" style="margin-top:12px">
+      <strong>Shared order engine:</strong> POS, Eyewoot Go, and Army all write to the same <code>orders</code> table. Channel is identified by <code>order_source</code> = POS / APP / ARMY. No separate tables per channel.
+    </div>
+  </div>
+
+  <!-- INSTANT ORDER -->
+  <div class="section" id="s-instant">
+    <div class="callout callout-blue"><strong>Instant order</strong> — Sunglasses, zero-power frames, accessories, in-stock contact lenses. Customer takes items in the same visit. No lab involved.</div>
+    <hr class="div">
+    <div class="flow" id="flow-instant"></div>
+  </div>
+
+  <!-- LAB ORDER -->
+  <div class="section" id="s-lab">
+    <div class="callout callout-amber"><strong>Lab order</strong> — Spectacle glasses and out-of-stock contact lenses. Full 9-stage lifecycle from order placement to invoice. Lenses are ALWAYS processed by Foundry HQ — no exceptions.</div>
+    <hr class="div">
+    <div class="flow" id="flow-lab"></div>
+  </div>
+
+  <!-- MIXED ORDER -->
+  <div class="section" id="s-mixed">
+    <div class="callout callout-amber"><strong>Mixed order</strong> — One parent order ID, two sub-orders. Sub-order A (instant) closes same day. Sub-order B (lab) follows the full 9-stage lifecycle. One invoice is generated covering both after all payments are complete.</div>
+    <hr class="div">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="border:0.5px solid var(--blue);background:var(--blue-d);border-radius:var(--r);padding:14px">
+        <div class="slabel" style="color:var(--blue)">Sub-order A — Instant</div>
+        <ul style="font-size:12px;color:var(--color-text-secondary);line-height:2;padding-left:14px">
+          <li>Sunglasses, accessories, in-stock contact lenses</li>
+          <li>Stock deducted at billing — immediately</li>
+          <li>Full payment collected at POS</li>
+          <li>Freebies from store stock — given at counter</li>
+          <li>Customer takes items same visit</li>
+          <li>Sub-order closes same day</li>
+        </ul>
+      </div>
+      <div style="border:0.5px solid var(--acc);background:var(--acc-d);border-radius:var(--r);padding:14px">
+        <div class="slabel" style="color:var(--acc)">Sub-order B — Lab</div>
+        <ul style="font-size:12px;color:var(--color-text-secondary);line-height:2;padding-left:14px">
+          <li>Spectacle glasses, out-of-stock contact lenses</li>
+          <li>Advance payment collected at billing</li>
+          <li>Goes through full 9-stage lab lifecycle</li>
+          <li>Freebies packed by HQ lab</li>
+          <li>Balance collected on delivery / pickup</li>
+          <li>Invoice only after full balance paid</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout callout-amber">
+      <strong>Contact lens split scenario:</strong> Customer orders 6 boxes of a specific power. Store has 4 in stock. System automatically creates Sub-order A (4 boxes — instant) + Sub-order B (2 boxes — procurement). Staff sees this split clearly on the POS order summary screen.
+    </div>
+    <hr class="div">
+    <p class="slabel">Mixed order DB structure</p>
+    <table class="dtable">
+      <thead><tr><th>Table</th><th>What gets created</th></tr></thead>
+      <tbody>
+        <tr><td><code>orders</code></td><td>1 parent row — order_type = MIXED, carries both store_id and employee_id</td></tr>
+        <tr><td><code>sub_orders</code></td><td>2 rows — one INSTANT sub-order + one LAB sub-order, both FK to parent order_id</td></tr>
+        <tr><td><code>order_items</code></td><td>Each item carries sub_order_id FK — items split between the two sub-orders</td></tr>
+        <tr><td><code>payments</code></td><td>Multiple rows — instant full payment + lab advance + later lab balance</td></tr>
+        <tr><td><code>order_status_log</code></td><td>One log entry per stage change — both sub-orders tracked here</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- PAYMENT FLOW -->
+  <div class="section" id="s-payment">
+    <p class="slabel">Payment model by order type</p>
+    <div class="pay-grid">
+      <div class="pay-card">
+        <div class="pay-type">⚡ Instant order</div>
+        <div class="pay-row"><span>When collected</span><strong>At billing — before items leave store</strong></div>
+        <div class="pay-row"><span>Amount</span><strong>100% of total</strong></div>
+        <div class="pay-row"><span>Invoice generated</span><strong>Immediately after payment confirmed</strong></div>
+        <div class="pay-row"><span>Points written</span><strong>PENDING → REDEEMABLE after maturity period</strong></div>
+      </div>
+      <div class="pay-card highlight">
+        <div class="pay-type">🔬 Lab order</div>
+        <div class="pay-row"><span>Advance</span><strong>% configured in system_settings — not hardcoded</strong></div>
+        <div class="pay-row"><span>Advance receipt</span><strong>Issued at order time (NOT a GST invoice)</strong></div>
+        <div class="pay-row"><span>Balance</span><strong>Collected at pickup or on delivery</strong></div>
+        <div class="pay-row"><span>Invoice generated</span><strong>Only after full balance confirmed</strong></div>
+        <div class="pay-row"><span>Points written</span><strong>After invoice — PENDING → REDEEMABLE</strong></div>
+      </div>
+    </div>
+
+    <div class="callout callout-red">
+      <strong>Critical rule — invoice only after full payment.</strong> For lab orders, no GST invoice is ever generated at advance time. An advance receipt (non-GST slip) is issued to protect both parties. The GST invoice is generated only when the full balance is collected and the order is marked INVOICED.
+    </div>
+
+    <hr class="div">
+    <p class="slabel">Accepted payment methods</p>
+    <table class="dtable">
+      <thead><tr><th>Method</th><th>How it works</th><th>Confirmation mechanism</th></tr></thead>
+      <tbody>
+        <tr><td>Cash</td><td>Staff enters amount tendered. System calculates change. Staff confirms manually.</td><td>Manual — staff taps "Confirm"</td></tr>
+        <tr><td>Card / UPI</td><td>Razorpay order created server-side. Customer pays on Razorpay. Webhook confirms.</td><td>Razorpay webhook → automatic</td></tr>
+        <tr><td>Points redemption</td><td>Redeemable points balance deducted from total. Points must be in REDEEMABLE state — never PENDING.</td><td>Points ledger write on confirm</td></tr>
+      </tbody>
+    </table>
+
+    <hr class="div">
+    <p class="slabel">Points lifecycle</p>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <div style="display:grid;grid-template-columns:120px 24px 1fr;align-items:center;gap:8px;font-size:12px">
+        <div style="background:var(--amber-d);border:0.5px solid var(--amber);border-radius:var(--r-sm);padding:7px 10px;text-align:center;font-weight:500;color:var(--amber)">Payment confirmed</div>
+        <div style="text-align:center;color:var(--color-text-secondary)">→</div>
+        <div style="color:var(--color-text-secondary)">Points written to <code>points_ledger</code> as <strong>PENDING</strong> — not yet redeemable</div>
+      </div>
+      <div style="display:grid;grid-template-columns:120px 24px 1fr;align-items:center;gap:8px;font-size:12px">
+        <div style="background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--r-sm);padding:7px 10px;text-align:center;font-weight:500;color:var(--color-text-secondary)">Nightly cron</div>
+        <div style="text-align:center;color:var(--color-text-secondary)">→</div>
+        <div style="color:var(--color-text-secondary)">After <strong>maturity days</strong> (from system_settings — not hardcoded), PENDING flips to <strong>REDEEMABLE</strong></div>
+      </div>
+      <div style="display:grid;grid-template-columns:120px 24px 1fr;align-items:center;gap:8px;font-size:12px">
+        <div style="background:var(--green-d);border:0.5px solid var(--green);border-radius:var(--r-sm);padding:7px 10px;text-align:center;font-weight:500;color:var(--green)">Redeemable</div>
+        <div style="text-align:center;color:var(--color-text-secondary)">→</div>
+        <div style="color:var(--color-text-secondary)">Shown on POS customer lookup. Membership owner can redeem at next purchase.</div>
+      </div>
+    </div>
+    <div class="callout callout-blue" style="margin-top:12px">
+      <strong>Points always go to the membership owner</strong> — not the member who made the purchase. If a membership member buys at POS, the points are written to the owner's <code>points_ledger</code> with <code>triggered_by_customer_id</code> = the member. Owner can see points earned per member — not what the member bought.
+    </div>
+  </div>
+
+  <!-- STOCK & PROCUREMENT -->
+  <div class="section" id="s-stock">
+    <p class="slabel">Procurement mode — controlled by super admin in CommandUnit</p>
+    <div class="source-toggle">
+      <button class="src-btn active" id="srcA" onclick="setSource('A')">Mode A — Store stock (current)</button>
+      <button class="src-btn" id="srcB" onclick="setSource('B')">Mode B — HQ stock (future)</button>
+    </div>
+
+    <div id="src-content-A">
+      <div class="callout callout-blue"><strong>Mode A — Store stock:</strong> Each store fulfills from its own inventory. Frame stock is deducted immediately on order. Store is both display and fulfillment source. Lenses always from HQ regardless of this setting.</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">
+        <div style="display:grid;grid-template-columns:140px 24px 1fr;align-items:center;gap:8px;font-size:12px"><div style="background:var(--blue-d);border:0.5px solid var(--blue);border-radius:var(--r-sm);padding:7px 10px;text-align:center;font-weight:500;color:var(--blue)">Order placed at store</div><div style="text-align:center">→</div><div style="color:var(--color-text-secondary)">Store inventory checked for stock availability</div></div>
+        <div style="display:grid;grid-template-columns:140px 24px 1fr;align-items:center;gap:8px;font-size:12px"><div style="background:var(--blue-d);border:0.5px solid var(--blue);border-radius:var(--r-sm);padding:7px 10px;text-align:center;font-weight:500;color:var(--blue)">Stock deducted</div><div style="text-align:center">→</div><div style="color:var(--color-text-secondary)">Store stock reduced immediately on order creation — not at fulfillment</div></div>
+        <div style="display:grid;grid-template-columns:140px 24px 1fr;align-items:center;gap:8px;font-size:12px"><div style="background:var(--blue-d);border:0.5px solid var(--blue);border-radius:var(--r-sm);padding:7px 10px;text-align:center;font-weight:500;color:var(--blue)">Frame sent to lab</div><div style="text-align:center">→</div><div style="color:var(--color-text-secondary)">Physical store display frame dispatched to Foundry HQ lab for lens fitting</div></div>
+      </div>
+    </div>
+
+    <div id="src-content-B" style="display:none">
+      <div class="callout callout-amber"><strong>Mode B — HQ stock:</strong> Stores become display-only. All frame fulfillment from Foundry HQ. Store stock is never deducted. HQ stock is reserved at order time and deducted only when physically dispatched from HQ.</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">
+        <div style="display:grid;grid-template-columns:140px 24px 1fr;align-items:center;gap:8px;font-size:12px"><div style="background:var(--amber-d);border:0.5px solid var(--amber);border-radius:var(--r-sm);padding:7px 10px;text-align:center;font-weight:500;color:var(--amber)">Order placed</div><div style="text-align:center">→</div><div style="color:var(--color-text-secondary)">HQ Foundry stock checked for availability across warehouse</div></div>
+        <div style="display:grid;grid-template-columns:140px 24px 1fr;align-items:center;gap:8px;font-size:12px"><div style="background:var(--amber-d);border:0.5px solid var(--amber);border-radius:var(--r-sm);padding:7px 10px;text-align:center;font-weight:500;color:var(--amber)">HQ stock reserved</div><div style="text-align:center">→</div><div style="color:var(--color-text-secondary)">Frame reserved at HQ (status = ONLINE_RESERVED). Prevents double-selling across concurrent orders.</div></div>
+        <div style="display:grid;grid-template-columns:140px 24px 1fr;align-items:center;gap:8px;font-size:12px"><div style="background:var(--amber-d);border:0.5px solid var(--amber);border-radius:var(--r-sm);padding:7px 10px;text-align:center;font-weight:500;color:var(--amber)">HQ dispatches to lab</div><div style="text-align:center">→</div><div style="color:var(--color-text-secondary)">HQ sends frame to Foundry lab. Stock deducted from HQ at dispatch — not at order time.</div></div>
+      </div>
+      <div class="callout callout-red" style="margin-top:10px"><strong>Reserve vs deduct:</strong> In Mode B, stock is reserved at order time but deducted only at dispatch. This prevents two POS terminals simultaneously selling the last HQ unit.</div>
+    </div>
+
+    <hr class="div">
+    <p class="slabel">Setting granularity — most specific setting wins</p>
+    <table class="dtable">
+      <thead><tr><th>Level</th><th>Setting key</th><th>Example use</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge badge-critical">Global</span></td><td><code>procurement_mode</code></td><td>All stores → STORE_STOCK</td></tr>
+        <tr><td><span class="badge badge-manual">Per store</span></td><td><code>store_procurement_override</code></td><td>Store 3 → HQ_STOCK while others stay STORE_STOCK</td></tr>
+        <tr><td><span class="badge badge-auto">Per category</span></td><td><code>category_procurement_override</code></td><td>Frames → STORE_STOCK, Lenses → HQ_STOCK</td></tr>
+      </tbody>
+    </table>
+    <div class="callout callout-blue" style="margin-top:10px"><strong>Snapshot at order time:</strong> Every order stores <code>procurement_mode_snapshot</code> — the mode that was active when the order was placed. This never changes even if admin toggles the mode later. Historical accuracy is non-negotiable.</div>
+  </div>
+</div>
+
+<script>
+const instantSteps = [
+  {num:'1',dot:'dot-pos',role:'POS Staff',roleClass:'role-pos',name:'Customer lookup',auto:true,detail:'Search by phone or name. System resolves membership (owner or member), loads last 3 orders, last Rx, redeemable points balance. New walk-in: create customer record.',badges:['Auto: Foundry stock check']},
+  {num:'2',dot:'dot-pos',role:'POS Staff',roleClass:'role-pos',name:'Build cart + select items',auto:false,detail:'Add frames by SKU. Lens package soft guide shown (staff can override — logged). Freebies auto-added from package_freebies catalogue. Instant order type confirmed when all items in stock.',badges:['Manual: Staff selects','Auto: Freebies added']},
+  {num:'3',dot:'dot-pos',role:'POS Staff',roleClass:'role-pos',name:'Order summary + discounts',auto:false,detail:'GST calculated from system_settings (never hardcoded). Membership discount applied automatically if active. Redeemable points shown — staff asks customer if they want to use. Advance receipt preview shown.',badges:['Auto: GST calculation','Auto: Membership discount']},
+  {num:'4',dot:'dot-pos',role:'POS Staff',roleClass:'role-pos',name:'Payment collection',auto:false,detail:'Staff selects Cash / Card / UPI. Cash: enter amount tendered, change calculated. Card/UPI: Razorpay order created server-side, customer pays, webhook confirms. 100% collected in one step.',badges:['Payment: Full amount','Auto: Razorpay webhook']},
+  {num:'5',dot:'dot-system',role:'System',roleClass:'role-system',name:'Order created + stock deducted',auto:true,detail:'orders row inserted (order_source=POS, order_type=INSTANT). Foundry store stock deducted atomically. procurement_mode_snapshot and gst_rate_snapshot written. order_status_log row: ORDER_PLACED.',badges:['Auto: Stock deduction','Auto: Snapshot written']},
+  {num:'6',dot:'dot-system',role:'System',roleClass:'role-system',name:'Invoice generated + delivered',auto:true,detail:'GST invoice generated immediately (invoice_no from prefix in system_settings). PDF sent to customer via WhatsApp. Points written to points_ledger as PENDING. Order status: INVOICED.',badges:['Auto: GST invoice','Auto: WhatsApp delivery','Auto: Points PENDING']},
+  {num:'7',dot:'dot-pos',role:'POS Staff',roleClass:'role-pos',name:'Customer takes items',auto:false,detail:'Staff hands over all items including freebies from store stock. Confirmation screen shown on POS. Staff taps "New Order" to reset. Order complete.',badges:['Manual: Staff hands over']}
+];
+
+const labSteps = [
+  {num:'1',dot:'dot-pos',role:'POS Staff',roleClass:'role-pos',name:'Order placed at POS',auto:false,detail:'Customer and frame selected. Lens package chosen (soft guide). Prescription entered (or pulled from last Rx for returning customer). Advance payment collected (% from system_settings). Foundry stock hold placed.',badges:['Payment: Advance only','Auto: Stock hold','Auto: Snapshot written']},
+  {num:'2',dot:'dot-system',role:'System',roleClass:'role-system',name:'Advance receipt issued',auto:true,detail:'NOT a GST invoice. Advance receipt is a non-GST acknowledgment slip showing: order ID, customer name, items, advance paid, balance due, expected ready date. Sent via WhatsApp.',badges:['Auto: WhatsApp receipt','Critical: Not a GST invoice']},
+  {num:'3',dot:'dot-lab',role:'Lab Manager',roleClass:'role-lab',name:'Sent to lab',auto:false,detail:'Lab manager physically receives frame and Rx slip. Marks order SENT_TO_LAB in system. Customer auto-notified via WhatsApp: "Your lenses are being crafted." Frame status in Foundry: LAB_IN_USE.',badges:['Manual: Lab acknowledgment','Auto: Customer notification']},
+  {num:'4',dot:'dot-lab',role:'Lab Manager',roleClass:'role-lab',name:'Lab processing',auto:false,detail:'Lens cutting, edging, and fitting to frame. Lab manager updates status to LAB_PROCESSING when work begins. No customer notification at this stage.',badges:['Manual: Status update']},
+  {num:'5',dot:'dot-qc',role:'QC Team',roleClass:'role-qc',name:'Lab QC',auto:false,detail:'Quality check against Rx: power verification, axis check, coating inspection. QC team marks PASS or FAIL with reason logged.',special:'qc',passText:'PASS → Lab manager marks DISPATCHED_TO_STORE',failText:'FAIL → Returned to lab with qc_fail_reason logged. Lab restarts processing.'},
+  {num:'6',dot:'dot-lab',role:'Lab Manager',roleClass:'role-lab',name:'Dispatched to store',auto:false,detail:'Order physically sent from lab to the customer\'s store. Store incharge auto-notified. Frame status: in transit.',badges:['Manual: Dispatch logged','Auto: Store notification']},
+  {num:'7',dot:'dot-store',role:'Store Incharge',roleClass:'role-store',name:'Received at store + Store QC',auto:false,detail:'Store incharge marks receipt on StorePilot. Physical check: frame condition, lens clarity, packaging.',special:'qc',passText:'PASS → Proceed to customer notification',failText:'FAIL → Escalated back to lab with reason. Separate from Lab QC failure.'},
+  {num:'8',dot:'dot-store',role:'Store Staff',roleClass:'role-store',name:'Customer notified',auto:false,detail:'Auto WhatsApp sent to customer. Staff also makes a call — outcome logged: ANSWERED / CALLBACK / NO_ANSWER. Call log saved against order. Visible in CommandUnit for follow-up tracking.',badges:['Auto: WhatsApp message','Manual: Call outcome logged']},
+  {num:'9',dot:'dot-pos',role:'POS Staff',roleClass:'role-pos',name:'Delivered / picked up + balance',auto:false,detail:'Customer collects from store or home delivery. Balance payment collected (same methods as advance: Cash / Card / UPI). Order marked DELIVERED.',badges:['Payment: Balance collected','Manual: Staff confirms']},
+  {num:'10',dot:'dot-system',role:'System',roleClass:'role-system',name:'Invoiced',auto:true,detail:'Final GST invoice generated ONLY now — after full payment confirmed. Invoice number from prefix in system_settings. WhatsApp\'d to customer. Points written to membership owner\'s ledger as PENDING. Order complete.',badges:['Auto: GST invoice','Auto: WhatsApp','Auto: Points PENDING','Critical: Full payment required']}
+];
+
+function buildFlow(steps, containerId) {
+  const c = document.getElementById(containerId);
+  c.innerHTML = '';
+  steps.forEach((s, i) => {
+    const div = document.createElement('div');
+    div.className = 'step';
+    let detailHTML = '';
+    if (s.special === 'qc') {
+      detailHTML = `<div class="step-detail">${s.detail}<div class="qc-split"><div class="qc-path qc-pass"><strong>✓ Pass</strong>${s.passText}</div><div class="qc-path qc-fail"><strong>✗ Fail</strong>${s.failText}</div></div></div>`;
+    } else {
+      const badges = (s.badges||[]).map(b => {
+        const cl = b.startsWith('Auto')?'badge-auto':b.startsWith('Payment')?'badge-payment':b.startsWith('Manual')?'badge-manual':'badge-critical';
+        return `<span class="badge ${cl}">${b}</span>`;
+      }).join('');
+      detailHTML = `<div class="step-detail">${s.detail}${badges?`<div class="step-badges">${badges}</div>`:''}</div>`;
+    }
+    div.innerHTML = `
+      <div class="step-line">
+        <div class="step-dot ${s.dot}">${s.num}</div>
+        <div class="step-connector"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-header" onclick="toggleStep(this)">
+          <span class="step-name">${s.name}</span>
+          <span class="step-role ${s.roleClass}">${s.role}</span>
+        </div>
+        ${detailHTML}
+      </div>
+      <span class="expand-hint open">▾</span>`;
+    c.appendChild(div);
+    const hint = div.querySelector('.expand-hint');
+    const detail = div.querySelector('.step-detail');
+    div.querySelector('.step-header').onclick = () => {
+      const open = !detail.classList.contains('hidden');
+      detail.classList.toggle('hidden', open);
+      hint.classList.toggle('open', !open);
+    };
+  });
+}
+
+function toggleStep(header) {}
+
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('s-'+id).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t => {
+    if (t.textContent.toLowerCase().includes(id.replace('-',' '))||
+        (id==='overview'&&t.textContent==='Overview')||
+        (id==='instant'&&t.textContent.includes('Instant'))||
+        (id==='lab'&&t.textContent.includes('Lab'))||
+        (id==='mixed'&&t.textContent.includes('Mixed'))||
+        (id==='payment'&&t.textContent.includes('Payment'))||
+        (id==='stock'&&t.textContent.includes('Stock'))) t.classList.add('active');
+  });
+}
+
+function setTypeActive(type) {
+  ['instant','lab','mixed'].forEach(t => {
+    const el = document.getElementById('tc-'+t);
+    el.className = 'type-card' + (t===type ? ` selected-${t}` : '');
+  });
+}
+
+function setSource(mode) {
+  document.getElementById('src-content-A').style.display = mode==='A'?'block':'none';
+  document.getElementById('src-content-B').style.display = mode==='B'?'block':'none';
+  document.getElementById('srcA').className = 'src-btn'+(mode==='A'?' active':'');
+  document.getElementById('srcB').className = 'src-btn'+(mode==='B'?' active':'');
+}
+
+buildFlow(instantSteps, 'flow-instant');
+buildFlow(labSteps, 'flow-lab');
+</script>

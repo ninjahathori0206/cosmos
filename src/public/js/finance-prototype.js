@@ -124,6 +124,7 @@ function loadUser() {
       if (mods.command_unit !== false) window.location.href = '/command-unit/dashboard';
       else if (mods.foundry !== false) window.location.href = '/foundry/dashboard';
       else if (mods.storepilot !== false) window.location.href = '/storepilot/dashboard';
+      else if (mods.cx !== false) window.location.href = '/cx/dashboard';
       else window.location.href = '/';
       return;
     }

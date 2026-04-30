@@ -1,0 +1,76 @@
+---
+description: Pencil (.pen) ↔ Store OS — document live URL on every screen frame for design–dev alignment
+globs: ["**/*.pen", "**/POS_Prototype.html", "**/pos.js", "**/src/public/js/pos.js", "**/pencil-exports/**"]
+alwaysApply: false
+---
+
+# Pencil ↔ POS URL mapping (Store OS)
+
+When editing **`.pen`** files that contain **Cosmos Store OS / POS** screens, keep a **direct, copy-pastable link** between each top-level **screen frame** (and Pencil “Step N” order frames) and the **canonical route** the running app uses.
+
+`.pen` contents must be changed through the **Pencil MCP** (`batch_design` / `batch_get`), not raw file reads.
+
+---
+
+## Canonical artboard size (Store OS / POS)
+
+All **POS screen frames** in `pencil-new.pen` use **1024×768** — the same as **Order Creation** (`Order Creation - *`, `Step 0`, `Step 1`). Do **not** add alternate POS artboard sizes (e.g. 390×844, 834×1194) unless the product owner explicitly asks; use one unified tablet‑landscape frame.
+
+---
+
+## Canonical routes (source of truth)
+
+Derived from `POS_ROUTES` in `src/public/js/pos.js` (prototype: `POS_Prototype.html`):
+
+| Screen | Canonical path | Notes |
+|--------|----------------|--------|
+| Staff PIN login | `/pos/login` | `/pos` and unknown routes show login |
+| Login success / session gate | `/pos/session` | Shown after unlock |
+| Catalogue | `/pos/catalogue` | Aliases normalized: `/pos/catalog`, `/pos/catelogue`. `/pos/dashboard` redirects to catalogue |
+| Product page | `/pos/product` | |
+| Order builder / cart | `/pos/order` | |
+| Customer | `/pos/customer` | |
+| Lens configuration | `/pos/lens-config` | Multi-step UI; one URL |
+| Payment | `/pos/payment` | |
+| Order confirmation | `/pos/confirm` | |
+| Order history | `/pos/orders` | |
+
+---
+
+## What to put in the `.pen`
+
+Use the **frame `name`** only (do **not** add **`type: "note"`** documentation nodes — see **`.cursor/rules/pencil-mcp-no-notes.mdc`**).
+
+Append to the frame **`name`** so it appears in the layer list and search:
+
+```text
+{Human label} · {canonical path}
+```
+
+Examples:
+
+- `01 Login · /pos/login`
+- `03 Catalogue · /pos/catalogue`
+- `Step 0 - Catalogue · /pos/catalogue`
+
+For catalogue only, append a short alias hint once:
+
+- `03 Catalogue · /pos/catalogue · aliases /pos/catalog /pos/catelogue`
+
+---
+
+## When creating or duplicating screens
+
+1. Add the **canonical path** in the **`name`** immediately.
+2. Do **not** hardcode full origins (`http://localhost:4000`) in the pen — **path only**, so it stays valid on any host/port.
+3. If a frame is **shared** across modules (e.g. only Foundry), use the real app path for that module — Store OS paths **only** on Store OS frames.
+
+---
+
+## Checklist
+
+- [ ] Every Store OS step (Catalogue, Product, …, Confirmation) has **`· /pos/...`** in the frame **`name`**
+- [ ] Login + session success frames mention **`/pos/login`** and **`/pos/session`**
+- [ ] Catalogue mentions **`/pos/catalogue`** and key **aliases** where helpful
+- [ ] Order history mentions **`/pos/orders`**
+- [ ] No stray **`note`** nodes added for URLs or docs (global rule)

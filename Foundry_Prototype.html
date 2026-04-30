@@ -54,12 +54,16 @@
     <div class="nav-group" data-foundry-nav-group="intelligence">Intelligence</div>
     <div class="nav-item" data-foundry-permission="foundry.purchases.view" onclick="nav('rate-intelligence',this)"><span class="ic">💰</span> Rate Intelligence</div>
 
+    <div class="nav-group" data-foundry-nav-group="lab">Lab Operations</div>
+    <div class="nav-item" data-foundry-permission="foundry.lab.view" onclick="nav('lab-orders',this)"><span class="ic">🔬</span> Lab Orders</div>
+
     <div id="fd-switch-module-wrap">
       <div class="nav-group">System</div>
       <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
       <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🏬</span> StorePilot</div>
       <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/pos/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🧾</span> Store OS (POS)</div>
       <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
+      <div class="nav-item" data-cosmos-module="cx" onclick="window.location.href='/cx/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">📊</span> CX</div>
     </div>
     <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.3);font-size:12px"><span class="ic">🚪</span> Sign Out</div>
   </nav>
@@ -1263,6 +1267,46 @@
   </div>
 </div>
 
+  <!-- ═══ LAB ORDERS ═══ -->
+  <div class="page" id="page-lab-orders">
+    <div class="ph flex ic"><div><div class="pt">Lab Orders (All Stores)</div></div></div>
+    
+    <div class="card lab-orders-card">
+      <div class="ch lab-orders-toolbar">
+        <div class="lab-orders-toolbar-inner flex ic g3">
+          <div class="sw lab-orders-search-wrap">
+            <span class="si">🔍</span>
+            <input id="lab-orders-search" placeholder="Search orders..." oninput="if(window.debounceLabOrders) window.debounceLabOrders()">
+          </div>
+          <select id="lab-orders-status-filter" class="lab-orders-status-select" onchange="window.loadLabOrders && window.loadLabOrders()">
+            <option value="">All Statuses</option>
+            <option value="OPEN">Open</option>
+            <option value="PAID">Paid</option>
+            <option value="DELIVERED">Delivered</option>
+            <option value="CANCELLED">Cancelled</option>
+            <option value="CREATED">Created</option>
+          </select>
+        </div>
+      </div>
+      <div class="tw lab-orders-tw">
+        <table class="lab-orders-table">
+          <thead>
+            <tr>
+              <th>Order No</th>
+              <th>Store</th>
+              <th>Customer</th>
+              <th>Order Kind</th>
+              <th>Total Amount</th>
+              <th>Status</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="lab-orders-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 <script>
 const bcMap = {
   dashboard:'Dashboard', purchases:'All Purchases', 'new-purchase':'New Purchase',
@@ -1271,7 +1315,8 @@ const bcMap = {
   'master-catalogue':'Master Catalogue', 'rate-intelligence':'Rate Intelligence',
   'transfer-requests':'Store Connect — Goods Request',
   'stock-transfer':   'Store Connect — Goods Transfer',
-  'movement-list':    'Store Connect — Movement List'
+  'movement-list':    'Store Connect — Movement List',
+  'lab-orders':       'Lab Orders'
 };
 
 function nav(id, el) {

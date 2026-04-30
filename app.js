@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+const jwt = require('jsonwebtoken');
 const express = require('express');
 const path = require('path');
 const helmet = require('helmet');
@@ -38,6 +39,7 @@ const stockTransfersRouter     = require('./src/api/stockTransfers');
 const transferRequestsRouter   = require('./src/api/transferRequests');
 const stockTransferDocsRouter  = require('./src/api/stockTransferDocs');
 const posRouter                = require('./src/api/pos');
+const cxRouter                 = require('./src/api/cx');
 const { executeStoredProcedure, healthCheck } = require('./src/config/db');
 const { requireGoodsTransferDestinationStores } = require('./src/middleware/authorize');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
@@ -54,7 +56,23 @@ async function handleDestinationStores(req, res, next) {
 const app = express();
 const protectedApiRouter = express.Router();
 
+function assertAuthEnv() {
+  const secret = process.env.JWT_SECRET;
+  if (secret == null || String(secret).trim() === '') {
+    console.error('[startup] FATAL: JWT_SECRET is missing or empty. Set it in .env (see .env.example).');
+    process.exit(1);
+  }
+  const exp = process.env.JWT_EXPIRES_IN || '1d';
+  try {
+    jwt.sign({ _probe: 1 }, secret, { expiresIn: exp });
+  } catch (e) {
+    console.error('[startup] FATAL: JWT config invalid (check JWT_SECRET and JWT_EXPIRES_IN):', e.message);
+    process.exit(1);
+  }
+}
+
 const PORT = process.env.PORT || 4000;
+const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
 const PROTOTYPE_HTML_MAX_AGE_MS = Number(process.env.PROTOTYPE_HTML_MAX_AGE_MS || 10 * 60 * 1000);
 const API_RATE_LIMIT_WINDOW_MS = Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const API_RATE_LIMIT_MAX = Number(process.env.API_RATE_LIMIT_MAX || 1000);
@@ -62,6 +80,30 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:4000')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+/** Private LAN / loopback origins (tablet on same Wi‑Fi, etc.). Used only when CORS allows it. */
+function isPrivateLanOrigin(origin) {
+  if (!origin || typeof origin !== 'string') return false;
+  let hostname;
+  try {
+    hostname = new URL(origin).hostname;
+  } catch {
+    return false;
+  }
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  const m = /^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(hostname);
+  if (m) {
+    const second = Number(m[1]);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
+const corsAllowPrivateLan =
+  !isProductionEnv &&
+  !['0', 'false', 'no'].includes(String(process.env.CORS_ALLOW_PRIVATE_LAN || 'true').toLowerCase());
 
 let apiRateLimitStore;
 if (process.env.RATE_LIMIT_REDIS_URL || process.env.REDIS_URL) {
@@ -81,6 +123,16 @@ if (process.env.RATE_LIMIT_REDIS_URL || process.env.REDIS_URL) {
 app.set('etag', 'strong');
 
 function sendPrototypeHtml(res, absolutePath) {
+  // In development, do not cache prototype shells (Foundry/POS/etc.): strong ETag + maxAge
+  // caused stale HTML while JS/CSS already revalidated — users saw "old" multi-page flows.
+  if (!isProductionEnv) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    return res.sendFile(absolutePath, {
+      maxAge: 0,
+      lastModified: true,
+      cacheControl: false
+    });
+  }
   return res.sendFile(absolutePath, {
     maxAge: PROTOTYPE_HTML_MAX_AGE_MS,
     lastModified: true,
@@ -94,6 +146,7 @@ const MODULE_SHELLS = {
   finance: path.join(__dirname, 'Finance_Prototype.html'),
   'command-unit': path.join(__dirname, 'CommandUnit_Prototype.html'),
   pos: path.join(__dirname, 'POS_Prototype.html'),
+  cx: path.join(__dirname, 'Cx_Prototype.html'),
 };
 
 function sendModuleShell(res, moduleKey) {
@@ -138,6 +191,7 @@ app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      if (corsAllowPrivateLan && isPrivateLanOrigin(origin)) return callback(null, true);
       return callback(new Error('CORS not allowed'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -150,6 +204,16 @@ app.use(
 // Keep uploads on multer routes; allow larger metadata payloads on JSON/urlencoded endpoints.
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+
+// Public bootstrap — NOT under /api so it never hits protectedApiRouter (which requires X-API-Key).
+app.get('/config/bootstrap.json', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      apiKey: process.env.API_KEY || ''
+    }
+  });
+});
 
 // Simple rate limiter for all APIs
 app.use(
@@ -181,6 +245,7 @@ app.get('/foundry.html', (req, res) => res.redirect(302, '/foundry/dashboard'));
 app.get('/storepilot.html', (req, res) => res.redirect(302, '/storepilot/dashboard'));
 app.get('/finance.html', (req, res) => res.redirect(302, '/finance/dashboard'));
 app.get('/command-unit.html', (req, res) => res.redirect(302, '/command-unit/dashboard'));
+app.get('/cx.html', (req, res) => res.redirect(302, '/cx/dashboard'));
 // Self-hosted fonts: long cache lifetime + immutable.
 app.use(
   '/fonts',
@@ -193,7 +258,6 @@ app.use(
 // Static assets
 // - Cache CSS/JS/media for faster repeat visits
 // - Keep HTML non-cached so deployments/pages refresh immediately
-const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
 app.use(
   express.static(path.join(__dirname, 'src', 'public'), {
     maxAge: '7d',
@@ -215,7 +279,8 @@ app.get(['/foundry', '/foundry/*'], (req, res) => sendModuleShell(res, 'foundry'
 app.get(['/storepilot', '/storepilot/*'], (req, res) => sendModuleShell(res, 'storepilot'));
 app.get(['/finance', '/finance/*'], (req, res) => sendModuleShell(res, 'finance'));
 app.get(['/command-unit', '/command-unit/*'], (req, res) => sendModuleShell(res, 'command-unit'));
-app.get(['/pos', '/pos/*'], (req, res) => sendModuleShell(res, 'pos'));
+app.get(['/pos', '/pos/*', '/storeos', '/storeos/*'], (req, res) => sendModuleShell(res, 'pos'));
+app.get(['/cx', '/cx/*'], (req, res) => sendModuleShell(res, 'cx'));
 // Health check
 app.get('/health', (req, res) => {
   res.json({
@@ -274,11 +339,14 @@ protectedApiRouter.use('/finance', financeRouter);
 protectedApiRouter.use('/stock-transfers', stockTransfersRouter);
 protectedApiRouter.use('/transfer-requests', transferRequestsRouter);
 protectedApiRouter.use('/stock-transfer-docs', stockTransferDocsRouter);
+protectedApiRouter.use('/cx', cxRouter);
 app.use('/api', protectedApiRouter);
 
 // 404 + error handling
 app.use(notFoundHandler);
 app.use(errorHandler);
+
+assertAuthEnv();
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console

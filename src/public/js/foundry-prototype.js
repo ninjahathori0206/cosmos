@@ -169,6 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mods.command_unit !== false) window.location.href = '/command-unit/dashboard';
     else if (mods.finance !== false) window.location.href = '/finance/dashboard';
     else if (mods.storepilot !== false) window.location.href = '/storepilot/dashboard';
+    else if (mods.pos !== false) window.location.href = '/pos/dashboard';
+    else if (mods.cx !== false) window.location.href = '/cx/dashboard';
     else window.location.href = '/';
     return;
   }
@@ -4411,7 +4413,8 @@ document.addEventListener('DOMContentLoaded', () => {
     'rate-intelligence': '/foundry/rate-intelligence',
     'stock-transfer': '/foundry/stock-transfer',
     'transfer-requests': '/foundry/transfer-requests',
-    'movement-list': '/foundry/movement-list'
+    'movement-list': '/foundry/movement-list',
+    'lab-orders': '/foundry/lab-orders'
   };
 
   function getFoundryPageFromPath(pathname) {
@@ -4451,6 +4454,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id === 'stock-transfer')   stInit();
     if (id === 'transfer-requests') loadTransferRequests();
     if (id === 'movement-list')     loadMovementList();
+    if (id === 'lab-orders')        loadLabOrders();
     // Only load the list when navigating from sidebar (not when opening a detail directly)
     if (!skipList) {
       if (id === 'bill-verify')  loadBillVerifyList();
@@ -6362,6 +6366,75 @@ ${initScript}
       tableBody.addEventListener('click', handler);
     });
   }
+
+  // ── LAB ORDERS ────────────────────────────────────────────────────────────
+  let _labOrdersTimer = null;
+  window.debounceLabOrders = function() {
+    clearTimeout(_labOrdersTimer);
+    _labOrdersTimer = setTimeout(() => {
+      if (window.loadLabOrders) window.loadLabOrders();
+    }, 300);
+  };
+
+  window.labOrdersClearFilters = function() {
+    const s = document.getElementById('lab-orders-search');
+    const f = document.getElementById('lab-orders-status-filter');
+    if (s) s.value = '';
+    if (f) f.value = '';
+    if (window.loadLabOrders) window.loadLabOrders();
+  };
+
+  window.loadLabOrders = async function() {
+    const tbody = document.getElementById('lab-orders-tbody');
+    if (!tbody) return;
+
+    if (typeof window.cosmosSkeletonTable === 'function') {
+      window.cosmosSkeletonTable('lab-orders-tbody', 7, 6);
+    } else {
+      tbody.innerHTML = '';
+    }
+
+    const search = (document.getElementById('lab-orders-search')?.value || '').trim();
+    const status = (document.getElementById('lab-orders-status-filter')?.value || '').trim();
+
+    try {
+      const qs = new URLSearchParams();
+      if (search) qs.set('q', search);
+      if (status) qs.set('status', status);
+
+      const orders = await apiGet(`/api/pos/all-orders?${qs.toString()}`);
+      if (!orders || !orders.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="p0">
+          <div class="empty" style="padding:32px 24px;text-align:center">
+            <div class="empty-ic">🔬</div>
+            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No orders match</div>
+            <div style="font-size:13px;color:var(--text2);margin-bottom:16px;max-width:420px;margin-left:auto;margin-right:auto">Adjust search or status, or clear filters to reload the full list.</div>
+            <button type="button" class="btn primary" onclick="window.labOrdersClearFilters && window.labOrdersClearFilters()">Clear filters</button>
+          </div>
+        </td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = orders.map(o => {
+        return `
+          <tr>
+            <td><span class="lab-order-no">${o.order_no}</span></td>
+            <td>${o.store_name || o.store_id}</td>
+            <td>${o.customer_name || 'Walk-in'} ${o.customer_phone ? '<br><span style="font-size:11px;color:var(--text3)">'+o.customer_phone+'</span>' : ''}</td>
+            <td><span class="b b-gray" style="font-size:10px">${o.order_kind || 'STORE'}</span></td>
+            <td class="mono fw6">${inr(o.total_amount)}</td>
+            <td>${stageBadge(o.status)}</td>
+            <td style="font-size:12px;color:var(--text3)">${fmtDateTime(o.created_at)}</td>
+          </tr>
+        `;
+      }).join('');
+
+    } catch (e) {
+      const msg = e && e.message ? e.message : 'Could not load orders.';
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg);
+      tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">Could not load orders.</td></tr>`;
+    }
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // INIT
