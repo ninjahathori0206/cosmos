@@ -69,11 +69,14 @@ function errorHandler(err, req, res, next) {
   // Explicit status code on the error object (e.g. from Joi or custom throws)
   const status = err.statusCode || err.status || 500;
 
+  const message =
+    status === 500
+      ? (isProd ? 'Internal server error' : (err.message || 'Internal server error'))
+      : (isProd ? 'Request failed' : (err.message || 'Request failed'));
+
   return res.status(status).json({
     success: false,
-    message: status === 500
-      ? 'Internal server error'
-      : (isProd ? 'Request failed' : (err.message || 'Request failed')),
+    message,
     ...(isProd ? {} : { error: err.message || undefined })
   });
 }

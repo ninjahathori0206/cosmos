@@ -71,8 +71,45 @@ const brandingBypassSchema = Joi.object({
 const skuGenerateSchema = Joi.object({
   item_id:        Joi.number().integer().required(),
   item_colour_id: Joi.number().integer().required(),
-  sale_price:     Joi.number().precision(2).positive().required()
+  sale_price:     Joi.number().precision(2).positive().allow(null)
 });
+
+async function getRestockContext(headerId, itemId, colourId) {
+  const pool = await getPool();
+  const result = await pool.request()
+    .input('hid', sql.Int, Number(headerId))
+    .input('iid', sql.Int, Number(itemId))
+    .input('cid', sql.Int, Number(colourId))
+    .query(`
+      ;WITH cur AS (
+        SELECT TOP 1
+          pi.product_master_id,
+          pic.colour_code,
+          pic.linked_sku_id
+        FROM dbo.purchase_item_colours pic
+        JOIN dbo.purchase_items pi ON pi.item_id = pic.item_id
+        WHERE pi.header_id = @hid
+          AND pi.item_id = @iid
+          AND pic.colour_id = @cid
+      )
+      SELECT TOP 1
+        COALESCE(cur.linked_sku_id, sk.sku_id) AS linked_sku_id,
+        COALESCE(ls.sale_price, sk.sale_price) AS linked_sale_price
+      FROM cur
+      LEFT JOIN dbo.skus ls ON ls.sku_id = cur.linked_sku_id
+      LEFT JOIN dbo.skus sk ON cur.linked_sku_id IS NULL
+        AND sk.status = 'LIVE'
+        AND sk.product_master_id = cur.product_master_id
+        AND EXISTS (
+          SELECT 1
+          FROM dbo.purchase_item_colours epc
+          WHERE epc.colour_id = sk.item_colour_id
+            AND UPPER(LTRIM(RTRIM(ISNULL(epc.colour_code, '')))) = UPPER(LTRIM(RTRIM(ISNULL(cur.colour_code, ''))))
+        )
+      ORDER BY CASE WHEN cur.linked_sku_id IS NOT NULL THEN 0 ELSE 1 END, sk.updated_at DESC, sk.sku_id DESC
+    `);
+  return result.recordset && result.recordset[0] ? result.recordset[0] : null;
+}
 
 // Any action permission implies the right to read purchase data needed to perform that action.
 // requirePermission uses OR logic — passing multiple keys allows any one of them.
@@ -284,8 +321,41 @@ router.put(
       // Apply item brand mapping in one set-based update to avoid N+1 round-trips.
       if (value.item_brands && value.item_brands.length > 0) {
         const pool = await getPool();
+        const lockedRows = await pool.request()
+          .input('hid', sql.Int, headerId)
+          .query(`
+            SELECT DISTINCT pi.item_id
+            FROM dbo.purchase_items pi
+            JOIN dbo.product_master pm ON pm.product_id = pi.product_master_id
+            JOIN dbo.purchase_item_colours pic ON pic.item_id = pi.item_id
+            WHERE pi.header_id = @hid
+              AND (
+                pm.home_brand_id IS NOT NULL
+                OR pic.linked_sku_id IS NOT NULL
+                OR EXISTS (
+                  SELECT 1
+                  FROM dbo.skus sx
+                  WHERE sx.product_master_id = pi.product_master_id
+                    AND sx.status = 'LIVE'
+                )
+              )
+          `);
+        const lockedItemIds = new Set((lockedRows.recordset || []).map((r) => Number(r.item_id)));
+        const ignoredLockedItemIds = value.item_brands
+          .map((ib) => Number(ib.item_id))
+          .filter((id) => lockedItemIds.has(id));
+        const mutableItemBrands = value.item_brands.filter((ib) => !lockedItemIds.has(Number(ib.item_id)));
+        if (!mutableItemBrands.length) {
+          return res.json({
+            success: true,
+            data: result.recordset && result.recordset[0],
+            warnings: ignoredLockedItemIds.length
+              ? [{ code: 'IMMUTABLE_HOME_BRAND_IGNORED', item_ids: ignoredLockedItemIds }]
+              : []
+          });
+        }
         const itemBrandsJson = JSON.stringify(
-          value.item_brands.map((ib) => ({
+          mutableItemBrands.map((ib) => ({
             item_id: Number(ib.item_id),
             home_brand_id: Number(ib.home_brand_id),
             ew_collection: (ib.ew_collection && String(ib.ew_collection).trim()) || null
@@ -316,7 +386,14 @@ router.put(
                 ON pi.product_master_id = pm.product_id
               JOIN src
                 ON src.item_id = pi.item_id
-             WHERE pi.header_id = @hid;
+             WHERE pi.header_id = @hid
+               AND pm.home_brand_id IS NULL
+               AND NOT EXISTS (
+                 SELECT 1
+                 FROM dbo.skus sx
+                 WHERE sx.product_master_id = pm.product_id
+                   AND sx.status = 'LIVE'
+               );
           `);
       }
 
@@ -375,14 +452,30 @@ router.post(
     try {
       const { error, value } = skuGenerateSchema.validate(req.body, { abortEarly: false });
       if (error) return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });
+      const headerId = Number(req.params.id);
+      const restockCtx = await getRestockContext(headerId, value.item_id, value.item_colour_id);
+      const isRestock = Boolean(restockCtx && restockCtx.linked_sku_id);
+      const salePrice = isRestock
+        ? Number(restockCtx.linked_sale_price || 0)
+        : Number(value.sale_price);
+      if (!isRestock && (!Number.isFinite(salePrice) || salePrice <= 0)) {
+        return res.status(400).json({ success: false, message: 'Enter a valid Sale Price.' });
+      }
       const result = await executeStoredProcedure('sp_SKUv2_Generate', {
-        header_id:      { type: sql.Int,          value: Number(req.params.id) },
+        header_id:      { type: sql.Int,          value: headerId },
         item_id:        { type: sql.Int,           value: value.item_id },
         item_colour_id: { type: sql.Int,           value: value.item_colour_id },
-        sale_price:     { type: sql.Decimal(10,2), value: value.sale_price }
+        // For restock rows, always pass the linked SKU sale price.
+        sale_price:     { type: sql.Decimal(10,2), value: salePrice }
       });
       const row = result.recordset && result.recordset[0];
-      return res.json({ success: true, data: row });
+      return res.json({
+        success: true,
+        data: {
+          ...(row || {}),
+          is_restock: isRestock || (row && row.stock_action === 'RESTOCK_EXISTING') || false
+        }
+      });
     } catch (err) {
       if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });
       return next(err);
@@ -397,6 +490,26 @@ router.put(
   requirePermission('foundry.digitisation.edit'),
   async (req, res, next) => {
     try {
+      const headerId = Number(req.params.id);
+      const colourId = Number(req.params.colourId);
+      const restockCheck = await getPool();
+      const linked = await restockCheck.request()
+        .input('hid', sql.Int, headerId)
+        .input('cid', sql.Int, colourId)
+        .query(`
+          SELECT TOP 1 pic.linked_sku_id
+          FROM dbo.purchase_item_colours pic
+          JOIN dbo.purchase_items pi ON pi.item_id = pic.item_id
+          WHERE pi.header_id = @hid
+            AND pic.colour_id = @cid
+            AND pic.linked_sku_id IS NOT NULL
+        `);
+      if (linked.recordset && linked.recordset[0]) {
+        return res.status(409).json({
+          success: false,
+          message: 'Restock media is locked. This colour is linked to an existing SKU.'
+        });
+      }
       const { image_url, video_url } = req.body;
       if (!image_url && !video_url)
         return res.status(400).json({ success: false, message: 'image_url or video_url is required.' });

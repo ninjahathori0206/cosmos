@@ -107,6 +107,7 @@ BEGIN
     ('finance'),
     ('storepilot'),
     ('pos'),
+    ('cx'),
     ('army'),
     ('eyewoot_go'),
     ('promoter');

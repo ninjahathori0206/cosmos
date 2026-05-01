@@ -1,7 +1,7 @@
 const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
-const { executeStoredProcedure } = require('../config/db');
+const { executeStoredProcedure, getPool } = require('../config/db');
 const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
@@ -266,7 +266,42 @@ router.put('/:id', ...foundryPurchasesEdit, async (req, res, next) => {
 router.put('/:id/details', ...foundryPurchasesEdit, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const { description, frame_width, lens_height, temple_length, frame_material, image_url } = req.body;
+    const {
+      description,
+      frame_width,
+      lens_height,
+      temple_length,
+      frame_material,
+      image_url,
+      header_id,
+      item_id
+    } = req.body;
+
+    const headerId = Number(header_id);
+    const itemId = Number(item_id);
+    if (Number.isFinite(headerId) && Number.isFinite(itemId)) {
+      const pool = await getPool();
+      const restockResult = await pool.request()
+        .input('pid', sql.Int, id)
+        .input('hid', sql.Int, headerId)
+        .input('iid', sql.Int, itemId)
+        .query(`
+          SELECT TOP 1 pic.linked_sku_id
+          FROM dbo.purchase_items pi
+          JOIN dbo.purchase_item_colours pic ON pic.item_id = pi.item_id
+          WHERE pi.header_id = @hid
+            AND pi.item_id = @iid
+            AND pi.product_master_id = @pid
+            AND pic.linked_sku_id IS NOT NULL
+        `);
+      if (restockResult.recordset && restockResult.recordset[0]) {
+        return res.status(409).json({
+          success: false,
+          message: 'Product details are locked for restock items linked to an existing SKU.'
+        });
+      }
+    }
+
     const result = await executeStoredProcedure('sp_ProductMaster_UpdateDetails', {
       product_id:     { type: sql.Int,          value: id },
       description:    { type: sql.VarChar(500),  value: description    || null },

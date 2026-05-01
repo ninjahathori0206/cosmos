@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cosmos ERP — Minimal Mobile UI 2026</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/fonts.css">
 <style>
   :root {
     --bg: #0A0E1A;
@@ -25,7 +25,7 @@
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: 'Inter', sans-serif;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
@@ -43,7 +43,7 @@
     gap: 16px;
   }
   .header-tag { font-size: 11px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--orange); margin-bottom: 8px; }
-  .header-title { font-family: 'Syne', sans-serif; font-size: 36px; font-weight: 800; line-height: 1.1; }
+  .header-title { font-family: 'Inter', sans-serif; font-size: 36px; font-weight: 800; line-height: 1.1; }
   .header-title span { color: var(--orange); }
   .header-sub { font-size: 14px; color: var(--muted); margin-top: 8px; }
   .year-badge { background: var(--orangeL); border: 1px solid rgba(249,115,22,0.3); color: var(--orange); padding: 6px 16px; border-radius: 100px; font-size: 13px; font-weight: 600; }
@@ -121,12 +121,12 @@
   .sku-badges { display: flex; gap: 5px; padding: 6px 9px; }
   .sku-badge { padding: 2px 7px; border-radius: 20px; font-size: 7.5px; font-weight: 600; }
   .sku-actions { display: flex; gap: 5px; padding: 0 9px 9px; }
-  .sku-btn-req { flex: 1; background: var(--orange); color: #fff; border: none; border-radius: 6px; padding: 6px; font-size: 8.5px; font-weight: 600; font-family: 'Space Grotesk', sans-serif; cursor: pointer; }
-  .sku-btn-loc { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 8.5px; font-weight: 500; color: var(--muted); font-family: 'Space Grotesk', sans-serif; cursor: pointer; }
+  .sku-btn-req { flex: 1; background: var(--orange); color: #fff; border: none; border-radius: 6px; padding: 6px; font-size: 8.5px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer; }
+  .sku-btn-loc { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 8.5px; font-weight: 500; color: var(--muted); font-family: 'Inter', sans-serif; cursor: pointer; }
 
   .cart-bar { margin: 7px 10px 0; background: #120A00; border: 1px solid rgba(249,115,22,0.3); border-radius: 9px; padding: 8px 10px; display: flex; align-items: center; gap: 7px; }
   .cart-bar-txt { flex: 1; font-size: 8.5px; font-weight: 500; }
-  .cart-bar-btn { background: var(--orange); color: #fff; border: none; border-radius: 6px; padding: 5px 9px; font-size: 8.5px; font-weight: 600; font-family: 'Space Grotesk', sans-serif; cursor: pointer; }
+  .cart-bar-btn { background: var(--orange); color: #fff; border: none; border-radius: 6px; padding: 5px 9px; font-size: 8.5px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer; }
 
   .req-card { margin: 7px 10px 0; background: var(--surface2); border-radius: 9px; overflow: hidden; }
   .req-row { display: flex; align-items: flex-start; padding: 8px 9px; gap: 7px; border-bottom: 1px solid var(--border); }
@@ -137,7 +137,7 @@
   .req-meta { font-size: 7.5px; color: var(--muted); }
   .req-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
   .req-badge { padding: 2px 6px; border-radius: 20px; font-size: 7.5px; font-weight: 600; }
-  .req-btn { background: var(--blue); color: #fff; border: none; border-radius: 5px; padding: 4px 7px; font-size: 7.5px; font-weight: 600; font-family: 'Space Grotesk', sans-serif; cursor: pointer; }
+  .req-btn { background: var(--blue); color: #fff; border: none; border-radius: 5px; padding: 4px 7px; font-size: 7.5px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer; }
 
   .filter-chips { display: flex; gap: 5px; padding: 7px 10px 0; overflow-x: auto; }
   .chip { padding: 3px 9px; border-radius: 20px; font-size: 8.5px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
@@ -152,7 +152,7 @@
   .trend-card:hover { border-color: rgba(249,115,22,0.3); transform: translateY(-2px); }
   .trend-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--tc-color, var(--orange)); }
   .trend-tag { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
-  .trend-heading { font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800; margin-bottom: 8px; line-height: 1.2; }
+  .trend-heading { font-family: 'Inter', sans-serif; font-size: 17px; font-weight: 800; margin-bottom: 8px; line-height: 1.2; }
   .trend-body { font-size: 12px; color: var(--muted); line-height: 1.6; }
   .trend-pill { display: inline-block; margin-top: 14px; padding: 4px 12px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--tp-bg, var(--orangeL)); color: var(--tp-color, var(--orange)); }
 
@@ -396,7 +396,7 @@
           <div style="font-size:7.5px;font-weight:600;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:5px">Notes (Optional)</div>
           <div style="background:var(--surface);border-radius:6px;padding:7px 9px;font-size:8.5px;color:var(--muted);border:1px solid var(--border)">Reason, urgency or deadline…</div>
         </div>
-        <button style="width:100%;background:var(--orange);color:#fff;border:none;border-radius:9px;padding:11px;font-size:11px;font-weight:600;font-family:'Space Grotesk',sans-serif;cursor:pointer">Submit Request to HQ</button>
+        <button style="width:100%;background:var(--orange);color:#fff;border:none;border-radius:9px;padding:11px;font-size:11px;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer">Submit Request to HQ</button>
       </div>
     </div>
     <div class="phone-label">SP · Request Goods</div>
@@ -548,11 +548,11 @@
     <div class="type-scale">
       <div class="type-row">
         <div class="type-label">Display · 20px</div>
-        <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800">Store Pilot</div>
+        <div style="font-family:'Inter',sans-serif;font-size:20px;font-weight:800">Store Pilot</div>
       </div>
       <div class="type-row">
         <div class="type-label">Heading · 17px</div>
-        <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:700">Browse Catalogue</div>
+        <div style="font-family:'Inter',sans-serif;font-size:17px;font-weight:700">Browse Catalogue</div>
       </div>
       <div class="type-row">
         <div class="type-label">Body · 13px</div>

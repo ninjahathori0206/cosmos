@@ -56,7 +56,9 @@ BEGIN
     -- Suppliers (view only)
     (N'foundry.suppliers.view'),
     -- Makers (view)
-    (N'foundry.makers.view');
+    (N'foundry.makers.view'),
+    -- Lab — all-store POS orders (Foundry Lab Operations)
+    (N'foundry.lab.view');
 
   INSERT INTO dbo.role_permissions (role_key, permission, created_at)
   SELECT @rk, p, DATEADD(MINUTE, 330, SYSUTCDATETIME())

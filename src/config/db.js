@@ -7,14 +7,17 @@ const config = {
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
+  connectionTimeout: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 15000),
+  requestTimeout: Number(process.env.DB_REQUEST_TIMEOUT_MS || 30000),
   options: {
     encrypt: false,
     trustServerCertificate: true
   },
   pool: {
-    max: 10,
-    min: 0,
-    idleTimeoutMillis: 30000
+    min: Number(process.env.DB_POOL_MIN || 2),
+    max: Number(process.env.DB_POOL_MAX || 20),
+    idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_TIMEOUT_MS || 30000),
+    acquireTimeoutMillis: Number(process.env.DB_POOL_ACQUIRE_TIMEOUT_MS || 15000)
   }
 };
 

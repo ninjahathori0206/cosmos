@@ -1,0 +1,255 @@
+---
+description: SPA Clean URL Routing — History API + Server Fallback
+globs: ["**/*.html", "**/routes/**/*.js", "**/app.js", "**/server.js", "**/public/**/*.js", "**/src/**/*.js"]
+alwaysApply: false
+---
+
+# SPA Clean URL Routing
+
+Use this rule whenever implementing **clean/pretty URLs** in a single-page application using the **History API** (`pushState` / `popstate`) with a **server-side fallback**.
+
+**Other names for this pattern:**
+- SPA routing with clean URLs
+- History API routing
+- Route fallback pattern
+- Pretty URL routing
+
+---
+
+## How It Works
+
+```
+Browser requests /products/shoes
+    ↓
+Server has no file at that path
+    ↓
+Server fallback → serves index.html (the shell)
+    ↓
+JS reads window.location.pathname → "/products/shoes"
+    ↓
+Router shows the matching in-page section/component
+```
+
+No full page reloads. No hash (#) in URLs. Browser history works normally.
+
+---
+
+## Server Fallback (pick your stack)
+
+The server must serve the HTML shell for any path that isn't a static asset or API route.
+
+### Node.js / Express
+```js
+// Order matters — always follow this sequence:
+
+// 1. Static assets
+app.use(express.static('public'));
+
+// 2. API routes
+app.use('/api', apiRouter);
+
+// 3. SPA fallback — catches everything else
+app.get('*', (req, res) => {
+  res.sendFile(path.resolve('public', 'index.html'));
+});
+```
+
+> **Multi-shell variant** — if each section has its own HTML file:
+> ```js
+> app.get('/dashboard/*', (req, res) => res.sendFile(...'dashboard.html'));
+> app.get('/settings/*',  (req, res) => res.sendFile(...'settings.html'));
+> // keep API routes above these
+> ```
+
+### Nginx
+```nginx
+location / {
+  try_files $uri $uri/ /index.html;
+}
+```
+
+### Apache .htaccess
+```apache
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ /index.html [L]
+```
+
+### Vite / Webpack Dev Server
+```js
+// vite.config.js
+export default { server: { historyApiFallback: true } }
+
+// webpack.config.js
+devServer: { historyApiFallback: true }
+```
+
+---
+
+## Client-Side Router
+
+### Minimal vanilla implementation
+```js
+const routes = {
+  '/':          () => showPage('home'),
+  '/about':     () => showPage('about'),
+  '/products':  () => showPage('products'),
+};
+
+function resolve(pathname = window.location.pathname) {
+  // Exact match
+  const handler = routes[pathname];
+  if (handler) return handler();
+
+  // Prefix match (longest wins, for nested routes)
+  const match = Object.keys(routes)
+    .filter(r => pathname.startsWith(r) && r !== '/')
+    .sort((a, b) => b.length - a.length)[0];
+
+  if (match) return routes[match]();
+
+  routes['/'](); // fallback to home / 404 page
+}
+
+// Initial load
+document.addEventListener('DOMContentLoaded', () => resolve());
+
+// Browser back / forward
+window.addEventListener('popstate', () => resolve());
+```
+
+### Navigation — always use pushState
+```js
+function navigate(path) {
+  history.pushState({}, '', path);
+  resolve(path);
+}
+
+// Intercept clicks on SPA links
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('[data-route]');
+  if (!link) return;
+  e.preventDefault();
+  navigate(link.dataset.route);
+});
+```
+
+---
+
+## HTML Patterns
+
+### Section-based shell (show/hide)
+```html
+<nav>
+  <a data-route="/">Home</a>
+  <a data-route="/about">About</a>
+  <a data-route="/products">Products</a>
+</nav>
+
+<main>
+  <section id="page-home"     class="page" hidden>...</section>
+  <section id="page-about"    class="page" hidden>...</section>
+  <section id="page-products" class="page" hidden>...</section>
+</main>
+```
+
+```js
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.hidden = true);
+  document.getElementById(`page-${name}`).hidden = false;
+
+  // Update active nav link
+  document.querySelectorAll('[data-route]').forEach(link => {
+    link.classList.toggle('active', link.dataset.route === window.location.pathname);
+  });
+}
+```
+
+> Use data-route on nav links — not href. Using href triggers a full page reload.
+
+---
+
+## Framework Quick Reference
+
+### React (React Router v6)
+```jsx
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+
+<BrowserRouter>
+  <Routes>
+    <Route path="/"         element={<Home />} />
+    <Route path="/about"    element={<About />} />
+    <Route path="/products" element={<Products />} />
+    <Route path="*"         element={<NotFound />} />
+  </Routes>
+</BrowserRouter>
+```
+
+### Vue (Vue Router)
+```js
+const router = createRouter({
+  history: createWebHistory(), // enables History API, not hash mode
+  routes: [
+    { path: '/',         component: Home },
+    { path: '/about',    component: About },
+    { path: '/:pathMatch(.*)*', component: NotFound },
+  ]
+});
+```
+
+### Angular
+```ts
+// app-routing.module.ts — RouterModule.forRoot already uses History API by default
+{ path: '',        component: HomeComponent },
+{ path: 'about',   component: AboutComponent },
+{ path: '**',      component: NotFoundComponent },
+```
+
+---
+
+## URL Parameter Handling
+
+```js
+// Route: /products/:id  →  /products/42
+function resolve(pathname) {
+  const productMatch = pathname.match(/^\/products\/([^/]+)$/);
+  if (productMatch) {
+    const id = productMatch[1];
+    return showProduct(id);
+  }
+}
+```
+
+For query strings:
+```js
+const params = new URLSearchParams(window.location.search);
+const filter = params.get('filter'); // /products?filter=shoes → "shoes"
+```
+
+---
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---|---|
+| Using href="/path" for SPA navigation | Use data-route + pushState |
+| No popstate listener | Add it — breaks browser back/forward button |
+| API route registered after SPA wildcard | Always register API routes before * fallback |
+| Static files caught by fallback | Register express.static / try_files before SPA fallback |
+| Sections visible by default | Add hidden to all sections in HTML; let JS reveal the active one |
+| Hardcoded links in HTML (not using router) | All internal navigation must go through navigate() |
+| Forgetting to call resolve() on initial load | Call it in DOMContentLoaded |
+
+---
+
+## Checklist
+
+- [ ] Server serves the HTML shell for all non-asset, non-API paths
+- [ ] API routes are registered before the SPA fallback
+- [ ] pushState used for all internal navigation (no href on SPA links)
+- [ ] popstate listener handles browser back/forward
+- [ ] resolve() called on DOMContentLoaded for direct URL loads
+- [ ] All page sections start as hidden; router reveals the active one
+- [ ] Active nav link state updates on every route change
+- [ ] A 404 / fallback route is defined for unmatched paths

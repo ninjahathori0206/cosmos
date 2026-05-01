@@ -161,13 +161,16 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!token || !userRaw) { window.location.href = '/'; return; }
 
   const user = JSON.parse(userRaw);
+  const userPermissions = Array.isArray(user.permissions) ? user.permissions : [];
 
   const mods = user.modules;
   const hasMap = mods && typeof mods === 'object' && Object.keys(mods).length > 0;
   if (hasMap && mods.foundry === false) {
-    if (mods.command_unit !== false) window.location.href = '/command-unit.html';
-    else if (mods.finance !== false) window.location.href = '/finance.html';
-    else if (mods.storepilot !== false) window.location.href = '/storepilot.html';
+    if (mods.command_unit !== false) window.location.href = '/command-unit/dashboard';
+    else if (mods.finance !== false) window.location.href = '/finance/dashboard';
+    else if (mods.storepilot !== false) window.location.href = '/storepilot/dashboard';
+    else if (mods.pos !== false) window.location.href = '/pos/dashboard';
+    else if (mods.cx !== false) window.location.href = '/cx/dashboard';
     else window.location.href = '/';
     return;
   }
@@ -189,7 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Hide nav items the current user lacks permission for, then collapse any
   // nav-group heading that has no visible items beneath it.
   (function applyFoundryPermissionNav() {
-    const perms = Array.isArray(user.permissions) ? user.permissions : [];
+    const perms = userPermissions;
     // super_admin (empty permissions array with role super_admin) sees everything
     if (user.role === 'super_admin') return;
 
@@ -233,21 +236,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function apiGet(path) {
-    const res = await fetch(path, { headers: authHeaders() });
+    const res = await fetch(path, { headers: authHeaders(), cache: 'no-store' });
     let data; try { data = await res.json(); } catch(_) { throw new Error(`HTTP ${res.status}: unparseable response`); }
     if (!res.ok || !data.success) throw _buildApiError(data, res.status);
     return data.data;
   }
 
   async function apiPost(path, body) {
-    const res = await fetch(path, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
+    const res = await fetch(path, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body), cache: 'no-store' });
     let data; try { data = await res.json(); } catch(_) { throw new Error(`HTTP ${res.status}: unparseable response`); }
     if (!res.ok || !data.success) throw _buildApiError(data, res.status);
     return data.data;
   }
 
   async function apiPut(path, body) {
-    const res = await fetch(path, { method: 'PUT', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
+    const res = await fetch(path, { method: 'PUT', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body), cache: 'no-store' });
     let data; try { data = await res.json(); } catch(_) { throw new Error(`HTTP ${res.status}: unparseable response`); }
     if (!res.ok || !data.success) throw _buildApiError(data, res.status);
     return data.data;
@@ -981,7 +984,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const lowStockTbody = document.getElementById('dash-low-stock');
     const lowStockCount = document.getElementById('dash-low-stock-count');
     if (lowStockTbody) {
-      lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>';
+      if (window.cosmosSkeletonTable) window.cosmosSkeletonTable('dash-low-stock', 4, 4);
+      else lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>';
     }
     if (lowStockCount) {
       lowStockCount.className = 'b b-gray';
@@ -993,7 +997,18 @@ document.addEventListener('DOMContentLoaded', () => {
         apiGet('/api/stock-transfers/available').catch(() => [])
       ]);
       const p = data.purchases || {};
-      const setV = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v != null ? v : '0'; };
+      const setV = (id, v, asCurrency) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const num = Number(v != null ? v : 0);
+        if (window.cosmosCountUp && Number.isFinite(num)) {
+          if (asCurrency) el.dataset.format = 'currency';
+          else delete el.dataset.format;
+          window.cosmosCountUp(el, num, 600);
+          return;
+        }
+        el.textContent = num;
+      };
       setV('dash-active', p.active_purchases);
       setV('dash-pending-bill', p.pending_bill);
       setV('dash-branding', p.in_branding);
@@ -1001,7 +1016,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setV('dash-warehouse', p.warehouse_ready);
       setV('dash-discrepancy', p.bill_discrepancy);
       setV('dash-skus', (data.skus || {}).total_skus);
-      setV('dash-stock', (data.stock || {}).warehouse_stock);
+      setV('dash-stock', (data.stock || {}).warehouse_stock, true);
       setV('dash-suppliers', (data.suppliers || {}).active_suppliers);
 
       if (lowStockTbody && lowStockCount) {
@@ -1618,13 +1633,13 @@ document.addEventListener('DOMContentLoaded', () => {
       tb.innerHTML = rows.map((r) => {
         const actions = [];
         if (r.pipeline_status === 'PENDING_BILL_VERIFICATION')
-          actions.push(`<button class="btn xs primary" onclick="openBillVerifyPage(${r.header_id})">Verify Bill</button>`);
+          actions.push(`<button class="btn xs primary" data-action="open-bill-verify" data-id="${r.header_id}">Verify Bill</button>`);
         else if (['PENDING_BRANDING','BRANDING_DISPATCHED'].includes(r.pipeline_status))
-          actions.push(`<button class="btn xs primary" onclick="openBrandingPage(${r.header_id})">Branding</button>`);
+          actions.push(`<button class="btn xs primary" data-action="open-branding" data-id="${r.header_id}">Branding</button>`);
         else if (r.pipeline_status === 'PENDING_DIGITISATION')
-          actions.push(`<button class="btn xs primary" onclick="openDigitisationPage(${r.header_id})">Digitise</button>`);
+          actions.push(`<button class="btn xs primary" data-action="open-digitisation" data-id="${r.header_id}">Digitise</button>`);
         else if (r.pipeline_status === 'WAREHOUSE_READY')
-          actions.push(`<button class="btn xs" onclick="openPurchaseView(${r.header_id})">View</button>`);
+          actions.push(`<button class="btn xs" data-action="open-purchase-view" data-id="${r.header_id}">View</button>`);
 
         return `<tr>
           <td class="mono xs">#${r.header_id}</td>
@@ -1793,6 +1808,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div><div class="xs td2">Reason</div><div class="fw6">${h.bypass_reason}</div></div>` : `
                 <div><div class="xs td2">Dispatched At</div><div class="fw6">${fmtDateTime(h.dispatched_at) || '—'}</div></div>
                 <div><div class="xs td2">Received At</div><div class="fw6">${fmtDateTime(h.received_at) || '—'}</div></div>
+                <div><div class="xs td2">Branding Agent</div><div class="fw6">${h.branding_agent_name || '—'}</div></div>
                 ${h.branding_instructions ? `<div><div class="xs td2">Instructions</div><div class="fw6">${h.branding_instructions}</div></div>` : ''}`}
             </div>
           </div>
@@ -2094,14 +2110,27 @@ document.addEventListener('DOMContentLoaded', () => {
       const totalItemQty = items.reduce((s, it) => s + Number(it.quantity || 0), 0);
       const totalColourRows = items.reduce((s, it) => s + ((it.colours || []).length), 0);
       const brandingRequiredCount = items.filter((it) => !!it.branding_required).length;
+      const toBoolish = (v) => {
+        if (v === true || v === 1) return true;
+        if (typeof v === 'string') {
+          const t = v.trim().toLowerCase();
+          return t === 'true' || t === '1' || t === 'yes';
+        }
+        return false;
+      };
       items.forEach((it) => {
         const needsBranding = it.branding_required;
+        const isBrandLockedUi = toBoolish(it.is_brand_locked)
+          || Number(it.locked_home_brand_id || 0) > 0
+          || toBoolish(it.is_existing_product)
+          || Number(it.home_brand_id || 0) > 0
+          || (it.colours || []).some((c) => Number(c.linked_sku_id || 0) > 0);
         // Brand selector — shown for items needing branding in PENDING_BRANDING state;
         // read-only display when already dispatched/received.
         let brandRowHtml = '';
         const collDefault = (it.ew_collection || it.source_collection || '').replace(/"/g, '&quot;');
         if (needsBranding) {
-          if (isPendingDispatch) {
+          if (isPendingDispatch && !isBrandLockedUi) {
             const brandOpts = (_homeBrands || []).map((b) =>
               `<option value="${b.brand_id}" ${Number(b.brand_id) === Number(it.home_brand_id) ? 'selected' : ''}>${b.brand_name}</option>`
             ).join('');
@@ -2110,7 +2139,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="fgrp mt2" style="margin-bottom:10px">
                 <label style="font-size:12px;font-weight:600">Brand Name <span class="req">*</span></label>
                 <div class="xs td2" style="margin-top:2px;margin-bottom:2px">Source brand: <span class="fw6">${it.source_brand || '—'}</span></div>
-                <select id="brand-sel-${it.item_id}" data-item-id="${it.item_id}" style="margin-top:4px">
+                <select id="brand-sel-${it.item_id}" data-item-id="${it.item_id}" data-brand-locked="0" style="margin-top:4px">
                   <option value="">— Select Brand —</option>
                   ${brandOpts}
                 </select>
@@ -2118,7 +2147,18 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="fgrp mt2" style="margin-bottom:10px">
                 <label style="font-size:12px;font-weight:600">Collection Name <span class="req">*</span></label>
                 <div class="xs td2" style="margin-top:2px;margin-bottom:2px">Source collection: <span class="fw6">${srcCollHint}</span></div>
-                <input type="text" id="coll-inp-${it.item_id}" data-item-id="${it.item_id}" placeholder="Eyewoot / home collection name" value="${collDefault}" style="margin-top:4px;width:100%;max-width:420px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+                <input type="text" id="coll-inp-${it.item_id}" data-item-id="${it.item_id}" data-brand-locked="0" placeholder="Eyewoot / home collection name" value="${collDefault}" style="margin-top:4px;width:100%;max-width:420px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+              </div>`;
+          } else if (isPendingDispatch && isBrandLockedUi) {
+            const brandDisplay = it.locked_home_brand_name || it.brand_name || '—';
+            const collDisplay = it.ew_collection || '—';
+            brandRowHtml = `
+              <div class="digi-restock-note" style="margin-top:6px;margin-bottom:10px">
+                Existing product detected. Home Brand and Collection are recalled from existing product details and locked.
+              </div>
+              <div style="font-size:12px;margin-top:6px;margin-bottom:8px">
+                <span class="xs td2">Brand:</span> <span class="fw6">${brandDisplay}</span>
+                <span class="xs td2" style="margin-left:12px">Collection:</span> <span class="fw6">${collDisplay}</span>
               </div>`;
           } else {
             const brandDisplay = it.brand_name || '—';
@@ -2248,9 +2288,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const itemBrands = [];
     const missingBrand = [];
     const missingColl = [];
-    document.querySelectorAll('[id^="brand-sel-"]').forEach((sel) => {
+    document.querySelectorAll('[id^="brand-sel-"][data-brand-locked="0"]').forEach((sel) => {
+      if (sel.dataset.brandLocked === '1') return;
       const itemId = Number(sel.dataset.itemId);
       const collInp = document.getElementById(`coll-inp-${itemId}`);
+      if (collInp && collInp.dataset.brandLocked === '1') return;
       const collVal = collInp ? collInp.value.trim() : '';
       if (sel.value) {
         if (!collVal) missingColl.push(itemId);
@@ -2352,16 +2394,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const { itemMismatches, colourMismatches } = computeBrandingReceiptMismatches(headerId);
     const total = itemMismatches.length + colourMismatches.length;
     if (!total) {
-      wrap.innerHTML = `<div class="b b-green">All quantities matched. Confirm Receipt is enabled.</div>`;
+      wrap.innerHTML = '<div class="branding-verify-summary-ok">All quantities matched. Confirm Receipt is enabled.</div>';
       return;
     }
     const itemList = itemMismatches.slice(0, 6).map((m) => `<li>Item ${_mcEsc(m.label || m.item_id)}: expected ${m.expected_qty}, received ${m.received_qty}</li>`).join('');
     const colourList = colourMismatches.slice(0, 6).map((m) => `<li>${_mcEsc(m.item_label || ('Item #' + m.item_id))} · ${_mcEsc(m.colour_label)}: expected ${m.expected_qty}, received ${m.received_qty}</li>`).join('');
     wrap.innerHTML = `
-      <div class="b b-red">Mismatches found: ${total} (Items: ${itemMismatches.length}, Colours: ${colourMismatches.length})</div>
-      <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><div class="xs td2" style="margin-bottom:4px">Item-level mismatches</div><ul style="margin:0;padding-left:16px">${itemList || '<li class="td2">None</li>'}</ul></div>
-        <div><div class="xs td2" style="margin-bottom:4px">Colour-level mismatches</div><ul style="margin:0;padding-left:16px">${colourList || '<li class="td2">None</li>'}</ul></div>
+      <div class="branding-verify-summary-error">Mismatches found: ${total} (Items: ${itemMismatches.length}, Colours: ${colourMismatches.length})</div>
+      <div class="branding-verify-summary-grid">
+        <div class="branding-verify-summary-col">
+          <div class="xs td2 branding-verify-summary-title">Item-level mismatches</div>
+          <ul class="branding-verify-summary-list">${itemList || '<li class="td2">None</li>'}</ul>
+        </div>
+        <div class="branding-verify-summary-col">
+          <div class="xs td2 branding-verify-summary-title">Colour-level mismatches</div>
+          <ul class="branding-verify-summary-list">${colourList || '<li class="td2">None</li>'}</ul>
+        </div>
       </div>`;
   }
 
@@ -2383,38 +2431,38 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!host) {
       host = document.createElement('div');
       host.id = 'branding-receipt-verify-wrap';
-      host.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid var(--border)';
+      host.className = 'branding-verify-wrap';
       receiptCard.appendChild(host);
     }
 
     const itemRows = Object.entries(draft.items).map(([k, it]) => `
       <tr>
-        <td style="padding:6px 8px">${_mcEsc(it.label)}</td>
-        <td class="tc" style="padding:6px 8px">${Number(it.expected_qty || 0)}</td>
-        <td style="padding:6px 8px"><input type="number" min="0" step="1" value="${Number(it.received_qty || 0)}" oninput="handleBrandingReceiptQtyInput(${headerId}, 'item', '${k}', this.value)" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px"></td>
+        <td>${_mcEsc(it.label)}</td>
+        <td class="tc">${Number(it.expected_qty || 0)}</td>
+        <td><input class="branding-verify-input" type="number" min="0" step="1" value="${Number(it.received_qty || 0)}" oninput="handleBrandingReceiptQtyInput(${headerId}, 'item', '${k}', this.value)"></td>
       </tr>`).join('');
 
     const colourRows = Object.entries(draft.colours).map(([k, c]) => `
       <tr>
-        <td style="padding:6px 8px">${_mcEsc(c.item_label)}</td>
-        <td style="padding:6px 8px">${_mcEsc(c.colour_label)}</td>
-        <td class="tc" style="padding:6px 8px">${Number(c.expected_qty || 0)}</td>
-        <td style="padding:6px 8px"><input type="number" min="0" step="1" value="${Number(c.received_qty || 0)}" oninput="handleBrandingReceiptQtyInput(${headerId}, 'colour', '${k}', this.value)" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px"></td>
+        <td>${_mcEsc(c.item_label)}</td>
+        <td>${_mcEsc(c.colour_label)}</td>
+        <td class="tc">${Number(c.expected_qty || 0)}</td>
+        <td><input class="branding-verify-input" type="number" min="0" step="1" value="${Number(c.received_qty || 0)}" oninput="handleBrandingReceiptQtyInput(${headerId}, 'colour', '${k}', this.value)"></td>
       </tr>`).join('');
 
     host.innerHTML = `
-      <div class="fw6" style="margin-bottom:8px">Receipt Quantity Verification</div>
-      <div class="xs td2" style="margin-bottom:8px">Confirm Receipt is blocked until item-wise and colour-wise received quantities match expected quantities.</div>
-      <div id="branding-receipt-verify-summary" style="margin-bottom:10px"></div>
-      <div style="display:grid;grid-template-columns:1fr;gap:10px">
-        <div class="tw">
-          <table>
+      <div class="branding-verify-title">Receipt Quantity Verification</div>
+      <div class="branding-verify-subtitle">Confirm Receipt is blocked until item-wise and colour-wise received quantities match expected quantities.</div>
+      <div id="branding-receipt-verify-summary" class="branding-verify-summary"></div>
+      <div class="branding-verify-grid">
+        <div class="tw branding-verify-table-wrap">
+          <table class="branding-verify-table">
             <thead><tr><th>Item</th><th class="tc">Expected Qty</th><th>Received Qty</th></tr></thead>
             <tbody>${itemRows || '<tr><td colspan="3" class="tc td2 p12">No items</td></tr>'}</tbody>
           </table>
         </div>
-        <div class="tw">
-          <table>
+        <div class="tw branding-verify-table-wrap">
+          <table class="branding-verify-table">
             <thead><tr><th>Item</th><th>Colour</th><th class="tc">Expected Qty</th><th>Received Qty</th></tr></thead>
             <tbody>${colourRows || '<tr><td colspan="4" class="tc td2 p12">No colours</td></tr>'}</tbody>
           </table>
@@ -2642,6 +2690,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         colours.forEach((col, colIdx) => {
           const existingSku = skus.find((sk) => sk.item_colour_id === col.colour_id);
+          const isExistingProductItem = Boolean(item.is_existing_product) || Boolean(item.home_brand_id);
+          const isRestockLinked = Boolean(col.linked_sku_id);
+          const isRestockDone = Boolean(existingSku && (existingSku.is_restock || existingSku.stock_action === 'RESTOCK_EXISTING'));
+          const isRestock = isRestockLinked || isRestockDone || isExistingProductItem;
           const isDone = !!existingSku;
           const tabId  = `digi-panel-${item.item_id}-${col.colour_id}`;
           const imgId  = `clr-img-${item.item_id}-${col.colour_id}`;
@@ -2664,7 +2716,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : `<div class="digi-media-thumb"><span class="xs td2">No media yet</span></div>`;
 
           tabsHtml += `<div class="tab${colIdx === 0 ? ' active' : ''}" data-digi-status="${isDone ? 'done' : 'pending'}" onclick="switchDigiTab(this, '${tabId}')">
-            ${col.colour_name} ${isDone ? '<span class="b b-green xs">Done</span>' : '<span class="b b-gold xs">Pending</span>'}
+            ${col.colour_name} ${isDone ? `<span class="b ${isRestockDone ? 'b-blue' : 'b-green'} xs">${isRestockDone ? 'Restock' : 'Done'}</span>` : '<span class="b b-gold xs">Pending</span>'}
           </div>`;
 
           panelsHtml += `<div id="${tabId}" ${colIdx !== 0 ? 'style="display:none"' : ''}>
@@ -2673,12 +2725,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="card">
                   <div class="ch"><div class="ct">SKU Details</div></div>
                   <div class="cb">
-                    ${isDone ? `
+                    ${isDone && isRestockDone ? `
+                      <div class="digi-restock-card">
+                        <div class="digi-restock-title">Reused from existing SKU</div>
+                        <div class="digi-restock-meta">
+                          <div><span class="digi-restock-lbl">SKU</span><strong class="mono">${_mcEsc((existingSku && existingSku.sku_code) || col.linked_sku_code || '—')}</strong></div>
+                          <div><span class="digi-restock-lbl">Barcode</span><strong class="mono">${_mcEsc((existingSku && existingSku.barcode) || col.linked_barcode || '—')}</strong></div>
+                          <div><span class="digi-restock-lbl">Sale Price</span><strong>${inrD(Number((existingSku && existingSku.sale_price) || col.linked_sale_price || 0))}</strong></div>
+                          <div><span class="digi-restock-lbl">Purchase Entry</span><strong class="mono">${_mcEsc(existingSku.purchase_event_id || '—')}</strong></div>
+                        </div>
+                      </div>` : isDone ? `
                       <div class="alert alert-blue" style="margin-bottom:0"><span>✅</span>
                         <div>SKU Generated: <strong class="mono">${existingSku.sku_code}</strong><br>
                         Barcode: <span class="mono">${existingSku.barcode}</span><br>
                         Sale Price: ${inrD(existingSku.sale_price)}</div>
-                      </div>` : `
+                    </div>` : isRestock ? `
+                      <div class="digi-restock-note" style="margin-bottom:10px">
+                        Existing item detected. Selling price is inherited from linked SKU and cannot be changed here.
+                        Use SKU Catalogue to update sale price; history is tracked there.
+                      </div>
+                      <div class="fg2">
+                        <div class="fgrp"><label>Colour</label><input value="${col.colour_name}" readonly style="background:var(--bg)"></div>
+                        <div class="fgrp"><label>Quantity</label><input value="${col.quantity}" readonly style="background:var(--bg)"></div>
+                        <div class="fgrp"><label>Linked SKU</label><input value="${col.linked_sku_code || '—'}" readonly style="background:var(--bg)"></div>
+                        <div class="fgrp"><label>Current Sale Price</label><input value="${inrD(Number(col.linked_sale_price || 0))}" readonly style="background:var(--bg)"></div>
+                      </div>
+                      <button class="btn primary w100 mt2" onclick="handleGenerateSKU(${headerId},${item.item_id},${col.colour_id}, true)">
+                        Generate Purchase Entry for ${col.colour_name}
+                      </button>` : `
                       <div class="fg2">
                         <div class="fgrp"><label>Colour</label><input value="${col.colour_name}" readonly style="background:var(--bg)"></div>
                         <div class="fgrp"><label>Quantity</label><input value="${col.quantity}" readonly style="background:var(--bg)"></div>
@@ -2695,23 +2769,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px">
                   <div class="section-lbl mb3">${col.colour_name} — Media</div>
                   <div class="digi-media-grid">
-                    <div class="digi-upload-tile" onclick="document.getElementById('${imgId}-file').click()">
+                    ${isRestock ? `
+                    <div class="digi-upload-tile digi-upload-tile-locked">
+                      Locked for restock<br>Using existing SKU media
+                    </div>` : `<div class="digi-upload-tile" onclick="document.getElementById('${imgId}-file').click()">
                       Click to upload<br>or drag and drop
-                    </div>
+                    </div>`}
                     <div>
                       <div id="${imgId}-current" class="digi-media-strip">${currentMedia}</div>
                       <div id="${imgId}-preview" class="digi-media-strip" style="display:none"></div>
-                      <div class="digi-media-actions">
+                      ${isRestock ? `<div class="xs td2">Media editing is locked for linked restock SKUs.</div>` : `<div class="digi-media-actions">
                         <button type="button" class="btn sm" onclick="document.getElementById('${imgId}-file').click()">Replace</button>
                         <button type="button" class="btn sm" onclick="clearColourMediaSelection('${imgId}')">Remove</button>
-                      </div>
+                      </div>`}
                     </div>
                   </div>
+                  ${isRestock ? `<div id="${imgId}-lock" class="digi-restock-lock-flag" style="display:none"></div>` : ''}
                   <input type="file" id="${imgId}-file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/avi,video/x-matroska"
-                    style="display:none" onchange="handleColourMediaPreview('${imgId}')">
+                    style="display:none" onchange="handleColourMediaPreview('${imgId}')" ${isRestock ? 'disabled' : ''}>
                   <div class="xs td2 mt1 mb2">Upload one file (Photo max 5 MB or Video max 100 MB)</div>
                   <div id="${imgId}-msg" style="display:none;font-size:12px;margin-bottom:6px"></div>
-                  <button id="${imgId}-save-btn" class="btn sm" onclick="handleSaveColourMedia(${headerId},${col.colour_id},'${imgId}')">💾 Save Media</button>
+                  ${isRestock
+                    ? '<button class="btn sm" disabled>Media Locked for Restock</button>'
+                    : `<button id="${imgId}-save-btn" class="btn sm" onclick="handleSaveColourMedia(${headerId},${col.colour_id},'${imgId}')">💾 Save Media</button>`}
                 </div>
               </div>
             </div>
@@ -2720,35 +2800,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Product details section (per item — text specs only; photos are per colour tab above)
         const pdId = `pd-${item.item_id}`;
+        const isItemRestockLocked = colours.some((c) => {
+          const sku = skus.find((sk) => sk.item_colour_id === c.colour_id);
+          return Boolean((sku && (sku.is_restock || sku.stock_action === 'RESTOCK_EXISTING')) || c.linked_sku_id);
+        });
+        const pdReadOnlyAttr = isItemRestockLocked ? 'readonly' : '';
         const productDetailsHtml = `
           <div style="border-top:1.5px solid var(--border);padding-top:16px;margin-top:8px">
             <div class="section-lbl mb3">Product Details for Catalogue
               <span class="xs td2" style="font-weight:400;margin-left:8px">(shared specs — saved to product master)</span>
             </div>
+            ${isItemRestockLocked ? `<div id="${pdId}-lock" class="digi-restock-note">Restock linked item: product details are locked and reused from the existing SKU connection.</div>` : ''}
             <div class="fg3 mb3">
               <div class="fgrp" style="grid-column:1/-1">
                 <label>Product Description</label>
-                <textarea id="${pdId}-desc" rows="2" placeholder="e.g. Premium metal frame eyeglasses with spring hinges and UV400 lenses">${item.description || ''}</textarea>
+                <textarea id="${pdId}-desc" rows="2" placeholder="e.g. Premium metal frame eyeglasses with spring hinges and UV400 lenses" ${pdReadOnlyAttr}>${item.description || ''}</textarea>
               </div>
               <div class="fgrp">
                 <label>Frame Material</label>
-                <input id="${pdId}-material" placeholder="e.g. Stainless Steel, Titanium, Acetate" value="${item.frame_material || ''}">
+                <input id="${pdId}-material" placeholder="e.g. Stainless Steel, Titanium, Acetate" value="${item.frame_material || ''}" ${pdReadOnlyAttr}>
               </div>
               <div class="fgrp">
                 <label>Frame Width (mm)</label>
-                <input type="number" id="${pdId}-width" placeholder="e.g. 135" step="0.1" value="${item.frame_width || ''}">
+                <input type="number" id="${pdId}-width" placeholder="e.g. 135" step="0.1" value="${item.frame_width || ''}" ${pdReadOnlyAttr}>
               </div>
               <div class="fgrp">
                 <label>Lens Height (mm)</label>
-                <input type="number" id="${pdId}-height" placeholder="e.g. 42" step="0.1" value="${item.lens_height || ''}">
+                <input type="number" id="${pdId}-height" placeholder="e.g. 42" step="0.1" value="${item.lens_height || ''}" ${pdReadOnlyAttr}>
               </div>
               <div class="fgrp">
                 <label>Temple Length (mm)</label>
-                <input type="number" id="${pdId}-temple" placeholder="e.g. 145" step="0.1" value="${item.temple_length || ''}">
+                <input type="number" id="${pdId}-temple" placeholder="e.g. 145" step="0.1" value="${item.temple_length || ''}" ${pdReadOnlyAttr}>
               </div>
             </div>
             <div id="${pdId}-msg" style="display:none;font-size:12.5px;margin-bottom:8px"></div>
-            <button class="btn sm mt2" onclick="handleSaveProductDetails(${item.item_id}, ${item.product_master_id}, '${pdId}')">💾 Save Product Specs</button>
+            ${isItemRestockLocked
+              ? '<button class="btn sm mt2" disabled>Product Specs Locked for Restock</button>'
+              : `<button class="btn sm mt2" onclick="handleSaveProductDetails(${headerId}, ${item.item_id}, ${item.product_master_id}, '${pdId}')">💾 Save Product Specs</button>`}
           </div>`;
 
         section.innerHTML = `
@@ -2801,15 +2889,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.handleGenerateSKU = async function(headerId, itemId, colourId) {
     const priceEl = document.getElementById(`sale-price-${itemId}-${colourId}`);
-    if (!priceEl) return;
-    const price = parseFloat(priceEl.value);
-    if (!price || price <= 0) return alert('Enter a valid Sale Price.');
+    const isRestockTrigger = !priceEl;
+    const price = isRestockTrigger ? null : parseFloat(priceEl.value);
+    if (!isRestockTrigger && (!price || price <= 0)) return alert('Enter a valid Sale Price.');
+    const btn = document.querySelector(`button[onclick*="handleGenerateSKU(${headerId},${itemId},${colourId}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
     try {
-      await apiPost(`/api/purchases/${headerId}/generate-sku`, {
+      const response = await apiPost(`/api/purchases/${headerId}/generate-sku`, {
         item_id: itemId, item_colour_id: colourId, sale_price: price
       });
+      if (isRestockTrigger) {
+        const eventId = response && response.purchase_event_id
+          ? response.purchase_event_id
+          : response && response.data && response.data.purchase_event_id;
+        if (eventId) {
+          alert(`Restock purchase entry generated: ${eventId}`);
+        }
+      }
       await openDigitisationPage(headerId);
     } catch (err) { alert(err.message); }
+    finally {
+      if (btn) { btn.disabled = false; btn.textContent = isRestockTrigger ? `Generate Purchase Entry` : 'Generate SKU'; }
+    }
   };
 
   // Show local preview when a file is selected
@@ -2835,10 +2936,18 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.readAsDataURL(file);
   };
 
-  window.handleSaveProductDetails = async function(itemId, productMasterId, pdId) {
+  window.handleSaveProductDetails = async function(headerId, itemId, productMasterId, pdId) {
     const getV  = (sfx) => { const el = document.getElementById(`${pdId}-${sfx}`); return el ? el.value.trim() || null : null; };
     const toN   = (sfx) => { const v = parseFloat(document.getElementById(`${pdId}-${sfx}`)?.value); return isNaN(v) ? null : v; };
     const msgEl = document.getElementById(`${pdId}-msg`);
+    if (document.getElementById(`${pdId}-lock`)) {
+      if (msgEl) {
+        msgEl.textContent = 'Restock linked item: product details are locked.';
+        msgEl.style.color = 'var(--text2)';
+        msgEl.style.display = '';
+      }
+      return;
+    }
     const btn   = document.querySelector(`button[onclick*="handleSaveProductDetails(${itemId}"]`);
     if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
 
@@ -2849,7 +2958,9 @@ document.addEventListener('DOMContentLoaded', () => {
         frame_material: getV('material'),
         frame_width:    toN('width'),
         lens_height:    toN('height'),
-        temple_length:  toN('temple')
+        temple_length:  toN('temple'),
+        header_id:      headerId,
+        item_id:        itemId
       });
 
       if (msgEl) {
@@ -2920,6 +3031,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Unified upload + persist for selected media per colour variant
   window.handleSaveColourMedia = async function(headerId, colourId, imgId, mediaType) {
+    if (document.getElementById(`${imgId}-lock`)) {
+      const lockMsgEl = document.getElementById(`${imgId}-msg`);
+      if (lockMsgEl) {
+        lockMsgEl.textContent = 'Restock linked SKU: media editing is locked.';
+        lockMsgEl.style.color = 'var(--text2)';
+        lockMsgEl.style.display = '';
+      }
+      return;
+    }
     const fileEl = document.getElementById(`${imgId}-file`);
     const selected = fileEl && fileEl.files && fileEl.files[0] ? fileEl.files[0] : null;
     const inferredVideo = selected ? selected.type.startsWith('video/') : false;
@@ -3103,7 +3223,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="tc">${r.total_qty || 0}</td>
         <td class="mono xs">${inrD(r.expected_bill_amt)}</td>
         <td class="xs td2">${fmtDate(r.created_at)}</td>
-        <td><button class="btn xs primary" onclick="openBillVerifyPage(${r.header_id})">Verify Bill</button></td>
+        <td><button class="btn xs primary" data-action="open-bill-verify" data-id="${r.header_id}">Verify Bill</button></td>
       </tr>`).join('');
     } catch (err) {
       if (tb) tb.innerHTML = `<tr><td colspan="8" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`;
@@ -3292,17 +3412,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const active = isBrandingActiveStatus(r.pipeline_status);
         const history = isBrandingHistoryStatus(r.pipeline_status);
         const actionHtml = active
-          ? `<button class="btn xs primary" onclick="openBrandingPage(${r.header_id})">View / Manage</button>`
+          ? `<button class="btn xs primary" data-action="open-branding" data-id="${r.header_id}">View / Manage</button>`
           : (history
-            ? `<button class="btn xs primary" onclick="toggleBrandingHistoryDetail(${r.header_id}); return false;">View Details</button>`
-            : `<button class="btn xs" onclick="openPurchaseView(${r.header_id})">View</button>`);
-        const rowClick = history ? ` onclick="toggleBrandingHistoryDetail(${r.header_id})"` : '';
+            ? `<button class="btn xs primary" data-action="toggle-branding-history" data-id="${r.header_id}">View Details</button>`
+            : `<button class="btn xs" data-action="open-purchase-view" data-id="${r.header_id}">View</button>`);
+        const rowAction = history ? ` data-action="toggle-branding-history" data-id="${r.header_id}"` : '';
         const rowStyle = history ? ' style="cursor:pointer"' : '';
         const detailRow = history ? `
           <tr id="branding-hist-row-${r.header_id}" style="display:none;background:#f8fbff">
             <td colspan="8" id="branding-hist-cell-${r.header_id}" class="p0"></td>
           </tr>` : '';
-        return `<tr${rowClick}${rowStyle}>
+        return `<tr${rowAction}${rowStyle}>
           <td class="mono xs fw6">#${r.header_id}</td>
           <td class="fw6">${r.supplier_name || '—'}</td>
           <td class="mono xs td2">${r.bill_ref || r.bill_number || '—'}</td>
@@ -3340,7 +3460,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="tc">${r.item_count || 0}</td>
         <td class="tc">${r.total_qty || 0}</td>
         <td class="xs td2">${fmtDate(r.created_at)}</td>
-        <td><button class="btn xs primary" onclick="openDigitisationPage(${r.header_id})">Digitise</button></td>
+        <td><button class="btn xs primary" data-action="open-digitisation" data-id="${r.header_id}">Digitise</button></td>
       </tr>`).join('');
     } catch (err) {
       if (tb) tb.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`;
@@ -3412,6 +3532,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let _mcBrandFilterReady = false;
   let _mcRowById = {};
+  let _mcDetailSkus = [];
+  const canEditMasterDigitisationFields = user.role === 'super_admin' || userPermissions.includes('foundry.catalogue.edit');
 
   async function _mcEnsureBrandFilter() {
     if (_mcBrandFilterReady) return;
@@ -3433,64 +3555,179 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  window.openMasterProductDetail = function(productId) {
-    const r = _mcRowById[productId];
-    if (!r) return;
+  window.handleMasterSkuEditorSkuChange = function() {
+    const skuSel = document.getElementById('mc-edit-sku-id');
+    if (!skuSel) return;
+    const skuId = Number(skuSel.value || 0);
+    const selected = _mcDetailSkus.find((s) => Number(s.sku_id) === skuId) || null;
+    const mrpEl = document.getElementById('mc-edit-mrp');
+    const imgEl = document.getElementById('mc-edit-photo');
+    const vidEl = document.getElementById('mc-edit-video');
+    if (mrpEl) mrpEl.value = selected && selected.sale_price != null ? Number(selected.sale_price) : '';
+    if (imgEl) imgEl.value = selected && selected.image_url ? selected.image_url : '';
+    if (vidEl) vidEl.value = selected && selected.video_url ? selected.video_url : '';
+  };
+
+  window.handleMasterDigitisationSave = async function(productId) {
+    if (!canEditMasterDigitisationFields) return;
+    const saveBtn = document.getElementById('mc-edit-save-btn');
+    const msgEl = document.getElementById('mc-edit-msg');
+    const skuSel = document.getElementById('mc-edit-sku-id');
+    const selectedSkuId = Number((skuSel && skuSel.value) || 0);
+    const payload = {
+      description: val('mc-edit-description') || null,
+      frame_material: val('mc-edit-frame-material') || null,
+      frame_width: val('mc-edit-frame-width') ? Number(val('mc-edit-frame-width')) : null,
+      lens_height: val('mc-edit-lens-height') ? Number(val('mc-edit-lens-height')) : null,
+      temple_length: val('mc-edit-temple-length') ? Number(val('mc-edit-temple-length')) : null,
+      image_url: val('mc-edit-photo') || null
+    };
+    const mrpRaw = val('mc-edit-mrp');
+    const mrpValue = mrpRaw ? Number(mrpRaw) : null;
+    const videoUrl = val('mc-edit-video') || null;
+
+    if (mrpRaw && (!Number.isFinite(mrpValue) || mrpValue <= 0)) {
+      if (msgEl) {
+        msgEl.textContent = 'Enter a valid MRP value.'
+        msgEl.style.display = ''
+        msgEl.style.color = 'var(--red)'
+      }
+      return
+    }
+
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+    if (msgEl) { msgEl.style.display = 'none'; msgEl.textContent = ''; }
+    try {
+      await apiPut(`/api/products/${productId}/details`, payload);
+      if (selectedSkuId > 0 && mrpValue != null) {
+        await apiPut(`/api/skus/${selectedSkuId}/sale-price`, {
+          sale_price: mrpValue,
+          reason: 'MASTER_CATALOGUE_DIGITISATION_EDIT'
+        });
+      }
+      if (selectedSkuId > 0) {
+        await apiPut(`/api/skus/${selectedSkuId}/media`, {
+          image_url: payload.image_url,
+          video_url: videoUrl
+        });
+      }
+      if (msgEl) {
+        msgEl.textContent = 'Digitisation fields saved.'
+        msgEl.style.display = ''
+        msgEl.style.color = 'var(--green)'
+      }
+      await loadMasterCatalogue();
+      await openMasterProductDetail(productId);
+    } catch (err) {
+      if (msgEl) {
+        msgEl.textContent = err.message || 'Failed to save changes'
+        msgEl.style.display = ''
+        msgEl.style.color = 'var(--red)'
+      }
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    }
+  };
+
+  window.openMasterProductDetail = async function(productId) {
+    const row = _mcRowById[productId];
+    if (!row) return;
     const titleEl = document.getElementById('mc-detail-title');
     const idEl = document.getElementById('mc-detail-id');
     const bodyEl = document.getElementById('mc-detail-body');
-    if (titleEl) titleEl.textContent = r.brand_name || 'Product';
-    if (idEl) idEl.textContent = r.product_id ? `product_id ${r.product_id}` : '';
+    if (titleEl) titleEl.textContent = row.brand_name || 'Product';
+    if (idEl) idEl.textContent = row.product_id ? `product_id ${row.product_id}` : '';
     if (!bodyEl) return;
-
-    const styleBlock = (() => {
-      const sm = r.style_model ? `<div>${_mcEsc(r.style_model)}</div>` : '';
-      const sn = r.source_model_number && String(r.source_model_number).trim() !== ''
-        ? `<div class="xs td2 mono" style="margin-top:4px">Source model #: ${_mcEsc(r.source_model_number)}</div>`
-        : '';
-      if (!sm && !sn) return '—';
-      return sm + sn;
-    })();
-
-    const purchaseBlock = (() => {
-      const c = Number(r.purchase_count) || 0;
-      if (c === 0) return '<span class="td2">No purchase lines yet</span>';
-      const lo = r.purchase_rate_min;
-      const hi = r.purchase_rate_max;
-      if (lo == null && hi == null) return '—';
-      if (lo != null && hi != null) {
-        return `<div>Lowest (purchase rate): <span class="mono fw6">${_mcInr(lo)}</span></div>
-          <div style="margin-top:6px">Highest (purchase rate): <span class="mono fw6">${_mcInr(hi)}</span></div>`;
-      }
-      const v = _mcInr(lo != null ? lo : hi);
-      return `<div><span class="mono fw6">${v}</span></div>`;
-    })();
-
-    const mrpBlock = (() => {
-      const lo = r.mrp_min;
-      const hi = r.mrp_max;
-      if (lo == null && hi == null) {
-        return '<span class="td2">No SKUs / MRP (sale price) yet</span>';
-      }
-      if (lo != null && hi != null && Number(lo) === Number(hi)) {
-        return `<span class="mono fw6">${_mcInr(lo)}</span> <span class="xs td2">(from SKU sale prices)</span>`;
-      }
-      return `<div>Lowest MRP: <span class="mono fw6">${_mcInr(lo)}</span></div>
-        <div style="margin-top:6px">Highest MRP: <span class="mono fw6">${_mcInr(hi)}</span></div>
-        <div class="xs td2" style="margin-top:6px">MIN/MAX of SKU sale_price for this model.</div>`;
-    })();
-
-    bodyEl.innerHTML = [
-      _mcDetailKV('Brand', _mcEsc(r.brand_name || '—')),
-      _mcDetailKV('EW collection', _mcEsc(r.ew_collection || '—')),
-      _mcDetailKV('Style', styleBlock),
-      _mcDetailKV('Manufacturer', _mcEsc(r.manufacturer_name || '—')),
-      _mcDetailKV('Source brand', _mcEsc(r.source_brand || '—')),
-      _mcDetailKV('Source collection', _mcEsc(r.source_collection || '—')),
-      _mcDetailKV('Purchase (lowest & highest rate)', purchaseBlock),
-      _mcDetailKV('MRP', mrpBlock)
-    ].join('');
+    bodyEl.innerHTML = '<div class="tc td2 p12">Loading details…</div>';
     if (typeof openM === 'function') openM('modal-master-product');
+
+    try {
+      const [product, skus] = await Promise.all([
+        apiGet(`/api/products/${productId}`),
+        apiGet(`/api/skus/by-product/${productId}`)
+      ]);
+      _mcDetailSkus = Array.isArray(skus) ? skus : [];
+      const r = product || row;
+      const selectedSku = _mcDetailSkus[0] || null;
+      const skuOptions = _mcDetailSkus.length
+        ? _mcDetailSkus.map((s, idx) => `<option value="${Number(s.sku_id || 0)}"${idx === 0 ? ' selected' : ''}>${_mcEsc(s.sku_code || `SKU ${s.sku_id}`)} · ${_mcEsc(s.colour_name || '—')}</option>`).join('')
+        : '<option value="">No SKU variants</option>';
+      const styleBlock = (() => {
+        const sm = r.style_model ? `<div>${_mcEsc(r.style_model)}</div>` : '';
+        const sn = r.source_model_number && String(r.source_model_number).trim() !== ''
+          ? `<div class="xs td2 mono" style="margin-top:4px">Source model #: ${_mcEsc(r.source_model_number)}</div>`
+          : '';
+        if (!sm && !sn) return '—';
+        return sm + sn;
+      })();
+      const purchaseBlock = (() => {
+        const c = Number(r.purchase_count) || 0;
+        if (c === 0) return '<span class="td2">No purchase lines yet</span>';
+        const lo = r.purchase_rate_min;
+        const hi = r.purchase_rate_max;
+        if (lo == null && hi == null) return '—';
+        if (lo != null && hi != null) {
+          return `<div>Lowest: <span class="mono fw6">${_mcInr(lo)}</span></div><div style="margin-top:6px">Highest: <span class="mono fw6">${_mcInr(hi)}</span></div>`;
+        }
+        return `<div><span class="mono fw6">${_mcInr(lo != null ? lo : hi)}</span></div>`;
+      })();
+
+      bodyEl.innerHTML = `
+        ${_mcDetailKV('Brand', _mcEsc(r.brand_name || '—'))}
+        ${_mcDetailKV('EW collection', _mcEsc(r.ew_collection || '—'))}
+        ${_mcDetailKV('Style', styleBlock)}
+        ${_mcDetailKV('Manufacturer', _mcEsc(r.manufacturer_name || '—'))}
+        ${_mcDetailKV('Source brand', _mcEsc(r.source_brand || '—'))}
+        ${_mcDetailKV('Source collection', _mcEsc(r.source_collection || '—'))}
+        ${_mcDetailKV('Purchase (readonly)', purchaseBlock)}
+        <hr style="border:none;border-top:1px solid #eee;margin:10px 0 14px">
+        <div class="xs td2" style="text-transform:uppercase;letter-spacing:.04em;font-weight:600;margin-bottom:8px">Digitisation fields (editable)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="grid-column:1/-1">
+            <label class="xs td2">Description</label>
+            <textarea id="mc-edit-description" rows="3" style="width:100%">${_mcEsc(r.description || '')}</textarea>
+          </div>
+          <div>
+            <label class="xs td2">Frame material</label>
+            <input id="mc-edit-frame-material" value="${_mcEsc(r.frame_material || '')}">
+          </div>
+          <div>
+            <label class="xs td2">MRP</label>
+            <input id="mc-edit-mrp" type="number" min="1" step="0.01" value="${selectedSku && selectedSku.sale_price != null ? Number(selectedSku.sale_price) : ''}">
+          </div>
+          <div>
+            <label class="xs td2">Frame width (mm)</label>
+            <input id="mc-edit-frame-width" type="number" min="0" step="0.1" value="${r.frame_width != null ? Number(r.frame_width) : ''}">
+          </div>
+          <div>
+            <label class="xs td2">Lens height (mm)</label>
+            <input id="mc-edit-lens-height" type="number" min="0" step="0.1" value="${r.lens_height != null ? Number(r.lens_height) : ''}">
+          </div>
+          <div>
+            <label class="xs td2">Temple length (mm)</label>
+            <input id="mc-edit-temple-length" type="number" min="0" step="0.1" value="${r.temple_length != null ? Number(r.temple_length) : ''}">
+          </div>
+          <div>
+            <label class="xs td2">Photo URL</label>
+            <input id="mc-edit-photo" value="${_mcEsc((selectedSku && selectedSku.image_url) || r.image_url || '')}">
+          </div>
+          <div>
+            <label class="xs td2">Video URL</label>
+            <input id="mc-edit-video" value="${_mcEsc((selectedSku && selectedSku.video_url) || '')}">
+          </div>
+          <div style="grid-column:1/-1">
+            <label class="xs td2">SKU variant for MRP/Media</label>
+            <select id="mc-edit-sku-id" onchange="handleMasterSkuEditorSkuChange()">${skuOptions}</select>
+          </div>
+        </div>
+        <div id="mc-edit-msg" class="xs" style="margin-top:10px;display:none"></div>
+        <div style="margin-top:10px">
+          <button id="mc-edit-save-btn" class="btn primary" onclick="handleMasterDigitisationSave(${Number(productId)})" ${canEditMasterDigitisationFields ? '' : 'disabled'}>Save</button>
+          ${canEditMasterDigitisationFields ? '' : '<span class="xs td2" style="margin-left:8px">Read-only access</span>'}
+        </div>`;
+    } catch (err) {
+      bodyEl.innerHTML = `<div class="tc" style="color:var(--red)">${_mcEsc(err.message || 'Unable to load details')}</div>`;
+    }
   };
 
   window.loadMasterCatalogue = async function loadMasterCatalogue() {
@@ -3512,7 +3749,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (q) params.set('q', q);
     const qs = params.toString();
 
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="tc td2 p12">Loading…</td></tr>';
+    if (tbody) {
+      if (window.cosmosSkeletonTable) window.cosmosSkeletonTable('mc-tbody', 7, 6);
+      else tbody.innerHTML = '<tr><td colspan="7" class="tc td2 p12">Loading…</td></tr>';
+    }
 
     try {
       const rows = await apiGet(`/api/products${qs ? `?${qs}` : ''}`);
@@ -3605,8 +3845,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (brandId)     qs += `&brand_id=${encodeURIComponent(brandId)}`;
     if (productType) qs += `&product_type=${encodeURIComponent(productType)}`;
 
-    if (grid)  grid.innerHTML  = '<div class="empty"><div class="empty-ic">⏳</div><div>Loading…</div></div>';
-    if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="tc td2 p12">Loading…</td></tr>';
+    if (grid) {
+      if (window.cosmosSkeletonCards) window.cosmosSkeletonCards('sku-cat-grid', 6);
+      else grid.innerHTML = '<div class="empty"><div class="empty-ic">⏳</div><div>Loading…</div></div>';
+    }
+    if (tbody) {
+      if (window.cosmosSkeletonTable) window.cosmosSkeletonTable('sku-cat-tbody', 10, 6);
+      else tbody.innerHTML = '<tr><td colspan="10" class="tc td2 p12">Loading…</td></tr>';
+    }
 
     try {
       const rows = await apiGet(`/api/skus?${qs}`);
@@ -3695,8 +3941,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="b ${stockClr(first.stock_qty)} xs" id="skupg-${pid}-stock">${first.stock_qty} in stock</span>
               </div>
               <div class="sku-code" id="skupg-${pid}-sku-code">${first.sku_code}</div>
-              <button class="btn primary sku-view-btn" id="skupg-${pid}-view-btn"
-                onclick="openSkuDetail(${first.sku_id})">View Details</button>
+              <div class="sku-card-actions">
+                <button class="btn primary sku-view-btn" id="skupg-${pid}-view-btn"
+                  onclick="openSkuDetail(${first.sku_id})">View Details</button>
+              </div>
             </div>
           </div>`;
         }).join('');
@@ -3728,7 +3976,9 @@ document.addEventListener('DOMContentLoaded', () => {
               <td class="tc"><span class="b ${stockClr(c.stock_qty)} xs">${c.stock_qty}</span></td>
               <td>${c.total_qty || '—'}</td>
               <td><span class="b b-green xs">${c.status}</span></td>
-              <td><button class="btn sm" onclick="openSkuDetail(${c.sku_id})">View</button></td>
+              <td class="sku-table-actions">
+                <button class="btn sm" onclick="openSkuDetail(${c.sku_id})">View</button>
+              </td>
             </tr>`;
           }).join('');
           return hdr + colRows;
@@ -3883,7 +4133,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span>${r.colour_name || '—'}${r.colour_code ? ` <span class="xs td2">(${r.colour_code})</span>` : ''}</span>
               </div>
             </div>
-            <div><div class="label-sm td2">Barcode</div><div class="mono xs">${r.barcode || '—'}</div></div>
           </div>
           <hr style="border:none;border-top:1px solid #eee;margin:8px 0">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
@@ -4150,12 +4399,47 @@ document.addEventListener('DOMContentLoaded', () => {
     if (qEl) qEl.focus();
   };
 
+  const FOUNDRY_PAGE_PATHS = {
+    dashboard: '/foundry/dashboard',
+    purchases: '/foundry/purchases',
+    'new-purchase': '/foundry/new-purchase',
+    'bill-verify': '/foundry/bill-verify',
+    branding: '/foundry/branding',
+    digitisation: '/foundry/digitisation',
+    'sku-catalogue': '/foundry/sku-catalogue',
+    'stock-view': '/foundry/stock-view',
+    'lens-portfolio': '/foundry/lens-portfolio',
+    'master-catalogue': '/foundry/master-catalogue',
+    'rate-intelligence': '/foundry/rate-intelligence',
+    'stock-transfer': '/foundry/stock-transfer',
+    'transfer-requests': '/foundry/transfer-requests',
+    'movement-list': '/foundry/movement-list',
+    'lab-orders': '/foundry/lab-orders'
+  };
+
+  function getFoundryPageFromPath(pathname) {
+    const normalized = String(pathname || '').replace(/\/+$/, '') || '/foundry';
+    const exact = Object.entries(FOUNDRY_PAGE_PATHS).find(([, route]) => route === normalized);
+    if (exact) return exact[0];
+    if (normalized === '/foundry') return 'dashboard';
+    return 'dashboard';
+  }
+
+  function getFoundryNavEl(id) {
+    return document.querySelector(`.nav-item[onclick*="nav('${id}'"]`) || null;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
-  // NAV PAGE CHANGE EVENTS
+  // NAV PAGE CHANGE EVENTS + CLEAN URL SYNC
   // ─────────────────────────────────────────────────────────────────────────
   const origNav = window.nav;
-  window.nav = function(id, el, skipList) {
+  window.nav = function(id, el, skipList, options) {
+    const navOptions = options || {};
     if (typeof origNav === 'function') origNav(id, el);
+    const nextPath = FOUNDRY_PAGE_PATHS[id] || '/foundry/dashboard';
+    if (!navOptions.fromHistory && window.location.pathname !== nextPath) {
+      window.history.pushState({ module: 'foundry', page: id }, '', nextPath);
+    }
     if (id === 'dashboard')    loadDashboard();
     if (id === 'purchases')    loadPurchases();
     if (id === 'new-purchase') {
@@ -4170,6 +4454,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id === 'stock-transfer')   stInit();
     if (id === 'transfer-requests') loadTransferRequests();
     if (id === 'movement-list')     loadMovementList();
+    if (id === 'lab-orders')        loadLabOrders();
     // Only load the list when navigating from sidebar (not when opening a detail directly)
     if (!skipList) {
       if (id === 'bill-verify')  loadBillVerifyList();
@@ -4177,6 +4462,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (id === 'digitisation') loadDigitisationList();
     }
   };
+
+  function applyFoundryRouteFromPath() {
+    const pageId = getFoundryPageFromPath(window.location.pathname);
+    window.nav(pageId, getFoundryNavEl(pageId), false, { fromHistory: true });
+  }
+
+  window.addEventListener('popstate', () => {
+    applyFoundryRouteFromPath();
+  });
+
+  applyFoundryRouteFromPath();
 
   // ─────────────────────────────────────────────────────────────────────────
   // BARCODE PRINT (TSC P210 · TSPL2 · roll/label geometry is parameterized)
@@ -4187,6 +4483,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // TSC P210 USB vendor/product IDs (TSC Auto ID)
   const TSC_VENDOR_ID = 0x0EB8;
+  let _jsBarcodeLoader = null;
+  let _html5QrLoader = null;
+
+  function _loadScriptOnce(src, attrs, stateKey) {
+    if (window[stateKey]) return Promise.resolve();
+    if (attrs.loaderRef.current) return attrs.loaderRef.current;
+    attrs.loaderRef.current = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      if (attrs.integrity) script.integrity = attrs.integrity;
+      if (attrs.crossorigin) script.crossOrigin = attrs.crossorigin;
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(script);
+    }).finally(() => {
+      attrs.loaderRef.current = null;
+    });
+    return attrs.loaderRef.current;
+  }
+
+  function loadJsBarcodeLib() {
+    return _loadScriptOnce(
+      'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js',
+      {
+        integrity: 'sha384-Kk5SjBOKprEnGfyBWfD2zROFd1Cu8kwOXxG2GIhYPcoDL2rBJS9P8Ud1ZMy4412a',
+        crossorigin: 'anonymous',
+        loaderRef: {
+          get current() { return _jsBarcodeLoader; },
+          set current(v) { _jsBarcodeLoader = v; }
+        }
+      },
+      'JsBarcode'
+    );
+  }
+
+  function loadHtml5QrLib() {
+    return _loadScriptOnce(
+      'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
+      {
+        integrity: 'sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+',
+        crossorigin: 'anonymous',
+        loaderRef: {
+          get current() { return _html5QrLoader; },
+          set current(v) { _html5QrLoader = v; }
+        }
+      },
+      'Html5Qrcode'
+    );
+  }
 
   function _bcEsc(s) {
     if (s == null) return '';
@@ -4207,9 +4553,15 @@ document.addEventListener('DOMContentLoaded', () => {
     return sku;
   }
 
-  window.openBarcodeModal = function(skus, opts) {
+  window.openBarcodeModal = async function(skus, opts) {
     opts = opts || {};
     if (!skus || !skus.length) { alert('No SKUs available to print.'); return; }
+    try {
+      await loadJsBarcodeLib();
+    } catch (err) {
+      alert(err.message || 'Failed to load barcode library.');
+      return;
+    }
     _bcSkus = skus;
     _bcUsbDevice = null;
     _bcUpdatePrinterStatus(null);
@@ -5125,7 +5477,7 @@ ${initScript}
       if (overlay) overlay.style.display = '';
     }
 
-    window.stToggleCamera = function stToggleCamera() {
+    window.stToggleCamera = async function stToggleCamera() {
       window.stUpdateQrHttpHint();
       if (!stIsLiveCameraSupported()) {
         stToast('Live camera is not allowed on plain HTTP. Use “QR from image” or open this site over HTTPS / localhost.', '#ca8a04');
@@ -5142,8 +5494,12 @@ ${initScript}
       const overlay = document.getElementById('st-scan-overlay');
       if (overlay) overlay.style.display = 'none';
       if (!window.Html5Qrcode) {
-        stToast('QR scanner library not loaded', '#e53e3e');
-        return;
+        try {
+          await loadHtml5QrLib();
+        } catch (err) {
+          stToast('QR scanner library failed to load', '#e53e3e');
+          return;
+        }
       }
       const btn = document.getElementById('st-cam-btn');
       if (btn) btn.textContent = '⏳ Starting…';
@@ -6059,9 +6415,116 @@ ${initScript}
     }
   };
 
+  function bindDelegatedTableActions() {
+    const handler = (event) => {
+      const actionEl = event.target.closest('[data-action]');
+      if (!actionEl) return;
+      const action = actionEl.dataset.action;
+      const id = Number(actionEl.dataset.id);
+      if (!action) return;
+
+      if (action === 'open-bill-verify' && id) {
+        openBillVerifyPage(id);
+        return;
+      }
+      if (action === 'open-branding' && id) {
+        openBrandingPage(id);
+        return;
+      }
+      if (action === 'open-digitisation' && id) {
+        openDigitisationPage(id);
+        return;
+      }
+      if (action === 'open-purchase-view' && id) {
+        openPurchaseView(id);
+        return;
+      }
+      if (action === 'toggle-branding-history' && id) {
+        toggleBrandingHistoryDetail(id);
+      }
+    };
+
+    ['purchases-tbody', 'bv-list-tbody', 'branding-list-tbody', 'digi-list-tbody'].forEach((id) => {
+      const tableBody = document.getElementById(id);
+      if (!tableBody || tableBody.dataset.delegateBound === '1') return;
+      tableBody.dataset.delegateBound = '1';
+      tableBody.addEventListener('click', handler);
+    });
+  }
+
+  // ── LAB ORDERS ────────────────────────────────────────────────────────────
+  let _labOrdersTimer = null;
+  window.debounceLabOrders = function() {
+    clearTimeout(_labOrdersTimer);
+    _labOrdersTimer = setTimeout(() => {
+      if (window.loadLabOrders) window.loadLabOrders();
+    }, 300);
+  };
+
+  window.labOrdersClearFilters = function() {
+    const s = document.getElementById('lab-orders-search');
+    const f = document.getElementById('lab-orders-status-filter');
+    if (s) s.value = '';
+    if (f) f.value = '';
+    if (window.loadLabOrders) window.loadLabOrders();
+  };
+
+  window.loadLabOrders = async function() {
+    const tbody = document.getElementById('lab-orders-tbody');
+    if (!tbody) return;
+
+    if (typeof window.cosmosSkeletonTable === 'function') {
+      window.cosmosSkeletonTable('lab-orders-tbody', 7, 6);
+    } else {
+      tbody.innerHTML = '';
+    }
+
+    const search = (document.getElementById('lab-orders-search')?.value || '').trim();
+    const status = (document.getElementById('lab-orders-status-filter')?.value || '').trim();
+
+    try {
+      const qs = new URLSearchParams();
+      if (search) qs.set('q', search);
+      if (status) qs.set('status', status);
+
+      const orders = await apiGet(`/api/pos/all-orders?${qs.toString()}`);
+      if (!orders || !orders.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="p0">
+          <div class="empty" style="padding:32px 24px;text-align:center">
+            <div class="empty-ic">🔬</div>
+            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No orders match</div>
+            <div style="font-size:13px;color:var(--text2);margin-bottom:16px;max-width:420px;margin-left:auto;margin-right:auto">Adjust search or status, or clear filters to reload the full list.</div>
+            <button type="button" class="btn primary" onclick="window.labOrdersClearFilters && window.labOrdersClearFilters()">Clear filters</button>
+          </div>
+        </td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = orders.map(o => {
+        return `
+          <tr>
+            <td><span class="lab-order-no">${o.order_no}</span></td>
+            <td>${o.store_name || o.store_id}</td>
+            <td>${o.customer_name || 'Walk-in'} ${o.customer_phone ? '<br><span style="font-size:11px;color:var(--text3)">'+o.customer_phone+'</span>' : ''}</td>
+            <td><span class="b b-gray" style="font-size:10px">${o.order_kind || 'STORE'}</span></td>
+            <td class="mono fw6">${inr(o.total_amount)}</td>
+            <td>${stageBadge(o.status)}</td>
+            <td style="font-size:12px;color:var(--text3)">${fmtDateTime(o.created_at)}</td>
+          </tr>
+        `;
+      }).join('');
+
+    } catch (e) {
+      const msg = e && e.message ? e.message : 'Could not load orders.';
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg);
+      tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">Could not load orders.</td></tr>`;
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // INIT
   // ─────────────────────────────────────────────────────────────────────────
+  bindDelegatedTableActions();
   loadFormData();
   loadDashboard();
   loadPurchases();

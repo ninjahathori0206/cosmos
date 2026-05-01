@@ -1,5 +1,35 @@
 const API_KEY = (typeof window !== 'undefined' && window.__COSMOS_API_KEY__) || ''
 
+const COMMAND_UNIT_PAGE_PATHS = {
+  dashboard: '/command-unit/dashboard',
+  stores: '/command-unit/stores',
+  users: '/command-unit/users',
+  roles: '/command-unit/roles',
+  modules: '/command-unit/modules',
+  homebrands: '/command-unit/homebrands',
+  locations: '/command-unit/locations',
+  settings: '/command-unit/settings',
+  membership: '/command-unit/membership',
+  leavetypes: '/command-unit/leavetypes',
+  'foundry-settings': '/command-unit/foundry-settings',
+  'cu-suppliers': '/command-unit/cu-suppliers',
+  'cu-maker-master': '/command-unit/cu-maker-master',
+  'cu-branding-agents': '/command-unit/cu-branding-agents',
+  audit: '/command-unit/audit'
+}
+
+function getCommandUnitPageFromPath(pathname) {
+  const normalized = String(pathname || '').replace(/\/+$/, '') || '/command-unit'
+  const exact = Object.entries(COMMAND_UNIT_PAGE_PATHS).find(([, route]) => route === normalized)
+  if (exact) return exact[0]
+  if (normalized === '/command-unit') return 'dashboard'
+  return 'dashboard'
+}
+
+function getCommandUnitNavEl(id) {
+  return document.querySelector(`.sidebar-nav .nav-item[onclick*="showPage('${id}'"]`) || null
+}
+
 function fmtIstDateTime(v) {
   if (!v) return '—';
   const d = new Date(v);
@@ -33,9 +63,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (!cosmosModuleAllowed('command_unit')) {
-    if (cosmosModuleAllowed('foundry')) window.location.href = '/foundry.html';
-    else if (cosmosModuleAllowed('finance')) window.location.href = '/finance.html';
-    else if (cosmosModuleAllowed('storepilot')) window.location.href = '/storepilot.html';
+    if (cosmosModuleAllowed('foundry')) window.location.href = '/foundry/dashboard';
+    else if (cosmosModuleAllowed('finance')) window.location.href = '/finance/dashboard';
+    else if (cosmosModuleAllowed('storepilot')) window.location.href = '/storepilot/dashboard';
+    else if (cosmosModuleAllowed('pos')) window.location.href = '/pos/dashboard';
+    else if (cosmosModuleAllowed('cx')) window.location.href = '/cx/dashboard';
     else {
       sessionStorage.removeItem('cosmos_token');
       sessionStorage.removeItem('cosmos_user');
@@ -61,6 +93,26 @@ document.addEventListener('DOMContentLoaded', () => {
   if (sidebarAvatar && user.full_name) {
     sidebarAvatar.textContent = user.full_name.split(' ').filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
   }
+
+  const baseShowPage = window.showPage
+  if (typeof baseShowPage === 'function') {
+    window.showPage = function(id, el, options) {
+      const showOptions = options || {}
+      baseShowPage(id, el)
+      const nextPath = COMMAND_UNIT_PAGE_PATHS[id] || '/command-unit/dashboard'
+      if (!showOptions.fromHistory && window.location.pathname !== nextPath) {
+        window.history.pushState({ module: 'command-unit', page: id }, '', nextPath)
+      }
+    }
+    const pageId = getCommandUnitPageFromPath(window.location.pathname)
+    window.showPage(pageId, getCommandUnitNavEl(pageId), { fromHistory: true })
+  }
+
+  window.addEventListener('popstate', () => {
+    if (typeof window.showPage !== 'function') return
+    const pageId = getCommandUnitPageFromPath(window.location.pathname)
+    window.showPage(pageId, getCommandUnitNavEl(pageId), { fromHistory: true })
+  })
 
   // ─── HTTP helpers ──────────────────────────────────────────────────────────
 
@@ -513,13 +565,6 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.appendChild(tr);
       });
 
-      document.querySelectorAll('.user-edit-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          const id = Number(e.target.closest('tr').dataset.userId);
-          openEditUserModal(id);
-        });
-      });
-
       refreshStoreDropdowns();
     } catch (err) {
       tbody.innerHTML = `<tr><td colspan="8" class="td-muted">Error: ${err.message}</td></tr>`;
@@ -659,6 +704,9 @@ document.addEventListener('DOMContentLoaded', () => {
       { key: 'foundry.digitisation.edit',           label: 'Digitisation — Edit Media' },
       { key: 'foundry.warehouse.view',              label: 'Warehouse — View' },
       { key: 'foundry.warehouse.create',            label: 'Warehouse — Approve Ready' },
+    ]},
+    { group: 'Foundry — Lab', perms: [
+      { key: 'foundry.lab.view',                    label: 'Lab Orders — View (all stores)' },
     ]},
     { group: 'Foundry — Catalogue & Inventory', perms: [
       { key: 'foundry.catalogue.view',              label: 'SKU Catalogue — View' },
@@ -1013,59 +1061,83 @@ document.addEventListener('DOMContentLoaded', () => {
   let cachedBrands = [];
 
   async function loadHomeBrands() {
+    const tbody = document.getElementById('home-brands-tbody');
+    if (!tbody) return;
+    if (typeof window.cosmosSkeletonTable === 'function') {
+      window.cosmosSkeletonTable('home-brands-tbody', 5, 8);
+    }
     try {
       const brands = await apiGet('/api/home-brands');
-      cachedBrands = brands;
-      const container = document.querySelector('#page-homebrands .three-col');
-      if (!container) return;
-      container.innerHTML = '';
+      cachedBrands = Array.isArray(brands) ? brands : [];
+      tbody.innerHTML = '';
 
-      brands.forEach((b) => {
-        const initials = (b.brand_name || '?').charAt(0).toUpperCase();
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.dataset.brandId = b.brand_id;
-        card.innerHTML = `
-          <div style="padding:20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
-            <div style="width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,#6C3FC5,#8B5CF6);display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;font-weight:700">${initials}</div>
-            <div>
-              <div class="fw-600" style="font-size:15px">${b.brand_name}</div>
-              <div class="td-muted font-mono" style="font-size:11px">${b.brand_code}</div>
+      if (!cachedBrands.length) {
+        tbody.innerHTML = `
+          <tr><td colspan="5" style="padding:0;border:none">
+            <div class="empty" style="padding:40px 24px;text-align:center">
+              <div class="empty-icon" style="font-size:36px;margin-bottom:10px">🏷️</div>
+              <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No home brands yet</div>
+              <div style="font-size:13px;color:var(--text2);margin-bottom:16px;max-width:420px;margin-left:auto;margin-right:auto">Create your first home brand to use on catalogue and purchases. Brand codes stay fixed once SKUs exist.</div>
+              <button type="button" class="topbar-btn primary" onclick="openModal('modal-new-brand')">+ Add Home Brand</button>
             </div>
-            <span class="badge ${b.is_active ? 'badge-green' : 'badge-gray'} ml-auto">${b.is_active ? 'Active' : 'Inactive'}</span>
-          </div>
-          <div class="card-body">
-            <div class="td-muted text-sm mb-4">${b.brand_description || '—'}</div>
-          </div>
-          <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px">
-            <button class="topbar-btn brand-edit-btn" style="flex:1;justify-content:center;font-size:12px">Edit</button>
-            <button class="topbar-btn brand-deactivate-btn" style="flex:1;justify-content:center;font-size:12px;${b.is_active ? 'border-color:#DC2626;color:#DC2626' : ''}" ${!b.is_active ? 'disabled' : ''}>${b.is_active ? 'Deactivate' : 'Inactive'}</button>
-          </div>
-        `;
-        container.appendChild(card);
+          </td></tr>`;
+        return;
+      }
+
+      cachedBrands.forEach((b) => {
+        const initials = (b.brand_name || '?').charAt(0).toUpperCase();
+        const tr = document.createElement('tr');
+        tr.dataset.brandId = String(b.brand_id);
+        const desc = b.brand_description ? escHtml(b.brand_description) : '<span class="td-muted">—</span>';
+        const active = Boolean(b.is_active);
+        tr.innerHTML = `
+          <td>
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,var(--purple),var(--purple2));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${escHtml(initials)}</div>
+              <span class="fw-600">${escHtml(b.brand_name || '—')}</span>
+            </div>
+          </td>
+          <td><code style="background:var(--bg);padding:2px 8px;border-radius:4px;font-size:11px">${escHtml(b.brand_code || '')}</code></td>
+          <td class="td-muted text-sm" style="max-width:320px">${desc}</td>
+          <td><span class="badge ${active ? 'badge-green' : 'badge-gray'}">${active ? 'Active' : 'Inactive'}</span></td>
+          <td style="text-align:right;white-space:nowrap">
+            <button type="button" class="topbar-btn home-brand-edit-btn" style="padding:5px 10px;font-size:12px;margin-right:6px">Edit</button>
+            <button type="button" class="topbar-btn home-brand-deactivate-btn" style="padding:5px 10px;font-size:12px;${active ? 'border-color:var(--red);color:var(--red)' : ''}" ${active ? '' : 'disabled'}>${active ? 'Deactivate' : 'Inactive'}</button>
+          </td>`;
+        tbody.appendChild(tr);
       });
 
-      document.querySelectorAll('.brand-edit-btn').forEach((btn) => {
+      tbody.querySelectorAll('.home-brand-edit-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {
-          const id = Number(e.target.closest('.card').dataset.brandId);
-          openEditBrandModal(id);
+          const row = e.target.closest('tr');
+          const id = Number(row && row.dataset.brandId);
+          if (id) openEditBrandModal(id);
         });
       });
-      document.querySelectorAll('.brand-deactivate-btn').forEach((btn) => {
+      tbody.querySelectorAll('.home-brand-deactivate-btn').forEach((btn) => {
         btn.addEventListener('click', async (e) => {
-          const id = Number(e.target.closest('.card').dataset.brandId);
+          const row = e.target.closest('tr');
+          const id = Number(row && row.dataset.brandId);
+          if (!id || btn.disabled) return;
           if (!window.confirm('Deactivate this home brand?')) return;
           try {
             await apiDelete(`/api/home-brands/${id}`);
             await loadHomeBrands();
             await loadDashboard();
+            if (typeof window.cosmosToastSuccess === 'function') {
+              window.cosmosToastSuccess('Home brand deactivated.');
+            }
           } catch (err) {
-            alert('Error: ' + err.message);
+            if (typeof window.cosmosToastError === 'function') {
+              window.cosmosToastError(err.message || 'Could not deactivate brand.');
+            }
           }
         });
       });
     } catch (err) {
-      console.error('Error loading home brands', err);
+      const msg = err && err.message ? err.message : 'Could not load home brands.';
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg);
+      tbody.innerHTML = `<tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px">${escHtml(msg)}</td></tr>`;
     }
   }
 
@@ -1094,7 +1166,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function openEditBrandModal(brandId) {
-    const b = cachedBrands.find((x) => x.brand_id === brandId);
+    const b = cachedBrands.find((x) => Number(x.brand_id) === Number(brandId));
     if (!b) return;
     const title = document.getElementById('edit-brand-title');
     if (title) title.textContent = `Edit — ${b.brand_name}`;
@@ -1532,6 +1604,7 @@ document.addEventListener('DOMContentLoaded', () => {
     { key: 'finance',   label: '💰 Finance',        desc: 'Accounts payable, supplier payments, outstanding tracking' },
     { key: 'storepilot',label: '🏬 StorePilot',    desc: 'Showroom ops — floor, appointments, walk-ins (not billing/POS)' },
     { key: 'pos',       label: '🧾 Store OS (POS)', desc: 'Sales, billing, patient records, prescriptions' },
+    { key: 'cx',        label: '📊 CX',               desc: 'Customer analytics — directories and POS revenue (HQ)' },
     { key: 'army',      label: '🪖 Army',           desc: 'Employee HR, attendance, performance' },
     { key: 'eyewoot_go',label: '📱 Eyewoot Go',     desc: 'Consumer app — store locator, D2C orders' },
     { key: 'promoter',  label: '🤝 Promoter',       desc: 'Promoter referrals, commissions, catalogue sharing' }
@@ -1667,10 +1740,20 @@ document.addEventListener('DOMContentLoaded', () => {
       pendingCount.className = 'badge badge-gray';
       pendingCount.textContent = '—';
     }
-    set('cu-dash-top-skus', '<tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>');
-    set('cu-dash-attendance', '<tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>');
-    set('cu-dash-pending', '<div class="td-muted" style="padding:4px 0">Loading…</div>');
-    set('cu-dash-audit', '<div class="td-muted" style="padding:4px 0">Loading…</div>');
+    if (window.cosmosSkeletonTable) {
+      window.cosmosSkeletonTable('cu-dash-top-skus', 5, 5);
+      window.cosmosSkeletonTable('cu-dash-attendance', 6, 5);
+    } else {
+      set('cu-dash-top-skus', '<tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>');
+      set('cu-dash-attendance', '<tr><td colspan="6" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>');
+    }
+    if (window.cosmosSkeletonRows) {
+      window.cosmosSkeletonRows('cu-dash-pending', 4);
+      window.cosmosSkeletonRows('cu-dash-audit', 4);
+    } else {
+      set('cu-dash-pending', '<div class="td-muted" style="padding:4px 0">Loading…</div>');
+      set('cu-dash-audit', '<div class="td-muted" style="padding:4px 0">Loading…</div>');
+    }
   }
 
   async function loadDashboard() {
@@ -1813,6 +1896,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function bind(id, fn) { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
 
+  function bindTableDelegation() {
+    const usersTbody = document.getElementById('users-tbody');
+    if (usersTbody && usersTbody.dataset.delegateBound !== '1') {
+      usersTbody.dataset.delegateBound = '1';
+      usersTbody.addEventListener('click', (event) => {
+        const btn = event.target.closest('.user-edit-btn');
+        if (!btn) return;
+        const row = btn.closest('tr');
+        const id = Number(row && row.dataset.userId);
+        if (!id) return;
+        openEditUserModal(id);
+      });
+    }
+  }
+
   // Stores
   bind('new-store-save-btn', handleCreateStore);
   bind('edit-store-save-btn', handleSaveStoreChanges);
@@ -1823,6 +1921,7 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('edit-user-deactivate-btn', handleDeactivateUser);
   bindPasswordToggle('new-user-password', 'new-user-password-toggle');
   bindPasswordToggle('edit-user-password', 'edit-user-password-toggle');
+  bindTableDelegation();
 
   // Roles
   bind('new-role-save-btn', handleCreateRole);
@@ -2246,6 +2345,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof _origShowPage === 'function') {
     window.showPage = function(id, el) {
       _origShowPage(id, el);
+      if (id === 'homebrands') loadHomeBrands();
       if (id === 'cu-suppliers')       loadCuSuppliers();
       if (id === 'cu-maker-master')    loadCuMakers();
       if (id === 'cu-branding-agents') loadCuBrandingAgents();

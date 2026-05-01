@@ -370,7 +370,7 @@ SKU Catalogue (LIVE)
 ## Environment Notes
 
 - All dates stored and returned as SQL Server `DATETIME`; displayed in UI as `dd/MM/yyyy HH:mm:ss`
-- Passwords stored as plain `VARCHAR` (system requirement — no bcrypt)
+- Passwords are stored as bcrypt hashes (`bcryptjs`); legacy plaintext rows are auto-migrated on successful login and can be bulk-migrated with `npm run migrate:passwords`
 - All database access through **stored procedures only** — no inline SQL in application code
 - Data types: `INT`, `VARCHAR(200/500)`, `DATETIME`, `DECIMAL(10,2)` / `DECIMAL(5,2)` — no `BIGINT` or unbounded `VARCHAR(MAX)`
 

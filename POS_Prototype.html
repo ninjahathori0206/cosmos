@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Store OS — Cosmos ERP</title>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css">
+<link rel="stylesheet" href="/css/pos.css">
+<link rel="stylesheet" href="/css/lenskart-pos.css">
+<script src="/js/cosmos-ui-polish.js" defer></script>
+<script src="/js/pos.js" defer></script>
+</head>
+<body class="pos-target-tablet-landscape">
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 1 — Staff PIN Login
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-login" class="pos-screen">
+  <div class="pos-login-card">
+
+    <!-- Branding -->
+    <div class="pos-branding">
+      <div class="pos-logo-row">
+        <div class="pos-logo-icon">✦</div>
+        <span class="pos-app-name">Cosmos ERP</span>
+      </div>
+      <span class="pos-module-badge">STORE OS</span>
+    </div>
+
+    <div class="pos-divider"></div>
+
+    <!-- Store selector -->
+    <div class="pos-store-section">
+      <div class="pos-field-label">STORE</div>
+      <div class="pos-store-dropdown-wrap">
+        <button
+          id="store-selector-btn"
+          class="pos-store-selector"
+          aria-haspopup="listbox"
+          aria-expanded="false"
+          aria-label="Select store"
+          tabindex="0"
+        >
+          <div class="pos-store-left">
+            <div class="pos-store-icon">🏪</div>
+            <span id="store-selector-name" class="pos-store-name">Select a store</span>
+          </div>
+          <span class="pos-chevron" aria-hidden="true">⌄</span>
+        </button>
+
+        <div id="store-dropdown" class="pos-store-dropdown" role="listbox" aria-label="Store list">
+          <!-- Populated by pos.js -->
+        </div>
+      </div>
+    </div>
+
+    <div class="pos-divider"></div>
+
+    <!-- PIN entry -->
+    <div class="pos-pin-section">
+      <span class="pos-pin-label">Enter Staff PIN</span>
+      <div class="pos-pin-dots" role="img" aria-label="PIN input progress">
+        <div class="pos-pin-dot" data-idx="0"></div>
+        <div class="pos-pin-dot" data-idx="1"></div>
+        <div class="pos-pin-dot" data-idx="2"></div>
+        <div class="pos-pin-dot" data-idx="3"></div>
+      </div>
+      <div id="pin-error" class="pos-pin-error" role="alert" aria-live="polite"></div>
+    </div>
+
+    <!-- Number pad -->
+    <div class="pos-numpad" id="pos-numpad">
+      <div class="pos-numpad-row">
+        <button class="pos-numpad-btn" data-digit="1" aria-label="1" tabindex="0">
+          <span class="pos-numpad-num">1</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="2" aria-label="2 ABC" tabindex="0">
+          <span class="pos-numpad-num">2</span>
+          <span class="pos-numpad-sub">ABC</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="3" aria-label="3 DEF" tabindex="0">
+          <span class="pos-numpad-num">3</span>
+          <span class="pos-numpad-sub">DEF</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button class="pos-numpad-btn" data-digit="4" aria-label="4 GHI" tabindex="0">
+          <span class="pos-numpad-num">4</span>
+          <span class="pos-numpad-sub">GHI</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="5" aria-label="5 JKL" tabindex="0">
+          <span class="pos-numpad-num">5</span>
+          <span class="pos-numpad-sub">JKL</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="6" aria-label="6 MNO" tabindex="0">
+          <span class="pos-numpad-num">6</span>
+          <span class="pos-numpad-sub">MNO</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button class="pos-numpad-btn" data-digit="7" aria-label="7 PQRS" tabindex="0">
+          <span class="pos-numpad-num">7</span>
+          <span class="pos-numpad-sub">PQRS</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="8" aria-label="8 TUV" tabindex="0">
+          <span class="pos-numpad-num">8</span>
+          <span class="pos-numpad-sub">TUV</span>
+        </button>
+        <button class="pos-numpad-btn" data-digit="9" aria-label="9 WXYZ" tabindex="0">
+          <span class="pos-numpad-num">9</span>
+          <span class="pos-numpad-sub">WXYZ</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button class="pos-numpad-btn ghost" aria-hidden="true" tabindex="-1"></button>
+        <button class="pos-numpad-btn" data-digit="0" aria-label="0" tabindex="0">
+          <span class="pos-numpad-num">0</span>
+        </button>
+        <button class="pos-numpad-btn" id="btn-backspace" aria-label="Delete" tabindex="0">
+          <span class="pos-numpad-num" style="font-size:20px">⌫</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="pos-divider"></div>
+
+    <!-- Footer / login button -->
+    <div class="pos-card-footer">
+      <button
+        id="btn-unlock-pos"
+        class="pos-login-btn"
+        aria-label="Unlock Store OS"
+        tabindex="0"
+      >
+        Unlock POS
+      </button>
+      <span class="pos-hint-text">Each tablet logs in independently per shift</span>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 2 — Login Success
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-login-success" class="pos-screen">
+  <div class="pos-success-card">
+    <div class="pos-check-circle" aria-hidden="true">✓</div>
+    <span class="pos-welcome-txt">Welcome back!</span>
+    <span id="success-staff-name" class="pos-staff-name"></span>
+    <span id="success-role-badge" class="pos-role-badge"></span>
+
+    <div id="success-store-box" class="pos-store-info-box">
+      <span class="pos-store-info-icon">🏪</span>
+      <span id="success-store-name" class="pos-store-info-name"></span>
+    </div>
+
+    <div class="pos-success-divider"></div>
+
+    <div class="pos-session-row">
+      <span class="pos-session-lbl">Session started</span>
+      <span id="success-session-time" class="pos-session-time"></span>
+    </div>
+
+    <div class="pos-success-actions">
+      <button
+        id="btn-enter-pos"
+        class="pos-enter-btn"
+        aria-label="Enter Store OS"
+        tabindex="0"
+      >
+        Enter Store OS
+      </button>
+      <button
+        type="button"
+        class="pos-success-logout-btn pos-lk-logout-btn"
+        aria-label="Log out and return to PIN login"
+        tabindex="0"
+      >
+        Logout
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 3 — Product Catalogue
+     Pencil: pencil-new.pen (repo root). PNG reference: pencil-exports/00-catalogue.png
+     Routes: /pos/catalogue (canonical), /pos/catelogue, /pos/catalog (aliases)
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-catalogue" class="pos-screen">
+  <div class="pos-lk-page">
+    <header class="pos-lk-header pos-lk-header--catalogue" aria-label="Store top bar">
+      <div class="pos-lk-header-left">
+        <span class="pos-lk-logo" aria-hidden="true">C</span>
+        <span class="pos-lk-brand">Cosmos</span>
+        <span class="pos-lk-crumb-sep">/</span>
+        <span class="pos-lk-crumb">Catalogue</span>
+      </div>
+      <div class="pos-lk-header-search" role="search" aria-label="Search catalogue by code">
+        <div class="pos-search-input-wrap pos-search-input-wrap--header">
+          <input id="pos-search-code" class="pos-search-input" type="text" inputmode="search" autocomplete="off" placeholder="SKU / Barcode / Code" aria-label="Search product by SKU, barcode, or code">
+          <button id="btn-pos-search" class="pos-search-btn" aria-label="Run search" tabindex="0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg></button>
+        </div>
+      </div>
+      <div class="pos-lk-header-cart-wrap">
+        <button id="btn-pos-header-cart" class="pos-lk-header-cart-btn" type="button" aria-label="Open cart" tabindex="0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="9" cy="20" r="1"></circle>
+            <circle cx="17" cy="20" r="1"></circle>
+            <path d="M3 4h2l2 11h10l2-7H7"></path>
+          </svg>
+          <span id="pos-header-cart-count" class="pos-lk-header-cart-count" aria-live="polite" hidden>0</span>
+        </button>
+      </div>
+    </header>
+    <nav class="pos-catalogue-filters" aria-label="Catalogue filters">
+      <span class="pos-catalogue-filters-label">Catalogue scope</span>
+      <div class="pos-catalogue-toggle" role="group" aria-label="Catalogue view">
+        <button id="btn-scope-store" class="pos-scope-btn active" data-scope="store" aria-pressed="true" tabindex="0">
+          Store Catalogue
+        </button>
+        <button id="btn-scope-global" class="pos-scope-btn" data-scope="global" aria-pressed="false" tabindex="0">
+          Global Catalogue
+        </button>
+      </div>
+      <span class="pos-catalogue-filters-label pos-catalogue-filters-label--brand" id="pos-catalogue-brand-label">Brand</span>
+      <div class="pos-catalogue-brand-wrap">
+        <label class="pos-visually-hidden" for="pos-catalogue-brand">Filter catalogue by brand</label>
+        <select id="pos-catalogue-brand" class="pos-catalogue-brand-select" aria-labelledby="pos-catalogue-brand-label" tabindex="0">
+          <option value="">All brands</option>
+        </select>
+      </div>
+    </nav>
+    <div class="pos-visually-hidden">
+      <span id="pos-catalogue-staff"></span>
+      <span id="pos-catalogue-store"></span>
+    </div>
+
+  <div class="pos-catalogue-shell">
+    <section class="pos-catalogue-results-wrap">
+      <div id="pos-catalogue-meta" class="pos-catalogue-meta"></div>
+      <div id="pos-catalogue-results" class="pos-catalogue-results" role="list" aria-live="polite"></div>
+    </section>
+
+  </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 3.5 — Product Page
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-product" class="pos-screen">
+  <div class="pos-lk-page">
+    <header class="pos-lk-header" aria-label="Store top bar">
+      <div class="pos-lk-header-left">
+        <button type="button" id="btn-pdp-back" class="pos-lk-back-link pos-pdp-header-back" aria-label="Back to catalogue" tabindex="0">‹ Back</button>
+        <span class="pos-lk-logo" aria-hidden="true">C</span>
+        <button type="button" class="pos-lk-brand-link" data-pos-nav="catalogue" aria-label="Cosmos home, back to catalogue" tabindex="0">Cosmos</button>
+        <span class="pos-lk-crumb-sep">/</span>
+        <span class="pos-lk-crumb">Product Page</span>
+      </div>
+    </header>
+    <p class="pos-lk-step-hint">Step 1: review product details and tap Select Lenses</p>
+  <div class="pos-pdp-shell">
+    <div class="pos-pdp-main">
+      <section class="pos-pdp-media">
+        <div class="pos-pdp-hero">
+          <div class="pos-pdp-hero-fallback">👓</div>
+        </div>
+        <div class="pos-lk-pdp-rating-pill">4.8 ★ (2988)</div>
+        <div class="pos-pdp-actions">
+          <button type="button" class="pos-pdp-chip">Photos</button>
+          <button type="button" class="pos-pdp-chip">Videos</button>
+          <button type="button" class="pos-pdp-chip active">AR Try on</button>
+        </div>
+      </section>
+      <section class="pos-pdp-detail">
+        <div class="pos-pdp-detail-body">
+          <div id="pos-pdp-product-title" class="pos-pdp-product-title">Collection · Model</div>
+          <div id="pos-pdp-brand" class="pos-pdp-brand">Brand</div>
+          <div id="pos-pdp-price" class="pos-pdp-price">₹0</div>
+          <div id="pos-pdp-strike" class="pos-pdp-strike">₹0</div>
+          <div id="pos-pdp-delivery" class="pos-pdp-delivery">⚡ Delivery by 6, May</div>
+          <div class="pos-lk-pdp-chips">
+            <span id="pos-pdp-chip-instore" class="pos-lk-pdp-chip-instore">In Store</span>
+          </div>
+        </div>
+        <div class="pos-pdp-detail-footer">
+          <div class="pos-pdp-total-wrap">
+            <div class="pos-pdp-total-lbl">Frame + Lens</div>
+            <div id="pos-pdp-total" class="pos-pdp-total-val">₹0</div>
+          </div>
+          <button type="button" id="btn-pdp-select-lenses" class="pos-ob-proceed-btn" tabindex="0">Select Lenses</button>
+        </div>
+      </section>
+    </div>
+    <div class="pos-visually-hidden">
+      <span id="pos-pdp-name"></span>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 4 — Order Builder (Cart — matches Pencil 05-cart layout)
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-order-builder" class="pos-screen">
+  <div class="pos-lk-page">
+    <header class="pos-lk-header" aria-label="Store top bar">
+      <div class="pos-lk-header-left">
+        <span class="pos-lk-logo" aria-hidden="true">C</span>
+        <span class="pos-lk-brand">Cosmos</span>
+        <span class="pos-lk-crumb-sep">/</span>
+        <span class="pos-lk-crumb">Cart</span>
+      </div>
+    </header>
+    <p class="pos-lk-step-hint">Step 5: review items, delivery, and proceed to payment</p>
+    <div class="pos-visually-hidden">
+      <span id="pos-ob-staff"></span>
+      <span id="pos-ob-store"></span>
+    </div>
+
+  <div class="pos-lk-cart-layout">
+    <div class="pos-lk-cart-maincol">
+    <button id="btn-ob-back" type="button" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Back</button>
+    <div class="pos-lk-cart-main-head">
+      <h2 class="pos-lk-cart-title">Cart (<span id="pos-lk-cart-count">0</span> items)</h2>
+      <button type="button" class="pos-lk-text-link" aria-disabled="true">Help</button>
+    </div>
+
+    <section class="pos-ob-section">
+      <div class="pos-ob-section-label">ORDER KIND</div>
+      <div id="pos-ob-kind-wrap" class="pos-ob-kind-wrap">
+        <span id="pos-ob-kind-chip" class="pos-ob-kind-chip" aria-live="polite">Instant</span>
+        <span class="pos-ob-kind-hint">Based on items in cart</span>
+      </div>
+    </section>
+
+    <section class="pos-ob-section" style="background:transparent;border:none;padding:0">
+      <div id="pos-ob-cart" class="pos-ob-cart" aria-live="polite"></div>
+      <button id="btn-ob-add-more" class="pos-ob-add-more-btn" aria-label="Add more products" tabindex="0">
+        + Add another product
+      </button>
+    </section>
+
+    <!-- Rx form was relocated into the Lens wizard's Add Power step (Pencil 04). -->
+    <section id="pos-ob-rx-section" class="pos-ob-rx-section pos-visually-hidden" aria-hidden="true">
+      <input id="rx-r-sph" type="hidden">
+      <input id="rx-r-cyl" type="hidden">
+      <input id="rx-r-axis" type="hidden">
+      <input id="rx-l-sph" type="hidden">
+      <input id="rx-l-cyl" type="hidden">
+      <input id="rx-l-axis" type="hidden">
+      <input id="rx-plano-od" type="checkbox">
+      <input id="rx-plano-os" type="checkbox">
+      <input id="rx-pd" type="hidden">
+      <input id="rx-doctor" type="hidden">
+    </section>
+    </div>
+
+    <aside class="pos-lk-cart-aside" aria-label="Offers and checkout">
+      <div class="pos-lk-side-card">
+        <h3>Offers</h3>
+        <div id="pos-lk-offers-banner" class="pos-lk-offer-banner">
+          <div class="pos-lk-offer-row">
+            <span>🏷  On Sale item discount</span>
+            <span id="pos-ob-discount-val">−₹0</span>
+          </div>
+        </div>
+        <button type="button" class="pos-lk-text-link" style="display:flex;justify-content:space-between;width:100%;align-items:center">
+          <span>View all coupons</span><span aria-hidden="true">›</span>
+        </button>
+      </div>
+      <div class="pos-lk-side-card" style="padding:0;overflow:hidden">
+        <label class="pos-lk-radio-row" style="padding:14px;border-bottom:1px solid var(--lk-border)">
+          <input type="radio" name="pos-lk-delivery" value="customer" tabindex="0">
+          <span><strong>Deliver to customer</strong><br><span style="font-size:12px;color:var(--lk-text-muted)">Customer address on file</span></span>
+        </label>
+        <label class="pos-lk-radio-row" style="padding:14px;background:#ECFDF5;border-bottom:none;flex-direction:column;align-items:flex-start;gap:6px">
+          <span style="display:flex;align-items:center;gap:10px">
+            <input type="radio" name="pos-lk-delivery" value="store" checked tabindex="0">
+            <strong>Deliver to Store</strong>
+          </span>
+          <span style="font-size:12px;color:var(--lk-text-muted);padding-left:28px" id="pos-lk-delivery-store-name">Pickup at this location</span>
+          <span style="display:inline-flex;background:#D1FAE5;color:#065F46;font-size:11px;font-weight:800;padding:4px 8px;border-radius:999px;margin-left:28px">Extra ₹100 OFF (Prepaid Only)</span>
+        </label>
+      </div>
+      <div class="pos-lk-side-card pos-lk-summary-card">
+        <div class="pos-ob-summary-lines pos-lk-summary-lines">
+          <div class="pos-ob-summary-row">
+            <span class="pos-ob-summary-lbl">Subtotal</span>
+            <span id="pos-ob-subtotal" class="pos-ob-summary-val">₹0</span>
+          </div>
+          <div class="pos-ob-summary-row pos-discount">
+            <span class="pos-ob-summary-lbl">Discount</span>
+            <span id="pos-ob-discount-line" class="pos-ob-summary-val">−₹0</span>
+          </div>
+          <div class="pos-ob-summary-row">
+            <span class="pos-ob-summary-lbl">GST</span>
+            <span id="pos-ob-gst" class="pos-ob-summary-val">₹0</span>
+          </div>
+          <div class="pos-ob-summary-row total">
+            <span class="pos-ob-summary-lbl">Total</span>
+            <span id="pos-ob-total" class="pos-ob-summary-val">₹0</span>
+          </div>
+        </div>
+        <button id="btn-ob-proceed" type="button" class="pos-lk-primary-wide pos-ob-proceed-btn" aria-label="Proceed to payment" tabindex="0">
+          ₹0 • Proceed to Payment
+        </button>
+      </div>
+    </aside>
+  </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN — Customer lookup
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-customer" class="pos-screen">
+  <div class="pos-lk-page">
+    <header class="pos-lk-header" aria-label="Store top bar">
+      <div class="pos-lk-header-left">
+        <span class="pos-lk-logo" aria-hidden="true">C</span>
+        <span class="pos-lk-brand">Cosmos</span>
+        <span class="pos-lk-crumb-sep">/</span>
+        <span class="pos-lk-crumb">Customer</span>
+      </div>
+    </header>
+    <p class="pos-lk-step-hint">Step 4: search or create a customer, then continue to cart</p>
+  <div class="pos-cust-shell">
+    <div class="pos-lk-lens-toolbar" style="margin-bottom:0">
+      <button type="button" id="btn-cust-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Back</button>
+    </div>
+    <section class="pos-cust-section">
+      <label class="pos-field-label" for="cust-search-input">Search phone or name</label>
+      <div class="pos-search-input-wrap">
+        <input id="cust-search-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Phone / name" aria-label="Search customers">
+        <button type="button" id="btn-cust-search" class="pos-search-btn" tabindex="0">Search</button>
+      </div>
+      <div id="cust-results" class="pos-cust-results" role="list" aria-live="polite"></div>
+    </section>
+    <section class="pos-cust-section">
+      <div class="pos-ob-section-label">NEW WALK-IN</div>
+      <div class="pos-cust-form">
+        <label class="pos-field-label" for="cust-new-name">Full name</label>
+        <input id="cust-new-name" class="pos-search-input" type="text" autocomplete="name" aria-label="Customer full name">
+        <label class="pos-field-label" for="cust-new-phone">Phone</label>
+        <input id="cust-new-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" aria-label="Customer phone">
+        <label class="pos-field-label" for="cust-new-email">Email (optional)</label>
+        <input id="cust-new-email" class="pos-search-input" type="email" autocomplete="email" aria-label="Customer email">
+        <button type="button" id="btn-cust-create" class="pos-next-btn" tabindex="0">Create customer</button>
+      </div>
+    </section>
+    <div id="cust-selected-banner" class="pos-cust-banner" aria-live="polite"></div>
+    <button type="button" id="btn-cust-continue" class="pos-next-btn" tabindex="0">Continue to Cart</button>
+  </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN — Lens configuration wizard
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-lens" class="pos-screen">
+  <div class="pos-lk-page">
+    <header class="pos-lk-header" aria-label="Store top bar">
+      <div class="pos-lk-header-left">
+        <span class="pos-lk-logo" aria-hidden="true">C</span>
+        <span class="pos-lk-brand">Cosmos</span>
+        <span class="pos-lk-crumb-sep">/</span>
+        <span class="pos-lk-crumb">Lens Setup</span>
+      </div>
+    </header>
+    <p class="pos-lk-step-hint">Steps 2–4: pick power type, choose your lens, and add power details</p>
+  <div class="pos-lens-shell">
+    <div class="pos-lk-lens-toolbar">
+      <button type="button" id="btn-lens-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Back</button>
+      <h1 class="pos-lk-lens-heading">Add Lens Details</h1>
+      <button type="button" class="pos-lk-text-link" aria-disabled="true">Help</button>
+    </div>
+    <nav id="pos-lk-lens-stepper" class="pos-lk-stepper" aria-label="Lens setup progress">
+      <div class="pos-lk-stepper-track">
+        <div class="pos-lk-step-dot active" data-step="0"><span>1</span><span>Power Type</span></div>
+        <div class="pos-lk-step-dot" data-step="1"><span>2</span><span>Lenses</span></div>
+        <div class="pos-lk-step-dot" data-step="2"><span>3</span><span>Add Power</span></div>
+      </div>
+    </nav>
+    <div id="lens-step-indicator" class="pos-lens-steps" aria-live="polite" style="display:none"></div>
+    <div id="lens-step-body" class="pos-lens-body"></div>
+    <div class="pos-lens-actions">
+      <button type="button" id="btn-lens-prev" class="pos-scope-btn" tabindex="0">Previous</button>
+      <button type="button" id="btn-lens-next" class="pos-next-btn" tabindex="0">Next</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN — Payment
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-payment" class="pos-screen">
+  <div class="pos-lk-page">
+    <header class="pos-lk-header" aria-label="Store top bar">
+      <div class="pos-lk-header-left">
+        <span class="pos-lk-logo" aria-hidden="true">C</span>
+        <span class="pos-lk-brand">Cosmos</span>
+        <span class="pos-lk-crumb-sep">/</span>
+        <span class="pos-lk-crumb">Payment</span>
+      </div>
+    </header>
+    <p class="pos-lk-step-hint">Step 6: choose payment method and confirm</p>
+  <div class="pos-lk-pay-grid">
+    <div class="pos-lk-pay-main">
+      <div class="pos-lk-lens-toolbar" style="margin-bottom:8px">
+        <button type="button" id="btn-pay-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Cart</button>
+      </div>
+
+      <!-- Delivery card (Pencil truck row at top of payment) -->
+      <div id="pay-delivery-slot" class="pos-lk-pay-card" style="padding:12px 14px">
+        <div class="pos-lk-delivery-line">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <span aria-hidden="true" style="color:#0D9F7B;font-size:18px">🚚</span>
+            <div>
+              <strong id="pay-delivery-title">Deliver to Store</strong>
+              <div id="pay-delivery-sub" style="font-size:11px;color:var(--lk-text-muted);margin-top:2px">Pickup at this location</div>
+            </div>
+          </div>
+          <button type="button" class="pos-lk-text-link" style="font-size:12px">Change</button>
+        </div>
+      </div>
+
+      <!-- Recommended (Pencil CRED pay) — maps to CARD -->
+      <h4 class="pos-lk-pay-section-head">Recommended</h4>
+      <label class="pos-lk-pay-row recommended selected" data-method-row="CARD" data-method-key="cred">
+        <span class="pos-lk-pay-row-left">
+          <span class="pos-lk-pay-row-logo cred" aria-hidden="true">C</span>
+          <span class="pos-lk-pay-row-info">
+            <span class="pos-lk-pay-row-title">CRED pay</span>
+            <span class="pos-lk-pay-row-sub">Save ₹100 · Linked card</span>
+          </span>
+        </span>
+        <input type="radio" name="pos-lk-pay-method" value="CARD" data-method-key="cred" class="pos-lk-pay-radio" checked tabindex="0">
+      </label>
+
+      <!-- Cash on Delivery (disabled per Pencil) -->
+      <h4 class="pos-lk-pay-section-head">Cash On Delivery</h4>
+      <label class="pos-lk-pay-row disabled" data-method-row="COD">
+        <span class="pos-lk-pay-row-left">
+          <span class="pos-lk-pay-row-logo cash" aria-hidden="true">$</span>
+          <span class="pos-lk-pay-row-info">
+            <span class="pos-lk-pay-row-title">Cash on Delivery</span>
+            <span class="pos-lk-pay-row-sub">Not available for store pickup</span>
+          </span>
+        </span>
+        <button type="button" class="pos-lk-pay-row-link">Choose Home Delivery</button>
+      </label>
+
+      <!-- UPI options -->
+      <h4 class="pos-lk-pay-section-head">UPI</h4>
+      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="gpay">
+        <span class="pos-lk-pay-row-left">
+          <span class="pos-lk-pay-row-logo gpay" aria-hidden="true">G</span>
+          <span class="pos-lk-pay-row-info">
+            <span class="pos-lk-pay-row-title">Google Pay</span>
+          </span>
+        </span>
+        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="gpay" class="pos-lk-pay-radio" tabindex="0">
+      </label>
+      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="paytm">
+        <span class="pos-lk-pay-row-left">
+          <span class="pos-lk-pay-row-logo paytm" aria-hidden="true">P</span>
+          <span class="pos-lk-pay-row-info">
+            <span class="pos-lk-pay-row-title">Paytm UPI</span>
+          </span>
+        </span>
+        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="paytm" class="pos-lk-pay-radio" tabindex="0">
+      </label>
+      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="credupi">
+        <span class="pos-lk-pay-row-left">
+          <span class="pos-lk-pay-row-logo cred-upi" aria-hidden="true">C</span>
+          <span class="pos-lk-pay-row-info">
+            <span class="pos-lk-pay-row-title">CRED UPI</span>
+          </span>
+        </span>
+        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="credupi" class="pos-lk-pay-radio" tabindex="0">
+      </label>
+      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="amazon">
+        <span class="pos-lk-pay-row-left">
+          <span class="pos-lk-pay-row-logo amazon" aria-hidden="true">a</span>
+          <span class="pos-lk-pay-row-info">
+            <span class="pos-lk-pay-row-title">Amazon Pay UPI</span>
+          </span>
+        </span>
+        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="amazon" class="pos-lk-pay-radio" tabindex="0">
+      </label>
+
+      <!-- Cash (kept for POS staff fallback; not in Pencil but required for the till) -->
+      <h4 class="pos-lk-pay-section-head">Cash (POS till)</h4>
+      <label class="pos-lk-pay-row" data-method-row="CASH" data-method-key="cash">
+        <span class="pos-lk-pay-row-left">
+          <span class="pos-lk-pay-row-logo cash" aria-hidden="true">₹</span>
+          <span class="pos-lk-pay-row-info">
+            <span class="pos-lk-pay-row-title">Cash</span>
+            <span class="pos-lk-pay-row-sub">Enter tendered amount below</span>
+          </span>
+        </span>
+        <input type="radio" name="pos-lk-pay-method" value="CASH" data-method-key="cash" class="pos-lk-pay-radio" tabindex="0">
+      </label>
+      <div id="pos-lk-pay-tendered-wrap" class="pos-lk-pay-tendered-wrap">
+        <label for="pay-tendered">Tendered (cash)</label>
+        <input id="pay-tendered" type="text" inputmode="decimal" placeholder="Amount received" aria-label="Cash tendered">
+      </div>
+
+      <select id="pay-method" class="pos-visually-hidden" aria-hidden="true" tabindex="-1" style="display:none">
+        <option value="CASH">Cash</option>
+        <option value="CARD" selected>Card</option>
+        <option value="UPI">UPI</option>
+      </select>
+    </div>
+
+    <aside class="pos-lk-pay-aside" aria-label="Order summary">
+      <div class="pos-lk-side-card">
+        <h3 style="font-size:14px">Order Summary</h3>
+        <div id="pay-summary-lines" class="pos-lk-order-lines" aria-live="polite"></div>
+      </div>
+      <div id="pos-lk-pay-savings" class="pos-lk-saving-banner" hidden>
+        <span aria-hidden="true">🏆</span>
+        <span id="pos-lk-pay-savings-text">You're saving ₹0 on this order</span>
+      </div>
+      <div class="pos-lk-side-card">
+        <div class="pos-ob-summary-lines pos-lk-summary-lines">
+          <div class="pos-ob-summary-row"><span class="pos-ob-summary-lbl">Subtotal</span><span id="pay-sub" class="pos-ob-summary-val">₹0</span></div>
+          <div class="pos-ob-summary-row"><span class="pos-ob-summary-lbl">GST</span><span id="pay-gst" class="pos-ob-summary-val">₹0</span></div>
+          <div class="pos-ob-summary-row total"><span class="pos-ob-summary-lbl">Total</span><span id="pay-total" class="pos-ob-summary-val">₹0</span></div>
+        </div>
+      </div>
+      <button type="button" id="btn-pay-submit" class="pos-lk-pay-cta" tabindex="0">
+        <span aria-hidden="true">🔒</span>
+        <span>Pay Now · <span id="pay-cta-amt">₹0</span></span>
+      </button>
+      <!-- legacy summary slot kept hidden for back-compat -->
+      <div id="pay-summary" class="pos-visually-hidden" aria-hidden="true"></div>
+    </aside>
+  </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN — Confirmation
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-confirm" class="pos-screen">
+  <div class="pos-lk-page">
+    <header class="pos-lk-header" aria-label="Store top bar">
+      <div class="pos-lk-header-left">
+        <span class="pos-lk-logo" aria-hidden="true">C</span>
+        <span class="pos-lk-brand">Cosmos</span>
+        <span class="pos-lk-crumb-sep">/</span>
+        <span class="pos-lk-crumb">Order Confirmation</span>
+      </div>
+    </header>
+    <p class="pos-lk-step-hint">Step 7: order complete — print or start a new order</p>
+  <div class="pos-cust-shell" style="max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:22px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+      <div class="pos-confirm-check" aria-hidden="true">✓</div>
+      <div id="confirm-title" class="pos-confirm-title">Order placed!</div>
+      <div id="confirm-order-no" class="pos-confirm-sub">Order #--</div>
+    </div>
+
+    <div class="pos-confirm-summary-card">
+      <div class="pos-field-label">Amount paid</div>
+      <div id="confirm-amount" class="pos-confirm-amount">₹0</div>
+      <div id="confirm-method" class="pos-confirm-sub">Paid via --</div>
+    </div>
+
+    <div>
+      <h3 style="font-size:14px;font-weight:800;color:var(--lk-text);margin:0 0 12px">Order Breakdown</h3>
+      <div id="confirm-breakdown" class="pos-confirm-breakdown" aria-live="polite"></div>
+    </div>
+
+    <div style="display:flex;justify-content:center;gap:12px;padding-top:8px">
+      <button type="button" id="btn-confirm-print" class="pos-confirm-action-print" tabindex="0">
+        <span aria-hidden="true">🖨</span>
+        <span>Print Bill</span>
+      </button>
+      <button type="button" id="btn-confirm-new-order" class="pos-confirm-action-new" tabindex="0">
+        <span aria-hidden="true">＋</span>
+        <span>New Order</span>
+      </button>
+    </div>
+
+    <div class="pos-visually-hidden">
+      <button type="button" id="btn-confirm-back" tabindex="-1" aria-hidden="true">Back</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN — Order History
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-pos-orders" class="pos-screen">
+  <div class="pos-orders-shell">
+    <header class="pos-catalogue-header">
+      <div class="pos-catalogue-brand">
+        <button type="button" id="btn-orders-back" class="pos-ob-back-btn" aria-label="Back" tabindex="0" style="margin-right: 15px;">‹ Back</button>
+        <div class="pos-logo-row">
+          <div class="pos-logo-icon" style="color: #6C3FC5;">✦</div>
+          <span class="pos-app-name">Order History</span>
+        </div>
+      </div>
+      <div class="pos-catalogue-session">
+        <span id="pos-orders-staff" class="pos-catalogue-session-item"></span>
+        <span id="pos-orders-store" class="pos-catalogue-session-item"></span>
+      </div>
+    </header>
+
+    <section class="pos-catalogue-controls" style="border-bottom: 1px solid var(--pos-border); padding-bottom: 20px;">
+      <div class="pos-search-row" style="flex: 1;">
+        <label for="pos-orders-search" class="pos-search-label">Global Search</label>
+        <div class="pos-search-input-wrap">
+          <input id="pos-orders-search" class="pos-search-input" type="search" autocomplete="off" placeholder="Order No, Customer Name or Phone" aria-label="Search orders">
+          <button id="btn-pos-orders-search" class="pos-search-btn" tabindex="0">Search</button>
+        </div>
+      </div>
+      <div class="pos-filter-wrap" style="margin-left: 15px;">
+        <label class="pos-search-label" for="pos-orders-status">Filter by Status</label>
+        <select id="pos-orders-status" class="pos-search-input" style="min-width: 150px;">
+          <option value="">All Orders</option>
+          <option value="OPEN">Open</option>
+          <option value="PAID">Paid</option>
+          <option value="DELIVERED">Delivered</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="pos-orders-results-wrap" style="flex: 1; overflow-y: auto; padding: 20px;">
+      <div id="pos-orders-list" class="pos-orders-list" role="list" aria-live="polite">
+        <!-- Orders injected here -->
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SIDEBAR — Persistent post-login navigation
+     Hidden on login screens; shown via pos-has-sidebar on body.
+     ═══════════════════════════════════════════════════════════════════ -->
+<aside id="pos-sidebar" class="pos-sidebar" aria-label="Store OS navigation" hidden>
+  <!-- Branding strip -->
+  <div class="pos-sb-brand">
+    <div class="pos-sb-logo" aria-hidden="true">✦</div>
+    <span class="pos-sb-brand-name">Store OS</span>
+  </div>
+
+  <!-- Staff identity -->
+  <div class="pos-sb-staff">
+    <div class="pos-sb-avatar" aria-hidden="true"><span id="pos-sb-avatar-letter">T</span></div>
+    <div class="pos-sb-staff-meta">
+      <div id="pos-sb-staff-name" class="pos-sb-staff-name">Staff</div>
+      <div id="pos-sb-store-label" class="pos-sb-store-label">Store</div>
+    </div>
+  </div>
+
+  <div class="pos-sb-divider"></div>
+
+  <!-- Navigation -->
+  <nav class="pos-sb-nav" aria-label="POS sections">
+    <button type="button" class="pos-sb-item" data-pos-sb-nav="catalogue" aria-label="Catalogue" tabindex="0">
+      <span class="pos-sb-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/>
+          <rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/>
+        </svg>
+      </span>
+      <span class="pos-sb-label">Catalogue</span>
+    </button>
+
+    <button type="button" class="pos-sb-item" data-pos-sb-nav="new-order" aria-label="New Order" tabindex="0">
+      <span class="pos-sb-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="10" cy="10" r="8"/><line x1="10" y1="6" x2="10" y2="14"/><line x1="6" y1="10" x2="14" y2="10"/>
+        </svg>
+      </span>
+      <span class="pos-sb-label">New Order</span>
+    </button>
+
+    <button type="button" class="pos-sb-item" data-pos-sb-nav="orders" aria-label="Order History" tabindex="0">
+      <span class="pos-sb-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 5h12M4 10h8M4 15h5"/><polyline points="14 12 16 14 20 10"/>
+        </svg>
+      </span>
+      <span class="pos-sb-label">Order History</span>
+    </button>
+  </nav>
+
+  <!-- Spacer -->
+  <div class="pos-sb-spacer"></div>
+  <div class="pos-sb-divider"></div>
+
+  <!-- Logout -->
+  <button type="button" class="pos-sb-item pos-sb-logout pos-lk-logout-btn" aria-label="Log out" tabindex="0">
+    <span class="pos-sb-icon" aria-hidden="true">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 3H4a1 1 0 00-1 1v12a1 1 0 001 1h3"/><polyline points="13 15 17 10 13 5"/><line x1="17" y1="10" x2="7" y2="10"/>
+      </svg>
+    </span>
+    <span class="pos-sb-label">Logout</span>
+  </button>
+</aside>
+
+</body>
+</html>

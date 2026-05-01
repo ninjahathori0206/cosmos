@@ -1,0 +1,32 @@
+---
+description: Graphiti MCP (graphiti-memory) — persistent agent memory via knowledge graph; use when that MCP server is enabled in Cursor.
+alwaysApply: false
+---
+
+# Graphiti agent memory (MCP)
+
+The **Cosmos web app** runs on **PORT** (default 4000). **Graphiti** is a **separate** stack: MCP HTTP **8000**, FalkorDB **6379**, optional UI **3000**. Do not change Cosmos `PORT` or `app.js` for Graphiti.
+
+When **graphiti-memory** tools are available:
+
+### Before starting a task
+
+- Call **`search_nodes`** for preferences, procedures, requirements, and related summaries.
+- Call **`search_facts`** for relationships and factual edges.
+- Filter searches by entity types (e.g. Preference, Procedure, Requirement) when useful.
+
+### Persist new information
+
+- Use **`add_episode`** to store new or updated requirements, preferences, procedures, and structured context (text, messages, or JSON per tool params).
+- Prefer smaller, logical episodes over one huge blob; be explicit when updating prior knowledge.
+
+### During work
+
+- Align with retrieved **preferences** and **procedures**; apply relevant **facts**.
+- For exploration, use search parameters such as center node / group as supported by the tool.
+
+### Do not use Graphiti tools for
+
+- Application data that belongs in Cosmos DB/API (orders, users, inventory). Graphiti is **session/agent memory**, not a replacement for MSSQL.
+
+See upstream docs: `https://github.com/getzep/graphiti` → `mcp_server/README.md`.
