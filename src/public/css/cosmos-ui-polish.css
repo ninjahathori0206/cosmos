@@ -226,3 +226,188 @@ tbody tr.tr-link:hover td:last-child::after {
     max-width: 100%;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Order Timeline — shared component
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Progress track at the top of the modal */
+.cosmos-timeline-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  padding: 10px 0 16px;
+  scrollbar-width: none;
+}
+.cosmos-timeline-track::-webkit-scrollbar { display: none; }
+
+.cosmos-tl-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1 0 auto;
+  min-width: 68px;
+  position: relative;
+}
+.cosmos-tl-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border, #e2e8f0);
+  z-index: 0;
+}
+.cosmos-tl-step.done:not(:last-child)::after,
+.cosmos-tl-step.current:not(:last-child)::after {
+  background: var(--green, #16a34a);
+}
+.cosmos-tl-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2.5px solid var(--border, #e2e8f0);
+  background: var(--bg, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  position: relative;
+  z-index: 1;
+  transition: background 0.15s, border-color 0.15s;
+}
+.cosmos-tl-step.done .cosmos-tl-dot {
+  background: var(--green, #16a34a);
+  border-color: var(--green, #16a34a);
+  color: #fff;
+}
+.cosmos-tl-step.current .cosmos-tl-dot {
+  background: var(--acc, #2563eb);
+  border-color: var(--acc, #2563eb);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.18);
+}
+.cosmos-tl-step.fail .cosmos-tl-dot {
+  background: var(--red, #dc2626);
+  border-color: var(--red, #dc2626);
+  color: #fff;
+}
+.cosmos-tl-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text3, #8b9cae);
+  margin-top: 5px;
+  text-align: center;
+  max-width: 64px;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.cosmos-tl-step.done .cosmos-tl-label,
+.cosmos-tl-step.current .cosmos-tl-label { color: var(--text2, #475569); }
+
+/* Log entries list */
+.cosmos-timeline-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 4px;
+}
+.cosmos-tl-entry {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  position: relative;
+}
+.cosmos-tl-entry:last-child { border-bottom: none; }
+.cosmos-tl-entry-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green, #16a34a);
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.cosmos-tl-entry-dot.fail { background: var(--red, #dc2626); }
+.cosmos-tl-entry-dot.info { background: var(--acc, #2563eb); }
+.cosmos-tl-entry-body { flex: 1; min-width: 0; }
+.cosmos-tl-entry-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text1, #0f172a);
+}
+.cosmos-tl-entry-meta {
+  font-size: 11px;
+  color: var(--text3, #8b9cae);
+  margin-top: 2px;
+}
+.cosmos-tl-entry-note {
+  font-size: 12px;
+  color: var(--text2, #475569);
+  background: var(--accL, #eff6ff);
+  border-left: 3px solid var(--acc2, #3b82f6);
+  padding: 4px 8px;
+  border-radius: 0 4px 4px 0;
+  margin-top: 5px;
+}
+
+/* Modal wrapper */
+.cosmos-timeline-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 9999;
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+.cosmos-timeline-modal-overlay.open {
+  display: flex;
+}
+.cosmos-timeline-modal {
+  background: var(--card, #fff);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 560px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+  overflow: hidden;
+  animation: cosmos-tl-slide-in 0.2s ease;
+}
+@keyframes cosmos-tl-slide-in {
+  from { opacity: 0; transform: translateY(-16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.cosmos-timeline-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.cosmos-timeline-modal-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text1, #0f172a);
+}
+.cosmos-timeline-modal-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--text3, #8b9cae);
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.cosmos-timeline-modal-close:hover { background: var(--border, #e2e8f0); }
+.cosmos-timeline-modal-body {
+  padding: 16px 20px 20px;
+  max-height: 70vh;
+  overflow-y: auto;
+}

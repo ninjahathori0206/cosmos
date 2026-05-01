@@ -13,10 +13,14 @@ if (!fs.existsSync(logDir)) {
   }
 }
 
+function istLogTimestamp () {
+  return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T')
+}
+
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
-    winston.format.timestamp(),
+    winston.format.timestamp({ format: istLogTimestamp }),
     winston.format.printf((info) => `${info.timestamp} ${info.level}: ${info.message}`)
   ),
   transports: [

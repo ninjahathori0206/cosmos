@@ -380,7 +380,7 @@ router.put(
             UPDATE pm
                SET pm.home_brand_id = src.home_brand_id,
                    pm.ew_collection = src.ew_collection,
-                   pm.updated_at = GETDATE()
+                   pm.updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
               FROM dbo.product_master pm
               JOIN dbo.purchase_items pi
                 ON pi.product_master_id = pm.product_id

@@ -111,6 +111,21 @@
   .btn.sm { padding:5px 10px; font-size:12px; }
   .btn:disabled { opacity:0.5; cursor:default; pointer-events:none; }
 
+  /* ── Handover modal payment method buttons ──────────────────────────── */
+  .sp-pay-method-btn {
+    padding: 8px 16px; font-size: 13px; font-weight: 700;
+    border: 1.5px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--text2); cursor: pointer;
+    transition: background 0.14s, color 0.14s, border-color 0.14s;
+  }
+  .sp-pay-method-btn.active {
+    background: var(--acc); border-color: var(--acc); color: #fff;
+  }
+  .badge.green { background:var(--greenL); color:var(--green); }
+  .field-label { font-size:12px; font-weight:700; color:var(--text2); margin-bottom:4px; display:block; }
+  .form-error { font-size:12px; color:var(--red); padding:6px 10px; background:var(--redL); border-radius:6px; }
+  #overlay-sp-handover { align-items:center; justify-content:center; }
+
   /* ── TWO-COL GRID ─────────────────────────────────────────────────────────── */
   .two-col { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
   @media (max-width:900px) { .two-col { grid-template-columns:1fr; } }
@@ -181,6 +196,18 @@
   .menu-toggle span:nth-child(2) { margin:3px 0; }
   .sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:99; }
   .sidebar-overlay.open { display:block; }
+
+  /* ── MODAL OVERLAY ─────────────────────────────────────────────────────────── */
+  .overlay { display:none; position:fixed; inset:0; background:rgba(15,30,53,.55); backdrop-filter:blur(4px); z-index:300; align-items:center; justify-content:center; }
+  .overlay.open { display:flex; }
+  .modal { background:var(--card); border-radius:14px; box-shadow:0 8px 40px rgba(0,0,0,.18); width:100%; max-width:520px; max-height:90vh; overflow-y:auto; animation:modalUp .2s ease; }
+  @keyframes modalUp { from { transform:translateY(24px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+  .modal-head { display:flex; align-items:center; justify-content:space-between; padding:18px 20px 14px; border-bottom:1px solid var(--border); }
+  .modal-title { font-size:15px; font-weight:700; color:var(--text1); }
+  .modal-close { background:none; border:none; font-size:18px; cursor:pointer; color:var(--text2); line-height:1; padding:2px 6px; border-radius:6px; }
+  .modal-close:hover { background:var(--redL); color:var(--red); }
+  .modal-body { padding:20px; }
+  .modal-foot { display:flex; gap:8px; justify-content:flex-end; padding:14px 20px; border-top:1px solid var(--border); }
 
   /* ── RESPONSIVE BREAKPOINTS ───────────────────────────────────────────────── */
   @media (max-width:768px) {
@@ -255,12 +282,13 @@
 
     <div class="nav-group">Reports</div>
     <div class="nav-item" data-storepilot-menu="reports" data-storepilot-permission="storepilot.reports.view" onclick="spNav('reports',this)"><span class="ic">📊</span> Store Reports</div>
+    <div class="nav-item" data-storepilot-menu="lab-orders" data-storepilot-permission="storepilot.dashboard.view" onclick="spNav('lab-orders',this)"><span class="ic">🧪</span> Lab Orders</div>
 
     <div id="sp-switch-module-wrap">
       <div class="nav-group">Switch Module</div>
       <div class="nav-item" data-cosmos-module="foundry" onclick="window.location.href='/foundry/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🔩</span> Full Foundry</div>
       <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
-      <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/pos/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🧾</span> Store OS (POS)</div>
+      <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/storeos/login'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🧾</span> Store OS (POS)</div>
       <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
       <div class="nav-item" data-cosmos-module="cx" onclick="window.location.href='/cx/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">📊</span> CX</div>
     </div>
@@ -572,6 +600,58 @@
     </div>
   </div>
 
+  <div class="page" id="page-lab-orders">
+    <div class="head">
+      <div>
+        <div class="title">Lab Orders</div>
+        <div class="muted">Receive from lab, complete store QC, and mark ready for handover.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="sp-lab-search" class="search" placeholder="Search order or customer" style="min-width:220px">
+        <button class="btn" onclick="loadSpLabOrders()">Refresh</button>
+      </div>
+    </div>
+    <div class="tabs" style="margin:10px 0 12px">
+      <button class="tab active" id="sp-lab-tab-all" onclick="setSpLabFilter('', this)">All</button>
+      <button class="tab" id="sp-lab-tab-dispatched" onclick="setSpLabFilter('DISPATCHED_TO_STORE', this)">Dispatched</button>
+      <button class="tab" onclick="setSpLabFilter('RECEIVED_AT_STORE', this)">At Store</button>
+      <button class="tab" onclick="setSpLabFilter('STORE_QC_PASS', this)">QC Pass</button>
+      <button class="tab" onclick="setSpLabFilter('STORE_QC_PARTIAL', this)">QC Partial</button>
+      <button class="tab" onclick="setSpLabFilter('QC_FAIL_STORE', this)">QC Fail</button>
+      <button class="tab" onclick="setSpLabFilter('READY_FOR_DELIVERY', this)">Ready for Handover</button>
+    </div>
+    <div class="card">
+      <div style="overflow:auto">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Order #</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Total</th>
+              <th>Created</th>
+              <th style="width:300px">Action</th>
+            </tr>
+          </thead>
+          <tbody id="sp-lab-orders-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ HANDOVER MODAL ═══════════════ -->
+  <div class="overlay" id="overlay-sp-handover" role="dialog" aria-modal="true" aria-labelledby="sp-handover-modal-title" style="display:none">
+    <div class="modal" style="max-width:480px;width:100%">
+      <div class="modal-header">
+        <div class="modal-title" id="sp-handover-modal-title">Handover Order</div>
+        <button class="modal-close" onclick="closeSpHandoverModal()" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body" id="sp-handover-modal-body">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════════ INCOMING TRANSFERS ═══════════════ -->
   <div class="page" id="page-incoming-transfers">
     <style>
@@ -644,6 +724,27 @@
         <button class="btn sm" onclick="closeSpMlDetail()">✕ Close</button>
       </div>
       <div id="sp-ml-detail-body"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ QC NOTE MODAL ═══════════════ -->
+  <div class="overlay" id="overlay-sp-qc-note" onclick="if(event.target===this)closeSpQcNoteModal()">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-head">
+        <div class="modal-title" id="sp-qc-note-modal-title">Store QC — Add Note</div>
+        <button class="modal-close" onclick="closeSpQcNoteModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding:20px">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px" id="sp-qc-note-modal-desc"></div>
+        <label style="font-size:13px;font-weight:600;color:var(--text1);display:block;margin-bottom:6px">Note <span style="color:var(--red)">*</span></label>
+        <textarea id="sp-qc-note-input" rows="4" placeholder="Describe the defect or issue…"
+          style="width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px;resize:vertical;background:var(--bg);color:var(--text1)"></textarea>
+        <div id="sp-qc-note-err" style="color:var(--red);font-size:12px;margin-top:6px;display:none"></div>
+      </div>
+      <div class="modal-foot" style="display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border)">
+        <button class="btn" onclick="closeSpQcNoteModal()">Cancel</button>
+        <button class="btn primary" id="sp-qc-note-confirm-btn" onclick="confirmSpQcNote()">Confirm</button>
+      </div>
     </div>
   </div>
 

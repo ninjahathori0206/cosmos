@@ -1,3 +1,4 @@
+process.env.TZ = 'Asia/Kolkata'; // IST — must be first line, before any require()
 require('dotenv').config();
 
 const jwt = require('jsonwebtoken');
@@ -40,6 +41,9 @@ const transferRequestsRouter   = require('./src/api/transferRequests');
 const stockTransferDocsRouter  = require('./src/api/stockTransferDocs');
 const posRouter                = require('./src/api/pos');
 const cxRouter                 = require('./src/api/cx');
+const ordersRouter             = require('./src/api/orders');
+const customerAuthRouter       = require('./src/api/customerAuth');
+const customerAppRouter        = require('./src/api/customerApp');
 const { executeStoredProcedure, healthCheck } = require('./src/config/db');
 const { requireGoodsTransferDestinationStores } = require('./src/middleware/authorize');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
@@ -68,6 +72,11 @@ function assertAuthEnv() {
   } catch (e) {
     console.error('[startup] FATAL: JWT config invalid (check JWT_SECRET and JWT_EXPIRES_IN):', e.message);
     process.exit(1);
+  }
+
+  const custSecret = process.env.CUSTOMER_JWT_SECRET;
+  if (!custSecret || String(custSecret).trim() === '') {
+    console.warn('[startup] WARNING: CUSTOMER_JWT_SECRET is not set. Eyewoot Go customer login will fail. Add it to .env.');
   }
 }
 
@@ -194,7 +203,7 @@ app.use(
       if (corsAllowPrivateLan && isPrivateLanOrigin(origin)) return callback(null, true);
       return callback(new Error('CORS not allowed'));
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
     maxAge: 86400
   })
@@ -255,6 +264,20 @@ app.use(
   })
 );
 
+// Store OS HTML shell MUST run before the broad `express.static` below.
+// Mount dedicated routers so every path under /storeos and /pos is served (SPA fallback before static).
+// A plain req.path prefix check can miss some Express/path combinations; mounting is reliable.
+function sendPosShellForSpa(req, res, next) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  return sendModuleShell(res, 'pos');
+}
+
+const posSpaRouter = express.Router();
+posSpaRouter.use(sendPosShellForSpa);
+
+app.use('/storeos', posSpaRouter);
+app.use('/pos', posSpaRouter);
+
 // Static assets
 // - Cache CSS/JS/media for faster repeat visits
 // - Keep HTML non-cached so deployments/pages refresh immediately
@@ -279,7 +302,6 @@ app.get(['/foundry', '/foundry/*'], (req, res) => sendModuleShell(res, 'foundry'
 app.get(['/storepilot', '/storepilot/*'], (req, res) => sendModuleShell(res, 'storepilot'));
 app.get(['/finance', '/finance/*'], (req, res) => sendModuleShell(res, 'finance'));
 app.get(['/command-unit', '/command-unit/*'], (req, res) => sendModuleShell(res, 'command-unit'));
-app.get(['/pos', '/pos/*', '/storeos', '/storeos/*'], (req, res) => sendModuleShell(res, 'pos'));
 app.get(['/cx', '/cx/*'], (req, res) => sendModuleShell(res, 'cx'));
 // Health check
 app.get('/health', (req, res) => {
@@ -308,6 +330,20 @@ app.get('/health/db', async (req, res, next) => {
   } catch (err) {
     return next(err);
   }
+});
+
+// Customer-facing Eyewoot Go routes — no apiKeyAuth, no staff JWT (uses CUSTOMER_JWT_SECRET)
+app.use('/api/customer/auth', customerAuthRouter);
+app.use('/api/customer',      customerAppRouter);
+
+// Eyewoot Go PWA shell + service worker
+app.get('/go', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'src', 'public', 'go.html'));
+});
+app.get('/go-sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.sendFile(path.join(__dirname, 'src', 'public', 'go-sw.js'));
 });
 
 // Auth/public routes that do not use grouped protected router.
@@ -340,6 +376,7 @@ protectedApiRouter.use('/stock-transfers', stockTransfersRouter);
 protectedApiRouter.use('/transfer-requests', transferRequestsRouter);
 protectedApiRouter.use('/stock-transfer-docs', stockTransferDocsRouter);
 protectedApiRouter.use('/cx', cxRouter);
+protectedApiRouter.use('/orders', ordersRouter);
 app.use('/api', protectedApiRouter);
 
 // 404 + error handling

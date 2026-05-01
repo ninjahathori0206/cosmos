@@ -54,6 +54,10 @@
     <div class="nav-item" onclick="showPage('settings', this)">
       <span class="icon">⚙️</span> System Settings
     </div>
+    <div class="nav-item" onclick="showPage('pos-settings', this)">
+      <span class="icon">💳</span> POS Settings
+    </div>
+
     <div class="nav-item" onclick="showPage('membership', this)">
       <span class="icon">🌟</span> Membership Tiers
     </div>
@@ -91,7 +95,7 @@
     <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot/dashboard'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
       <span class="icon">🏬</span> StorePilot (Showroom)
     </div>
-    <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/pos/dashboard'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
+    <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/storeos/login'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
       <span class="icon">🧾</span> Store OS (POS)
     </div>
     <div class="nav-item" data-cosmos-module="cx" onclick="window.location.href='/cx/dashboard'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
@@ -577,6 +581,26 @@
           <div class="setting-row"><div><div class="fw-600 text-sm">Slow Mover Alert Threshold</div><div class="td-muted text-xs">Days without a sale before SKU is flagged as slow mover</div></div><div><input type="number" value="30" style="width:100px"> days</div></div>
           <div class="setting-row"><div><div class="fw-600 text-sm">Low Stock Reorder Threshold</div><div class="td-muted text-xs">Default minimum units at warehouse before alert fires</div></div><div><input type="number" value="5" style="width:100px"> units</div></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: POS SETTINGS ═══ -->
+  <div class="page" id="page-pos-settings">
+    <div class="page-header">
+      <div class="page-title">POS Settings</div>
+      <div class="page-subtitle">Configure minimum advance for lab orders. Instant orders always require 100% payment.</div>
+    </div>
+    <div class="card" style="max-width:620px">
+      <div class="form-grid" style="grid-template-columns:1fr">
+        <div class="form-group">
+          <label>Lab Advance % (0-100)</label>
+          <input id="cu-pos-lab-advance-pct" type="number" min="0" max="100" step="1" placeholder="40">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+        <button class="topbar-btn primary" id="btn-cu-save-pos-settings" onclick="saveCuPosSettings()">Save POS Settings</button>
+        <span style="font-size:12px;color:var(--text2)">Applies to all stores. Can be adjusted later by policy updates.</span>
       </div>
     </div>
   </div>
@@ -1419,7 +1443,7 @@ function showPage(id, el) {
     dashboard: 'Dashboard', stores: 'Store Management', users: 'User Management',
     roles: 'Roles & Permissions', modules: 'Module Access Control',
     homebrands: 'Home Brand Management', locations: 'Location Type Config',
-    settings: 'System Settings', membership: 'Membership Tiers',
+    settings: 'System Settings', 'pos-settings': 'POS Settings', membership: 'Membership Tiers',
     leavetypes: 'Leave Types', 'foundry-settings': 'Foundry Settings', audit: 'Audit Logs',
     'cu-suppliers': 'Suppliers', 'cu-maker-master': 'Maker Master', 'cu-branding-agents': 'Branding Agents'
   };

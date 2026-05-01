@@ -99,7 +99,8 @@ const SP_MENU_PERM_MAP = {
   'incoming-transfers': ['storepilot.transfers.view', 'foundry.transfers.view'],
   'movement-list': ['storepilot.transfers.view', 'foundry.transfers.view'],
   'transfers-history': ['storepilot.transfers.view', 'foundry.transfers.view'],
-  reports: ['storepilot.reports.view']
+  reports: ['storepilot.reports.view'],
+  'lab-orders': ['storepilot.dashboard.view']
 };
 
 // ── Breadcrumb map ─────────────────────────────────────────────────────────────
@@ -111,7 +112,8 @@ const spBcMap = {
   'transfers-create':     'Foundry Connect — Request Goods',
   'incoming-transfers':   'Foundry Connect — Incoming Goods',
   'movement-list':        'Foundry Connect — Movement List',
-  reports:                'Store Reports'
+  reports:                'Store Reports',
+  'lab-orders':           'Lab Orders'
 };
 
 const SP_PAGE_PATHS = {
@@ -122,7 +124,8 @@ const SP_PAGE_PATHS = {
   'transfers-create': '/storepilot/transfers-create',
   reports: '/storepilot/reports',
   'incoming-transfers': '/storepilot/incoming-transfers',
-  'movement-list': '/storepilot/movement-list'
+  'movement-list': '/storepilot/movement-list',
+  'lab-orders': '/storepilot/lab-orders'
 };
 
 function getStorepilotPageFromPath(pathname) {
@@ -178,6 +181,348 @@ function loadStorePilotPage(id) {
   if (id === 'reports')            loadReports();
   if (id === 'incoming-transfers') loadIncomingTransfers();
   if (id === 'movement-list')      loadSpMovementList();
+  if (id === 'lab-orders')         loadSpLabOrders();
+}
+
+/** '' = all lab workflow statuses for this store (no lab_status API filter). */
+let _spLabStatusFilter = ''
+const SP_LAB_STATUS_LABELS = {
+  ORDER_PLACED:        'Order Placed',
+  ADVANCE_PAID:        'Accepted',
+  LAB_FITTING:         'Fitting & Edging',
+  QC_PASS:             'QC Pass',
+  QC_FAIL_LAB:         'QC Fail',
+  SENT_TO_LAB:         'Sent To Lab',
+  DISPATCHED_TO_STORE: 'Dispatched To Store',
+  RECEIVED_AT_STORE:   'Received At Store',
+  STORE_QC_PASS:       'Store QC Passed',
+  STORE_QC_PARTIAL:    'QC Partial (Minor Defect)',
+  QC_FAIL_STORE:       'Store QC Failed',
+  READY_FOR_DELIVERY:  'Ready For Handover'
+}
+
+// Statuses where a mandatory note must be entered before the transition is submitted.
+const SP_LAB_STATUS_NOTE_REQUIRED = new Set(['STORE_QC_PARTIAL', 'QC_FAIL_STORE'])
+
+// StorePilot handles early store chain: ORDER_PLACED → Accepted (ADVANCE_PAID) → SENT_TO_LAB, plus dispatch onward.
+// Stages 16–18 (DELIVERED→BALANCE_COLLECTED→INVOICED) are auto-completed by Store OS on payment.
+const SP_LAB_STATUS_NEXT = {
+  ORDER_PLACED:        ['ADVANCE_PAID'],
+  ADVANCE_PAID:        ['SENT_TO_LAB'],
+  DISPATCHED_TO_STORE: ['RECEIVED_AT_STORE'],
+  RECEIVED_AT_STORE:   ['STORE_QC_PASS', 'STORE_QC_PARTIAL', 'QC_FAIL_STORE'],
+  STORE_QC_PASS:       ['READY_FOR_DELIVERY'],
+  STORE_QC_PARTIAL:    ['READY_FOR_DELIVERY']
+}
+
+function spLabStatusLabel(status) {
+  return SP_LAB_STATUS_LABELS[status] || String(status || '').replace(/_/g, ' ')
+}
+
+window.setSpLabFilter = function (status, tabEl) {
+  _spLabStatusFilter = status === undefined || status === null || status === '' ? '' : String(status)
+  document.querySelectorAll('#page-lab-orders .tab').forEach((el) => el.classList.remove('active'))
+  if (tabEl) tabEl.classList.add('active')
+  window.loadSpLabOrders()
+}
+
+window.loadSpLabOrders = async function () {
+  if (typeof window.closeSpQcNoteModal === 'function') window.closeSpQcNoteModal()
+  const tbody = document.getElementById('sp-lab-orders-tbody')
+  const searchEl = document.getElementById('sp-lab-search')
+  if (!tbody) return
+  if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('sp-lab-orders-tbody', 6)
+  try {
+    const qs = new URLSearchParams()
+    qs.set('kind', 'LAB')
+    qs.set('scope', 'store')
+    qs.set('limit', '120')
+    if (_spLabStatusFilter) qs.set('lab_status', _spLabStatusFilter)
+    const q = searchEl && searchEl.value ? searchEl.value.trim() : ''
+    if (q) qs.set('search', q)
+    const resp = await apiGet('/api/orders?' + qs.toString())
+    const rows = (resp && resp.data) ? resp.data : []
+    if (!rows.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6">
+            <div class="empty">
+              <div class="empty-ic">🧪</div>
+              <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No lab orders in this status</div>
+              <div style="font-size:13px;color:var(--text2)">Try the <strong>All</strong> tab to see lab orders still at HQ, or another status. You can also search by order number.</div>
+            </div>
+          </td>
+        </tr>
+      `
+      return
+    }
+    tbody.innerHTML = rows.map((r) => {
+      const curr = r.lab_workflow_status
+      const next = SP_LAB_STATUS_NEXT[curr] || []
+      let actionHtml = '<span class="muted">No action</span>'
+
+      // ── Special: READY_FOR_DELIVERY → Handover modal ────────────────────
+      if (curr === 'READY_FOR_DELIVERY') {
+        actionHtml = `<button class="btn sm primary" id="sp-lab-btn-${r.order_id}" onclick="openSpHandoverModal(${r.order_id})">🤝 Handover</button>`
+      } else if (next.length === 1) {
+        const s = next[0]
+        const needsNote = SP_LAB_STATUS_NOTE_REQUIRED.has(s)
+        const handler = needsNote
+          ? `openSpQcNoteModal(${r.order_id}, ${r.sub_order_id || 0}, '${s}')`
+          : `updateSpLabStatus(${r.order_id}, ${r.sub_order_id || 0}, '${s}')`
+        actionHtml = `<button class="btn sm" id="sp-lab-btn-${r.order_id}" onclick="${handler}">${spLabStatusLabel(s)}</button>`
+      } else if (next.length > 1) {
+        const opts = next.map((s) => `<option value="${s}">${spLabStatusLabel(s)}</option>`).join('')
+        actionHtml = `
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="sp-lab-next-${r.order_id}" style="min-width:185px">${opts}</select>
+            <button class="btn sm" id="sp-lab-btn-${r.order_id}" onclick="updateSpLabStatusFromSelect(${r.order_id}, ${r.sub_order_id || 0})">Update</button>
+          </div>
+        `
+      }
+      return `
+        <tr>
+          <td class="mono">
+            <div>${r.order_no || ''}</div>
+            <button type="button" onclick="window.cosmosTimelineOpen(${r.order_id},'${r.order_no || ''}')" style="background:none;border:none;color:var(--acc2);font-size:11px;cursor:pointer;padding:0;margin-top:2px;text-decoration:underline">📋 Timeline</button>
+          </td>
+          <td>${r.customer_name || 'Walk-in'}${r.customer_phone ? `<div class="muted" style="font-size:12px">${r.customer_phone}</div>` : ''}</td>
+          <td><span class="badge blue">${spLabStatusLabel(curr)}</span></td>
+          <td>₹${Number(r.total_amount || 0).toFixed(2)}</td>
+          <td class="muted" style="font-size:12px">${new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</td>
+          <td>${actionHtml}</td>
+        </tr>
+      `
+    }).join('')
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="6" class="muted">Failed to load lab orders.</td></tr>'
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+  }
+}
+
+window.updateSpLabStatusFromSelect = function (orderId, subOrderId) {
+  const sel = document.getElementById(`sp-lab-next-${orderId}`)
+  if (!sel || !sel.value) return
+  if (SP_LAB_STATUS_NOTE_REQUIRED.has(sel.value)) {
+    window.openSpQcNoteModal(orderId, subOrderId, sel.value)
+  } else {
+    window.updateSpLabStatus(orderId, subOrderId, sel.value)
+  }
+}
+
+window.updateSpLabStatus = async function (orderId, subOrderId, nextStatus, note) {
+  if (!subOrderId || !nextStatus) return
+  const btn = document.getElementById(`sp-lab-btn-${orderId}`)
+  if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+  try {
+    const body = { sub_order_id: Number(subOrderId), to_status: nextStatus }
+    if (note) body.note = note
+    await apiPost(`/api/orders/${orderId}/lab-status`, body)
+    if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Lab status updated')
+    window.loadSpLabOrders()
+  } catch (err) {
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+  }
+}
+
+// ── QC Note Modal ──────────────────────────────────────────────────────────
+let _spQcNoteCtx = null
+
+window.openSpQcNoteModal = function (orderId, subOrderId, toStatus) {
+  _spQcNoteCtx = { orderId, subOrderId, toStatus }
+  const overlay = document.getElementById('overlay-sp-qc-note')
+  const titleEl = document.getElementById('sp-qc-note-modal-title')
+  const descEl  = document.getElementById('sp-qc-note-modal-desc')
+  const input   = document.getElementById('sp-qc-note-input')
+  const errEl   = document.getElementById('sp-qc-note-err')
+  if (!overlay) return
+
+  const isPartial = toStatus === 'STORE_QC_PARTIAL'
+  titleEl.textContent = isPartial ? 'QC Partial — Describe Defect' : 'QC Fail — Reason Required'
+  descEl.textContent  = isPartial
+    ? 'Order has a minor defect but will be handed over to the customer. Note is mandatory and will be saved on the order.'
+    : 'Order failed QC and will be sent back to Foundry for remake. Clearly describe the defect.'
+  input.value = ''
+  errEl.style.display = 'none'
+  overlay.classList.add('open')
+  setTimeout(() => input.focus(), 120)
+}
+
+window.closeSpQcNoteModal = function () {
+  const overlay = document.getElementById('overlay-sp-qc-note')
+  if (overlay) overlay.classList.remove('open')
+  _spQcNoteCtx = null
+}
+
+window.confirmSpQcNote = async function () {
+  if (!_spQcNoteCtx) return
+  const input  = document.getElementById('sp-qc-note-input')
+  const errEl  = document.getElementById('sp-qc-note-err')
+  const btn    = document.getElementById('sp-qc-note-confirm-btn')
+  const note   = (input && input.value || '').trim()
+  if (!note) {
+    if (errEl) { errEl.textContent = 'Note is required.'; errEl.style.display = 'block' }
+    if (input && typeof cosmosFieldError === 'function') cosmosFieldError(input, 'Required')
+    return
+  }
+  if (errEl) errEl.style.display = 'none'
+  const { orderId, subOrderId, toStatus } = _spQcNoteCtx
+  window.closeSpQcNoteModal()
+  await window.updateSpLabStatus(orderId, subOrderId, toStatus, note)
+}
+
+// ── Handover Modal ─────────────────────────────────────────────────────────
+let _spHandoverCtx = null
+
+window.openSpHandoverModal = async function (orderId) {
+  const overlay = document.getElementById('overlay-sp-handover')
+  const body    = document.getElementById('sp-handover-modal-body')
+  if (!overlay || !body) return
+  body.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2)">Loading order details…</div>'
+  overlay.style.display = 'flex'
+  overlay.classList.add('open')
+  try {
+    const resp = await apiGet('/api/orders/' + orderId)
+    const order   = resp.data.order
+    const summary = resp.data.payment_summary
+    const balanceDue = Math.max(0, Number(summary && summary.amount_remaining || 0))
+    const total      = Number(order.total_amount || 0)
+    const orderNo    = order.order_no || ('#' + orderId)
+    _spHandoverCtx   = { orderId, orderNo, balanceDue, customerId: order.customer_id, customerPhone: order.customer_phone || '' }
+
+    const fmtRs = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+    if (balanceDue < 0.01) {
+      // Fully paid — just mark as delivered
+      body.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="badge green" style="width:fit-content">✓ Fully Paid at POS</div>
+          <div style="font-size:14px;color:var(--text1)">
+            Order <strong>${orderNo}</strong> — Total ${fmtRs(total)}<br>
+            <span style="font-size:12px;color:var(--text2)">No balance due. Click Confirm to mark as <strong>Delivered</strong> and generate invoice.</span>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+            <button class="btn" onclick="closeSpHandoverModal()">Cancel</button>
+            <button class="btn primary" id="btn-sp-handover-confirm" onclick="submitSpHandover(false)">✓ Confirm Handover</button>
+          </div>
+        </div>
+      `
+    } else {
+      // Balance due — show payment form
+      body.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="font-size:14px;color:var(--text1)">
+            Order <strong>${orderNo}</strong> — Total ${fmtRs(total)}
+          </div>
+          <div style="background:var(--goldL);border-radius:8px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:13px;font-weight:600;color:var(--gold)">Balance Due</span>
+            <span style="font-size:20px;font-weight:800;color:var(--text1)">${fmtRs(balanceDue)}</span>
+          </div>
+          <div>
+            <div class="field-label" style="margin-bottom:6px">Payment Method</div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="sp-pay-method-btn active" id="sp-pay-m-UPI" onclick="setSpPayMethod('UPI')">⬡ UPI</button>
+              <button type="button" class="sp-pay-method-btn" id="sp-pay-m-CARD" onclick="setSpPayMethod('CARD')">▣ Card</button>
+              <button type="button" class="sp-pay-method-btn" id="sp-pay-m-CASH" onclick="setSpPayMethod('CASH')">₹ Cash</button>
+            </div>
+          </div>
+          <div id="sp-handover-cash-wrap" style="display:none">
+            <label class="field-label" for="sp-handover-tendered">Tendered (cash)</label>
+            <input id="sp-handover-tendered" type="number" inputmode="decimal" min="0" placeholder="Amount received" style="width:100%">
+            <div id="sp-handover-change" style="font-size:12px;color:var(--green);font-weight:600;margin-top:4px;display:none"></div>
+          </div>
+          <div id="sp-handover-card-wrap" style="display:none">
+            <label class="field-label" for="sp-handover-card-ref">Approval code / Last 4 <span style="color:var(--text3)">(optional)</span></label>
+            <input id="sp-handover-card-ref" type="text" placeholder="e.g. 123456" style="width:100%">
+          </div>
+          <div id="sp-handover-err" class="form-error" style="display:none"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+            <button class="btn" onclick="closeSpHandoverModal()">Cancel</button>
+            <button class="btn primary" id="btn-sp-handover-confirm" onclick="submitSpHandover(true)">Collect ${fmtRs(balanceDue)} &amp; Hand Over</button>
+          </div>
+        </div>
+      `
+      // Cash change listener
+      const tEl = document.getElementById('sp-handover-tendered')
+      if (tEl) {
+        tEl.addEventListener('input', function () {
+          const t = Number(this.value) || 0
+          const chEl = document.getElementById('sp-handover-change')
+          if (chEl) {
+            if (t >= balanceDue) { chEl.textContent = 'Change: ' + fmtRs(t - balanceDue); chEl.style.display = '' }
+            else chEl.style.display = 'none'
+          }
+        })
+      }
+      // Default to UPI selected
+      setSpPayMethod('UPI')
+    }
+  } catch (err) {
+    body.innerHTML = '<div style="color:var(--red);padding:16px">' + (err.message || 'Failed to load order.') + '</div>'
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+  }
+}
+
+window.setSpPayMethod = function (method) {
+  ;['UPI', 'CARD', 'CASH'].forEach((m) => {
+    const btn = document.getElementById('sp-pay-m-' + m)
+    if (btn) btn.classList.toggle('active', m === method)
+  })
+  const cashWrap = document.getElementById('sp-handover-cash-wrap')
+  const cardWrap = document.getElementById('sp-handover-card-wrap')
+  if (cashWrap) cashWrap.style.display = method === 'CASH' ? '' : 'none'
+  if (cardWrap) cardWrap.style.display = method === 'CARD' ? '' : 'none'
+  if (_spHandoverCtx) _spHandoverCtx.method = method
+}
+
+window.closeSpHandoverModal = function () {
+  const overlay = document.getElementById('overlay-sp-handover')
+  if (overlay) { overlay.classList.remove('open'); setTimeout(() => { overlay.style.display = 'none' }, 200) }
+  _spHandoverCtx = null
+}
+
+window.submitSpHandover = async function (hasBalance) {
+  if (!_spHandoverCtx) return
+  const btn = document.getElementById('btn-sp-handover-confirm')
+  const errEl = document.getElementById('sp-handover-err')
+  if (errEl) errEl.style.display = 'none'
+  const { orderId, balanceDue } = _spHandoverCtx
+
+  let body = { order_id: orderId }
+
+  if (hasBalance) {
+    const method = _spHandoverCtx.method || 'UPI'
+    const tEl = document.getElementById('sp-handover-tendered')
+    const refEl = document.getElementById('sp-handover-card-ref')
+    const tendered = tEl && tEl.value ? Number(tEl.value) : null
+
+    if (method === 'CASH' && (tendered == null || tendered < balanceDue)) {
+      if (errEl) { errEl.textContent = 'Tendered amount must be ≥ balance due (' + '₹' + balanceDue.toFixed(2) + ').'; errEl.style.display = 'block' }
+      return
+    }
+    body.amount = balanceDue
+    body.method = method
+    if (method === 'CASH' && tendered) body.tendered = tendered
+    if (method === 'CARD' && refEl && refEl.value.trim()) body.external_ref = refEl.value.trim()
+  }
+
+  if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+  try {
+    const res = await apiPost('/api/orders/' + orderId + '/handover', body)
+    if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+    window.closeSpHandoverModal()
+    const invMsg = res.data && res.data.invoice_no ? ' Invoice: ' + res.data.invoice_no + '.' : ''
+    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Order handed over successfully.' + invMsg)
+    // Placeholder: receipt channels not connected yet — just show info
+    if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Receipt channels (WhatsApp / Email / SMS / Print) will be connected in the next phase.')
+    window.loadSpLabOrders()
+  } catch (err) {
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+    if (errEl) { errEl.textContent = err.message || 'Handover failed.'; errEl.style.display = 'block' }
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+  }
 }
 
 function hasAnyPermission(list) {
@@ -342,7 +687,7 @@ function loadDashboard() {
     renderDashRecentTransfers(transfers.slice(0, 5));
 
     if (lastEl) {
-      lastEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      lastEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
     }
   });
 }
@@ -1097,7 +1442,7 @@ function loadReports() {
   const monthEl = document.getElementById('reports-month-label');
 
   const now = new Date();
-  if (monthEl) monthEl.textContent = now.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+  if (monthEl) monthEl.textContent = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month: 'long', year: 'numeric' });
   if (statsEl) statsEl.innerHTML = '<div style="grid-column:1/-1;padding:16px;color:var(--text3);font-size:13px">Loading report data…</div>';
   if (tableEl) tableEl.innerHTML = '<div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>';
 
@@ -1115,8 +1460,10 @@ function loadReports() {
     const allTransfers = trResult.status === 'fulfilled' ? (trResult.value.data || []) : [];
     const storeOrCatSkus = skuResult.status === 'fulfilled' ? (skuResult.value.data || []) : [];
 
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const weekStart  = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+    const istDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // "YYYY-MM-DD"
+    const [iy, im, id] = istDateStr.split('-').map(Number);
+    const monthStart = new Date(`${iy}-${String(im).padStart(2,'0')}-01T00:00:00+05:30`);
+    const weekStart  = new Date(new Date(`${iy}-${String(im).padStart(2,'0')}-${String(id).padStart(2,'0')}T00:00:00+05:30`) - 6 * 864e5);
 
     const thisMonth = allTransfers.filter((r) => {
       const d = new Date(r.created_at || r.transfer_date);

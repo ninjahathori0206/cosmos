@@ -85,7 +85,7 @@ router.get(
         .input('pid', sql.VarChar(80), req.params.pid)
         .query(`
           SELECT s.sku_id, s.sku_code, s.pid, s.quantity, s.cost_price, s.sale_price, s.status,
-                 DATEDIFF(DAY, s.created_at, GETDATE()) AS product_age_days,
+                 DATEDIFF(DAY, s.created_at, DATEADD(MINUTE, 330, SYSUTCDATETIME())) AS product_age_days,
                  pm.product_name, pm.product_type, pm.ew_collection, pm.style_model,
                  hb.brand_name,
                  pc.colour_name, pc.colour_code,

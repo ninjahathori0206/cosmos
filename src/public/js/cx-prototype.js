@@ -1,6 +1,14 @@
 /* ─── CX (Customer Experience) — Analytics shell ───────────────────────────── */
 
-const CX_API_KEY = 'CHANGE_ME_API_KEY'
+const CX_API_KEY_FALLBACK = 'CHANGE_ME_API_KEY'
+
+function cxResolveApiKey () {
+  try {
+    var k = sessionStorage.getItem('cosmos_api_key')
+    if (k && String(k).trim()) return String(k).trim()
+  } catch (_) {}
+  return CX_API_KEY_FALLBACK
+}
 
 function getToken () {
   return sessionStorage.getItem('cosmos_token') || ''
@@ -9,7 +17,7 @@ function getToken () {
 async function cxApiFetch (method, path, body) {
   const headers = {
     'Content-Type': 'application/json',
-    'X-API-Key': CX_API_KEY,
+    'X-API-Key': cxResolveApiKey(),
     Authorization: 'Bearer ' + getToken()
   }
   const res = await fetch(path, {
@@ -24,6 +32,11 @@ async function cxApiFetch (method, path, body) {
   if (!res.ok) {
     const msg =
       (data && (data.message || (data.errors && data.errors.join(', ')))) || 'HTTP ' + res.status
+    throw new Error(msg)
+  }
+  if (data && Object.prototype.hasOwnProperty.call(data, 'success') && data.success === false) {
+    const msg =
+      (data.message || (data.errors && data.errors.join(', '))) || 'Request failed'
     throw new Error(msg)
   }
   return data
@@ -86,7 +99,8 @@ function cxOrderStatusBadge (status) {
 
 var CX_PAGE_PATHS = {
   dashboard: '/cx/dashboard',
-  customers: '/cx/customers'
+  customers: '/cx/customers',
+  offers:    '/cx/offers'
 }
 
 function cxGetPageFromPath (pathname) {
@@ -105,7 +119,8 @@ function cxGetNavEl (id) {
 
 var CX_BC_MAP = {
   dashboard: 'Dashboard',
-  customers: 'Customers'
+  customers: 'Customers',
+  offers:    'Customer Offers'
 }
 
 function cxRebuildStatCards () {
@@ -153,6 +168,7 @@ window.cxNav = function (id, el, options) {
   }
   if (id === 'dashboard') window.loadCxDashboardPage()
   if (id === 'customers') window.loadCxCustomersPage()
+  if (id === 'offers' && typeof window.loadOffersPage === 'function') window.loadOffersPage()
 }
 
 function cxApplyRouteFromPath () {
@@ -181,7 +197,7 @@ function cxLoadUser () {
       else if (mods.foundry !== false) window.location.href = '/foundry/dashboard'
       else if (mods.finance !== false) window.location.href = '/finance/dashboard'
       else if (mods.storepilot !== false) window.location.href = '/storepilot/dashboard'
-      else if (mods.pos !== false) window.location.href = '/pos/dashboard'
+      else if (mods.pos !== false) window.location.href = '/storeos/login'
       else window.location.href = '/'
       return
     }
@@ -347,8 +363,14 @@ window.loadCxCustomersPage = async function () {
     }
     tbody.innerHTML = rows
       .map(function (r) {
+        var cid = escCx(String(r.customer_id))
+        var cname = encodeURIComponent(r.full_name || '')
         return (
-          '<tr>' +
+          '<tr class="tr-link" data-cid="' +
+          cid +
+          '" data-cname="' +
+          cname +
+          '">' +
           '<td><div class="fw6">' +
           escCx(r.full_name) +
           '</div>' +
@@ -383,9 +405,145 @@ window.loadCxCustomersPage = async function () {
   }
 }
 
+window.closeGrantMembershipModal = function () {
+  var ov = document.getElementById('modal-grant-membership-overlay')
+  if (ov) ov.style.display = 'none'
+}
+
+window._gmApplyPlanDefaults = function () {
+  var sel = document.getElementById('gm-plan')
+  if (!sel || !sel.options.length) return
+  var opt = sel.options[sel.selectedIndex]
+  if (!opt) return
+  document.getElementById('gm-price').value = opt.dataset.price || ''
+  document.getElementById('gm-days').value = opt.dataset.days || ''
+}
+
+window.openGrantMembershipModal = async function (customerId, customerName) {
+  document.getElementById('gm-customer-id').value = String(customerId)
+  document.getElementById('gm-customer-name').value = customerName || ''
+  document.getElementById('gm-customer-label').textContent = customerName
+    ? 'Customer: ' + customerName
+    : 'Customer #' + customerId
+  document.getElementById('gm-modal-error').style.display = 'none'
+  document.getElementById('gm-price').value = ''
+  document.getElementById('gm-days').value = ''
+  document.getElementById('gm-expires').value = ''
+  var sel = document.getElementById('gm-plan')
+  sel.innerHTML = ''
+  sel.onchange = null
+  document.getElementById('gm-current-status').innerHTML =
+    '<div class="skel skel-stat" style="width:100%;max-width:none"></div>'
+  document.getElementById('modal-grant-membership-overlay').style.display = 'flex'
+  try {
+    var plansRes = await cxApiFetch('GET', '/api/cx/plans')
+    var statusRes = await cxApiFetch('GET', '/api/cx/customers/' + customerId + '/membership')
+    var plans = plansRes.data || []
+    var active = (statusRes.data && statusRes.data.active_membership) || null
+    if (active) {
+      document.getElementById('gm-current-status').innerHTML =
+        '<strong>Current:</strong> ' +
+        escCx(active.plan_display_name || active.plan_key) +
+        ' · expires ' +
+        fmtCxDateOnly(active.expires_at) +
+        ' · paid ' +
+        fmtCxRs(active.price_paid)
+    } else {
+      document.getElementById('gm-current-status').innerHTML =
+        '<strong>No active Eyewoot Go membership.</strong> Saving creates a new term; any previous active term is ended.'
+    }
+    if (!plans.length) {
+      document.getElementById('gm-current-status').innerHTML =
+        '<span style="color:var(--red)">No active membership plans in the database.</span>'
+      return
+    }
+    plans.forEach(function (p) {
+      var opt = document.createElement('option')
+      opt.value = p.plan_key
+      opt.textContent = p.display_name + ' (' + p.plan_key + ')'
+      opt.dataset.price = String(p.price)
+      opt.dataset.days = String(p.validity_days)
+      sel.appendChild(opt)
+    })
+    window._gmApplyPlanDefaults()
+    sel.onchange = function () {
+      window._gmApplyPlanDefaults()
+    }
+  } catch (err) {
+    var msg = err && err.message ? err.message : 'Could not load.'
+    document.getElementById('gm-current-status').innerHTML =
+      '<span style="color:var(--red)">' + escCx(msg) + '</span>'
+    if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg)
+  }
+}
+
+window.saveGrantMembership = async function () {
+  var errEl = document.getElementById('gm-modal-error')
+  var btn = document.getElementById('gm-save-btn')
+  errEl.style.display = 'none'
+  var cid = document.getElementById('gm-customer-id').value
+  var plan = document.getElementById('gm-plan').value
+  if (!plan) {
+    errEl.textContent = 'Select a membership plan.'
+    errEl.style.display = 'block'
+    return
+  }
+  var price = parseFloat(document.getElementById('gm-price').value)
+  if (Number.isNaN(price) || price < 0) {
+    errEl.textContent = 'Enter a valid price paid.'
+    errEl.style.display = 'block'
+    return
+  }
+  var body = { plan_key: plan, price_paid: price }
+  var exp = document.getElementById('gm-expires').value.trim()
+  if (exp) {
+    body.expires_at = exp
+  } else {
+    var d = document.getElementById('gm-days').value.trim()
+    if (d) {
+      var nd = parseInt(d, 10)
+      if (!Number.isNaN(nd) && nd > 0) body.validity_days = nd
+    }
+  }
+  if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn)
+  try {
+    await cxApiFetch('POST', '/api/cx/customers/' + cid + '/membership', body)
+    if (typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn)
+    else if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn)
+    window.closeGrantMembershipModal()
+    if (typeof window.cosmosToastSuccess === 'function') window.cosmosToastSuccess('Eyewoot Go membership saved.')
+    if (typeof window.loadCxCustomersPage === 'function') await window.loadCxCustomersPage()
+  } catch (err) {
+    if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn)
+    errEl.textContent = err && err.message ? err.message : 'Save failed.'
+    errEl.style.display = 'block'
+  }
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   cxLoadUser()
   cxApplyRouteFromPath()
+  var cxTbl = document.getElementById('cx-customers-table')
+  if (cxTbl && !cxTbl.dataset.cxGrantMembershipBound) {
+    cxTbl.dataset.cxGrantMembershipBound = '1'
+    cxTbl.addEventListener('click', function (e) {
+      var tr = e.target.closest('tbody tr[data-cid]')
+      if (!tr) return
+      var idStr = tr.getAttribute('data-cid')
+      if (!idStr) return
+      var id = parseInt(idStr, 10)
+      if (!id) return
+      var name = ''
+      try {
+        name = decodeURIComponent(tr.getAttribute('data-cname') || '')
+      } catch (e2) {
+        name = ''
+      }
+      if (typeof window.openGrantMembershipModal === 'function') {
+        window.openGrantMembershipModal(id, name)
+      }
+    })
+  }
   var btn = document.getElementById('btn-cx-cust-search')
   var inp = document.getElementById('cx-cust-search')
   if (btn) {

@@ -61,7 +61,7 @@
       <div class="nav-group">System</div>
       <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
       <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🏬</span> StorePilot</div>
-      <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/pos/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🧾</span> Store OS (POS)</div>
+      <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/storeos/login'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🧾</span> Store OS (POS)</div>
       <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
       <div class="nav-item" data-cosmos-module="cx" onclick="window.location.href='/cx/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">📊</span> CX</div>
     </div>
@@ -703,31 +703,33 @@
       </div>
     </div>
 
-    <!-- Transfer History -->
+    <!-- Dispatch documents (challans) — not the same as stocked movements -->
     <div class="card">
       <div class="ch">
-        <div class="ct">Transfer History</div>
+        <div class="ct">Dispatch documents</div>
         <div style="display:flex;gap:8px;margin-left:auto;align-items:center;flex-wrap:wrap">
           <button type="button" class="btn sm" id="st-print-last-btn" style="display:none" onclick="stReprintLastTransferSlip()" title="Re-print last dispatch slip">🖨️ Print last slip</button>
           <button class="btn sm" onclick="stLoadHistory()">↻ Refresh</button>
         </div>
       </div>
+      <div class="cb" style="padding-top:0;border-top:none">
+        <p style="margin:0 0 12px;font-size:12px;color:var(--text3)">Each row is a challan (HQ → store). Stock enters the destination only after staff complete <strong>StorePilot — Incoming Goods</strong>.</p>
+      </div>
       <div style="overflow-x:auto">
         <table class="tbl">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>SKU</th>
-              <th>Product</th>
-              <th>Brand</th>
-              <th>Colour</th>
-              <th class="tc">Qty</th>
-              <th>To Store</th>
-              <th>By</th>
+              <th>Doc #</th>
+              <th>Dispatched</th>
+              <th>Destination</th>
+              <th>Status</th>
+              <th class="tc">SKUs</th>
+              <th>Dispatched by</th>
+              <th class="tc">Challan</th>
             </tr>
           </thead>
           <tbody id="st-history-tbody">
-            <tr><td colspan="8" class="tc td2 p12">Loading history…</td></tr>
+            <tr><td colspan="7" class="tc td2 p12">—</td></tr>
           </tbody>
         </table>
       </div>
@@ -1269,36 +1271,34 @@
 
   <!-- ═══ LAB ORDERS ═══ -->
   <div class="page" id="page-lab-orders">
-    <div class="ph flex ic"><div><div class="pt">Lab Orders (All Stores)</div></div></div>
-    
-    <div class="card lab-orders-card">
-      <div class="ch lab-orders-toolbar">
-        <div class="lab-orders-toolbar-inner flex ic g3">
-          <div class="sw lab-orders-search-wrap">
-            <span class="si">🔍</span>
-            <input id="lab-orders-search" placeholder="Search orders..." oninput="if(window.debounceLabOrders) window.debounceLabOrders()">
-          </div>
-          <select id="lab-orders-status-filter" class="lab-orders-status-select" onchange="window.loadLabOrders && window.loadLabOrders()">
-            <option value="">All Statuses</option>
-            <option value="OPEN">Open</option>
-            <option value="PAID">Paid</option>
-            <option value="DELIVERED">Delivered</option>
-            <option value="CANCELLED">Cancelled</option>
-            <option value="CREATED">Created</option>
-          </select>
-        </div>
+    <div class="ph flex ic">
+      <div>
+        <div class="pt">Lab Orders</div>
+        <div class="xs td2">All stores — monitor and advance lab order workflow from Sent-to-Lab through Dispatch.</div>
       </div>
-      <div class="tw lab-orders-tw">
-        <table class="lab-orders-table">
+      <div class="mla flex ic g2">
+        <input id="lab-orders-search" class="search" placeholder="Search order, customer, store" style="min-width:240px" oninput="if(window.debounceLabOrders) window.debounceLabOrders()">
+        <button class="btn" onclick="window.loadLabOrders && window.loadLabOrders()">Refresh</button>
+      </div>
+    </div>
+    <div class="tabs" style="margin:10px 0 12px">
+      <button class="tab active" id="fy-lab-tab-all"        onclick="setFyLabFilter('', this)">All</button>
+      <button class="tab"                                    onclick="setFyLabFilter('SENT_TO_LAB', this)">Pending Lab</button>
+      <button class="tab"                                    onclick="setFyLabFilter('LAB_FITTING', this)">At Lab</button>
+      <button class="tab"                                    onclick="setFyLabFilter('QC_PASS', this)">QC Pass</button>
+      <button class="tab"                                    onclick="setFyLabFilter('DISPATCHED_TO_STORE', this)">Dispatched</button>
+    </div>
+    <div class="card">
+      <div style="overflow:auto">
+        <table class="table">
           <thead>
             <tr>
-              <th>Order No</th>
-              <th>Store</th>
+              <th>Order #</th>
               <th>Customer</th>
-              <th>Order Kind</th>
-              <th>Total Amount</th>
-              <th>Status</th>
-              <th>Date</th>
+              <th>Store</th>
+              <th>Lab Status</th>
+              <th>Created</th>
+              <th style="width:270px">Action</th>
             </tr>
           </thead>
           <tbody id="lab-orders-tbody"></tbody>

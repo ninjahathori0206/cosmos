@@ -186,7 +186,7 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      SCREEN 3 — Product Catalogue
      Pencil: pencil-new.pen (repo root). PNG reference: pencil-exports/00-catalogue.png
-     Routes: /pos/catalogue (canonical), /pos/catelogue, /pos/catalog (aliases)
+     Routes: /storeos/catalogue (canonical); aliases include /pos/dashboard→dashboard→catalogue, /pos/catelogue, /pos/catalog
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-pos-catalogue" class="pos-screen">
   <div class="pos-lk-page">
@@ -516,86 +516,65 @@
         <button type="button" id="btn-pay-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Cart</button>
       </div>
 
-      <!-- Delivery card (Pencil truck row at top of payment) -->
-      <div id="pay-delivery-slot" class="pos-lk-pay-card" style="padding:12px 14px">
+      <!-- Delivery card -->
+      <div id="pay-delivery-slot" class="pos-lk-pay-card" style="padding:12px 14px;margin-bottom:12px">
         <div class="pos-lk-delivery-line">
-          <div style="display:flex;align-items:flex-start;gap:10px">
-            <span aria-hidden="true" style="color:#0D9F7B;font-size:18px">🚚</span>
-            <div>
-              <strong id="pay-delivery-title">Deliver to Store</strong>
-              <div id="pay-delivery-sub" style="font-size:11px;color:var(--lk-text-muted);margin-top:2px">Pickup at this location</div>
+          <div style="display:flex;align-items:flex-start;gap:10px;flex:1">
+            <span aria-hidden="true" style="color:var(--teal);font-size:18px">🚚</span>
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <strong style="font-size:13px;color:var(--text1)">Delivery Mode</strong>
+              </div>
+              <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;width:fit-content">
+                <button type="button" id="pay-mode-store" class="pos-pay-mode-btn active" onclick="setPosDeliveryMode('STORE')" aria-pressed="true">
+                  🏪 Pickup at Store
+                </button>
+                <button type="button" id="pay-mode-home" class="pos-pay-mode-btn" onclick="setPosDeliveryMode('HOME')" aria-pressed="false">
+                  🏠 Home Delivery
+                </button>
+              </div>
+              <div id="pay-delivery-sub" style="font-size:11px;color:var(--text3);margin-top:6px"></div>
+              <!-- Date picker — visible for both modes -->
+              <div id="pay-delivery-date-row" style="margin-top:8px;display:flex;align-items:center;gap:8px">
+                <label for="pay-delivery-date" style="font-size:12px;color:var(--text2);white-space:nowrap">Expected Date</label>
+                <input type="date" id="pay-delivery-date" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;color:var(--text1);background:var(--bg)" aria-label="Expected delivery date">
+              </div>
             </div>
           </div>
-          <button type="button" class="pos-lk-text-link" style="font-size:12px">Change</button>
         </div>
       </div>
 
-      <!-- Recommended (Pencil CRED pay) — maps to CARD -->
+      <!-- Recommended — UPI (most used at store) -->
       <h4 class="pos-lk-pay-section-head">Recommended</h4>
-      <label class="pos-lk-pay-row recommended selected" data-method-row="CARD" data-method-key="cred">
+      <label class="pos-lk-pay-row recommended selected" data-method-row="UPI" data-method-key="upi">
         <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo cred" aria-hidden="true">C</span>
+          <span class="pos-lk-pay-row-logo upi-icon" aria-hidden="true">⬡</span>
           <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">CRED pay</span>
-            <span class="pos-lk-pay-row-sub">Save ₹100 · Linked card</span>
+            <span class="pos-lk-pay-row-title">UPI / QR Code</span>
+            <span class="pos-lk-pay-row-sub">Show QR · any UPI app</span>
           </span>
         </span>
-        <input type="radio" name="pos-lk-pay-method" value="CARD" data-method-key="cred" class="pos-lk-pay-radio" checked tabindex="0">
+        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="upi" class="pos-lk-pay-radio" checked tabindex="0">
       </label>
 
-      <!-- Cash on Delivery (disabled per Pencil) -->
-      <h4 class="pos-lk-pay-section-head">Cash On Delivery</h4>
-      <label class="pos-lk-pay-row disabled" data-method-row="COD">
+      <!-- Card -->
+      <h4 class="pos-lk-pay-section-head">Card</h4>
+      <label class="pos-lk-pay-row" data-method-row="CARD" data-method-key="card">
         <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo cash" aria-hidden="true">$</span>
+          <span class="pos-lk-pay-row-logo card-icon" aria-hidden="true">▣</span>
           <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">Cash on Delivery</span>
-            <span class="pos-lk-pay-row-sub">Not available for store pickup</span>
+            <span class="pos-lk-pay-row-title">Debit / Credit Card</span>
+            <span class="pos-lk-pay-row-sub">Swipe or tap on machine</span>
           </span>
         </span>
-        <button type="button" class="pos-lk-pay-row-link">Choose Home Delivery</button>
+        <input type="radio" name="pos-lk-pay-method" value="CARD" data-method-key="card" class="pos-lk-pay-radio" tabindex="0">
       </label>
+      <div id="pos-lk-pay-card-ref-wrap" class="pos-lk-pay-tendered-wrap" style="display:none">
+        <label for="pay-card-ref" style="font-size:12px;color:var(--text2)">Approval code / Last 4 digits <span style="color:var(--text3)">(optional)</span></label>
+        <input id="pay-card-ref" type="text" inputmode="text" placeholder="e.g. 123456 or 4242" aria-label="Card approval code or last 4 digits" style="max-width:220px">
+      </div>
 
-      <!-- UPI options -->
-      <h4 class="pos-lk-pay-section-head">UPI</h4>
-      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="gpay">
-        <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo gpay" aria-hidden="true">G</span>
-          <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">Google Pay</span>
-          </span>
-        </span>
-        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="gpay" class="pos-lk-pay-radio" tabindex="0">
-      </label>
-      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="paytm">
-        <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo paytm" aria-hidden="true">P</span>
-          <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">Paytm UPI</span>
-          </span>
-        </span>
-        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="paytm" class="pos-lk-pay-radio" tabindex="0">
-      </label>
-      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="credupi">
-        <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo cred-upi" aria-hidden="true">C</span>
-          <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">CRED UPI</span>
-          </span>
-        </span>
-        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="credupi" class="pos-lk-pay-radio" tabindex="0">
-      </label>
-      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="amazon">
-        <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo amazon" aria-hidden="true">a</span>
-          <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">Amazon Pay UPI</span>
-          </span>
-        </span>
-        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="amazon" class="pos-lk-pay-radio" tabindex="0">
-      </label>
-
-      <!-- Cash (kept for POS staff fallback; not in Pencil but required for the till) -->
+      <!-- Cash (POS till) -->
       <h4 class="pos-lk-pay-section-head">Cash (POS till)</h4>
       <label class="pos-lk-pay-row" data-method-row="CASH" data-method-key="cash">
         <span class="pos-lk-pay-row-left">
@@ -610,12 +589,26 @@
       <div id="pos-lk-pay-tendered-wrap" class="pos-lk-pay-tendered-wrap">
         <label for="pay-tendered">Tendered (cash)</label>
         <input id="pay-tendered" type="text" inputmode="decimal" placeholder="Amount received" aria-label="Cash tendered">
+        <div id="pay-cash-change" style="font-size:12px;color:var(--green);font-weight:600;margin-top:4px;display:none"></div>
       </div>
 
+      <!-- Store Wallet (coming soon) -->
+      <h4 class="pos-lk-pay-section-head">Store Wallet</h4>
+      <label class="pos-lk-pay-row disabled" data-method-row="WALLET">
+        <span class="pos-lk-pay-row-left">
+          <span class="pos-lk-pay-row-logo wallet-icon" aria-hidden="true">◈</span>
+          <span class="pos-lk-pay-row-info">
+            <span class="pos-lk-pay-row-title">Loyalty Wallet</span>
+            <span class="pos-lk-pay-row-sub">Coming soon</span>
+          </span>
+        </span>
+        <span style="font-size:11px;color:var(--text3);background:var(--accL);color:var(--acc2);padding:2px 8px;border-radius:20px;font-weight:600">Soon</span>
+      </label>
+
       <select id="pay-method" class="pos-visually-hidden" aria-hidden="true" tabindex="-1" style="display:none">
+        <option value="UPI" selected>UPI</option>
+        <option value="CARD">Card</option>
         <option value="CASH">Cash</option>
-        <option value="CARD" selected>Card</option>
-        <option value="UPI">UPI</option>
       </select>
     </div>
 
@@ -634,6 +627,20 @@
           <div class="pos-ob-summary-row"><span class="pos-ob-summary-lbl">GST</span><span id="pay-gst" class="pos-ob-summary-val">₹0</span></div>
           <div class="pos-ob-summary-row total"><span class="pos-ob-summary-lbl">Total</span><span id="pay-total" class="pos-ob-summary-val">₹0</span></div>
         </div>
+      </div>
+      <!-- Advance / amount section -->
+      <div id="pay-amount-card" class="pos-lk-side-card" style="padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:12px;font-weight:600;color:var(--text2)" id="pay-amount-stage-label">Amount to collect</span>
+          <span id="pay-advance-badge" style="display:none;font-size:11px;background:var(--goldL);color:var(--gold);padding:2px 8px;border-radius:20px;font-weight:700">ADVANCE</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:22px;font-weight:800;color:var(--text1)">₹</span>
+          <input type="number" id="pay-amount-input" inputmode="decimal" min="0" step="1"
+            style="font-size:22px;font-weight:800;color:var(--text1);border:none;border-bottom:2px solid var(--border);background:transparent;width:100%;outline:none;padding:2px 0"
+            aria-label="Amount to collect">
+        </div>
+        <div id="pay-amount-hint" style="font-size:11px;color:var(--text3);margin-top:5px"></div>
       </div>
       <button type="button" id="btn-pay-submit" class="pos-lk-pay-cta" tabindex="0">
         <span aria-hidden="true">🔒</span>
@@ -678,7 +685,11 @@
       <div id="confirm-breakdown" class="pos-confirm-breakdown" aria-live="polite"></div>
     </div>
 
-    <div style="display:flex;justify-content:center;gap:12px;padding-top:8px">
+    <div style="display:flex;justify-content:center;gap:12px;padding-top:8px;flex-wrap:wrap">
+      <button type="button" id="btn-confirm-whatsapp" class="pos-confirm-action-whatsapp" tabindex="0">
+        <span aria-hidden="true">💬</span>
+        <span>WhatsApp Receipt</span>
+      </button>
       <button type="button" id="btn-confirm-print" class="pos-confirm-action-print" tabindex="0">
         <span aria-hidden="true">🖨</span>
         <span>Print Bill</span>

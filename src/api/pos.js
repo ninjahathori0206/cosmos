@@ -505,10 +505,20 @@ router.get('/orders', authJwt, requireModule('pos'), async (req, res, next) => {
 
     const search = (req.query.q || '').trim() || null
     const statusFilter = (req.query.status || '').trim() || null
+    const orderKind = (req.query.kind || '').trim() || null
+    const labStatusFilter = (req.query.lab_status || '').trim() || null
+    const excludeRaw = (req.query.exclude_lab_status || '').trim()
+    const labStatusExcludes = excludeRaw ? excludeRaw.split(',').map((s) => s.trim()).filter(Boolean) : []
 
     const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
-    const orders = await orderService.fetchStoreOrders(pool, storeId, mode, { search, statusFilter })
+    const orders = await orderService.fetchStoreOrders(pool, storeId, mode, {
+      search,
+      statusFilter,
+      orderKind,
+      labStatusFilter,
+      labStatusExcludes
+    })
 
     return res.json({ success: true, data: orders })
   } catch (err) {
@@ -637,7 +647,14 @@ router.post('/payment', authJwt, requireModule('pos'), async (req, res, next) =>
     const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
     const result = await orderService.recordPayment(pool, mode, storeId, employeeId, value)
-    return res.json({ success: true, message: result.message, data: { payment_summary: result.payment_summary } })
+    return res.json({
+      success: true,
+      message: result.message,
+      data: {
+        payment_summary: result.payment_summary,
+        invoice_no: result.invoice_no || null
+      }
+    })
   } catch (err) {
     if (err.statusCode === 400 || err.statusCode === 404) {
       return res.status(err.statusCode).json({ success: false, message: err.message })

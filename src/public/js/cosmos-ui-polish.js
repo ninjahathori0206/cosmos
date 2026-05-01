@@ -238,3 +238,160 @@
     window.cosmosApplyPolish(document)
   }
 })()
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Order Timeline — shared modal (works in Foundry, StorePilot, POS)
+// ═══════════════════════════════════════════════════════════════════════════
+;(function () {
+  // Full canonical workflow — used to render the progress track
+  var TIMELINE_STEPS = [
+    { key: 'ORDER_PLACED',         label: 'Placed' },
+    { key: 'ADVANCE_PAID',         label: 'Accepted' },
+    { key: 'SENT_TO_LAB',          label: 'Sent to Lab' },
+    { key: 'LAB_FITTING',          label: 'Fitting & Edging' },
+    { key: 'QC_PASS',              label: 'QC Pass' },
+    { key: 'QC_FAIL_LAB',          label: 'QC Fail' },
+    { key: 'DISPATCHED_TO_STORE',  label: 'Dispatched' },
+    { key: 'RECEIVED_AT_STORE',    label: 'At Store' },
+    { key: 'STORE_QC_PASS',        label: 'Store QC' },
+    { key: 'READY_FOR_DELIVERY',   label: 'Ready' },
+    { key: 'DELIVERED',            label: 'Delivered' },
+    { key: 'BALANCE_COLLECTED',    label: 'Paid' },
+    { key: 'INVOICED',             label: 'Invoiced' }
+  ]
+
+  var FAIL_STATUSES = new Set(['QC_FAIL_LAB', 'QC_FAIL_STORE', 'STORE_QC_PARTIAL'])
+
+  function fmtIST(raw) {
+    if (!raw) return '—'
+    try {
+      return new Date(raw).toLocaleString('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false
+      })
+    } catch (e) { return String(raw) }
+  }
+
+  function statusLabel(key) {
+    for (var i = 0; i < TIMELINE_STEPS.length; i++) {
+      if (TIMELINE_STEPS[i].key === key) return TIMELINE_STEPS[i].label
+    }
+    return String(key || '').replace(/_/g, ' ')
+  }
+
+  function injectOverlay() {
+    if (document.getElementById('cosmos-timeline-overlay')) return
+    var el = document.createElement('div')
+    el.id = 'cosmos-timeline-overlay'
+    el.className = 'cosmos-timeline-modal-overlay'
+    el.setAttribute('role', 'dialog')
+    el.setAttribute('aria-modal', 'true')
+    el.setAttribute('aria-labelledby', 'cosmos-tl-modal-title')
+    el.innerHTML = [
+      '<div class="cosmos-timeline-modal">',
+      '  <div class="cosmos-timeline-modal-header">',
+      '    <div class="cosmos-timeline-modal-title" id="cosmos-tl-modal-title">Order Timeline</div>',
+      '    <button class="cosmos-timeline-modal-close" onclick="window.cosmosTimelineClose()" aria-label="Close">&times;</button>',
+      '  </div>',
+      '  <div class="cosmos-timeline-modal-body" id="cosmos-tl-modal-body">',
+      '    <div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>',
+      '  </div>',
+      '</div>'
+    ].join('')
+    el.addEventListener('click', function (e) {
+      if (e.target === el) window.cosmosTimelineClose()
+    })
+    document.body.appendChild(el)
+  }
+
+  window.cosmosTimelineClose = function () {
+    var ol = document.getElementById('cosmos-timeline-overlay')
+    if (ol) ol.classList.remove('open')
+  }
+
+  window.cosmosTimelineOpen = async function (orderId, orderNo) {
+    injectOverlay()
+    var overlay = document.getElementById('cosmos-timeline-overlay')
+    var body    = document.getElementById('cosmos-tl-modal-body')
+    var title   = document.getElementById('cosmos-tl-modal-title')
+    if (!overlay || !body) return
+    if (title) title.textContent = 'Timeline — ' + (orderNo || ('#' + orderId))
+    body.innerHTML = '<div style="text-align:center;padding:28px;color:var(--text3)">Loading…</div>'
+    overlay.classList.add('open')
+
+    try {
+      // Use page-specific apiGet if available, else fetch directly
+      var data
+      var token = (sessionStorage.getItem('cosmos_token') || localStorage.getItem('cosmos_token') || '')
+      var headers = { 'Content-Type': 'application/json' }
+      if (token) headers['Authorization'] = 'Bearer ' + token
+      // Attach X-API-Key from whichever global the host page set (API_KEY / SP_API_KEY)
+      var apiKey = (typeof API_KEY !== 'undefined' && API_KEY ? API_KEY : '')
+                 || (typeof SP_API_KEY !== 'undefined' && SP_API_KEY ? SP_API_KEY : '')
+      if (apiKey) headers['X-API-Key'] = apiKey
+      var r = await fetch('/api/orders/' + orderId + '/timeline', { headers: headers })
+      if (!r.ok) { var errJson = await r.json(); throw new Error(errJson.message || 'Request failed') }
+      var json = await r.json()
+      data = json && json.data ? json.data : []
+
+      if (!data.length) {
+        body.innerHTML = '<div style="text-align:center;padding:28px;color:var(--text3)">No timeline events recorded yet.</div>'
+        return
+      }
+
+      // Determine which steps are done / current from the log
+      var doneKeys = new Set()
+      data.forEach(function (e) { if (e.to_status) doneKeys.add(e.to_status) })
+      var lastStatus = data[data.length - 1].to_status
+
+      // Build progress track
+      var trackHTML = '<div class="cosmos-timeline-track">'
+      // Only show steps that are relevant (done or after last done in canonical list)
+      var lastDoneIdx = -1
+      for (var i = 0; i < TIMELINE_STEPS.length; i++) {
+        if (doneKeys.has(TIMELINE_STEPS[i].key)) lastDoneIdx = i
+      }
+      var showSteps = TIMELINE_STEPS.slice(0, Math.min(lastDoneIdx + 3, TIMELINE_STEPS.length))
+      showSteps.forEach(function (step) {
+        var isDone    = doneKeys.has(step.key) && step.key !== lastStatus
+        var isCurrent = step.key === lastStatus
+        var isFail    = isCurrent && FAIL_STATUSES.has(step.key)
+        var cls = isFail ? 'fail' : isCurrent ? 'current' : isDone ? 'done' : ''
+        var dotContent = isDone ? '✓' : (isCurrent ? '●' : '')
+        trackHTML += '<div class="cosmos-tl-step ' + cls + '">'
+        trackHTML += '<div class="cosmos-tl-dot">' + dotContent + '</div>'
+        trackHTML += '<div class="cosmos-tl-label">' + step.label + '</div>'
+        trackHTML += '</div>'
+      })
+      trackHTML += '</div>'
+
+      // Build log entries (newest first toggle? No — keep chronological for analysis)
+      var logHTML = '<div class="cosmos-timeline-log">'
+      data.forEach(function (entry) {
+        var isFail = FAIL_STATUSES.has(entry.to_status)
+        var dotCls = isFail ? 'fail' : ''
+        var arrow  = entry.from_status
+          ? statusLabel(entry.from_status) + ' → ' + statusLabel(entry.to_status)
+          : statusLabel(entry.to_status)
+        var actor  = entry.actor_name
+          ? (entry.actor_name + (entry.actor_role ? ' (' + entry.actor_role + ')' : ''))
+          : 'System'
+        logHTML += '<div class="cosmos-tl-entry">'
+        logHTML += '<div class="cosmos-tl-entry-dot ' + dotCls + '"></div>'
+        logHTML += '<div class="cosmos-tl-entry-body">'
+        logHTML += '<div class="cosmos-tl-entry-title">' + arrow + '</div>'
+        logHTML += '<div class="cosmos-tl-entry-meta">' + fmtIST(entry.created_at) + ' &nbsp;·&nbsp; ' + actor + '</div>'
+        if (entry.note) {
+          logHTML += '<div class="cosmos-tl-entry-note">' + entry.note + '</div>'
+        }
+        logHTML += '</div></div>'
+      })
+      logHTML += '</div>'
+
+      body.innerHTML = trackHTML + logHTML
+    } catch (err) {
+      body.innerHTML = '<div style="color:var(--red,#dc2626);padding:16px">' + (err.message || 'Failed to load timeline.') + '</div>'
+    }
+  }
+})()

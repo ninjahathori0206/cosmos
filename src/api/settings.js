@@ -1,13 +1,79 @@
 const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
-const { executeStoredProcedure } = require('../config/db');
+const { executeStoredProcedure, getPool } = require('../config/db');
 const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
 
 const settingsView = [requireModule('command_unit'), requirePermission('command_unit.settings.view')];
 const settingsManage = [requireModule('command_unit'), requirePermission('command_unit.settings.edit')];
+const posSettingsSchema = Joi.object({
+  lab_advance_pct: Joi.number().min(0).max(100).required()
+});
+
+// ─── POS SETTINGS ────────────────────────────────────────────────────────────
+router.get('/pos', ...settingsView, async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const rows = await pool.request().query(`
+      SELECT setting_key, setting_value
+      FROM dbo.app_settings
+      WHERE setting_key = N'lab_advance_pct'
+    `);
+
+    const map = {};
+    for (const row of (rows.recordset || [])) {
+      map[row.setting_key] = row.setting_value;
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        lab_advance_pct: Number(map.lab_advance_pct || 40)
+      }
+    });
+  } catch (err) { return next(err); }
+});
+
+router.put('/pos', ...settingsManage, async (req, res, next) => {
+  try {
+    const { error, value } = posSettingsSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      });
+    }
+
+    const pool = await getPool();
+    await pool.request()
+      .input('setting_key', sql.NVarChar(100), 'lab_advance_pct')
+      .input('setting_value', sql.NVarChar(400), String(value.lab_advance_pct))
+      .input('setting_group', sql.NVarChar(50), 'pos')
+      .input('description', sql.NVarChar(500), 'Lab order advance percent (0–100).')
+      .query(`
+        MERGE dbo.app_settings AS tgt
+        USING (SELECT @setting_key AS setting_key) AS src
+        ON tgt.setting_key = src.setting_key
+        WHEN MATCHED THEN
+          UPDATE SET
+            setting_value = @setting_value,
+            setting_group = @setting_group,
+            description = @description,
+            updated_at = SYSDATETIME()
+        WHEN NOT MATCHED THEN
+          INSERT (setting_key, setting_value, setting_group, description)
+          VALUES (@setting_key, @setting_value, @setting_group, @description);
+      `);
+
+    return res.json({
+      success: true,
+      data: { lab_advance_pct: value.lab_advance_pct }
+    });
+  } catch (err) { return next(err); }
+});
 
 // ─── GST RATES ───────────────────────────────────────────────────────────────
 

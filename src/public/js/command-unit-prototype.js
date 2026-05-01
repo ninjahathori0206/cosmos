@@ -9,6 +9,7 @@ const COMMAND_UNIT_PAGE_PATHS = {
   homebrands: '/command-unit/homebrands',
   locations: '/command-unit/locations',
   settings: '/command-unit/settings',
+  'pos-settings': '/command-unit/pos-settings',
   membership: '/command-unit/membership',
   leavetypes: '/command-unit/leavetypes',
   'foundry-settings': '/command-unit/foundry-settings',
@@ -66,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cosmosModuleAllowed('foundry')) window.location.href = '/foundry/dashboard';
     else if (cosmosModuleAllowed('finance')) window.location.href = '/finance/dashboard';
     else if (cosmosModuleAllowed('storepilot')) window.location.href = '/storepilot/dashboard';
-    else if (cosmosModuleAllowed('pos')) window.location.href = '/pos/dashboard';
+    else if (cosmosModuleAllowed('pos')) window.location.href = '/storeos/login';
     else if (cosmosModuleAllowed('cx')) window.location.href = '/cx/dashboard';
     else {
       sessionStorage.removeItem('cosmos_token');
@@ -201,6 +202,38 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!el || !el.value) return null;
     const n = Number(el.value);
     return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  async function loadCuPosSettings() {
+    const input = document.getElementById('cu-pos-lab-advance-pct')
+    if (!input) return
+    try {
+      const data = await apiGet('/api/settings/pos')
+      input.value = Number(data.lab_advance_pct || 40)
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+  }
+
+  window.saveCuPosSettings = async function() {
+    const input = document.getElementById('cu-pos-lab-advance-pct')
+    const btn = document.getElementById('btn-cu-save-pos-settings')
+    if (!input) return
+    const pct = Number(input.value)
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(input, 'Enter a valid percentage (0-100)')
+      return
+    }
+    if (typeof cosmosFieldClear === 'function') cosmosFieldClear(input)
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      await apiPut('/api/settings/pos', { lab_advance_pct: pct })
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('POS settings saved')
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
   }
 
   /** Fill role dropdowns from cachedRoles (after /api/roles load). */
@@ -847,6 +880,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="font-mono fw-600">${escHtml(role.role_key)}</span>
           </div>
         </div>
+        <div style="padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:var(--card,#f8fafc);margin-bottom:16px;font-size:13px;line-height:1.45;color:var(--text2,#475569)">
+          <strong style="color:var(--text1,#0f172a)">CX and other apps</strong> are not listed in the permission checkboxes above.
+          They are controlled under <a href="#" id="role-jump-module-access" style="color:var(--accent,#6366f1);font-weight:600">Module access for this role</a> below — turn <strong>📊 CX</strong> on, click <strong>Save Modules</strong>, then <strong>sign out and sign in again</strong> so your session picks it up.
+          If access still fails, open <strong>Configuration → Module Access</strong>, select the user’s store, and ensure <strong>CX</strong> is enabled there too (role and store must both allow the module).
+        </div>
         <div id="perm-save-msg" style="min-height:18px;font-size:12px;margin-bottom:8px"></div>
       `;
 
@@ -874,10 +912,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // ── Module access section ──────────────────────────────────────────────
       html += `
-        <div class="section-divider" style="margin:24px 0 12px">Module access for this role</div>
+        <div id="role-module-access-section" class="section-divider" style="margin:24px 0 12px">Module access for this role (CX, POS, Foundry, …)</div>
         <div class="td-muted text-xs" style="margin-bottom:12px">
-          Toggle which Cosmos modules users with this role may access.
-          Store-level policy (in Module Access → Per store) can further narrow access for store-scoped users.
+          Toggle which Cosmos modules users with this role may access (includes <strong>📊 CX</strong>).
+          Store-level policy (Configuration → Module Access → pick a store) can further narrow access for store-scoped users.
         </div>
         <div id="role-module-err" style="color:#b91c1c;font-size:12px;min-height:14px;margin-bottom:6px"></div>
         <div id="role-module-toggles"></div>
@@ -888,6 +926,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       panel.innerHTML = html;
       panel.dataset.roleKey = roleKey;
+
+      const jump = document.getElementById('role-jump-module-access');
+      if (jump) {
+        jump.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          document.getElementById('role-module-access-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
 
       document.getElementById('perm-save-btn').addEventListener('click', () => saveRolePermissions(roleKey));
       document.getElementById('perm-grant-all-btn').addEventListener('click', () => {
@@ -1792,7 +1838,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const titleEl = document.querySelector('#page-dashboard .page-title');
       if (titleEl) {
-        const hour = new Date().getHours();
+        const hour = Number(new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', hour: 'numeric', hour12: false }));
         const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
         titleEl.textContent = `${greeting}, ${user.full_name || user.username || 'User'} 👋`;
       }
@@ -2346,6 +2392,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.showPage = function(id, el) {
       _origShowPage(id, el);
       if (id === 'homebrands') loadHomeBrands();
+      if (id === 'pos-settings') loadCuPosSettings();
       if (id === 'cu-suppliers')       loadCuSuppliers();
       if (id === 'cu-maker-master')    loadCuMakers();
       if (id === 'cu-branding-agents') loadCuBrandingAgents();
@@ -2361,6 +2408,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadGstRates();
   loadMembershipTiers();
   loadLeaveTypes();
+  loadCuPosSettings();
   loadFoundrySettings();
   loadAuditLogs();
   loadDashboard();

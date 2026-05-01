@@ -2547,6 +2547,56 @@ body.pos-lk-flow .pos-confirm-action-new {
   cursor: pointer;
 }
 
+/* ── Delivery mode toggle ────────────────────────────────────────────────── */
+.pos-pay-mode-btn {
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--lk-card);
+  color: var(--lk-text-muted);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.pos-pay-mode-btn:first-child { border-right: 1px solid var(--lk-border); }
+.pos-pay-mode-btn.active {
+  background: var(--lk-navy-cta);
+  color: #fff;
+}
+
+/* ── New payment method logos ────────────────────────────────────────────── */
+.pos-lk-pay-row-logo.upi-icon {
+  background: #EDE9FE;
+  color: #7C3AED;
+}
+.pos-lk-pay-row-logo.card-icon {
+  background: #DBEAFE;
+  color: #1E40AF;
+}
+.pos-lk-pay-row-logo.wallet-icon {
+  background: #F1F5F9;
+  color: var(--lk-text-muted);
+}
+
+/* ── WhatsApp confirm button ─────────────────────────────────────────────── */
+body.pos-lk-flow .pos-confirm-action-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  background: #25D366;
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+}
+body.pos-lk-flow .pos-confirm-action-whatsapp:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Tablet landscape as primary Store OS layout (body.pos-target-tablet-landscape)
    — earlier two-column breakpoints + full-width page shell for 1024–1366 class tablets.

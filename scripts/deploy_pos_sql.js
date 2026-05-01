@@ -28,7 +28,10 @@ const POS_TABLE_FILES = [
 ]
 
 const POS_MIGRATION_FILES = [
-  path.join('sql', 'migrations', 'migrate_pos_to_oe_orders.sql')
+  path.join('sql', 'migrations', 'migrate_pos_to_oe_orders.sql'),
+  path.join('sql', 'migrations', 'add_lab_workflow_statuses.sql'),
+  path.join('sql', 'migrations', 'remap_legacy_lab_workflow_statuses.sql'),
+  path.join('sql', 'migrations', 'lab_intake_flags_and_sent_to_lab_transitions.sql')
 ]
 
 async function runBatches(pool, relativeSqlPath, label) {

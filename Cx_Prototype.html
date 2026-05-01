@@ -127,6 +127,7 @@
     <div class="nav-group">Overview</div>
     <div class="nav-item active" data-cx-page="dashboard" onclick="cxNav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
     <div class="nav-item" data-cx-page="customers" onclick="cxNav('customers',this)"><span class="ic">👥</span> Customers</div>
+    <div class="nav-item" data-cx-page="offers" onclick="cxNav('offers',this)"><span class="ic">🎁</span> Customer Offers</div>
 
     <div id="cx-switch-module-wrap">
       <div class="nav-group">System</div>
@@ -134,7 +135,7 @@
       <div class="nav-item" data-cosmos-module="foundry" onclick="window.location.href='/foundry/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🔩</span> Foundry</div>
       <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
       <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🏬</span> StorePilot</div>
-      <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/pos/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🧾</span> Store OS (POS)</div>
+      <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/storeos/login'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🧾</span> Store OS (POS)</div>
     </div>
     <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.3);font-size:12px"><span class="ic">🚪</span> Sign Out</div>
   </nav>
@@ -183,7 +184,7 @@
   <div class="page" id="page-customers">
     <div class="ph">
       <div class="pt">Customers</div>
-      <div class="ps">Registered POS customers with lifetime order value.</div>
+      <div class="ps">Registered POS customers with lifetime order value. Click a row to grant or renew Eyewoot Go membership.</div>
     </div>
     <div class="card mb4">
       <div class="ch">
@@ -194,7 +195,7 @@
         <button type="button" class="btn primary sm" id="btn-cx-cust-search">Search</button>
       </div>
       <div class="tw">
-        <table>
+        <table id="cx-customers-table">
           <thead>
             <tr>
               <th>Customer</th>
@@ -210,9 +211,388 @@
       </div>
     </div>
   </div>
+
+  <!-- ── Customer Offers ─────────────────────────────────── -->
+  <div class="page" id="page-offers">
+    <div class="ph">
+      <div class="pt">Customer Offers</div>
+      <div class="ps">Create and manage offers visible to Eyewoot Go customers.</div>
+    </div>
+    <div class="card mb4">
+      <div class="ch">
+        <div style="font-weight:600;font-size:14px;color:var(--text1)">Active Offers</div>
+        <button type="button" class="btn primary sm" onclick="openOfferModal()">+ New Offer</button>
+      </div>
+      <div class="tw">
+        <table>
+          <thead>
+            <tr>
+              <th>Offer</th>
+              <th>Discount</th>
+              <th>Tier / Plus</th>
+              <th>Valid Until</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="cx-tbody-offers"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 </main>
+
+<!-- ── Offer Modal ──────────────────────────────────────────── -->
+<div class="overlay" id="modal-offer-overlay" style="display:none">
+  <div class="modal" style="max-width:520px">
+    <div class="mh">
+      <div class="mt" id="offer-modal-title">New Offer</div>
+      <button class="close-btn" onclick="closeOfferModal()">✕</button>
+    </div>
+    <div class="mb" style="display:flex;flex-direction:column;gap:14px">
+      <input type="hidden" id="offer-edit-id">
+      <div class="fgrp">
+        <label>Title *</label>
+        <input type="text" id="of-title" placeholder="e.g. 20% off all frames">
+      </div>
+      <div class="fgrp">
+        <label>Description</label>
+        <input type="text" id="of-desc" placeholder="All brands · Any store · Stackable with loyalty">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="fgrp">
+          <label>Icon Emoji</label>
+          <input type="text" id="of-emoji" placeholder="🎯" style="font-size:20px;text-align:center" maxlength="4">
+        </div>
+        <div class="fgrp">
+          <label>Discount Type</label>
+          <select id="of-type">
+            <option value="PCT">Percentage (%)</option>
+            <option value="FLAT">Flat (₹)</option>
+            <option value="FREEBIE">Freebie</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="fgrp">
+          <label>Discount Value</label>
+          <input type="number" id="of-value" placeholder="20" min="0" step="any">
+        </div>
+        <div class="fgrp">
+          <label>Eligible Tier (blank = all)</label>
+          <select id="of-tier">
+            <option value="">All Tiers</option>
+            <option value="Gold">Gold+</option>
+            <option value="Platinum">Platinum only</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="fgrp">
+          <label>Valid From *</label>
+          <input type="date" id="of-from">
+        </div>
+        <div class="fgrp">
+          <label>Valid Until *</label>
+          <input type="date" id="of-to">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="of-plus-only" style="width:16px;height:16px">
+        <label for="of-plus-only" style="font-size:13px;color:var(--text2);cursor:pointer">Plus members only (hide from non-subscribers)</label>
+      </div>
+      <div class="fgrp"><label>Sort Order <span style="color:var(--text3);font-weight:400">(lower = higher up)</span></label><input type="number" id="of-sort" value="0" min="0"></div>
+      <div id="offer-modal-error" style="color:var(--red);font-size:12px;display:none"></div>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button type="button" class="btn primary" id="offer-save-btn" onclick="saveOffer()">Save Offer</button>
+        <button type="button" class="btn" onclick="closeOfferModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Grant Eyewoot Go membership ───────────────────────── -->
+<div class="overlay" id="modal-grant-membership-overlay" style="display:none">
+  <div class="modal" style="max-width:480px">
+    <div class="mh">
+      <div class="mt">Grant Eyewoot Go membership</div>
+      <button class="close-btn" onclick="closeGrantMembershipModal()">✕</button>
+    </div>
+    <div class="mb" style="display:flex;flex-direction:column;gap:14px">
+      <input type="hidden" id="gm-customer-id">
+      <input type="hidden" id="gm-customer-name">
+      <div id="gm-customer-label" style="font-size:13px;color:var(--text2)"></div>
+      <div id="gm-current-status" style="font-size:12px;padding:10px 12px;border-radius:8px;background:var(--bg2);border:1px solid var(--border);color:var(--text2)"></div>
+      <div class="fgrp">
+        <label>Plan *</label>
+        <select id="gm-plan"></select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="fgrp">
+          <label>Price paid (₹) *</label>
+          <input type="number" id="gm-price" min="0" step="0.01">
+        </div>
+        <div class="fgrp">
+          <label>Validity (days)</label>
+          <input type="number" id="gm-days" min="1" placeholder="Plan default">
+        </div>
+      </div>
+      <div class="fgrp">
+        <label>Or set exact expiry date (optional)</label>
+        <input type="date" id="gm-expires">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">If set, overrides validity days.</div>
+      </div>
+      <div id="gm-modal-error" style="color:var(--red);font-size:12px;display:none"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">
+        <button type="button" class="btn primary" id="gm-save-btn" onclick="saveGrantMembership()">Save membership</button>
+        <button type="button" class="btn" onclick="closeGrantMembershipModal()">Cancel</button>
+        <button type="button" class="btn sm" id="gm-eye-test-btn" onclick="gmOpenEyeTestFromGrant()">Add eye test…</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add Eye Test Modal ──────────────────────────────────── -->
+<div class="overlay" id="modal-eyetest-overlay" style="display:none">
+  <div class="modal" style="max-width:560px">
+    <div class="mh">
+      <div class="mt">Add Eye Test Record</div>
+      <button class="close-btn" onclick="closeEyeTestModal()">✕</button>
+    </div>
+    <div class="mb" style="display:flex;flex-direction:column;gap:14px">
+      <input type="hidden" id="et-customer-id">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="fgrp"><label>Test Date *</label><input type="date" id="et-date"></div>
+        <div class="fgrp"><label>Lens Type</label><input type="text" id="et-lens" placeholder="Progressive / SV / Bifocal"></div>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;padding-bottom:2px">Right Eye (RE)</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div class="fgrp"><label>SPH</label><input type="number" step="0.25" id="et-re-sph" placeholder="-2.50"></div>
+        <div class="fgrp"><label>CYL</label><input type="number" step="0.25" id="et-re-cyl" placeholder="-0.75"></div>
+        <div class="fgrp"><label>AXIS</label><input type="number" id="et-re-axis" placeholder="180"></div>
+        <div class="fgrp"><label>ADD</label><input type="number" step="0.25" id="et-re-add" placeholder="+1.00"></div>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;padding-bottom:2px">Left Eye (LE)</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div class="fgrp"><label>SPH</label><input type="number" step="0.25" id="et-le-sph" placeholder="-2.00"></div>
+        <div class="fgrp"><label>CYL</label><input type="number" step="0.25" id="et-le-cyl" placeholder="-0.50"></div>
+        <div class="fgrp"><label>AXIS</label><input type="number" id="et-le-axis" placeholder="175"></div>
+        <div class="fgrp"><label>ADD</label><input type="number" step="0.25" id="et-le-add" placeholder="+1.00"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="fgrp"><label>PD (mm)</label><input type="number" step="0.5" id="et-pd" placeholder="63"></div>
+        <div class="fgrp"><label>VA (optional)</label><input type="text" id="et-va" placeholder="6/9"></div>
+      </div>
+      <div class="fgrp"><label>Notes</label><input type="text" id="et-notes" placeholder="Any additional observations"></div>
+      <div id="eyetest-modal-error" style="color:var(--red);font-size:12px;display:none"></div>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button type="button" class="btn primary" id="eyetest-save-btn" onclick="saveEyeTest()">Save Eye Test</button>
+        <button type="button" class="btn" onclick="closeEyeTestModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script src="/js/cosmos-module-switch.js"></script>
 <script src="/js/cx-prototype.js"></script>
+<script>
+/* ── CX: Offers page ─────────────────────────────────────────── */
+var _cxOffersLoaded = false;
+
+function loadOffersPage() {
+  if (_cxOffersLoaded) return;
+  _cxOffersLoaded = true;
+  refreshOffers();
+}
+
+async function refreshOffers() {
+  var tbody = document.getElementById('cx-tbody-offers');
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text3);padding:20px;text-align:center">Loading…</td></tr>';
+  try {
+    var res = await cxApiFetch('GET', '/api/cx/offers');
+    var rows = res.data || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text3);padding:24px;text-align:center">No offers yet. Create one to get started.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function (o) {
+      var discLabel = o.discount_type === 'PCT' ? o.discount_value + '%'
+                    : o.discount_type === 'FLAT' ? '₹' + o.discount_value
+                    : 'Freebie';
+      var tierLabel = o.eligible_tier ? o.eligible_tier + '+' : 'All';
+      var plusLabel = o.is_plus_only ? '<span style="font-size:11px;background:var(--accL);color:var(--acc2);padding:2px 7px;border-radius:10px">Plus</span>' : '';
+      var status = o.is_active
+        ? '<span style="font-size:11px;background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px">Active</span>'
+        : '<span style="font-size:11px;background:var(--bg2);color:var(--text3);padding:2px 8px;border-radius:10px;border:1px solid var(--border)">Inactive</span>';
+      return '<tr>'
+        + '<td><span style="font-size:20px;margin-right:6px">' + o.icon_emoji + '</span>' + o.title + '</td>'
+        + '<td>' + discLabel + '</td>'
+        + '<td>' + tierLabel + ' ' + plusLabel + '</td>'
+        + '<td>' + new Date(o.valid_to).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) + '</td>'
+        + '<td>' + status + '</td>'
+        + '<td style="text-align:right">'
+        + '<button class="btn sm" onclick="editOffer(' + JSON.stringify(o).replace(/"/g, '&quot;') + ')" style="margin-right:6px">Edit</button>'
+        + (o.is_active ? '<button class="btn sm" style="color:var(--red)" onclick="deactivateOffer(' + o.offer_id + ')">Deactivate</button>' : '')
+        + '</td></tr>';
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--red);padding:16px">' + e.message + '</td></tr>';
+  }
+}
+
+function openOfferModal(offer) {
+  document.getElementById('offer-edit-id').value = '';
+  document.getElementById('of-title').value = '';
+  document.getElementById('of-desc').value = '';
+  document.getElementById('of-emoji').value = '🎁';
+  document.getElementById('of-type').value = 'PCT';
+  document.getElementById('of-value').value = '';
+  document.getElementById('of-tier').value = '';
+  document.getElementById('of-from').value = new Date().toISOString().split('T')[0];
+  document.getElementById('of-to').value = '';
+  document.getElementById('of-plus-only').checked = false;
+  document.getElementById('of-sort').value = 0;
+  document.getElementById('offer-modal-title').textContent = 'New Offer';
+  document.getElementById('offer-modal-error').style.display = 'none';
+  document.getElementById('modal-offer-overlay').style.display = 'flex';
+}
+
+function editOffer(o) {
+  document.getElementById('offer-edit-id').value = o.offer_id;
+  document.getElementById('of-title').value = o.title;
+  document.getElementById('of-desc').value = o.description;
+  document.getElementById('of-emoji').value = o.icon_emoji;
+  document.getElementById('of-type').value = o.discount_type;
+  document.getElementById('of-value').value = o.discount_value;
+  document.getElementById('of-tier').value = o.eligible_tier || '';
+  document.getElementById('of-from').value = o.valid_from ? o.valid_from.split('T')[0] : '';
+  document.getElementById('of-to').value = o.valid_to ? o.valid_to.split('T')[0] : '';
+  document.getElementById('of-plus-only').checked = !!o.is_plus_only;
+  document.getElementById('of-sort').value = o.sort_order || 0;
+  document.getElementById('offer-modal-title').textContent = 'Edit Offer';
+  document.getElementById('offer-modal-error').style.display = 'none';
+  document.getElementById('modal-offer-overlay').style.display = 'flex';
+}
+
+function closeOfferModal() { document.getElementById('modal-offer-overlay').style.display = 'none'; }
+
+async function saveOffer() {
+  var errEl = document.getElementById('offer-modal-error');
+  var btn   = document.getElementById('offer-save-btn');
+  errEl.style.display = 'none';
+  var title  = document.getElementById('of-title').value.trim();
+  var valid_to = document.getElementById('of-to').value;
+  if (!title || !valid_to) { errEl.textContent = 'Title and Valid Until are required.'; errEl.style.display = 'block'; return; }
+
+  var body = {
+    title,
+    description: document.getElementById('of-desc').value,
+    icon_emoji:  document.getElementById('of-emoji').value || '🎁',
+    discount_type:  document.getElementById('of-type').value,
+    discount_value: parseFloat(document.getElementById('of-value').value) || 0,
+    eligible_tier:  document.getElementById('of-tier').value || null,
+    valid_from:  document.getElementById('of-from').value,
+    valid_to,
+    is_plus_only: document.getElementById('of-plus-only').checked,
+    sort_order: parseInt(document.getElementById('of-sort').value) || 0
+  };
+
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    var editId = document.getElementById('offer-edit-id').value;
+    if (editId) {
+      await cxApiFetch('PATCH', '/api/cx/offers/' + editId, body);
+    } else {
+      await cxApiFetch('POST', '/api/cx/offers', body);
+    }
+    closeOfferModal();
+    _cxOffersLoaded = false;
+    refreshOffers();
+    cosmosToastSuccess('Offer saved.');
+  } catch (e) {
+    errEl.textContent = e.message; errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Offer';
+  }
+}
+
+async function deactivateOffer(id) {
+  if (!confirm('Deactivate this offer? Customers will no longer see it.')) return;
+  try {
+    await cxApiFetch('DELETE', '/api/cx/offers/' + id);
+    _cxOffersLoaded = false;
+    refreshOffers();
+    cosmosToastSuccess('Offer deactivated.');
+  } catch (e) {
+    cosmosToastError(e.message);
+  }
+}
+
+/* ── CX: Eye Test Modal ──────────────────────────────────────── */
+var _etCustomerName = '';
+
+function openEyeTestModal(customerId, customerName) {
+  _etCustomerName = customerName || '';
+  document.getElementById('et-customer-id').value = customerId;
+  document.getElementById('et-date').value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  ['re-sph','re-cyl','re-axis','re-add','le-sph','le-cyl','le-axis','le-add','pd','va','lens','notes'].forEach(function (f) {
+    var el = document.getElementById('et-' + f.replace('-','_') === 'et-va' ? 'et-va' : 'et-' + f);
+    if (el) el.value = '';
+  });
+  document.getElementById('eyetest-modal-error').style.display = 'none';
+  document.getElementById('modal-eyetest-overlay').style.display = 'flex';
+}
+
+function closeEyeTestModal() { document.getElementById('modal-eyetest-overlay').style.display = 'none'; }
+
+function gmOpenEyeTestFromGrant() {
+  var cid = document.getElementById('gm-customer-id').value
+  var name = document.getElementById('gm-customer-name').value || ''
+  if (typeof window.closeGrantMembershipModal === 'function') window.closeGrantMembershipModal()
+  openEyeTestModal(parseInt(cid, 10), name)
+}
+
+async function saveEyeTest() {
+  var errEl = document.getElementById('eyetest-modal-error');
+  var btn   = document.getElementById('eyetest-save-btn');
+  errEl.style.display = 'none';
+  var cid = document.getElementById('et-customer-id').value;
+  if (!cid) { errEl.textContent = 'Customer ID missing.'; errEl.style.display = 'block'; return; }
+
+  var body = {
+    tested_at: document.getElementById('et-date').value,
+    re_sph:    document.getElementById('et-re-sph').value  || null,
+    re_cyl:    document.getElementById('et-re-cyl').value  || null,
+    re_axis:   document.getElementById('et-re-axis').value || null,
+    re_add:    document.getElementById('et-re-add').value  || null,
+    le_sph:    document.getElementById('et-le-sph').value  || null,
+    le_cyl:    document.getElementById('et-le-cyl').value  || null,
+    le_axis:   document.getElementById('et-le-axis').value || null,
+    le_add:    document.getElementById('et-le-add').value  || null,
+    pd:        document.getElementById('et-pd').value      || null,
+    lens_type: document.getElementById('et-lens').value    || null,
+    notes:     document.getElementById('et-notes').value   || null
+  };
+
+  if (!body.re_sph && !body.le_sph) {
+    errEl.textContent = 'Please enter at least one eye\'s SPH value.'; errEl.style.display = 'block'; return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await cxApiFetch('POST', '/api/cx/customers/' + cid + '/eye-tests', body);
+    closeEyeTestModal();
+    cosmosToastSuccess('Eye test saved for ' + _etCustomerName + '.');
+  } catch (e) {
+    errEl.textContent = e.message; errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Eye Test';
+  }
+}
+
+/* loadOffersPage is registered on window so cx-prototype.js can call it from cxNav */
+window.loadOffersPage = loadOffersPage;
+</script>
 </body>
 </html>

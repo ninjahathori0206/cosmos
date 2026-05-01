@@ -32,6 +32,7 @@
   await ensureCosmosApiKeyFromBootstrap()
 
   const POS_SESSION_KEY = 'pos_session'
+  const POS_CART_KEY    = 'pos_cart'
 
   function getPosSession() {
     try { return JSON.parse(sessionStorage.getItem(POS_SESSION_KEY) || 'null') } catch { return null }
@@ -43,6 +44,23 @@
 
   function clearPosSession() {
     sessionStorage.removeItem(POS_SESSION_KEY)
+  }
+
+  function saveCart() {
+    try { localStorage.setItem(POS_CART_KEY, JSON.stringify(obCart)) } catch (_e) { /* storage unavailable */ }
+  }
+
+  function loadSavedCart() {
+    try {
+      const raw = localStorage.getItem(POS_CART_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) obCart = parsed
+    } catch (_e) { /* corrupt data — ignore */ }
+  }
+
+  function clearCartStorage() {
+    try { localStorage.removeItem(POS_CART_KEY) } catch (_e) { /* ignore */ }
   }
 
   // ── Generic API fetch ────────────────────────────────────────────────────
@@ -157,27 +175,40 @@
   const POS_ROUTES = {
     LOGIN:     '/storeos/login',
     DASHBOARD: '/storeos/dashboard',
-    SESSION:   '/storeos/session',
+    /** Post-PIN success screen (avoid path segment "session" — some proxies/ad lists block it). */
+    SESSION:   '/storeos/staff-ready',
     CATALOGUE: '/storeos/catalogue',
+    /** Product detail — canonical form is /storeos/product/:productId/:skuId */
     PRODUCT:   '/storeos/product',
     CUSTOMER:  '/storeos/customer',
-    ORDER:     '/storeos/order',
+    ORDER:     '/storeos/cart',
     LENS:      '/storeos/lens-config',
     PAYMENT:   '/storeos/payment',
     CONFIRM:   '/storeos/confirm',
     ORDERS:    '/storeos/orders'
   }
 
+  function productRoute(productId, skuId) {
+    return '/storeos/product/' + productId + '/' + skuId
+  }
+
   /** Alternate paths → canonical (Pencil / marketing URLs, spelling variants). */
   const POS_PATH_ALIASES = {
+    '/pos': POS_ROUTES.LOGIN,
+    '/storeos': POS_ROUTES.LOGIN,
+    '/pos/login': POS_ROUTES.LOGIN,
+    '/pos/dashboard': POS_ROUTES.DASHBOARD,
+    '/pos/session': POS_ROUTES.SESSION,
+    '/storeos/session': POS_ROUTES.SESSION,
     '/pos/catelogue': POS_ROUTES.CATALOGUE,
-    '/pos/catalog':   POS_ROUTES.CATALOGUE,
+    '/pos/catalog': POS_ROUTES.CATALOGUE,
     '/storeos/catelogue': POS_ROUTES.CATALOGUE,
-    '/storeos/catalog':   POS_ROUTES.CATALOGUE
+    '/storeos/catalog': POS_ROUTES.CATALOGUE,
+    '/storeos/order': POS_ROUTES.ORDER
   }
 
   function normalizePosPath(rawPath) {
-    const p = (rawPath || '').replace(/\/$/, '') || POS_ROUTES.LOGIN
+    const p = (rawPath || '').replace(/\/+$/, '') || POS_ROUTES.LOGIN
     return POS_PATH_ALIASES[p] || p
   }
 
@@ -193,7 +224,7 @@
   }
 
   function resolve(pathname) {
-    const raw = (pathname != null ? pathname : window.location.pathname).replace(/\/$/, '') || POS_ROUTES.LOGIN
+    const raw = (pathname != null ? pathname : window.location.pathname).replace(/\/+$/, '') || POS_ROUTES.LOGIN
     const path = normalizePosPath(raw)
     if (path !== raw) {
       history.replaceState({}, '', path)
@@ -219,8 +250,20 @@
       return
     }
 
-    if (path === POS_ROUTES.PRODUCT) {
+    const productPathMatch = path.match(/^\/storeos\/product\/([^/]+)\/([^/]+)$/)
+    if (productPathMatch || path === POS_ROUTES.PRODUCT) {
       if (!valid) { navigate(POS_ROUTES.LOGIN); return }
+      if (productPathMatch) {
+        const pId = Number(productPathMatch[1])
+        const sId = Number(productPathMatch[2])
+        const already = pendingOrderSelection
+        if (already && already.product && already.product.product_id === pId && already.colour && already.colour.sku_id === sId) {
+          showProductPageScreen(session)
+        } else {
+          void resolveProductByIds(session, pId, sId)
+        }
+        return
+      }
       showProductPageScreen(session)
       return
     }
@@ -297,7 +340,7 @@
 
   // ── Format time ──────────────────────────────────────────────────────────
   function formatTime(date) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -331,6 +374,10 @@
   let lastCreatedOrder = null
   let lastPaymentReceipt = null
   let paySessionSnapshot = { stage: 'FULL', amount: 0 }
+  let payMinimumAdvanceAmount = 0
+  let payMinimumAdvancePct = 0
+  let forceBalanceSettlement = false
+  let posDeliveryMode = 'STORE'
 
   // ── Order Builder state ──────────────────────────────────────────────────
   let obCart = []
@@ -899,7 +946,7 @@
       function openProductFor(c) {
         selectedProductId = [product.product_id, c.sku_id]
         pendingOrderSelection = { colour: c, product: product }
-        navigate(POS_ROUTES.PRODUCT)
+        navigate(productRoute(product.product_id, c.sku_id))
       }
 
       card.addEventListener('click', e => {
@@ -1101,6 +1148,41 @@
     showScreen('screen-pos-product')
   }
 
+  async function resolveProductByIds(session, productId, skuId) {
+    // Try in-memory cache first (no extra fetch if catalogue was already loaded)
+    const cached = lastLoadedProducts.find(function (p) { return p.product_id === productId })
+    if (cached) {
+      const colour = cached.colours.find(function (c) { return c.sku_id === skuId }) || cached.colours[0]
+      selectedProductId = [cached.product_id, colour.sku_id]
+      pendingOrderSelection = { colour: colour, product: cached }
+      if (colour.sku_id !== skuId) {
+        history.replaceState({}, '', productRoute(cached.product_id, colour.sku_id))
+      }
+      showProductPageScreen(session)
+      return
+    }
+    // Cache miss — fetch the single product from the API
+    showScreen('screen-pos-product')
+    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pos-pdp-colour-swatches', 3)
+    try {
+      const results = await apiGet('/api/pos/catalogue?product_id=' + productId, session.token)
+      const products = Array.isArray(results) ? results : (results && results.products ? results.products : [])
+      const product = products.find(function (p) { return p.product_id === productId }) || products[0]
+      if (!product) { navigate(POS_ROUTES.CATALOGUE); return }
+      const colour = product.colours.find(function (c) { return c.sku_id === skuId }) || product.colours[0]
+      selectedProductId = [product.product_id, colour.sku_id]
+      pendingOrderSelection = { colour: colour, product: product }
+      lastLoadedProducts = products.length ? products : lastLoadedProducts
+      if (colour.sku_id !== skuId) {
+        history.replaceState({}, '', productRoute(product.product_id, colour.sku_id))
+      }
+      showProductPageScreen(session)
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Could not load product: ' + err.message)
+      navigate(POS_ROUTES.CATALOGUE)
+    }
+  }
+
   function startLensFlowFromProduct() {
     if (!pendingOrderSelection || !pendingOrderSelection.colour || !pendingOrderSelection.product) {
       if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a product first.')
@@ -1109,7 +1191,11 @@
     }
     const newIdx = obCart.length
     addToCart(pendingOrderSelection)
-    lensWizardLineIdx = newIdx
+    // addToCart may return early (qty>1 blocked) and NOT push — actual item may already be in cart.
+    // Resolve the real index rather than blindly using newIdx.
+    const skuId = pendingOrderSelection.colour.sku_id
+    const actualIdx = obCart.length > newIdx ? newIdx : obCart.findIndex(function (l) { return l.sku_id === skuId })
+    lensWizardLineIdx = actualIdx >= 0 ? actualIdx : newIdx
     lensWizardBackRoute = POS_ROUTES.PRODUCT
     resetLensWizardState()
     navigate(POS_ROUTES.LENS)
@@ -1240,7 +1326,10 @@
     if (btnLensNext) btnLensNext.addEventListener('click', lensWizardNext)
 
     const btnPayBack = document.getElementById('btn-pay-back')
-    if (btnPayBack) btnPayBack.addEventListener('click', () => navigate(POS_ROUTES.ORDER))
+    if (btnPayBack) btnPayBack.addEventListener('click', () => {
+      forceBalanceSettlement = false
+      navigate(POS_ROUTES.ORDER)
+    })
     const btnPaySubmit = document.getElementById('btn-pay-submit')
     if (btnPaySubmit) btnPaySubmit.addEventListener('click', function () { void submitPayment() })
 
@@ -1255,8 +1344,38 @@
         if (sel && r.checked) sel.value = r.value
         const tw = document.getElementById('pos-lk-pay-tendered-wrap')
         if (tw) tw.classList.toggle('show', r.value === 'CASH')
+        const cw = document.getElementById('pos-lk-pay-card-ref-wrap')
+        if (cw) cw.style.display = r.value === 'CARD' ? '' : 'none'
       })
     })
+    // Cash change calculator
+    const tenderInput = document.getElementById('pay-tendered')
+    if (tenderInput) {
+      tenderInput.addEventListener('input', function () {
+        const tendered = Number(this.value) || 0
+        const due = Math.max(0, Number(paySessionSnapshot.amount) || 0)
+        const changeEl = document.getElementById('pay-cash-change')
+        if (changeEl) {
+          if (tendered > 0 && tendered >= due) {
+            const change = Math.round((tendered - due) * 100) / 100
+            changeEl.textContent = 'Change: ' + formatRupees(change)
+            changeEl.style.display = ''
+          } else {
+            changeEl.style.display = 'none'
+          }
+        }
+      })
+    }
+    // Sync amount input → CTA button
+    const amtInputBind = document.getElementById('pay-amount-input')
+    if (amtInputBind) {
+      amtInputBind.addEventListener('input', function () {
+        const v = Math.max(0, Number(this.value) || 0)
+        paySessionSnapshot.amount = v
+        const span = document.getElementById('pay-cta-amt')
+        if (span) span.textContent = formatRupees(v)
+      })
+    }
 
     if (btnPdpBack) btnPdpBack.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
     if (btnPdpSelectLens) btnPdpSelectLens.addEventListener('click', startLensFlowFromProduct)
@@ -1695,6 +1814,7 @@
       line.lab_status = 'complete'
       line.fulfillment = 'INSTANT'
     }
+    saveCart()
     lensWizardLineIdx = -1
     navigate(POS_ROUTES.ORDER)
     if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Lens setup complete')
@@ -1750,6 +1870,8 @@
     if (!el || !lastCreatedOrder || !session || !session.token) return
     if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pay-summary', 4)
     paySessionSnapshot = { stage: 'FULL', amount: Number(lastCreatedOrder.total_amount) || 0 }
+    payMinimumAdvanceAmount = 0
+    payMinimumAdvancePct = Number(posSettings.lab_advance_pct) || 0
     try {
       const detail = await apiGet('/api/pos/orders/' + lastCreatedOrder.order_id, session.token)
       const order = detail.order
@@ -1764,7 +1886,9 @@
         balanceRemaining = Number(ps.amount_remaining) || 0
       } else {
         const pct = Number(order.lab_advance_pct_snapshot) || 40
-        const advanceTarget = Math.round(total * (pct / 100) * 100) / 100
+        // Match server logic: advance is pct% of pre-tax subtotal, not GST-inclusive total
+        const subtotalForAdvance = Number(order.subtotal_amount) || total
+        const advanceTarget = Math.round(subtotalForAdvance * (pct / 100) * 100) / 100
         let advPaid = 0
         for (let i = 0; i < payments.length; i++) {
           if (payments[i].stage === 'ADVANCE') advPaid += Number(payments[i].amount) || 0
@@ -1791,11 +1915,24 @@
         advanceTargetDisplay = Number(ps.advance_target) || 0
         advPaidDisplay = Number(ps.paid_advance) || 0
       } else {
-        advanceTargetDisplay = Math.round(total * (pctAdvDisplay / 100) * 100) / 100
+        const subtotalForAdv = Number(order.subtotal_amount) || total
+        advanceTargetDisplay = Math.round(subtotalForAdv * (pctAdvDisplay / 100) * 100) / 100
         for (let k = 0; k < payments.length; k++) {
           if (payments[k].stage === 'ADVANCE') advPaidDisplay += Number(payments[k].amount) || 0
         }
         advPaidDisplay = Math.round(advPaidDisplay * 100) / 100
+      }
+      payMinimumAdvancePct = pctAdvDisplay
+      // Use the server's advance_target (pre-tax basis) — NOT total_amount (GST-inclusive).
+      // Recalculating from total inflates the minimum and causes "exceeds remaining advance" errors.
+      payMinimumAdvanceAmount = advanceTargetDisplay > 0
+        ? Math.round((advanceTargetDisplay - advPaidDisplay) * 100) / 100
+        : Math.round((total * (pctAdvDisplay / 100)) * 100) / 100
+      if (paySessionSnapshot.stage === 'ADVANCE' && advPaidDisplay <= 0.009) {
+        paySessionSnapshot.amount = Math.max(paySessionSnapshot.amount, payMinimumAdvanceAmount)
+      }
+      if (forceBalanceSettlement) {
+        paySessionSnapshot = { stage: 'BALANCE', amount: Math.max(0, balanceRemaining) }
       }
       let subHint = ''
       const subs = detail.sub_orders || []
@@ -1845,10 +1982,47 @@
       const sbt = document.getElementById('pos-lk-pay-savings-text')
       if (sb) sb.hidden = savings <= 0
       if (sbt) sbt.textContent = "You're saving " + formatRupees(savings) + " on this order"
-      // CTA amount
+      // ── Amount card: default to full balance, show advance info ────────
+      const fullRemaining = Math.max(0, Math.round((total - (advPaidDisplay || 0)) * 100) / 100)
+      // Default: collect full amount; staff can reduce to minimum advance
+      if (!forceBalanceSettlement) {
+        paySessionSnapshot = { stage: labLike && advanceRemaining > 0.009 ? 'ADVANCE' : 'FULL', amount: fullRemaining }
+      }
       const collectAmt = Math.max(0, Number(paySessionSnapshot.amount) || 0)
+      const amtInput = document.getElementById('pay-amount-input')
       const amtSpan = document.getElementById('pay-cta-amt')
+      const amtBadge = document.getElementById('pay-advance-badge')
+      const amtLabel = document.getElementById('pay-amount-stage-label')
+      const amtHint = document.getElementById('pay-amount-hint')
+      if (amtInput) {
+        amtInput.value = collectAmt
+        amtInput.min = payMinimumAdvanceAmount > 0 ? payMinimumAdvanceAmount : 1
+        amtInput.max = fullRemaining
+        amtInput.addEventListener('input', function () {
+          const v = Math.max(0, Number(this.value) || 0)
+          paySessionSnapshot.amount = v
+          if (amtSpan) amtSpan.textContent = formatRupees(v)
+          // update stage based on amount
+          if (labLike && advanceRemaining > 0.009 && v < fullRemaining - 0.009) {
+            paySessionSnapshot.stage = 'ADVANCE'
+            if (amtBadge) amtBadge.style.display = ''
+          } else {
+            paySessionSnapshot.stage = 'FULL'
+            if (amtBadge) amtBadge.style.display = 'none'
+          }
+        })
+      }
       if (amtSpan) amtSpan.textContent = formatRupees(collectAmt)
+      if (amtBadge) amtBadge.style.display = labLike && advanceRemaining > 0.009 && collectAmt < fullRemaining - 0.009 ? '' : 'none'
+      if (amtLabel) amtLabel.textContent = paySessionSnapshot.stage === 'ADVANCE' ? 'Advance to collect' : 'Amount to collect'
+      if (amtHint) {
+        if (labLike && payMinimumAdvanceAmount > 0.009) {
+          amtHint.innerHTML = 'Min advance: <strong>' + formatRupees(payMinimumAdvanceAmount) + '</strong> (' + Math.round(payMinimumAdvancePct) + '%) · Full: <strong>' + formatRupees(fullRemaining) + '</strong>'
+          amtHint.style.display = ''
+        } else {
+          amtHint.style.display = 'none'
+        }
+      }
       // Hidden legacy summary slot is left untouched.
       el.innerHTML = ''
     } catch (err) {
@@ -1859,18 +2033,31 @@
       if (linesEl2) linesEl2.innerHTML = '<div><span>Order ' + lastCreatedOrder.order_no + '</span><span>' + formatRupees(fallbackTotal) + '</span></div>'
       const totEl2 = document.getElementById('pay-total')
       if (totEl2) totEl2.textContent = formatRupees(fallbackTotal)
+      const amtInput2 = document.getElementById('pay-amount-input')
+      if (amtInput2) amtInput2.value = fallbackTotal
       const amtSpan2 = document.getElementById('pay-cta-amt')
       if (amtSpan2) amtSpan2.textContent = formatRupees(fallbackTotal)
     }
+    // Delivery sub-label
     const paySub = document.getElementById('pay-delivery-sub')
     if (paySub) {
-      const eta = 'Get it by May 4'
-      paySub.textContent = (session && session.store_name ? session.store_name + ' · ' + eta : 'Store · ' + eta)
+      paySub.textContent = session && session.store_name ? session.store_name : 'Store'
     }
-    const amtSpan = document.getElementById('pay-cta-amt')
-    if (amtSpan) {
+    // Default delivery date: today + 3 days (IST)
+    const dateInput = document.getElementById('pay-delivery-date')
+    if (dateInput && !dateInput.value) {
+      const [d, m, y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/')
+      const base = new Date(y + '-' + m + '-' + d + 'T00:00:00+05:30')
+      base.setDate(base.getDate() + 3)
+      const dy = base.getFullYear()
+      const dm = String(base.getMonth() + 1).padStart(2, '0')
+      const dd2 = String(base.getDate()).padStart(2, '0')
+      dateInput.value = dy + '-' + dm + '-' + dd2
+    }
+    const amtSpanFinal = document.getElementById('pay-cta-amt')
+    if (amtSpanFinal) {
       const a = Math.max(0, Number(paySessionSnapshot.amount) || 0)
-      amtSpan.textContent = formatRupees(a)
+      amtSpanFinal.textContent = formatRupees(a)
     }
   }
 
@@ -1883,38 +2070,67 @@
     if (methodEl) methodEl.value = method
     const tenderEl = document.getElementById('pay-tendered')
     const tendered = tenderEl && tenderEl.value ? Number(tenderEl.value) : null
+    const cardRefEl = document.getElementById('pay-card-ref')
+    const externalRef = cardRefEl && cardRefEl.value.trim() ? cardRefEl.value.trim() : null
     const btn = document.getElementById('btn-pay-submit')
+    // Read amount from the editable input first, fallback to snapshot
+    const amtInputEl = document.getElementById('pay-amount-input')
+    if (amtInputEl && amtInputEl.value) paySessionSnapshot.amount = Math.max(0, Number(amtInputEl.value) || 0)
     const amt = Math.max(0, Number(paySessionSnapshot.amount) || 0)
     if (amt <= 0) {
       if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Nothing to collect — return to catalogue or refresh payment.')
       return
     }
+    if (paySessionSnapshot.stage === 'ADVANCE' && amt + 0.01 < payMinimumAdvanceAmount) {
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn('Minimum advance is ' + formatRupees(payMinimumAdvanceAmount) + '. Reduce the amount or collect full payment.')
+      }
+      return
+    }
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
-      await apiPost('/api/pos/payment', {
+      const payRes = await apiPost('/api/pos/payment', {
         order_id: lastCreatedOrder.order_id,
         stage: paySessionSnapshot.stage,
         method: method,
         amount: amt,
-        tendered: method === 'CASH' ? tendered : null
+        tendered: method === 'CASH' ? tendered : null,
+        external_ref: method === 'CARD' ? externalRef : null
       }, session.token)
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
       if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Payment recorded')
+      // For ADVANCE stage: check if full balance is now settled (amount_remaining ≈ 0).
+      // If so, fall through to confirm screen. Otherwise, stay on payment for balance collection.
       if (paySessionSnapshot.stage === 'ADVANCE') {
-        if (typeof cosmosToastInfo === 'function') {
-          cosmosToastInfo('Advance saved. Collect balance when the order is ready.')
+        const updatedSummary = payRes && payRes.data && payRes.data.payment_summary
+        const stillDue = updatedSummary ? (Number(updatedSummary.amount_remaining) || 0) : -1
+        if (stillDue > 0.009) {
+          if (typeof cosmosToastInfo === 'function') {
+            cosmosToastInfo('Advance saved. Balance due: ' + formatRupees(stillDue) + ' — collect when order is ready.')
+          }
+          void showPaymentScreen(session)
+          return
         }
-        void showPaymentScreen(session)
-        return
+        // stillDue === 0 or unknown → treat as fully paid, go to confirm
       }
+      const deliveryDateEl = document.getElementById('pay-delivery-date')
+      const deliveryDate = deliveryDateEl ? deliveryDateEl.value : ''
       lastPaymentReceipt = {
         order_id: lastCreatedOrder.order_id,
         order_no: lastCreatedOrder.order_no,
         amount: amt,
-        method: method
+        method: method,
+        external_ref: externalRef,
+        delivery_mode: posDeliveryMode,
+        delivery_date: deliveryDate,
+        customer_phone: lastCreatedOrder.customer_phone || '',
+        invoice_no: (payRes && payRes.data && payRes.data.invoice_no) || (payRes && payRes.invoice_no) || null
       }
       lastCreatedOrder = null
       paySessionSnapshot = { stage: 'FULL', amount: 0 }
+      forceBalanceSettlement = false
+      obCart = []
+      clearCartStorage()
       navigate(POS_ROUTES.CONFIRM)
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
@@ -1935,8 +2151,34 @@
     if (amtEl) amtEl.textContent = formatRupees(receipt.amount || 0)
     if (mEl) {
       const methodLabel = String(receipt.method || '').toUpperCase()
-      const ref = receipt.reference || ('TXN' + Math.floor(1000 + Math.random() * 9000))
-      mEl.textContent = 'Paid via ' + methodLabel + ' · Reference: ' + ref
+      const refPart = receipt.external_ref ? (' · Ref: ' + receipt.external_ref) : ''
+      const inv = receipt.invoice_no ? (' · Invoice: ' + receipt.invoice_no) : ''
+      const delPart = receipt.delivery_date
+        ? ' · ' + (receipt.delivery_mode === 'HOME' ? 'Home delivery' : 'Pickup') + ' by ' + new Date(receipt.delivery_date).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' })
+        : ''
+      mEl.textContent = 'Paid via ' + methodLabel + refPart + inv + delPart
+    }
+    // WhatsApp button
+    const waBtn = document.getElementById('btn-confirm-whatsapp')
+    if (waBtn) {
+      const phone = String(receipt.customer_phone || '').replace(/\D/g, '')
+      if (phone.length >= 10) {
+        const msg = encodeURIComponent(
+          'Hi! Your Cosmos order #' + (receipt.order_no || '') + ' has been placed.\n' +
+          'Amount paid: ' + formatRupees(receipt.amount || 0) + ' via ' + (receipt.method || '') +
+          (receipt.invoice_no ? '\nInvoice: ' + receipt.invoice_no : '') +
+          (receipt.delivery_date ? '\nExpected: ' + receipt.delivery_date : '') +
+          '\nThank you!'
+        )
+        const wa = phone.length === 10 ? '91' + phone : phone
+        waBtn.onclick = function () { window.open('https://wa.me/' + wa + '?text=' + msg, '_blank') }
+        waBtn.disabled = false
+        waBtn.style.opacity = '1'
+      } else {
+        waBtn.disabled = true
+        waBtn.style.opacity = '0.4'
+        waBtn.title = 'No customer phone number on this order'
+      }
     }
     showScreen('screen-pos-confirm')
     void populateConfirmBreakdown(receipt)
@@ -2135,6 +2377,7 @@
       lensWizardLineIdx = idx
       pendingResumeOrder = true
       resetLensWizardState()
+      saveCart()
       navigate(POS_ROUTES.LENS)
       return
     } else if (action === 'configure-lens') {
@@ -2142,9 +2385,11 @@
       lensWizardLineIdx = idx
       pendingResumeOrder = true
       resetLensWizardState()
+      saveCart()
       navigate(POS_ROUTES.LENS)
       return
     }
+    saveCart()
     obRenderCart()
   }
 
@@ -2178,6 +2423,7 @@
     } else {
       obCart.push(candidate)
     }
+    saveCart()
   }
 
   function syncCartDeliveryStoreName(session) {
@@ -2191,6 +2437,7 @@
     obStaffEl.textContent = session.name + ' • ' + formatRole(session.role)
     obStoreEl.textContent = session.store_name
     obCart = []
+    clearCartStorage()
     if (selection) addToCart(selection)
     updateKindChip()
     syncRxSectionVisibility()
@@ -2222,6 +2469,7 @@
   function performPosLogout() {
     clearPosSession()
     obCart = []
+    clearCartStorage()
     pendingResumeOrder = false
     pendingOrderSelection = null
     posSelectedCustomerId = null
@@ -2315,6 +2563,7 @@
         lines: lines
       }, session.token)
       lastCreatedOrder = res.data
+      forceBalanceSettlement = false
       if (btnObProceed && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnObProceed)
       navigate(POS_ROUTES.PAYMENT)
     } catch (err) {
@@ -2327,6 +2576,22 @@
   // ORDER HISTORY SCREEN
   // ═══════════════════════════════════════════════════════════════════════
 
+  const POS_LAB_WF_LABEL = {
+    ORDER_PLACED: 'Order Placed',
+    ADVANCE_PAID: 'Accepted',
+    SENT_TO_LAB: 'Sent To Lab',
+    LAB_FITTING: 'Fitting & Edging',
+    QC_PASS: 'QC Pass',
+    QC_FAIL_LAB: 'QC Fail',
+    DISPATCHED_TO_STORE: 'Dispatched To Store',
+    RECEIVED_AT_STORE: 'Received At Store'
+  }
+
+  function posLabWfDisplay(status) {
+    const k = String(status || '').trim()
+    return POS_LAB_WF_LABEL[k] || k.replace(/_/g, ' ')
+  }
+
   async function showOrderHistoryScreen(session) {
     document.getElementById('pos-orders-staff').textContent = session.name + ' • ' + formatRole(session.role)
     document.getElementById('pos-orders-store').textContent = session.store_name || ''
@@ -2338,6 +2603,12 @@
     const searchInput = document.getElementById('pos-orders-search')
     const statusSelect = document.getElementById('pos-orders-status')
     const searchBtn = document.getElementById('btn-pos-orders-search')
+    if (statusSelect && !statusSelect.querySelector('option[value="PROCESSING"]')) {
+      const opt = document.createElement('option')
+      opt.value = 'PROCESSING'
+      opt.textContent = 'Processing (Lab)'
+      statusSelect.appendChild(opt)
+    }
 
     searchBtn.onclick = () => loadOrderHistory(session, searchInput.value, statusSelect.value)
     searchInput.onkeydown = (e) => {
@@ -2357,19 +2628,56 @@
     try {
       const qs = new URLSearchParams()
       if (search) qs.append('q', search)
-      if (status) qs.append('status', status)
+      if (status === 'PROCESSING') {
+        qs.append('kind', 'LAB')
+        qs.append('exclude_lab_status', 'READY_FOR_DELIVERY,DELIVERED,INVOICED')
+      } else if (status) {
+        qs.append('status', status)
+      }
       
       const orders = await apiGet('/api/pos/orders?' + qs.toString(), session.token)
       
       if (!orders || !orders.length) {
-        listEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--pos-text-3);">No orders found.</div>'
+        listEl.innerHTML = `
+          <div class="empty">
+            <div class="empty-ic">📄</div>
+            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No orders found</div>
+            <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Try another filter or search term.</div>
+            <button style="padding:8px 10px;border:1px solid var(--border);background:var(--card);border-radius:8px;cursor:pointer" onclick="location.reload()">Refresh</button>
+          </div>
+        `
         return
       }
 
       listEl.innerHTML = orders.map(o => {
         const d = new Date(o.created_at)
-        const dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        const dateStr = d.toLocaleString('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        })
         const statusLower = String(o.status).toLowerCase()
+        const labStatus = String(o.lab_workflow_status || '')
+        const canCollectBalance = o.order_kind === 'LAB' && labStatus === 'READY_FOR_DELIVERY'
+        const collectHtml = canCollectBalance
+          ? `<button style="margin-top:8px;padding:8px 10px;border:1px solid var(--acc2);background:var(--accL);color:var(--acc2);border-radius:8px;cursor:pointer" onclick="openBalanceCollection(${o.order_id})">Collect Balance</button>`
+          : ''
+        // Store OS advances stages 1–3 via lab-status buttons
+        const labActionHtml = (() => {
+          if (o.order_kind !== 'LAB' && o.order_kind !== 'MIXED') return ''
+          if (labStatus === 'ORDER_PLACED')
+            return `<button class="btn primary" type="button" style="margin-top:8px;font-size:12px;padding:6px 10px" onclick="posAdvanceLabStage(${o.order_id},${o.sub_order_id},'ADVANCE_PAID',this)">Mark Accepted</button>`
+          if (labStatus === 'ADVANCE_PAID')
+            return `<button class="btn primary" type="button" style="margin-top:8px;font-size:12px;padding:6px 10px" onclick="posAdvanceLabStage(${o.order_id},${o.sub_order_id},'SENT_TO_LAB',this)">Mark Sent To Lab</button>`
+          return ''
+        })()
+        const labBadge = (o.order_kind === 'LAB' || o.order_kind === 'MIXED') && labStatus
+          ? `<div class="pos-order-status" style="margin-top:6px">${posLabWfDisplay(labStatus)}</div>`
+          : ''
         return `
           <div class="pos-order-card">
             <div class="pos-order-info">
@@ -2380,6 +2688,9 @@
             <div class="pos-order-meta">
               <div class="pos-order-amount">₹${o.total_amount.toLocaleString('en-IN')}</div>
               <div class="pos-order-status ${statusLower}">${o.status}</div>
+              ${labBadge}
+              ${labActionHtml}
+              ${collectHtml}
             </div>
           </div>
         `
@@ -2387,6 +2698,47 @@
     } catch (err) {
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
       if (listEl) listEl.innerHTML = ''
+    }
+  }
+
+  window.setPosDeliveryMode = function(mode) {
+    posDeliveryMode = mode
+    const storeBtn = document.getElementById('pay-mode-store')
+    const homeBtn = document.getElementById('pay-mode-home')
+    const sub = document.getElementById('pay-delivery-sub')
+    if (storeBtn) { storeBtn.classList.toggle('active', mode === 'STORE'); storeBtn.setAttribute('aria-pressed', mode === 'STORE') }
+    if (homeBtn) { homeBtn.classList.toggle('active', mode === 'HOME'); homeBtn.setAttribute('aria-pressed', mode === 'HOME') }
+    if (sub) sub.textContent = mode === 'HOME' ? 'Delivery address from customer profile' : 'Customer picks up at store'
+  }
+
+  window.posAdvanceLabStage = async function(orderId, subOrderId, toStatus, btn) {
+    if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      const session = getPosSession()
+      await apiPost('/api/orders/' + orderId + '/lab-status', { sub_order_id: subOrderId, to_status: toStatus }, session.token)
+      if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Lab stage: ' + posLabWfDisplay(toStatus))
+      setTimeout(() => loadPosOrders(), 600)
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+  }
+
+  window.openBalanceCollection = async function(orderId) {
+    const session = getPosSession()
+    if (!session || !session.token || !orderId) return
+    try {
+      const detail = await apiGet('/api/pos/orders/' + orderId, session.token)
+      lastCreatedOrder = detail.order || null
+      forceBalanceSettlement = true
+      if (!lastCreatedOrder) {
+        if (typeof cosmosToastError === 'function') cosmosToastError('Order not found for balance collection.')
+        return
+      }
+      navigate(POS_ROUTES.PAYMENT)
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
     }
   }
 
@@ -2413,6 +2765,7 @@
     bindCatalogueEvents()
     bindCustomerLensPayEvents()
     bindOrderBuilderEvents()
+    loadSavedCart()
     resolve()
   })()
   })

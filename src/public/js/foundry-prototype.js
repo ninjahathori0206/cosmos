@@ -169,7 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mods.command_unit !== false) window.location.href = '/command-unit/dashboard';
     else if (mods.finance !== false) window.location.href = '/finance/dashboard';
     else if (mods.storepilot !== false) window.location.href = '/storepilot/dashboard';
-    else if (mods.pos !== false) window.location.href = '/pos/dashboard';
+    else if (mods.pos !== false) window.location.href = '/storeos/login';
     else if (mods.cx !== false) window.location.href = '/cx/dashboard';
     else window.location.href = '/';
     return;
@@ -4454,7 +4454,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id === 'stock-transfer')   stInit();
     if (id === 'transfer-requests') loadTransferRequests();
     if (id === 'movement-list')     loadMovementList();
-    if (id === 'lab-orders')        loadLabOrders();
+    // loadLabOrders is assigned later in this file; guard avoids ReferenceError + aborted init on /foundry/lab-orders refresh.
+    if (id === 'lab-orders' && typeof window.loadLabOrders === 'function') window.loadLabOrders();
     // Only load the list when navigating from sidebar (not when opening a detail directly)
     if (!skipList) {
       if (id === 'bill-verify')  loadBillVerifyList();
@@ -5632,6 +5633,17 @@ ${initScript}
       }
     };
 
+    window.stPrintStockTransferDoc = async function stPrintStockTransferDoc(docId) {
+      const id = Number(docId);
+      if (!Number.isFinite(id) || id < 1) return;
+      try {
+        const doc = await apiGet('/api/stock-transfer-docs/' + id);
+        stPrintDispatchSlip(doc);
+      } catch (err) {
+        stToast('Could not load slip: ' + err.message, '#e53e3e');
+      }
+    };
+
     // ── Submit transfer ────────────────────────────────────────────────────────
     window.stSubmitTransfer = async function stSubmitTransfer() {
       const storeId = document.getElementById('st-store-sel').value;
@@ -5671,29 +5683,49 @@ ${initScript}
       }
     };
 
-    // ── History ────────────────────────────────────────────────────────────────
+    // ── Dispatch documents (challans) ───────────────────────────────────────────
+    // Old flow used /api/stock-transfers/history (stock_movements after STOCKED only).
+    // Direct dispatch creates stock_transfer_docs in DISPATCHED state first — list those here.
+    function stDocStatusBadgeClass(status) {
+      const s = String(status || '').toUpperCase();
+      if (s === 'DISPATCHED') return 'b-orange';
+      if (s === 'ACCEPTED') return 'b-blue';
+      if (s === 'STOCKED') return 'b-green';
+      return 'b-gray';
+    }
+
     window.stLoadHistory = async function stLoadHistory() {
       const tbody = document.getElementById('st-history-tbody');
       if (!tbody) return;
-      tbody.innerHTML = `<tr><td colspan="8" class="tc td2 p12">Loading…</td></tr>`;
+      if (typeof window.cosmosSkeletonTable === 'function') {
+        window.cosmosSkeletonTable('st-history-tbody', 7, 6);
+      } else {
+        tbody.innerHTML = '<tr><td colspan="7" class="tc td2 p12">…</td></tr>';
+      }
       try {
-        const rows = await apiGet('/api/stock-transfers/history?top_n=50');
+        const rows = await apiGet('/api/stock-transfer-docs?top_n=50');
         if (!rows || !rows.length) {
-          tbody.innerHTML = `<tr><td colspan="8" class="tc td2 p12">No transfers yet</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12">No dispatch documents yet — dispatch a cart above to create a challan.</td></tr>`;
           return;
         }
-        tbody.innerHTML = rows.map((r) => `<tr>
-          <td class="xs td2" style="white-space:nowrap">${stFmtDate(r.created_at)}</td>
-          <td class="mono xs fw6">${stEsc(r.sku_code)}</td>
-          <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stEsc(r.product_name)}</td>
-          <td>${stEsc(r.brand_name || '—')}</td>
-          <td>${stEsc(r.colour_name || '—')}</td>
-          <td class="tc fw6" style="color:var(--acc2)">${r.qty}</td>
-          <td style="white-space:nowrap">${stEsc(r.to_store_name || '—')}</td>
-          <td class="xs td2">${stEsc(r.transferred_by || '—')}</td>
-        </tr>`).join('');
+        tbody.innerHTML = rows.map((d) => {
+          const dest = [d.store_name, d.store_code].filter(Boolean).join(' · ') || '—';
+          const lines = Number(d.line_count);
+          return `<tr>
+          <td class="mono fw6" style="color:var(--acc2)">${stEsc(String(d.doc_id))}</td>
+          <td class="xs td2" style="white-space:nowrap">${stFmtDate(d.dispatched_at || d.created_at)}</td>
+          <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${stEsc(dest)}">${stEsc(dest)}</td>
+          <td><span class="b ${stDocStatusBadgeClass(d.status)}">${stEsc(d.status || '—')}</span></td>
+          <td class="tc fw6">${Number.isFinite(lines) ? lines : '—'}</td>
+          <td class="xs td2">${stEsc(d.dispatched_by_name || '—')}</td>
+          <td class="tc"><button type="button" class="btn xs primary" onclick="stPrintStockTransferDoc(${Number(d.doc_id)})">Print</button></td>
+        </tr>`;
+        }).join('');
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="8" class="tc td2 p12" style="color:var(--red)">${stEsc(err.message)}</td></tr>`;
+        if (typeof window.cosmosToastError === 'function') {
+          window.cosmosToastError(err.message || 'Could not load dispatch documents');
+        }
+        tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">${stEsc(err.message)}</td></tr>`;
       }
     };
   }
@@ -6369,70 +6401,213 @@ ${initScript}
 
   // ── LAB ORDERS ────────────────────────────────────────────────────────────
   let _labOrdersTimer = null;
-  window.debounceLabOrders = function() {
-    clearTimeout(_labOrdersTimer);
-    _labOrdersTimer = setTimeout(() => {
-      if (window.loadLabOrders) window.loadLabOrders();
-    }, 300);
+  let _fyLabStatusFilter = '';
+
+  const FY_LAB_STATUS_LABELS = {
+    ORDER_PLACED:                 'Order Placed',
+    ADVANCE_PAID:                 'Accepted',
+    SENT_TO_LAB:                  'Sent To Lab',
+    FRAME_PENDING_LENS_BACKORDER: 'Frame Pending + Lens Backorder',
+    FRAME_RECEIVED_LENS_BACKORDER:'Frame Received + Lens Backordered',
+    FRAME_AND_LENS_RECEIVED:      'Frame + Lens Received',
+    LAB_FITTING:                  'Fitting & Edging',
+    QC_FAIL_LAB:                  'QC Fail',
+    QC_PASS:                      'QC Pass',
+    DISPATCHED_TO_STORE:          'Dispatched To Store',
+    RECEIVED_AT_STORE:            'Received At Store',
+    STORE_QC_PASS:                'Store QC Pass',
+    STORE_QC_PARTIAL:             'QC Partial (Minor Defect)',
+    QC_FAIL_STORE:                'Store QC Failed',
+    READY_FOR_DELIVERY:           'Ready For Delivery',
+    DELIVERED:                    'Delivered',
+    BALANCE_COLLECTED:            'Balance Collected',
+    INVOICED:                     'Invoiced'
   };
 
-  window.labOrdersClearFilters = function() {
-    const s = document.getElementById('lab-orders-search');
-    const f = document.getElementById('lab-orders-status-filter');
-    if (s) s.value = '';
-    if (f) f.value = '';
-    if (window.loadLabOrders) window.loadLabOrders();
+  // Store-side early chain (POS): ORDER_PLACED → Accepted (DB key ADVANCE_PAID) → SENT_TO_LAB.
+  const FY_LAB_NEXT_STATUSES = {
+    FRAME_PENDING_LENS_BACKORDER: ['FRAME_RECEIVED_LENS_BACKORDER'],
+    FRAME_RECEIVED_LENS_BACKORDER:['FRAME_AND_LENS_RECEIVED'],
+    FRAME_AND_LENS_RECEIVED:      ['LAB_FITTING'],
+    // QC Fail is selectable but auto-reverts server-side — order never leaves At Lab
+    LAB_FITTING:                  ['QC_PASS', 'QC_FAIL_LAB'],
+    QC_PASS:                      ['DISPATCHED_TO_STORE']
+  };
+
+  function fyLabelLabStatus(status) {
+    if (!status) return '—';
+    return FY_LAB_STATUS_LABELS[status] || String(status).replace(/_/g, ' ');
+  }
+
+  function buildFyLabStatusAction(order) {
+    const curr = String(order.lab_workflow_status || '');
+    const subId = Number(order.sub_order_id) || 0;
+
+    if (curr === 'SENT_TO_LAB') {
+      if (!subId) {
+        return '<span style="font-size:11px;color:var(--gold)">No LAB line id — reopen order.</span>';
+      }
+      const rc = order.lab_received_confirmed === true;
+      const bc = order.lab_backorder_confirmed === true;
+      let row = `
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">`;
+      if (rc) {
+        row += '<span style="font-size:11px;font-weight:600;color:var(--green);background:var(--greenL);padding:3px 8px;border-radius:6px">Received at Lab — done</span>';
+      } else {
+        row += `<button type="button" class="btn sm" id="btn-fy-intake-rcv-${order.order_id}" onclick="markFyLabIntake(${order.order_id},${subId},'received_at_lab')">Mark Received at Lab</button>`;
+      }
+      if (bc) {
+        row += '<span style="font-size:11px;font-weight:600;color:var(--green);background:var(--greenL);padding:3px 8px;border-radius:6px">Backorder Created — done</span>';
+      } else {
+        row += `<button type="button" class="btn sm" id="btn-fy-intake-bo-${order.order_id}" onclick="markFyLabIntake(${order.order_id},${subId},'backorder_created')">Mark Backorder Created</button>`;
+      }
+      row += '</div>';
+      if (rc && bc) {
+        row += `
+        <div style="margin-top:2px">
+          <button type="button" class="btn primary" id="btn-fy-fitting-edging-${order.order_id}" onclick="advanceFyLabFittingEdging(${order.order_id}, ${subId})">Fitting/Edging</button>
+        </div>`;
+      } else {
+        row += '<span style="font-size:11px;color:var(--text3)">Complete both checkpoints to advance.</span>';
+      }
+      row += '</div>';
+      return row;
+    }
+
+    const options = FY_LAB_NEXT_STATUSES[curr] || [];
+    if (!options.length) return '<span style="font-size:12px;color:var(--text3)">No action</span>';
+    const opts = options.map((s) => `<option value="${s}">${fyLabelLabStatus(s)}</option>`).join('');
+    let qcHint = '';
+    if (curr === 'LAB_FITTING') {
+      qcHint =
+        '<div style="font-size:11px;color:var(--text3);margin-top:4px;max-width:320px"><strong>QC Pass</strong> → dispatches to store. <strong>QC Fail</strong> → logged in timeline, order stays here for rework.</div>';
+    }
+    return `
+      <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="fy-lab-next-${order.order_id}" aria-label="Next lab stage" style="font-size:12px;min-width:175px">${opts}</select>
+        <button type="button" class="btn sm" id="btn-fy-lab-next-${order.order_id}" onclick="updateFyLabOrderStatus(${order.order_id}, ${order.sub_order_id || 0})">Update</button>
+      </div>${qcHint}</div>
+    `;
+  }
+
+  window.setFyLabFilter = function(status, tabEl) {
+    _fyLabStatusFilter = status || '';
+    document.querySelectorAll('#page-lab-orders .tab').forEach((el) => el.classList.remove('active'));
+    if (tabEl) tabEl.classList.add('active');
+    window.loadLabOrders();
+  };
+
+  window.debounceLabOrders = function() {
+    clearTimeout(_labOrdersTimer);
+    _labOrdersTimer = setTimeout(() => { window.loadLabOrders && window.loadLabOrders(); }, 300);
   };
 
   window.loadLabOrders = async function() {
     const tbody = document.getElementById('lab-orders-tbody');
     if (!tbody) return;
+    if (typeof window.cosmosSkeletonTable === 'function') window.cosmosSkeletonTable('lab-orders-tbody', 6);
 
-    if (typeof window.cosmosSkeletonTable === 'function') {
-      window.cosmosSkeletonTable('lab-orders-tbody', 7, 6);
-    } else {
-      tbody.innerHTML = '';
-    }
-
-    const search = (document.getElementById('lab-orders-search')?.value || '').trim();
-    const status = (document.getElementById('lab-orders-status-filter')?.value || '').trim();
-
+    const searchEl = document.getElementById('lab-orders-search');
+    const q = (searchEl && searchEl.value ? searchEl.value.trim() : '');
     try {
       const qs = new URLSearchParams();
-      if (search) qs.set('q', search);
-      if (status) qs.set('status', status);
-
-      const orders = await apiGet(`/api/pos/all-orders?${qs.toString()}`);
-      if (!orders || !orders.length) {
-        tbody.innerHTML = `<tr><td colspan="7" class="p0">
+      qs.set('kind', 'LAB');
+      qs.set('scope', 'all');
+      qs.set('limit', '120');
+      if (q) qs.set('search', q);
+      if (_fyLabStatusFilter) qs.set('lab_status', _fyLabStatusFilter);
+      const rows = await apiGet(`/api/orders?${qs.toString()}`);
+      if (!rows || !rows.length) {
+        tbody.innerHTML = `<tr><td colspan="6">
           <div class="empty" style="padding:32px 24px;text-align:center">
             <div class="empty-ic">🔬</div>
-            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No orders match</div>
-            <div style="font-size:13px;color:var(--text2);margin-bottom:16px;max-width:420px;margin-left:auto;margin-right:auto">Adjust search or status, or clear filters to reload the full list.</div>
-            <button type="button" class="btn primary" onclick="window.labOrdersClearFilters && window.labOrdersClearFilters()">Clear filters</button>
+            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No lab orders found</div>
+            <div style="font-size:13px;color:var(--text2)">Try another tab or search by order number or customer name.</div>
           </div>
         </td></tr>`;
         return;
       }
-
-      tbody.innerHTML = orders.map(o => {
-        return `
-          <tr>
-            <td><span class="lab-order-no">${o.order_no}</span></td>
-            <td>${o.store_name || o.store_id}</td>
-            <td>${o.customer_name || 'Walk-in'} ${o.customer_phone ? '<br><span style="font-size:11px;color:var(--text3)">'+o.customer_phone+'</span>' : ''}</td>
-            <td><span class="b b-gray" style="font-size:10px">${o.order_kind || 'STORE'}</span></td>
-            <td class="mono fw6">${inr(o.total_amount)}</td>
-            <td>${stageBadge(o.status)}</td>
-            <td style="font-size:12px;color:var(--text3)">${fmtDateTime(o.created_at)}</td>
-          </tr>
-        `;
-      }).join('');
-
+      tbody.innerHTML = rows.map((r) => `
+        <tr>
+          <td class="mono xs">
+            <div>${r.order_no || ''}</div>
+            <button type="button" onclick="window.cosmosTimelineOpen(${r.order_id},'${r.order_no || ''}')" style="background:none;border:none;color:var(--acc2);font-size:11px;cursor:pointer;padding:0;margin-top:2px;text-decoration:underline">📋 Timeline</button>
+          </td>
+          <td>${r.customer_name || 'Walk-in'}${r.customer_phone ? `<div style="font-size:11px;color:var(--text3)">${r.customer_phone}</div>` : ''}</td>
+          <td>${r.store_name || ''}</td>
+          <td><span class="b b-blue" style="font-size:11px">${fyLabelLabStatus(r.lab_workflow_status)}</span></td>
+          <td style="font-size:12px;color:var(--text3)">${typeof fmtDateTime === 'function' ? fmtDateTime(r.created_at) : (r.created_at || '')}</td>
+          <td>${buildFyLabStatusAction(r)}</td>
+        </tr>
+      `).join('');
     } catch (e) {
       const msg = e && e.message ? e.message : 'Could not load orders.';
       if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg);
-      tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">Could not load orders.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);padding:16px">Could not load orders.</td></tr>`;
+    }
+  };
+
+  window.markFyLabIntake = async function(orderId, subOrderId, field) {
+    if (!orderId || !subOrderId || !field) return;
+    const btnId =
+      field === 'received_at_lab'
+        ? 'btn-fy-intake-rcv-' + orderId
+        : 'btn-fy-intake-bo-' + orderId;
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn);
+    const payload =
+      field === 'received_at_lab'
+        ? { sub_order_id: Number(subOrderId), received_at_lab: true }
+        : { sub_order_id: Number(subOrderId), backorder_created: true };
+    try {
+      await apiPost(`/api/orders/${orderId}/lab-intake`, payload);
+      if (typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn);
+      if (typeof window.cosmosToastSuccess === 'function') window.cosmosToastSuccess('Checkpoint saved.');
+      window.loadLabOrders();
+    } catch (e) {
+      if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(e.message);
+    }
+  };
+
+  window.advanceFyLabFittingEdging = async function(orderId, subOrderId) {
+    if (!orderId || !subOrderId) return;
+    const btn = document.getElementById('btn-fy-fitting-edging-' + orderId);
+    if (!btn) return;
+    if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn);
+    try {
+      await apiPost(`/api/orders/${orderId}/lab-status`, {
+        sub_order_id: Number(subOrderId),
+        to_status: 'LAB_FITTING'
+      });
+      if (typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn);
+      if (typeof window.cosmosToastSuccess === 'function') window.cosmosToastSuccess('Moved to Fitting/Edging');
+      window.loadLabOrders();
+    } catch (err) {
+      if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message);
+    }
+  };
+
+  window.updateFyLabOrderStatus = async function(orderId, subOrderId) {
+    const sel = document.getElementById(`fy-lab-next-${orderId}`);
+    const btn = document.getElementById(`btn-fy-lab-next-${orderId}`);
+    if (!sel || !sel.value || !subOrderId) return;
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      await apiPost(`/api/orders/${orderId}/lab-status`, {
+        sub_order_id: Number(subOrderId),
+        to_status: sel.value
+      });
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Lab status updated');
+      window.loadLabOrders();
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
     }
   };
 
@@ -6443,4 +6618,8 @@ ${initScript}
   loadFormData();
   loadDashboard();
   loadPurchases();
+  // Deep link / hard refresh on /foundry/lab-orders: lab loader runs only after assignment above in this file.
+  if (getFoundryPageFromPath(window.location.pathname) === 'lab-orders' && typeof window.loadLabOrders === 'function') {
+    window.loadLabOrders();
+  }
 });

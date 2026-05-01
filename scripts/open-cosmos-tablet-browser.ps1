@@ -2,9 +2,9 @@
 # Store OS (POS) primary device: tablet landscape — default 1180×820 (swap for 820×1180 portrait if needed).
 # Usage:
 #   .\scripts\open-cosmos-tablet-browser.ps1
-#   .\scripts\open-cosmos-tablet-browser.ps1 -Url "http://192.168.0.107:4000/pos/login" -Width 820 -Height 1180
+#   .\scripts\open-cosmos-tablet-browser.ps1 -Url "http://192.168.0.107:4000/storeos/login" -Width 820 -Height 1180
 param(
-  [string] $Url = "http://localhost:4000/pos/login",
+  [string] $Url = "http://localhost:4000/storeos/login",
   [int] $Width = 1180,
   [int] $Height = 820
 )
