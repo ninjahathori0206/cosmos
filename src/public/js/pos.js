@@ -358,6 +358,9 @@
   let pendingOrderSelection = null
   let pendingResumeOrder = false
   let posSelectedCustomerId = null
+  let posCartOffers = []
+  /** Selected POS / CX customer row for cart reference (name, phone, id). */
+  let posSelectedCustomerSnapshot = null
   let posSettings = { gst_rate: 0.05, lab_advance_pct: 40 }
   let lensCatalogData = null
   let lensWizardLineIdx = -1
@@ -405,6 +408,227 @@
     return String(str || '').replace(/[&<>"']/g, function (m) {
       return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]
     })
+  }
+
+  function setPosCustomerSelection(customerId, fullName, phone) {
+    const id = customerId != null ? Number(customerId) : NaN
+    if (!Number.isNaN(id) && id > 0) {
+      posSelectedCustomerId = id
+      posSelectedCustomerSnapshot = {
+        customer_id: id,
+        full_name: String(fullName || '').trim() || ('Customer #' + id),
+        phone: phone != null ? String(phone).trim() : ''
+      }
+      lensWizard.customerName = posSelectedCustomerSnapshot.full_name
+      const session = getPosSession()
+      if (session && session.token) {
+        void loadPosOffersPanel(session, 'pos-lk-offers-list', 'pos-lk-offers-hint', false)
+      }
+      renderCartCustomerRef()
+      return
+    }
+    posSelectedCustomerId = null
+    posSelectedCustomerSnapshot = null
+    lensWizard.customerName = null
+    posCartOffers = []
+    const session = getPosSession()
+    if (session && session.token) {
+      void loadPosOffersPanel(session, 'pos-lk-offers-list', 'pos-lk-offers-hint', false)
+    } else {
+      obRecalcTotals()
+    }
+  }
+
+  function clearPosCustomerSelection() {
+    posSelectedCustomerId = null
+    posSelectedCustomerSnapshot = null
+    lensWizard.customerName = null
+    posCartOffers = []
+    const session = getPosSession()
+    if (session && session.token) {
+      void loadPosOffersPanel(session, 'pos-lk-offers-list', 'pos-lk-offers-hint', false)
+    } else {
+      obRecalcTotals()
+    }
+    renderCartCustomerRef()
+  }
+
+  function fmtOfferDateIso(v) {
+    if (!v) return '—'
+    try {
+      return new Date(v).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
+    } catch (_e) {
+      return '—'
+    }
+  }
+
+  /** Normalise SQL/driver discount_value (number, string, or rare object shapes) to a finite number. */
+  function coerceOfferDiscountRaw(raw) {
+    if (raw == null || raw === '') return 0
+    if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0
+    if (typeof raw === 'string') {
+      var s = raw.trim().replace(/,/g, '')
+      var n = parseFloat(s)
+      return Number.isFinite(n) ? n : 0
+    }
+    if (typeof raw === 'object' && raw !== null && 'value' in raw) {
+      return coerceOfferDiscountRaw(raw.value)
+    }
+    var m = Number(raw)
+    return Number.isFinite(m) ? m : 0
+  }
+
+  /** If Command Unit left discount_value at 0 but put "10%" in the title, recover the percent (max 100). */
+  function parsePctFallbackFromTitle(title) {
+    var m = String(title || '').match(/(\d+(?:\.\d+)?)\s*%/)
+    if (!m) return 0
+    var p = parseFloat(m[1])
+    if (!Number.isFinite(p) || p < 0) return 0
+    return Math.min(100, p)
+  }
+
+  function effectiveOfferPct(o) {
+    var t = String(o.discount_type || '').trim().toUpperCase()
+    if (t !== 'PCT') return 0
+    var v = coerceOfferDiscountRaw(o.discount_value)
+    if (v > 0) return Math.min(100, v)
+    return parsePctFallbackFromTitle(o.title)
+  }
+
+  function effectiveOfferFlat(o) {
+    var t = String(o.discount_type || '').trim().toUpperCase()
+    if (t !== 'FLAT') return 0
+    var v = coerceOfferDiscountRaw(o.discount_value)
+    if (v > 0) return v
+    return 0
+  }
+
+  /** Plus-only rows from /cart-offers without customer_id must not reduce walk-in totals. */
+  function offerAppliesToCartContext(o) {
+    if (!posSelectedCustomerId || posSelectedCustomerId < 1) {
+      if (o.is_plus_only) return false
+    }
+    return true
+  }
+
+  function offerDiscountSummary(o) {
+    const t = String(o.discount_type || '').trim().toUpperCase()
+    if (t === 'PCT') {
+      var p = effectiveOfferPct(o)
+      return p + '% off'
+    }
+    if (t === 'FLAT') {
+      var f = effectiveOfferFlat(o)
+      return '₹' + f.toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' off'
+    }
+    if (t === 'FREEBIE') return 'Freebie'
+    return ''
+  }
+
+  function renderCartCustomerRef() {
+    const body = document.getElementById('pos-lk-cart-customer-body')
+    if (!body) return
+    const snap = posSelectedCustomerSnapshot
+    if (snap && posSelectedCustomerId) {
+      const phoneRow = snap.phone
+        ? '<div class="pos-lk-cart-cust-row">' + escapeHtml(snap.phone) + '</div>'
+        : ''
+      body.innerHTML =
+        '<div class="pos-lk-cart-cust-name">' + escapeHtml(snap.full_name) + '</div>' +
+        phoneRow +
+        '<div class="pos-lk-cart-cust-meta">Customer ID · ' + escapeHtml(String(snap.customer_id)) + '</div>' +
+        '<button type="button" class="pos-lk-text-link" id="pos-cart-remove-customer" style="margin-top:10px;padding:0">Remove customer · walk-in</button>'
+      const rm = document.getElementById('pos-cart-remove-customer')
+      if (rm) {
+        rm.addEventListener('click', function () {
+          clearPosCustomerSelection()
+          renderCartCustomerRef()
+          if (typeof cosmosToastInfo === 'function') {
+            cosmosToastInfo('Customer removed. Cart uses walk-in pricing and offers.')
+          }
+        })
+      }
+      return
+    }
+    body.innerHTML =
+      '<div class="pos-lk-cart-cust-walkin-title">Walk-in</div>' +
+      '<div class="pos-lk-cart-cust-walkin-sub">No CRM customer linked. Attach a customer for profile-based offers and clearer checkout reference.</div>'
+  }
+
+  async function loadPosOffersPanel(session, listId, hintId, forPayment) {
+    const listEl = document.getElementById(listId)
+    const hintEl = hintId ? document.getElementById(hintId) : null
+    if (!listEl) return
+    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows(listId, 4)
+    if (hintEl) {
+      if (forPayment) {
+        hintEl.textContent = posSelectedCustomerId
+          ? 'Same filters as the cart (Plus & tier). Best eligible offer is included in billed totals when you linked a customer before checkout.'
+          : 'Active promos for this store. Link a Plus customer before placing the order to include membership discounts in totals.'
+      } else {
+        hintEl.textContent = posSelectedCustomerId
+          ? 'Filtered for Plus / loyalty tier. The strongest eligible discount below is applied to cart subtotal and GST.'
+          : 'Showing active promos for reference. Link a customer to filter Plus / tier offers and apply the best discount.'
+      }
+    }
+    try {
+      const q = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
+      const offers = await apiGet('/api/pos/cart-offers' + q, session.token)
+      posCartOffers = Array.isArray(offers) ? offers : []
+      obRecalcTotals()
+      if (!Array.isArray(offers) || !offers.length) {
+        listEl.innerHTML =
+          '<div class="pos-lk-offers-empty">' +
+          '<div class="pos-lk-offers-empty-title">No active offers</div>' +
+          '<div class="pos-lk-offers-empty-sub">Add or extend offers in Command Unit → Promotion. Totals update automatically when eligible offers are linked to a customer.</div>' +
+          '</div>'
+        return
+      }
+      let html = ''
+      for (let i = 0; i < offers.length; i++) {
+        const o = offers[i]
+        const plus = o.is_plus_only ? '<span class="pos-lk-offer-badge">Plus</span>' : ''
+        const tier = o.eligible_tier ? '<span class="pos-lk-offer-tier">' + escapeHtml(String(o.eligible_tier)) + '+</span>' : ''
+        const disc = offerDiscountSummary(o)
+        html +=
+          '<div class="pos-lk-offer-item">' +
+          '<span class="pos-lk-offer-ico" aria-hidden="true">' + escapeHtml(o.icon_emoji || '🎁') + '</span>' +
+          '<div class="pos-lk-offer-item-body">' +
+          '<div class="pos-lk-offer-item-title">' + escapeHtml(o.title || '') + plus + tier + '</div>' +
+          '<div class="pos-lk-offer-item-desc">' + escapeHtml(o.description || '') + '</div>' +
+          (disc
+            ? '<div class="pos-lk-offer-item-disc">' + escapeHtml(disc) + ' · valid till ' + escapeHtml(fmtOfferDateIso(o.valid_to)) + '</div>'
+            : '<div class="pos-lk-offer-item-disc">Valid till ' + escapeHtml(fmtOfferDateIso(o.valid_to)) + '</div>') +
+          '</div></div>'
+      }
+      listEl.innerHTML = html
+    } catch (err) {
+      posCartOffers = []
+      obRecalcTotals()
+      listEl.innerHTML =
+        '<div class="pos-lk-offers-empty">' +
+        '<div class="pos-lk-offers-empty-title">Could not load offers</div>' +
+        '<div class="pos-lk-offers-empty-sub">' + escapeHtml(err.message || 'Check server logs or run Eyewoot Go migrations.') + '</div>' +
+        '</div>'
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not load offers.')
+    }
+  }
+
+  async function loadCartOffers(session) {
+    await loadPosOffersPanel(session, 'pos-lk-offers-list', 'pos-lk-offers-hint', false)
+  }
+
+  function refreshCartSidebar(session) {
+    if (!session || !session.token) return
+    renderCartCustomerRef()
+    void loadCartOffers(session)
+  }
+
+  function maybeRefreshCartSidebar() {
+    const active = document.querySelector('.pos-screen.active')
+    if (!active || active.id !== 'screen-pos-order-builder') return
+    const session = getPosSession()
+    refreshCartSidebar(session)
   }
 
   // ── Colour code → hex mapping (DB stores short codes, not hex values) ───────
@@ -1218,9 +1442,14 @@
     const banner = document.getElementById('cust-selected-banner')
     const continueBtn = document.getElementById('btn-cust-continue')
     if (banner) {
-      banner.textContent = posSelectedCustomerId
-        ? ('Selected customer id: ' + posSelectedCustomerId)
-        : 'No customer selected — optional for walk-in.'
+      if (posSelectedCustomerSnapshot) {
+        const ph = posSelectedCustomerSnapshot.phone ? ' · ' + posSelectedCustomerSnapshot.phone : ''
+        banner.textContent = 'Selected: ' + posSelectedCustomerSnapshot.full_name + ph
+      } else if (posSelectedCustomerId) {
+        banner.textContent = 'Selected customer id: ' + posSelectedCustomerId
+      } else {
+        banner.textContent = 'No customer selected — optional for walk-in.'
+      }
     }
     if (continueBtn) continueBtn.textContent = posSelectedCustomerId ? 'Continue to Cart' : 'Skip & Continue to Cart'
     showScreen('screen-pos-customer')
@@ -1247,10 +1476,14 @@
         btn.className = 'pos-cust-row'
         btn.innerHTML = '<span>' + (r.full_name || '') + '</span><span>' + (r.phone || '') + '</span>'
         btn.addEventListener('click', function () {
-          posSelectedCustomerId = r.customer_id
+          setPosCustomerSelection(r.customer_id, r.full_name, r.phone)
           const b = document.getElementById('cust-selected-banner')
-          if (b) b.textContent = 'Selected: ' + (r.full_name || '') + ' (' + (r.phone || '') + ')'
+          if (b) {
+            const ph = r.phone ? ' · ' + r.phone : ''
+            b.textContent = 'Selected: ' + (r.full_name || '') + ph
+          }
           cosmosToastSuccess('Customer selected')
+          maybeRefreshCartSidebar()
         })
         wrap.appendChild(btn)
       })
@@ -1283,11 +1516,12 @@
         phone: phone,
         email: emailEl && emailEl.value ? emailEl.value.trim() : null
       }, session.token)
-      posSelectedCustomerId = res.data.customer_id
+      setPosCustomerSelection(res.data.customer_id, name, phone)
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
       const b = document.getElementById('cust-selected-banner')
-      if (b) b.textContent = 'Created and selected: ' + name
+      if (b) b.textContent = 'Created and selected: ' + name + (phone ? ' · ' + phone : '')
       cosmosToastSuccess('Customer created')
+      maybeRefreshCartSidebar()
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
@@ -1580,6 +1814,14 @@
   }
 
   // ── Lens step 2 — Pencil 04-add-power: customer card + 4 power options ───
+  function refreshLensCustomerBanner() {
+    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected customer #' + posSelectedCustomerId : 'Walk-in customer')
+    const nameEl = document.getElementById('pos-lk-customer-name')
+    const av = document.querySelector('#pos-lk-customer-card .pos-lk-customer-avatar')
+    if (nameEl) nameEl.textContent = customerName
+    if (av) av.textContent = (customerName || 'W').trim().charAt(0).toUpperCase()
+  }
+
   function renderLensStep2AddPower(body) {
     updateLensStepper(2)
     const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected customer #' + posSelectedCustomerId : 'Walk-in customer')
@@ -1603,7 +1845,10 @@
         '<button type="button" id="pos-lk-cust-btn" class="pos-search-btn">Search</button>' +
       '</div>' +
       '<div class="pos-lk-cust-results" id="pos-lk-cust-results"></div>' +
-      '<div style="font-size:12px;color:var(--lk-text-muted);margin-top:4px">Walk-in customer is allowed if no record exists.</div>' +
+      '<div style="font-size:12px;color:var(--text2);margin-top:4px">Walk-in is allowed if no customer is linked. Enter at least 2–3 digits of a phone number or the start of a name when searching.</div>' +
+      '<div style="margin-top:12px">' +
+        '<button type="button" class="pos-lk-text-link" id="pos-lk-walk-in-btn">Remove customer · continue as walk-in</button>' +
+      '</div>' +
     '</div>')
 
     if (lensWizard.powerType && lensWizard.powerType.key === 'frame') {
@@ -1651,6 +1896,17 @@
     if (change && dd) {
       change.addEventListener('click', function () {
         dd.style.display = dd.style.display === 'none' ? 'flex' : 'none'
+      })
+    }
+    const walkInLens = document.getElementById('pos-lk-walk-in-btn')
+    if (walkInLens) {
+      walkInLens.addEventListener('click', function () {
+        closeLensNewCustomerModal()
+        clearPosCustomerSelection()
+        refreshLensCustomerBanner()
+        if (dd) dd.style.display = 'none'
+        if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Customer removed for this order — walk-in.')
+        maybeRefreshCartSidebar()
       })
     }
     const ddBtn = document.getElementById('pos-lk-cust-btn')
@@ -1727,6 +1983,82 @@
     if (doc) doc.addEventListener('input', function () { lensWizard.rx.doctor = doc.value })
   }
 
+  function computeLensSearchPrefillForNewCustomer(q) {
+    const t = String(q || '').trim()
+    if (!t) return { name: '', phone: '' }
+    const digits = t.replace(/\D/g, '')
+    if (digits.length >= 8) return { name: '', phone: t }
+    if (/[a-zA-Z\u00C0-\u024F\u0900-\u097F]/.test(t) && t.length >= 2) return { name: t, phone: '' }
+    return { name: '', phone: '' }
+  }
+
+  function openLensNewCustomerModal(queryStr) {
+    const pre = computeLensSearchPrefillForNewCustomer(queryStr)
+    const overlay = document.getElementById('overlay-pos-lens-new-customer')
+    const nameIn = document.getElementById('pos-lens-new-cust-name')
+    const phoneIn = document.getElementById('pos-lens-new-cust-phone')
+    const subEl = document.getElementById('pos-lens-new-cust-subtitle')
+    const q = String(queryStr || '').trim()
+    if (nameIn) {
+      nameIn.value = pre.name
+      if (typeof cosmosFieldClear === 'function') cosmosFieldClear(nameIn)
+    }
+    if (phoneIn) {
+      phoneIn.value = pre.phone
+      if (typeof cosmosFieldClear === 'function') cosmosFieldClear(phoneIn)
+    }
+    if (subEl) {
+      subEl.textContent = q
+        ? ('No match for “' + q.slice(0, 48) + (q.length > 48 ? '…' : '') + '”. Add a new customer to link to this order.')
+        : 'Add a new customer to link to this order.'
+    }
+    if (!overlay) return
+    overlay.classList.add('open')
+    window.requestAnimationFrame(function () {
+      if (pre.name && !pre.phone && nameIn) nameIn.focus()
+      else if (phoneIn) phoneIn.focus()
+      else if (nameIn) nameIn.focus()
+    })
+  }
+
+  function closeLensNewCustomerModal() {
+    const overlay = document.getElementById('overlay-pos-lens-new-customer')
+    if (!overlay || !overlay.classList.contains('open')) return
+    overlay.classList.remove('open')
+  }
+
+  async function submitLensModalNewCustomer(btn) {
+    const session = getPosSession()
+    if (!session || !session.token) return
+    const nameEl = document.getElementById('pos-lens-new-cust-name')
+    const phoneEl = document.getElementById('pos-lens-new-cust-phone')
+    const name = nameEl ? nameEl.value.trim() : ''
+    const phone = phoneEl ? phoneEl.value.trim() : ''
+    if (!name) {
+      if (nameEl && typeof cosmosFieldError === 'function') cosmosFieldError(nameEl, 'Required')
+      return
+    }
+    if (!phone) {
+      if (phoneEl && typeof cosmosFieldError === 'function') cosmosFieldError(phoneEl, 'Required')
+      return
+    }
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      const res = await apiPost('/api/pos/customer', { full_name: name, phone: phone, email: null }, session.token)
+      setPosCustomerSelection(res.data.customer_id, name, phone)
+      closeLensNewCustomerModal()
+      refreshLensCustomerBanner()
+      const dd = document.getElementById('pos-lk-cust-dropdown')
+      if (dd) dd.style.display = 'none'
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Customer created and linked.')
+      maybeRefreshCartSidebar()
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    } finally {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+    }
+  }
+
   async function runInlineCustomerSearch() {
     const input = document.getElementById('pos-lk-cust-input')
     const wrap = document.getElementById('pos-lk-cust-results')
@@ -1738,7 +2070,12 @@
       const rows = await apiGet('/api/pos/customer-search?q=' + encodeURIComponent(q), session.token)
       wrap.innerHTML = ''
       if (!rows.length) {
-        wrap.innerHTML = '<div class="pos-empty-sub">No customers found.</div>'
+        wrap.innerHTML =
+          '<div class="pos-empty-sub">No customers found.</div>' +
+          '<button type="button" class="pos-lk-text-link" style="display:block;margin-top:10px" id="pos-lk-open-add-cust-modal">Add new customer</button>'
+        const reopen = document.getElementById('pos-lk-open-add-cust-modal')
+        if (reopen) reopen.addEventListener('click', function () { openLensNewCustomerModal(q) })
+        openLensNewCustomerModal(q)
         return
       }
       rows.forEach(function (r) {
@@ -1747,15 +2084,16 @@
         btn.className = 'pos-lk-cust-result'
         btn.innerHTML = '<span>' + escapeHtml(r.full_name || '') + '</span><span>' + escapeHtml(r.phone || '') + '</span>'
         btn.addEventListener('click', function () {
-          posSelectedCustomerId = r.customer_id
-          lensWizard.customerName = r.full_name || ''
-          const nameEl = document.getElementById('pos-lk-customer-name')
-          if (nameEl) nameEl.textContent = lensWizard.customerName
+          setPosCustomerSelection(r.customer_id, r.full_name, r.phone)
+          const nameElBanner = document.getElementById('pos-lk-customer-name')
+          const nm = posSelectedCustomerSnapshot ? posSelectedCustomerSnapshot.full_name : ''
+          if (nameElBanner) nameElBanner.textContent = nm
           const av = document.querySelector('#pos-lk-customer-card .pos-lk-customer-avatar')
-          if (av) av.textContent = lensWizard.customerName.charAt(0).toUpperCase()
+          if (av) av.textContent = (nm || 'C').charAt(0).toUpperCase()
           const dd = document.getElementById('pos-lk-cust-dropdown')
           if (dd) dd.style.display = 'none'
           if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Customer selected')
+          maybeRefreshCartSidebar()
         })
         wrap.appendChild(btn)
       })
@@ -1866,8 +2204,21 @@
 
   async function showPaymentScreen(session) {
     const el = document.getElementById('pay-summary')
+    function clearPaymentOffersPanel() {
+      const payList = document.getElementById('pos-lk-pay-offers-list')
+      const payHint = document.getElementById('pos-lk-pay-offers-hint')
+      if (payList) payList.innerHTML = ''
+      if (payHint) payHint.textContent = ''
+    }
     showScreen('screen-pos-payment')
-    if (!el || !lastCreatedOrder || !session || !session.token) return
+    if (!session || !session.token) {
+      clearPaymentOffersPanel()
+      return
+    }
+    if (!el || !lastCreatedOrder) {
+      clearPaymentOffersPanel()
+      return
+    }
     if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pay-summary', 4)
     paySessionSnapshot = { stage: 'FULL', amount: Number(lastCreatedOrder.total_amount) || 0 }
     payMinimumAdvanceAmount = 0
@@ -2059,6 +2410,7 @@
       const a = Math.max(0, Number(paySessionSnapshot.amount) || 0)
       amtSpanFinal.textContent = formatRupees(a)
     }
+    await loadPosOffersPanel(session, 'pos-lk-pay-offers-list', 'pos-lk-pay-offers-hint', true)
   }
 
   async function submitPayment() {
@@ -2242,12 +2594,33 @@
     return '₹' + Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   }
 
+  function computeCartOfferDiscount(subtotal) {
+    if (!posCartOffers || !posCartOffers.length || subtotal <= 0) return { amount: 0, offerId: null }
+    var best = { amount: 0, offerId: null }
+    for (var i = 0; i < posCartOffers.length; i++) {
+      var o = posCartOffers[i]
+      if (!offerAppliesToCartContext(o)) continue
+      var t = String(o.discount_type || '').trim().toUpperCase()
+      var amt = 0
+      if (t === 'PCT') {
+        var p = effectiveOfferPct(o)
+        amt = Math.round(subtotal * (p / 100) * 100) / 100
+      } else if (t === 'FLAT') {
+        amt = effectiveOfferFlat(o)
+      }
+      if (amt > subtotal) amt = subtotal
+      if (amt > best.amount) best = { amount: amt, offerId: o.offer_id }
+    }
+    return best
+  }
+
   function obRecalcTotals() {
     const gstRate = Number(posSettings.gst_rate) || 0.05
     const subtotal = obCart.reduce(function (sum, line) {
       return sum + computeLineDisplayUnit(line) * line.qty
     }, 0)
-    const discount = 0
+    const offerDisc = computeCartOfferDiscount(subtotal)
+    const discount = Math.min(offerDisc.amount, subtotal)
     const taxable = Math.max(0, Math.round((subtotal - discount) * 100) / 100)
     const gst = Math.round(taxable * gstRate * 100) / 100
     const total = Math.round((taxable + gst) * 100) / 100
@@ -2443,6 +2816,7 @@
     syncRxSectionVisibility()
     syncCartDeliveryStoreName(session)
     obRenderCart()
+    refreshCartSidebar(session)
     showScreen('screen-pos-order-builder')
   }
 
@@ -2453,6 +2827,7 @@
     syncRxSectionVisibility()
     syncCartDeliveryStoreName(session)
     obRenderCart()
+    refreshCartSidebar(session)
     showScreen('screen-pos-order-builder')
   }
 
@@ -2472,7 +2847,7 @@
     clearCartStorage()
     pendingResumeOrder = false
     pendingOrderSelection = null
-    posSelectedCustomerId = null
+    clearPosCustomerSelection()
     selectedProductId = null
     lensWizardLineIdx = -1
     lensWizardBackRoute = POS_ROUTES.ORDER
@@ -2554,12 +2929,18 @@
     // Pick the first cart line that captured a per-line Rx in the Lens wizard.
     const rxLine = obCart.find(function (l) { return l.rx })
     const rxSnap = rxLine ? rxLine.rx : null
+    const subtotalForDisc = obCart.reduce(function (sum, line) {
+      return sum + computeLineDisplayUnit(line) * line.qty
+    }, 0)
+    const discInfo = computeCartOfferDiscount(subtotalForDisc)
     if (btnObProceed && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btnObProceed)
     try {
       const res = await apiPost('/api/pos/orders', {
         customer_id: posSelectedCustomerId,
         order_source: 'POS',
         rx_snapshot: rxSnap,
+        discount_amount: discInfo.amount || 0,
+        applied_offer_id: discInfo.offerId || null,
         lines: lines
       }, session.token)
       lastCreatedOrder = res.data
@@ -2742,6 +3123,33 @@
     }
   }
 
+  function bindPosLensNewCustomerModal() {
+    var overlay = document.getElementById('overlay-pos-lens-new-customer')
+    var backdrop = document.getElementById('pos-lens-newcust-backdrop')
+    var dismiss = document.getElementById('pos-lens-new-cust-dismiss')
+    var cancel = document.getElementById('btn-pos-lens-new-cust-cancel')
+    var submitBtn = document.getElementById('btn-pos-lens-new-cust-submit')
+    var nameIn = document.getElementById('pos-lens-new-cust-name')
+    var phoneIn = document.getElementById('pos-lens-new-cust-phone')
+    if (!overlay) return
+    backdrop && backdrop.addEventListener('click', closeLensNewCustomerModal)
+    dismiss && dismiss.addEventListener('click', closeLensNewCustomerModal)
+    cancel && cancel.addEventListener('click', closeLensNewCustomerModal)
+    if (submitBtn) submitBtn.addEventListener('click', function () { void submitLensModalNewCustomer(submitBtn) })
+    if (nameIn && typeof cosmosFieldClear === 'function') {
+      nameIn.addEventListener('input', function () { cosmosFieldClear(nameIn) })
+    }
+    if (phoneIn && typeof cosmosFieldClear === 'function') {
+      phoneIn.addEventListener('input', function () { cosmosFieldClear(phoneIn) })
+    }
+    document.addEventListener('keydown', function onLensCustModalEscape(ev) {
+      if (ev.key !== 'Escape') return
+      if (!overlay.classList.contains('open')) return
+      ev.preventDefault()
+      closeLensNewCustomerModal()
+    })
+  }
+
   // ── Boot ─────────────────────────────────────────────────────────────────
   ;(function boot() {
     document.body.addEventListener('click', function onPosLogoutClick(e) {
@@ -2766,6 +3174,7 @@
     bindCustomerLensPayEvents()
     bindOrderBuilderEvents()
     loadSavedCart()
+    bindPosLensNewCustomerModal()
     resolve()
   })()
   })

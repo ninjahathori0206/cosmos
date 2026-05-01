@@ -11,6 +11,7 @@ const COMMAND_UNIT_PAGE_PATHS = {
   settings: '/command-unit/settings',
   'pos-settings': '/command-unit/pos-settings',
   membership: '/command-unit/membership',
+  promotion: '/command-unit/promotion',
   leavetypes: '/command-unit/leavetypes',
   'foundry-settings': '/command-unit/foundry-settings',
   'cu-suppliers': '/command-unit/cu-suppliers',
@@ -705,109 +706,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let cachedRoles = [];
 
-  // ── Permission definitions displayed in the matrix ──────────────
-  const PERMISSION_MATRIX = [
-    { group: 'Command Unit', perms: [
-      { key: 'command_unit.stores.view',        label: 'Stores — View' },
-      { key: 'command_unit.stores.create',      label: 'Stores — Create' },
-      { key: 'command_unit.stores.edit',        label: 'Stores — Edit' },
-      { key: 'command_unit.users.view',         label: 'Users — View' },
-      { key: 'command_unit.users.create',       label: 'Users — Create' },
-      { key: 'command_unit.users.edit',         label: 'Users — Edit' },
-      { key: 'command_unit.roles.view',         label: 'Roles — View' },
-      { key: 'command_unit.roles.create',       label: 'Roles — Create' },
-      { key: 'command_unit.roles.edit',         label: 'Roles — Edit / Permissions' },
-      { key: 'command_unit.modules.edit',       label: 'Module Access — Edit' },
-      { key: 'command_unit.settings.view',      label: 'Settings — View' },
-      { key: 'command_unit.settings.edit',      label: 'Settings — Edit' },
-      { key: 'command_unit.audit.view',         label: 'Audit Logs — View' },
-    ]},
-    { group: 'Foundry — Procurement', perms: [
-      { key: 'foundry.purchases.view',              label: 'Purchases — View' },
-      { key: 'foundry.purchases.create',            label: 'Purchases — Create' },
-      { key: 'foundry.purchases.edit',              label: 'Purchases — Edit' },
-      { key: 'foundry.bill_verification.view',      label: 'Bill Verify — View' },
-      { key: 'foundry.bill_verification.create',    label: 'Bill Verify — Submit' },
-      { key: 'foundry.bill_verification.edit',      label: 'Bill Verify — Approve Discrepancy' },
-      { key: 'foundry.branding.view',               label: 'Branding — View' },
-      { key: 'foundry.branding.create',             label: 'Branding — Dispatch' },
-      { key: 'foundry.branding.edit',               label: 'Branding — Receive / Bypass' },
-      { key: 'foundry.digitisation.view',           label: 'Digitisation — View' },
-      { key: 'foundry.digitisation.create',         label: 'Digitisation — Generate SKU' },
-      { key: 'foundry.digitisation.edit',           label: 'Digitisation — Edit Media' },
-      { key: 'foundry.warehouse.view',              label: 'Warehouse — View' },
-      { key: 'foundry.warehouse.create',            label: 'Warehouse — Approve Ready' },
-    ]},
-    { group: 'Foundry — Lab', perms: [
-      { key: 'foundry.lab.view',                    label: 'Lab Orders — View (all stores)' },
-    ]},
-    { group: 'Foundry — Catalogue & Inventory', perms: [
-      { key: 'foundry.catalogue.view',              label: 'SKU Catalogue — View' },
-      { key: 'foundry.catalogue.edit',              label: 'SKU Catalogue — Edit' },
-      { key: 'foundry.stock.view',                  label: 'Stock Transfers — View' },
-      { key: 'foundry.stock.create',                label: 'Stock Transfers — Create' },
-    ]},
-    { group: 'Foundry — Store Connect', perms: [
-      { key: 'foundry.transfers.view',              label: 'Transfer Requests — View' },
-      { key: 'foundry.transfers.create',            label: 'Transfer Requests — Create' },
-      { key: 'foundry.transfers.edit',              label: 'Transfer Requests — Approve / Reject' },
-    ]},
-    { group: 'Foundry — Intelligence', perms: [
-      { key: 'foundry.suppliers.view',              label: 'Suppliers — View' },
-      { key: 'foundry.suppliers.create',            label: 'Suppliers — Create' },
-      { key: 'foundry.suppliers.edit',              label: 'Suppliers — Edit' },
-      { key: 'foundry.makers.view',                 label: 'Makers — View' },
-      { key: 'foundry.makers.create',               label: 'Makers — Create' },
-      { key: 'foundry.makers.edit',                 label: 'Makers — Edit' },
-    ]},
-    { group: 'Finance', perms: [
-      { key: 'finance.dashboard.view',              label: 'Dashboard — View' },
-      { key: 'finance.payments.view',               label: 'Payments — View' },
-      { key: 'finance.payments.create',             label: 'Payments — Create' },
-      { key: 'finance.payments.edit',               label: 'Payments — Edit / Void' },
-      { key: 'finance.reports.view',                label: 'Reports — View' },
-    ]},
-    { group: 'StorePilot (Showroom)', perms: [
-      { key: 'storepilot.dashboard.view',           label: 'Dashboard — View' },
-      { key: 'storepilot.catalogue.view',           label: 'Catalogue — View' },
-      { key: 'storepilot.floor.view',               label: 'Floor & Displays — View' },
-      { key: 'storepilot.floor.create',             label: 'Floor & Displays — Create' },
-      { key: 'storepilot.floor.edit',               label: 'Floor & Displays — Edit' },
-      { key: 'storepilot.appointments.view',        label: 'Appointments — View' },
-      { key: 'storepilot.appointments.create',      label: 'Appointments — Create' },
-      { key: 'storepilot.appointments.edit',        label: 'Appointments — Edit' },
-      { key: 'storepilot.walkins.view',             label: 'Walk-ins — View' },
-      { key: 'storepilot.walkins.create',           label: 'Walk-ins — Create' },
-      { key: 'storepilot.walkins.edit',             label: 'Walk-ins — Edit' },
-      { key: 'storepilot.handoffs.create',          label: 'POS Handoffs — Create' },
-      { key: 'storepilot.reports.view',             label: 'Reports — View' },
-      { key: 'storepilot.transfers.view',           label: 'Transfers — View' },
-      { key: 'storepilot.transfers.create',         label: 'Transfers — Create' },
-      { key: 'storepilot.transfers.edit',           label: 'Transfers — Accept / Stock' },
-    ]},
-    { group: 'Store OS (POS)', perms: [
-      { key: 'store_os.pos.view',                   label: 'POS — View' },
-      { key: 'store_os.pos.create',                 label: 'POS — Transact' },
-      { key: 'store_os.inventory.view',             label: 'Inventory — View' },
-      { key: 'store_os.inventory.create',           label: 'Inventory — Create' },
-      { key: 'store_os.inventory.edit',             label: 'Inventory — Edit' },
-      { key: 'store_os.reports.view',               label: 'Reports — View' },
-      { key: 'store_os.reports.create',             label: 'Reports — Export' },
-    ]},
-    { group: 'Army (HR & Attendance)', perms: [
-      { key: 'army.staff.view',                     label: 'Staff — View' },
-      { key: 'army.staff.create',                   label: 'Staff — Create' },
-      { key: 'army.staff.edit',                     label: 'Staff — Edit' },
-      { key: 'army.attendance.view',                label: 'Attendance — View' },
-      { key: 'army.attendance.create',              label: 'Attendance — Create' },
-      { key: 'army.attendance.edit',                label: 'Attendance — Edit' },
-      { key: 'army.leaves.view',                    label: 'Leaves — View' },
-      { key: 'army.leaves.edit',                    label: 'Leaves — Approve / Reject' },
-      { key: 'army.payroll.view',                   label: 'Payroll — View' },
-      { key: 'army.payroll.create',                 label: 'Payroll — Create' },
-      { key: 'army.payroll.edit',                   label: 'Payroll — Edit' },
-    ]},
-  ];
+  /** Server-driven permission catalogue (see src/config/permissionsCatalogue.js). */
+  let cachedPermissionCatalogue = null;
+
+  async function fetchPermissionCatalogue() {
+    if (cachedPermissionCatalogue && cachedPermissionCatalogue.length) return cachedPermissionCatalogue;
+    try {
+      const raw = await apiGet('/api/meta/permissions-catalogue');
+      cachedPermissionCatalogue = Array.isArray(raw.groups) ? raw.groups : [];
+    } catch (_) {
+      cachedPermissionCatalogue = [];
+    }
+    return cachedPermissionCatalogue;
+  }
+
+  function buildCatalogueKeySet(groups) {
+    const s = new Set();
+    (groups || []).forEach((g) => {
+      (g.perms || []).forEach((p) => s.add(String(p.key || '').toLowerCase()));
+    });
+    return s;
+  }
+
+  function computeModulesEnabledButNoPermissions(grantedSet, groups, moduleDefs, roleModState) {
+    const keysByModule = {};
+    moduleDefs.forEach((m) => { keysByModule[m.key] = []; });
+    (groups || []).forEach((g) => {
+      (g.perms || []).forEach((p) => {
+        const mk = String(p.moduleKey || '').toLowerCase();
+        if (keysByModule[mk]) keysByModule[mk].push(String(p.key || '').toLowerCase());
+      });
+    });
+    const gaps = [];
+    moduleDefs.forEach((m) => {
+      if (!roleModState[m.key]) return;
+      const keys = keysByModule[m.key] || [];
+      if (!keys.length) return;
+      const any = keys.some((k) => grantedSet.has(k));
+      if (!any) gaps.push(m.label);
+    });
+    return gaps;
+  }
 
   async function loadRoles() {
     const tbody = document.getElementById('roles-tbody');
@@ -862,16 +801,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!role) return;
 
     title.textContent = `${role.display_name} — Permissions`;
-    panel.innerHTML = '<div class="td-muted" style="padding:16px">Loading permissions…</div>';
+    panel.innerHTML = '';
+    if (typeof window.cosmosSkeletonRows === 'function') {
+      window.cosmosSkeletonRows('role-detail-body', 14);
+    } else {
+      panel.innerHTML = '<div class="td-muted" style="padding:16px">Preparing permissions…</div>';
+    }
 
-    // Highlight active row
     document.querySelectorAll('#roles-tbody tr').forEach((tr) => {
       tr.style.background = tr.dataset.roleKey === roleKey ? 'rgba(109,93,230,0.08)' : '';
     });
 
     try {
-      const grantedPerms = await apiGet(`/api/roles/${roleKey}/permissions`);
-      const grantedSet = new Set(grantedPerms);
+      const [groups, grantedPerms] = await Promise.all([
+        fetchPermissionCatalogue(),
+        apiGet(`/api/roles/${roleKey}/permissions`)
+      ]);
+      if (!groups.length) {
+        panel.innerHTML = `<div class="td-muted" style="padding:16px;color:var(--red,#b91c1c)">Could not load permission catalogue. You need <strong>Roles — View</strong>. Refresh after upgrading.</div>`;
+        return;
+      }
+
+      const grantedSet = new Set((grantedPerms || []).map((x) => String(x).toLowerCase()));
+      const catalogueKeys = buildCatalogueKeySet(groups);
+      const orphanGranted = [...grantedSet].filter((k) => !catalogueKeys.has(k));
 
       let html = `
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;align-items:center">
@@ -880,24 +833,26 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="font-mono fw-600">${escHtml(role.role_key)}</span>
           </div>
         </div>
+        <div id="role-perm-dynamic-warnings"></div>
         <div style="padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:var(--card,#f8fafc);margin-bottom:16px;font-size:13px;line-height:1.45;color:var(--text2,#475569)">
-          <strong style="color:var(--text1,#0f172a)">CX and other apps</strong> are not listed in the permission checkboxes above.
-          They are controlled under <a href="#" id="role-jump-module-access" style="color:var(--accent,#6366f1);font-weight:600">Module access for this role</a> below — turn <strong>📊 CX</strong> on, click <strong>Save Modules</strong>, then <strong>sign out and sign in again</strong> so your session picks it up.
-          If access still fails, open <strong>Configuration → Module Access</strong>, select the user’s store, and ensure <strong>CX</strong> is enabled there too (role and store must both allow the module).
+          <strong style="color:var(--text1,#0f172a)">Module access</strong> is coarse (which apps open). <strong>Permissions</strong> below are fine-grained (what APIs allow). Both apply — assign modules in the section below and tick capabilities here. Users must <strong>sign out and sign in</strong> for JWT updates.
+          Open <a href="#" id="role-jump-module-access" style="color:var(--acc,#6366f1);font-weight:600">module toggles</a>.
+          Store-level policy (<strong>Configuration → Module Access</strong>) can still narrow store-scoped users.
         </div>
         <div id="perm-save-msg" style="min-height:18px;font-size:12px;margin-bottom:8px"></div>
       `;
 
-      PERMISSION_MATRIX.forEach((group) => {
+      groups.forEach((group) => {
         html += `<div class="section-divider" style="margin:14px 0 8px">${escHtml(group.group)}</div>`;
         html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 16px">';
-        group.perms.forEach((p) => {
-          const checked = grantedSet.has(p.key) ? 'checked' : '';
+        (group.perms || []).forEach((p) => {
+          const k = String(p.key || '').toLowerCase();
+          const checked = grantedSet.has(k) ? 'checked' : '';
           html += `
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:4px 0">
-              <input type="checkbox" class="perm-checkbox" data-perm="${escAttr(p.key)}" ${checked}
-                style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer">
-              ${escHtml(p.label)}
+            <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;padding:4px 0">
+              <input type="checkbox" class="perm-checkbox" data-perm="${escAttr(k)}" ${checked}
+                style="width:15px;height:15px;margin-top:3px;accent-color:var(--acc);cursor:pointer">
+              <span>${escHtml(p.label)} <span class="td-muted font-mono" style="font-size:10px;display:block">${escHtml(k)}</span></span>
             </label>`;
         });
         html += '</div>';
@@ -905,22 +860,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
       html += `
         <div style="margin-top:20px;display:flex;gap:10px;align-items:center">
-          <button class="topbar-btn primary" id="perm-save-btn" style="font-size:13px">Save Permissions</button>
-          <button class="topbar-btn" id="perm-grant-all-btn" style="font-size:12px">Grant All</button>
-          <button class="topbar-btn" id="perm-revoke-all-btn" style="font-size:12px;border-color:#DC2626;color:#DC2626">Revoke All</button>
+          <button type="button" class="topbar-btn primary" id="perm-save-btn" style="font-size:13px">Save Permissions</button>
+          <button type="button" class="topbar-btn" id="perm-grant-all-btn" style="font-size:12px">Grant All</button>
+          <button type="button" class="topbar-btn" id="perm-revoke-all-btn" style="font-size:12px;border-color:var(--red,#DC2626);color:var(--red,#DC2626)">Revoke All</button>
         </div>`;
 
-      // ── Module access section ──────────────────────────────────────────────
       html += `
-        <div id="role-module-access-section" class="section-divider" style="margin:24px 0 12px">Module access for this role (CX, POS, Foundry, …)</div>
+        <div id="role-module-access-section" class="section-divider" style="margin:24px 0 12px">Module access for this role</div>
         <div class="td-muted text-xs" style="margin-bottom:12px">
-          Toggle which Cosmos modules users with this role may access (includes <strong>📊 CX</strong>).
-          Store-level policy (Configuration → Module Access → pick a store) can further narrow access for store-scoped users.
+          Toggle which Cosmos modules users with this role may access. Permissions above must match — otherwise menus/API calls fail even when a module is on.
         </div>
-        <div id="role-module-err" style="color:#b91c1c;font-size:12px;min-height:14px;margin-bottom:6px"></div>
+        <div id="role-module-err" style="color:var(--red,#b91c1c);font-size:12px;min-height:14px;margin-bottom:6px"></div>
         <div id="role-module-toggles"></div>
         <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
-          <button class="topbar-btn primary" id="role-modules-save-btn" style="font-size:13px">Save Modules</button>
+          <button type="button" class="topbar-btn primary" id="role-modules-save-btn" style="font-size:13px">Save Modules</button>
           <span id="role-modules-msg" style="font-size:12px;min-height:16px"></span>
         </div>`;
 
@@ -943,11 +896,26 @@ document.addEventListener('DOMContentLoaded', () => {
         panel.querySelectorAll('.perm-checkbox').forEach((cb) => { cb.checked = false; });
       });
 
-      // Load module toggles for this role
       await renderRoleModuleToggles(roleKey);
+
+      const dyn = document.getElementById('role-perm-dynamic-warnings');
+      if (dyn) {
+        const gapMods = computeModulesEnabledButNoPermissions(grantedSet, groups, MODULE_DEFS, roleModuleState);
+        let whtml = '';
+        if (orphanGranted.length) {
+          whtml += `<div style="padding:10px 12px;border-radius:8px;border:1px solid var(--gold,#f59e0b);background:var(--goldL,#fffbeb);color:var(--text1);font-size:13px;margin-bottom:12px">
+            <strong>Legacy keys on this role</strong> (not in catalogue — assign replacements, save permissions):<div class="font-mono" style="margin-top:6px;word-break:break-all">${orphanGranted.map(escHtml).join(', ')}</div></div>`;
+        }
+        if (gapMods.length) {
+          whtml += `<div style="padding:10px 12px;border-radius:8px;border:1px solid var(--acc2,#6366f1);background:var(--accL,#eef2ff);color:var(--text1);font-size:13px;margin-bottom:12px">
+            <strong>Module on but no permissions in catalogue</strong> for: ${gapMods.map(escHtml).join(', ')}. Grant at least one permission for those modules.</div>`;
+        }
+        dyn.innerHTML = whtml;
+      }
+
       document.getElementById('role-modules-save-btn').addEventListener('click', () => saveRoleModules(roleKey));
     } catch (err) {
-      panel.innerHTML = `<div class="td-muted" style="padding:16px;color:#b91c1c">Error loading permissions: ${escHtml(err.message)}</div>`;
+      panel.innerHTML = `<div class="td-muted" style="padding:16px;color:var(--red,#b91c1c)">Error loading permissions: ${escHtml(err.message)}</div>`;
     }
   }
 
@@ -1016,18 +984,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!panel || !msgEl) return;
 
     const checked = [...panel.querySelectorAll('.perm-checkbox:checked')].map((cb) => cb.dataset.perm);
-    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+    if (typeof window.cosmosBtnLoading === 'function' && saveBtn) window.cosmosBtnLoading(saveBtn);
+    else if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
     msgEl.style.color = '';
     msgEl.textContent = '';
     try {
       await apiPut(`/api/roles/${roleKey}/permissions`, { permissions: checked });
       msgEl.style.color = 'var(--green,#16a34a)';
       msgEl.textContent = `✓ ${checked.length} permission(s) saved successfully.`;
+      if (typeof window.cosmosBtnSuccess === 'function' && saveBtn) window.cosmosBtnSuccess(saveBtn);
+      else if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Permissions'; }
     } catch (err) {
-      msgEl.style.color = '#b91c1c';
+      msgEl.style.color = 'var(--red,#b91c1c)';
       msgEl.textContent = `Error: ${err.message}`;
-    } finally {
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Permissions'; }
+      if (typeof window.cosmosBtnDone === 'function' && saveBtn) window.cosmosBtnDone(saveBtn);
+      else if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Permissions'; }
     }
   }
 
@@ -1376,6 +1347,246 @@ document.addEventListener('DOMContentLoaded', () => {
       showError('edit-gst-error', err.message || 'Failed to deactivate GST rate');
     }
   }
+
+  // ─── PROMOTION: CUSTOMER OFFERS (Eyewoot Go) ─────────────────────────────
+
+  let cachedCuOffers = [];
+
+  function cuOfferDefaultFromDate() {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  }
+
+  /** End date default: one year after valid-from so offers qualify for cart / Go date filters. */
+  function cuOfferDefaultUntilDateFrom(fromIso) {
+    const base = (fromIso || '').trim() || cuOfferDefaultFromDate();
+    const parts = base.split('-').map((x) => parseInt(x, 10));
+    const y = parts[0];
+    const m = parts[1];
+    const d = parts[2];
+    if (!y || !m || !d) return cuOfferDefaultFromDate();
+    const end = new Date(Date.UTC(y, m - 1, d));
+    end.setUTCDate(end.getUTCDate() + 364);
+    return end.toISOString().slice(0, 10);
+  }
+
+  function syncCuOfferPreview() {
+    const title = (document.getElementById('cu-offer-title') || {}).value.trim() || 'Offer title';
+    const desc = (document.getElementById('cu-offer-desc') || {}).value.trim();
+    const icon = ((document.getElementById('cu-offer-emoji') || {}).value || '🎁').trim() || '🎁';
+    const typ = (document.getElementById('cu-offer-type') || {}).value || 'PCT';
+    const rawVal = (document.getElementById('cu-offer-value') || {}).value;
+    const val = parseFloat(rawVal);
+    const numOk = Number.isFinite(val);
+    let pill = '—';
+    if (typ === 'PCT') pill = numOk ? `${val}%` : '%';
+    else if (typ === 'FLAT') pill = numOk ? `₹${val.toLocaleString('en-IN')}` : '₹';
+    else pill = 'Freebie';
+    const pt = document.getElementById('cu-offer-preview-title');
+    const pd = document.getElementById('cu-offer-preview-desc');
+    const pi = document.getElementById('cu-offer-preview-icon');
+    const pp = document.getElementById('cu-offer-preview-pill');
+    if (pt) pt.textContent = title;
+    if (pd) pd.textContent = desc || 'Description shown to the customer';
+    if (pi) pi.textContent = icon;
+    if (pp) pp.textContent = pill;
+  }
+
+  let cuOfferPreviewListenersBound = false;
+  function bindCuOfferPreviewListeners() {
+    if (cuOfferPreviewListenersBound) return;
+    cuOfferPreviewListenersBound = true;
+    ['cu-offer-title', 'cu-offer-desc', 'cu-offer-emoji', 'cu-offer-type', 'cu-offer-value'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('input', syncCuOfferPreview);
+      el.addEventListener('change', syncCuOfferPreview);
+    });
+    const fromEl = document.getElementById('cu-offer-from');
+    if (fromEl) {
+      fromEl.addEventListener('change', () => {
+        const hid = document.getElementById('cu-offer-edit-id');
+        const toEl = document.getElementById('cu-offer-to');
+        if (!toEl || !hid || hid.value) return;
+        toEl.value = cuOfferDefaultUntilDateFrom(fromEl.value);
+      });
+    }
+  }
+
+  async function loadCuPromotionOffers() {
+    const tbody = document.getElementById('cu-promotion-offers-tbody');
+    if (!tbody) return;
+    if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('cu-promotion-offers-tbody', 6, 6);
+    try {
+      const rows = await apiGet('/api/settings/customer-offers');
+      cachedCuOffers = Array.isArray(rows) ? rows : [];
+      if (!cachedCuOffers.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="td-muted" style="padding:24px;text-align:center">
+          <div style="font-weight:600;color:var(--text1,#0f172a);margin-bottom:6px">No offers yet</div>
+          <div style="font-size:13px">Create a promotion to show it in Eyewoot Go and on the POS cart reference panel.</div>
+        </td></tr>`;
+        return;
+      }
+      tbody.innerHTML = cachedCuOffers.map((o) => {
+        const discLabel = o.discount_type === 'PCT' ? `${Number(o.discount_value)}%`
+          : o.discount_type === 'FLAT' ? `₹${Number(o.discount_value).toLocaleString('en-IN')}`
+            : 'Freebie';
+        const tierLabel = o.eligible_tier ? `${escHtml(String(o.eligible_tier))}+` : 'All';
+        const plusLabel = o.is_plus_only ? '<span class="badge badge-purple" style="font-size:10px">Plus</span>' : '';
+        const status = o.is_active
+          ? '<span class="badge badge-green">Active</span>'
+          : '<span class="badge badge-gray">Inactive</span>';
+        const until = o.valid_to ? fmtIstDateTime(o.valid_to).split(',')[0] : '—';
+        return `<tr class="tr-link" data-offer-id="${o.offer_id}">
+          <td><span style="font-size:18px;margin-right:6px">${escHtml(o.icon_emoji || '🎁')}</span>${escHtml(o.title || '')}</td>
+          <td>${escHtml(discLabel)}</td>
+          <td>${tierLabel} ${plusLabel}</td>
+          <td>${escHtml(until)}</td>
+          <td>${status}</td>
+          <td style="text-align:right">
+            <button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px" data-cu-offer-edit="${o.offer_id}">Edit</button>
+            ${o.is_active ? `<button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px;border-color:#DC2626;color:#DC2626" data-cu-offer-deactivate="${o.offer_id}">Deactivate</button>` : ''}
+          </td>
+        </tr>`;
+      }).join('');
+      tbody.querySelectorAll('[data-cu-offer-edit]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.editCuPromotionOffer(Number(btn.getAttribute('data-cu-offer-edit')));
+        });
+      });
+      tbody.querySelectorAll('[data-cu-offer-deactivate]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.deactivateCuPromotionOffer(Number(btn.getAttribute('data-cu-offer-deactivate')));
+        });
+      });
+      tbody.querySelectorAll('tr[data-offer-id]').forEach((tr) => {
+        tr.addEventListener('click', () => {
+          const id = Number(tr.getAttribute('data-offer-id'));
+          if (id) window.editCuPromotionOffer(id);
+        });
+      });
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="6" style="color:#b91c1c;padding:16px">${escHtml(err.message)}</td></tr>`;
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    }
+  }
+
+  window.openCuPromotionOfferModal = function () {
+    const hid = document.getElementById('cu-offer-edit-id');
+    const titleEl = document.getElementById('cu-offer-modal-title');
+    const statusWrap = document.getElementById('cu-offer-status-wrap');
+    if (hid) hid.value = '';
+    if (titleEl) titleEl.textContent = 'Create offer';
+    if (statusWrap) statusWrap.style.display = 'none';
+    document.getElementById('cu-offer-title').value = '';
+    document.getElementById('cu-offer-desc').value = '';
+    document.getElementById('cu-offer-emoji').value = '🎁';
+    document.getElementById('cu-offer-type').value = 'PCT';
+    document.getElementById('cu-offer-value').value = '';
+    document.getElementById('cu-offer-tier').value = '';
+    const fromVal = cuOfferDefaultFromDate();
+    document.getElementById('cu-offer-from').value = fromVal;
+    document.getElementById('cu-offer-to').value = cuOfferDefaultUntilDateFrom(fromVal);
+    document.getElementById('cu-offer-plus-only').checked = false;
+    document.getElementById('cu-offer-sort').value = '10';
+    showError('cu-offer-modal-error', '');
+    syncCuOfferPreview();
+    window.openModal && window.openModal('modal-cu-customer-offer');
+  };
+
+  window.editCuPromotionOffer = function (offerId) {
+    const o = cachedCuOffers.find((x) => x.offer_id === offerId);
+    if (!o) return;
+    const hid = document.getElementById('cu-offer-edit-id');
+    const titleEl = document.getElementById('cu-offer-modal-title');
+    const statusWrap = document.getElementById('cu-offer-status-wrap');
+    if (hid) hid.value = String(o.offer_id);
+    if (titleEl) titleEl.textContent = 'Edit offer';
+    if (statusWrap) statusWrap.style.display = '';
+    document.getElementById('cu-offer-title').value = o.title || '';
+    document.getElementById('cu-offer-desc').value = o.description || '';
+    document.getElementById('cu-offer-emoji').value = o.icon_emoji || '🎁';
+    document.getElementById('cu-offer-type').value = o.discount_type || 'PCT';
+    document.getElementById('cu-offer-value').value = o.discount_value != null ? String(o.discount_value) : '';
+    document.getElementById('cu-offer-tier').value = o.eligible_tier || '';
+    document.getElementById('cu-offer-from').value = o.valid_from ? String(o.valid_from).split('T')[0] : cuOfferDefaultFromDate();
+    document.getElementById('cu-offer-to').value = o.valid_to ? String(o.valid_to).split('T')[0] : cuOfferDefaultUntilDateFrom(document.getElementById('cu-offer-from').value);
+    document.getElementById('cu-offer-plus-only').checked = !!o.is_plus_only;
+    document.getElementById('cu-offer-sort').value = String(o.sort_order != null ? o.sort_order : 10);
+    const st = document.getElementById('cu-offer-active');
+    if (st) st.value = o.is_active ? '1' : '0';
+    showError('cu-offer-modal-error', '');
+    syncCuOfferPreview();
+    window.openModal && window.openModal('modal-cu-customer-offer');
+  };
+
+  async function handleCuOfferSave() {
+    const errEl = document.getElementById('cu-offer-modal-error');
+    const btn = document.getElementById('cu-offer-save-btn');
+    const titleIn = document.getElementById('cu-offer-title');
+    const toIn = document.getElementById('cu-offer-to');
+    showError('cu-offer-modal-error', '');
+    const title = titleIn ? titleIn.value.trim() : '';
+    const validTo = toIn ? toIn.value.trim() : '';
+    if (!title) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(titleIn, 'Required');
+      showError('cu-offer-modal-error', 'Title is required.');
+      return;
+    }
+    if (!validTo) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(toIn, 'Required');
+      showError('cu-offer-modal-error', 'Valid until date is required.');
+      return;
+    }
+    if (titleIn && typeof cosmosFieldClear === 'function') cosmosFieldClear(titleIn);
+    if (toIn && typeof cosmosFieldClear === 'function') cosmosFieldClear(toIn);
+
+    const editId = document.getElementById('cu-offer-edit-id').value;
+    const body = {
+      title,
+      description: document.getElementById('cu-offer-desc').value.trim(),
+      icon_emoji: document.getElementById('cu-offer-emoji').value.trim() || '🎁',
+      discount_type: document.getElementById('cu-offer-type').value,
+      discount_value: parseFloat(document.getElementById('cu-offer-value').value) || 0,
+      eligible_tier: document.getElementById('cu-offer-tier').value || null,
+      valid_from: document.getElementById('cu-offer-from').value,
+      valid_to: validTo,
+      is_plus_only: document.getElementById('cu-offer-plus-only').checked,
+      sort_order: parseInt(document.getElementById('cu-offer-sort').value, 10) || 0
+    };
+    if (editId) {
+      body.is_active = document.getElementById('cu-offer-active').value === '1';
+    }
+
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      if (editId) {
+        await apiPut(`/api/settings/customer-offers/${editId}`, body);
+      } else {
+        await apiPost('/api/settings/customer-offers', body);
+      }
+      window.closeModal && window.closeModal('modal-cu-customer-offer');
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess(editId ? 'Offer updated.' : 'Offer saved.');
+      await loadCuPromotionOffers();
+    } catch (err) {
+      showError('cu-offer-modal-error', err.message || 'Save failed');
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    } finally {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+    }
+  }
+
+  window.deactivateCuPromotionOffer = async function (offerId) {
+    if (!offerId || !window.confirm('Deactivate this offer? Customers will no longer see it in Eyewoot Go.')) return;
+    try {
+      await apiDelete(`/api/settings/customer-offers/${offerId}`);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Offer deactivated.');
+      await loadCuPromotionOffers();
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    }
+  };
 
   // ─── MEMBERSHIP TIERS ────────────────────────────────────────────────────
 
@@ -1988,6 +2199,9 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('edit-tier-save-btn', handleSaveTierChanges);
   bind('edit-tier-deactivate-btn', handleDeactivateTier);
 
+  bind('cu-offer-save-btn', handleCuOfferSave);
+  bindCuOfferPreviewListeners();
+
   // Leave Types
   bind('new-leave-save-btn', handleCreateLeave);
   bind('edit-leave-save-btn', handleSaveLeaveChanges);
@@ -2389,10 +2603,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Wire showPage nav triggers for new masters
   const _origShowPage = window.showPage;
   if (typeof _origShowPage === 'function') {
-    window.showPage = function(id, el) {
-      _origShowPage(id, el);
+    window.showPage = function(id, el, options) {
+      _origShowPage(id, el, options);
       if (id === 'homebrands') loadHomeBrands();
       if (id === 'pos-settings') loadCuPosSettings();
+      if (id === 'promotion') loadCuPromotionOffers();
       if (id === 'cu-suppliers')       loadCuSuppliers();
       if (id === 'cu-maker-master')    loadCuMakers();
       if (id === 'cu-branding-agents') loadCuBrandingAgents();

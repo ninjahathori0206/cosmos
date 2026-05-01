@@ -55,6 +55,63 @@ function escCx (s) {
     .replace(/"/g, '&quot;')
 }
 
+/** JWT permission keys from cosmos_user (lowercase). */
+window.cosmosEffectiveCxPermissions = function cosmosEffectiveCxPermissions () {
+  try {
+    var u = JSON.parse(sessionStorage.getItem('cosmos_user') || '{}')
+    var p = u.permissions
+    if (!Array.isArray(p)) return []
+    return p.map(function (x) { return String(x).toLowerCase() })
+  } catch (_) {
+    return []
+  }
+}
+
+/**
+ * If JWT has cx.* keys: require one of `keys` (OR).
+ * Strict default: no cx.* in JWT → deny each scoped check (full CX not implied).
+ * Legacy bypass (server): RBAC_LEGACY_EMPTY_PERMISSION_BYPASS / RBAC_STRICT_EMPTY_PERMISSIONS=false → no cx.* → allow.
+ */
+window.cosmosCxAllows = function cosmosCxAllows (keys) {
+  var arr = Array.isArray(keys) ? keys : [keys]
+  var perms = window.cosmosEffectiveCxPermissions()
+  var scoped = perms.some(function (p) { return p.indexOf('cx.') === 0 })
+  var strict = typeof window.cosmosRbacStrictEmptyPerms === 'function'
+    ? window.cosmosRbacStrictEmptyPerms()
+    : true
+  if (!scoped) {
+    if (strict) return false
+    return true
+  }
+  var i
+  for (i = 0; i < arr.length; i++) {
+    if (perms.indexOf(String(arr[i]).toLowerCase()) >= 0) return true
+  }
+  return false
+}
+
+function cxApplyFinePermissionsUi () {
+  var dash = document.querySelector('[data-cx-page="dashboard"]')
+  var cust = document.querySelector('[data-cx-page="customers"]')
+  var off = document.querySelector('[data-cx-page="offers"]')
+  if (dash) dash.style.display = window.cosmosCxAllows(['cx.dashboard.view']) ? '' : 'none'
+  if (cust) cust.style.display = window.cosmosCxAllows(['cx.customers.view']) ? '' : 'none'
+  if (off) off.style.display = window.cosmosCxAllows(['cx.offers.view', 'cx.offers.manage']) ? '' : 'none'
+  var newOfferBtn = document.getElementById('cx-btn-new-offer')
+  if (newOfferBtn) newOfferBtn.style.display = window.cosmosCxAllows(['cx.offers.manage']) ? '' : 'none'
+  var gmEye = document.getElementById('gm-eye-test-btn')
+  if (gmEye) gmEye.style.display = window.cosmosCxAllows(['cx.eye_tests.create']) ? '' : 'none'
+  var gmSave = document.getElementById('gm-save-btn')
+  if (gmSave) gmSave.style.display = window.cosmosCxAllows(['cx.membership.manage']) ? '' : 'none'
+}
+
+function cxCustomerInitials (name) {
+  var parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
 function fmtCxRs (v) {
   var n = Number(v) || 0
   return (
@@ -173,6 +230,27 @@ window.cxNav = function (id, el, options) {
 
 function cxApplyRouteFromPath () {
   var pageId = cxGetPageFromPath(window.location.pathname)
+  function allowed (pid) {
+    if (pid === 'dashboard') return window.cosmosCxAllows(['cx.dashboard.view'])
+    if (pid === 'customers') return window.cosmosCxAllows(['cx.customers.view'])
+    if (pid === 'offers') return window.cosmosCxAllows(['cx.offers.view', 'cx.offers.manage'])
+    return true
+  }
+  if (!allowed(pageId)) {
+    if (window.cosmosCxAllows(['cx.dashboard.view'])) pageId = 'dashboard'
+    else if (window.cosmosCxAllows(['cx.customers.view'])) pageId = 'customers'
+    else if (window.cosmosCxAllows(['cx.offers.view', 'cx.offers.manage'])) pageId = 'offers'
+    else {
+      if (typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError('No CX screen permissions for this role. Ask an admin to assign CX permissions in Command Unit → Roles.')
+      }
+      return
+    }
+    var path = CX_PAGE_PATHS[pageId] || '/cx/dashboard'
+    if (window.location.pathname !== path) {
+      window.history.replaceState({ module: 'cx', page: pageId }, '', path)
+    }
+  }
   window.cxNav(pageId, cxGetNavEl(pageId), { fromHistory: true })
 }
 
@@ -218,6 +296,7 @@ function cxLoadUser () {
     if (typeof window.applyCosmosModuleSwitchNav === 'function') {
       window.applyCosmosModuleSwitchNav('cx-switch-module-wrap', u)
     }
+    cxApplyFinePermissionsUi()
   } catch (_) {}
 }
 
@@ -281,48 +360,55 @@ window.loadCxDashboardPage = async function () {
         .join('')
     }
 
-    var ordRes = await cxApiGet('/api/cx/orders?limit=24')
-    var orders = ordRes.data || []
     var tbodyO = document.getElementById('cx-tbody-recent-orders')
-    if (!orders.length && tbodyO) {
-      tbodyO.innerHTML =
-        '<tr><td colspan="6" class="empty" style="border:none">' +
-        '<div class="empty-ic">\uD83E\uDDE9</div>' +
-        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No orders yet</div>' +
-        '<div style="font-size:13px;color:var(--text2);margin-bottom:16px">Recent POS orders will show here.</div>' +
-        '</td></tr>'
-    } else if (tbodyO) {
-      tbodyO.innerHTML = orders
-        .map(function (o) {
-          var cust =
-            escCx(o.customer_name || 'Walk-in') +
-            (o.customer_phone
-              ? '<br><span class="xs td3">' + escCx(o.customer_phone) + '</span>'
-              : '')
-          return (
-            '<tr>' +
-            '<td><span class="mono">' +
-            escCx(o.order_no) +
-            '</span></td>' +
-            '<td>' +
-            escCx(o.store_name || '') +
-            '</td>' +
-            '<td>' +
-            cust +
-            '</td>' +
-            '<td class="text-right mono fw6">' +
-            fmtCxRs(o.total_amount) +
-            '</td>' +
-            '<td>' +
-            cxOrderStatusBadge(o.status) +
-            '</td>' +
-            '<td class="td3" style="font-size:12px">' +
-            fmtCxDateTime(o.created_at) +
-            '</td>' +
-            '</tr>'
-          )
-        })
-        .join('')
+    if (!window.cosmosCxAllows(['cx.orders.view'])) {
+      if (tbodyO) {
+        tbodyO.innerHTML =
+          '<tr><td colspan="6" style="padding:16px;font-size:13px;color:var(--text2)">Recent orders require <strong>CX — Orders list</strong> permission.</td></tr>'
+      }
+    } else {
+      var ordRes = await cxApiGet('/api/cx/orders?limit=24')
+      var orders = ordRes.data || []
+      if (!orders.length && tbodyO) {
+        tbodyO.innerHTML =
+          '<tr><td colspan="6" class="empty" style="border:none">' +
+          '<div class="empty-ic">\uD83E\uDDE9</div>' +
+          '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No orders yet</div>' +
+          '<div style="font-size:13px;color:var(--text2);margin-bottom:16px">Recent POS orders will show here.</div>' +
+          '</td></tr>'
+      } else if (tbodyO) {
+        tbodyO.innerHTML = orders
+          .map(function (o) {
+            var cust =
+              escCx(o.customer_name || 'Walk-in') +
+              (o.customer_phone
+                ? '<br><span class="xs td3">' + escCx(o.customer_phone) + '</span>'
+                : '')
+            return (
+              '<tr>' +
+              '<td><span class="mono">' +
+              escCx(o.order_no) +
+              '</span></td>' +
+              '<td>' +
+              escCx(o.store_name || '') +
+              '</td>' +
+              '<td>' +
+              cust +
+              '</td>' +
+              '<td class="text-right mono fw6">' +
+              fmtCxRs(o.total_amount) +
+              '</td>' +
+              '<td>' +
+              cxOrderStatusBadge(o.status) +
+              '</td>' +
+              '<td class="td3" style="font-size:12px">' +
+              fmtCxDateTime(o.created_at) +
+              '</td>' +
+              '</tr>'
+            )
+          })
+          .join('')
+      }
     }
   } catch (err) {
     var msg = err && err.message ? err.message : 'Could not load CX dashboard.'
@@ -370,6 +456,10 @@ window.loadCxCustomersPage = async function () {
           cid +
           '" data-cname="' +
           cname +
+          '" data-cphone="' +
+          encodeURIComponent(r.phone || '') +
+          '" data-cstore="' +
+          encodeURIComponent(r.home_store_name || '') +
           '">' +
           '<td><div class="fw6">' +
           escCx(r.full_name) +
@@ -419,12 +509,23 @@ window._gmApplyPlanDefaults = function () {
   document.getElementById('gm-days').value = opt.dataset.days || ''
 }
 
-window.openGrantMembershipModal = async function (customerId, customerName) {
+window.openGrantMembershipModal = async function (customerId, customerName, customerPhone, homeStore) {
+  customerName = customerName || ''
+  customerPhone = customerPhone || ''
+  homeStore = homeStore || ''
   document.getElementById('gm-customer-id').value = String(customerId)
-  document.getElementById('gm-customer-name').value = customerName || ''
-  document.getElementById('gm-customer-label').textContent = customerName
-    ? 'Customer: ' + customerName
-    : 'Customer #' + customerId
+  document.getElementById('gm-customer-name').value = customerName
+  document.getElementById('gm-hero-name').textContent = customerName || 'Customer #' + customerId
+  document.getElementById('gm-hero-av').textContent = cxCustomerInitials(customerName || 'C')
+  var subParts = []
+  if (customerPhone) subParts.push(customerPhone)
+  if (homeStore) subParts.push(homeStore)
+  document.getElementById('gm-hero-sub').textContent = subParts.join(' · ') || '—'
+  document.getElementById('gm-hero-badges').style.display = 'none'
+  document.getElementById('gm-active-plan-badge').textContent = ''
+  document.getElementById('gm-active-expiry-line').textContent = ''
+  document.getElementById('gm-info-banner').style.display = 'none'
+  document.getElementById('gm-info-banner-text').innerHTML = ''
   document.getElementById('gm-modal-error').style.display = 'none'
   document.getElementById('gm-price').value = ''
   document.getElementById('gm-days').value = ''
@@ -441,13 +542,20 @@ window.openGrantMembershipModal = async function (customerId, customerName) {
     var plans = plansRes.data || []
     var active = (statusRes.data && statusRes.data.active_membership) || null
     if (active) {
-      document.getElementById('gm-current-status').innerHTML =
-        '<strong>Current:</strong> ' +
-        escCx(active.plan_display_name || active.plan_key) +
-        ' · expires ' +
-        fmtCxDateOnly(active.expires_at) +
-        ' · paid ' +
-        fmtCxRs(active.price_paid)
+      var planLabel = escCx(active.plan_display_name || active.plan_key)
+      var expStr = fmtCxDateOnly(active.expires_at)
+      var paidStr = fmtCxRs(active.price_paid)
+      document.getElementById('gm-hero-badges').style.display = 'flex'
+      document.getElementById('gm-active-plan-badge').textContent = planLabel
+      document.getElementById('gm-active-expiry-line').textContent = 'Expires ' + expStr
+      document.getElementById('gm-info-banner').style.display = 'flex'
+      document.getElementById('gm-info-banner-text').innerHTML =
+        'Active plan: <strong>' +
+        planLabel +
+        '</strong> — paid ' +
+        paidStr +
+        '. Saving now will renew or override the current plan.'
+      document.getElementById('gm-current-status').innerHTML = ''
     } else {
       document.getElementById('gm-current-status').innerHTML =
         '<strong>No active Eyewoot Go membership.</strong> Saving creates a new term; any previous active term is ended.'
@@ -478,6 +586,10 @@ window.openGrantMembershipModal = async function (customerId, customerName) {
 }
 
 window.saveGrantMembership = async function () {
+  if (!window.cosmosCxAllows(['cx.membership.manage'])) {
+    if (typeof window.cosmosToastWarn === 'function') window.cosmosToastWarn('No permission to save membership.')
+    return
+  }
   var errEl = document.getElementById('gm-modal-error')
   var btn = document.getElementById('gm-save-btn')
   errEl.style.display = 'none'
@@ -521,50 +633,73 @@ window.saveGrantMembership = async function () {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-  cxLoadUser()
-  cxApplyRouteFromPath()
-  var cxTbl = document.getElementById('cx-customers-table')
-  if (cxTbl && !cxTbl.dataset.cxGrantMembershipBound) {
-    cxTbl.dataset.cxGrantMembershipBound = '1'
-    cxTbl.addEventListener('click', function (e) {
-      var tr = e.target.closest('tbody tr[data-cid]')
-      if (!tr) return
-      var idStr = tr.getAttribute('data-cid')
-      if (!idStr) return
-      var id = parseInt(idStr, 10)
-      if (!id) return
-      var name = ''
-      try {
-        name = decodeURIComponent(tr.getAttribute('data-cname') || '')
-      } catch (e2) {
-        name = ''
-      }
-      if (typeof window.openGrantMembershipModal === 'function') {
-        window.openGrantMembershipModal(id, name)
-      }
-    })
-  }
-  var btn = document.getElementById('btn-cx-cust-search')
-  var inp = document.getElementById('cx-cust-search')
-  if (btn) {
-    btn.addEventListener('click', function () {
-      if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn)
-      window
-        .loadCxCustomersPage()
-        .then(function () {
-          if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn)
-        })
-        .catch(function () {
-          if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn)
-        })
-    })
-  }
-  if (inp) {
-    inp.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') btn && btn.click()
-    })
-    inp.addEventListener('input', function () {
-      if (typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(inp)
-    })
-  }
+  ;(async function cxBoot () {
+    if (typeof window.cosmosLoadRbacBootstrap === 'function') {
+      await window.cosmosLoadRbacBootstrap()
+    }
+    cxLoadUser()
+    cxApplyRouteFromPath()
+    var cxTbl = document.getElementById('cx-customers-table')
+    if (cxTbl && !cxTbl.dataset.cxGrantMembershipBound) {
+      cxTbl.dataset.cxGrantMembershipBound = '1'
+      cxTbl.addEventListener('click', function (e) {
+        var tr = e.target.closest('tbody tr[data-cid]')
+        if (!tr) return
+        var idStr = tr.getAttribute('data-cid')
+        if (!idStr) return
+        var id = parseInt(idStr, 10)
+        if (!id) return
+        if (!window.cosmosCxAllows(['cx.membership.manage'])) {
+          if (typeof window.cosmosToastWarn === 'function') {
+            window.cosmosToastWarn('No permission to manage membership. Ask an admin for CX — Membership plans & grant.')
+          }
+          return
+        }
+        var name = ''
+        var phone = ''
+        var store = ''
+        try {
+          name = decodeURIComponent(tr.getAttribute('data-cname') || '')
+        } catch (e2) {
+          name = ''
+        }
+        try {
+          phone = decodeURIComponent(tr.getAttribute('data-cphone') || '')
+        } catch (e3) {
+          phone = ''
+        }
+        try {
+          store = decodeURIComponent(tr.getAttribute('data-cstore') || '')
+        } catch (e4) {
+          store = ''
+        }
+        if (typeof window.openGrantMembershipModal === 'function') {
+          window.openGrantMembershipModal(id, name, phone, store)
+        }
+      })
+    }
+    var btn = document.getElementById('btn-cx-cust-search')
+    var inp = document.getElementById('cx-cust-search')
+    if (btn) {
+      btn.addEventListener('click', function () {
+        if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn)
+        window
+          .loadCxCustomersPage()
+          .then(function () {
+            if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn)
+          })
+          .catch(function () {
+            if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn)
+          })
+      })
+    }
+    if (inp) {
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') btn && btn.click()
+      })
+      inp.addEventListener('input', function () {
+        if (typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(inp)
+      })
+    }
+  })()
 })

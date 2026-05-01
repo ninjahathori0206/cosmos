@@ -42,10 +42,14 @@ const stockTransferDocsRouter  = require('./src/api/stockTransferDocs');
 const posRouter                = require('./src/api/pos');
 const cxRouter                 = require('./src/api/cx');
 const ordersRouter             = require('./src/api/orders');
+const metaRouter               = require('./src/api/meta');
 const customerAuthRouter       = require('./src/api/customerAuth');
 const customerAppRouter        = require('./src/api/customerApp');
 const { executeStoredProcedure, healthCheck } = require('./src/config/db');
-const { requireGoodsTransferDestinationStores } = require('./src/middleware/authorize');
+const {
+  requireGoodsTransferDestinationStores,
+  isRbacStrictEmptyPermissions
+} = require('./src/middleware/authorize');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 
 async function handleDestinationStores(req, res, next) {
@@ -216,10 +220,13 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Public bootstrap — NOT under /api so it never hits protectedApiRouter (which requires X-API-Key).
 app.get('/config/bootstrap.json', (req, res) => {
+  const strictEmpty = isRbacStrictEmptyPermissions();
   res.json({
     success: true,
     data: {
-      apiKey: process.env.API_KEY || ''
+      apiKey: process.env.API_KEY || '',
+      rbacStrictEmptyPermissions: strictEmpty,
+      rbacLegacyEmptyPermissionBypass: !strictEmpty
     }
   });
 });
@@ -377,6 +384,7 @@ protectedApiRouter.use('/transfer-requests', transferRequestsRouter);
 protectedApiRouter.use('/stock-transfer-docs', stockTransferDocsRouter);
 protectedApiRouter.use('/cx', cxRouter);
 protectedApiRouter.use('/orders', ordersRouter);
+protectedApiRouter.use('/meta', metaRouter);
 app.use('/api', protectedApiRouter);
 
 // 404 + error handling

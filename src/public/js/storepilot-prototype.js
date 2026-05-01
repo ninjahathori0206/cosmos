@@ -99,8 +99,7 @@ const SP_MENU_PERM_MAP = {
   'incoming-transfers': ['storepilot.transfers.view', 'foundry.transfers.view'],
   'movement-list': ['storepilot.transfers.view', 'foundry.transfers.view'],
   'transfers-history': ['storepilot.transfers.view', 'foundry.transfers.view'],
-  reports: ['storepilot.reports.view'],
-  'lab-orders': ['storepilot.dashboard.view']
+  reports: ['storepilot.reports.view']
 };
 
 // ── Breadcrumb map ─────────────────────────────────────────────────────────────
@@ -242,6 +241,7 @@ window.loadSpLabOrders = async function () {
     if (q) qs.set('search', q)
     const resp = await apiGet('/api/orders?' + qs.toString())
     const rows = (resp && resp.data) ? resp.data : []
+    const canMutate = canStorePilotManageLab()
     if (!rows.length) {
       tbody.innerHTML = `
         <tr>
@@ -263,22 +263,28 @@ window.loadSpLabOrders = async function () {
 
       // ── Special: READY_FOR_DELIVERY → Handover modal ────────────────────
       if (curr === 'READY_FOR_DELIVERY') {
-        actionHtml = `<button class="btn sm primary" id="sp-lab-btn-${r.order_id}" onclick="openSpHandoverModal(${r.order_id})">🤝 Handover</button>`
+        actionHtml = canMutate
+          ? `<button class="btn sm primary" id="sp-lab-btn-${r.order_id}" onclick="openSpHandoverModal(${r.order_id})">🤝 Handover</button>`
+          : '<span class="muted">View only</span>'
       } else if (next.length === 1) {
         const s = next[0]
         const needsNote = SP_LAB_STATUS_NOTE_REQUIRED.has(s)
         const handler = needsNote
           ? `openSpQcNoteModal(${r.order_id}, ${r.sub_order_id || 0}, '${s}')`
           : `updateSpLabStatus(${r.order_id}, ${r.sub_order_id || 0}, '${s}')`
-        actionHtml = `<button class="btn sm" id="sp-lab-btn-${r.order_id}" onclick="${handler}">${spLabStatusLabel(s)}</button>`
+        actionHtml = canMutate
+          ? `<button class="btn sm" id="sp-lab-btn-${r.order_id}" onclick="${handler}">${spLabStatusLabel(s)}</button>`
+          : '<span class="muted">View only</span>'
       } else if (next.length > 1) {
         const opts = next.map((s) => `<option value="${s}">${spLabStatusLabel(s)}</option>`).join('')
-        actionHtml = `
+        actionHtml = canMutate
+          ? `
           <div style="display:flex;gap:6px;align-items:center">
             <select id="sp-lab-next-${r.order_id}" style="min-width:185px">${opts}</select>
             <button class="btn sm" id="sp-lab-btn-${r.order_id}" onclick="updateSpLabStatusFromSelect(${r.order_id}, ${r.sub_order_id || 0})">Update</button>
           </div>
         `
+          : '<span class="muted">View only</span>'
       }
       return `
         <tr>
@@ -312,6 +318,12 @@ window.updateSpLabStatusFromSelect = function (orderId, subOrderId) {
 
 window.updateSpLabStatus = async function (orderId, subOrderId, nextStatus, note) {
   if (!subOrderId || !nextStatus) return
+  if (!canStorePilotManageLab()) {
+    if (typeof cosmosToastWarn === 'function') {
+      cosmosToastWarn('No permission to update lab workflow — assign StorePilot · Lab Orders — Manage for this role.')
+    }
+    return
+  }
   const btn = document.getElementById(`sp-lab-btn-${orderId}`)
   if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
   try {
@@ -331,6 +343,12 @@ window.updateSpLabStatus = async function (orderId, subOrderId, nextStatus, note
 let _spQcNoteCtx = null
 
 window.openSpQcNoteModal = function (orderId, subOrderId, toStatus) {
+  if (!canStorePilotManageLab()) {
+    if (typeof cosmosToastWarn === 'function') {
+      cosmosToastWarn('No permission to update lab workflow — assign StorePilot · Lab Orders — Manage for this role.')
+    }
+    return
+  }
   _spQcNoteCtx = { orderId, subOrderId, toStatus }
   const overlay = document.getElementById('overlay-sp-qc-note')
   const titleEl = document.getElementById('sp-qc-note-modal-title')
@@ -377,6 +395,12 @@ window.confirmSpQcNote = async function () {
 let _spHandoverCtx = null
 
 window.openSpHandoverModal = async function (orderId) {
+  if (!canStorePilotManageLab()) {
+    if (typeof cosmosToastWarn === 'function') {
+      cosmosToastWarn('No permission for lab handover — assign StorePilot · Lab Orders — Manage for this role.')
+    }
+    return
+  }
   const overlay = document.getElementById('overlay-sp-handover')
   const body    = document.getElementById('sp-handover-modal-body')
   if (!overlay || !body) return
@@ -485,6 +509,12 @@ window.closeSpHandoverModal = function () {
 
 window.submitSpHandover = async function (hasBalance) {
   if (!_spHandoverCtx) return
+  if (!canStorePilotManageLab()) {
+    if (typeof cosmosToastWarn === 'function') {
+      cosmosToastWarn('No permission for lab handover — assign StorePilot · Lab Orders — Manage for this role.')
+    }
+    return
+  }
   const btn = document.getElementById('btn-sp-handover-confirm')
   const errEl = document.getElementById('sp-handover-err')
   if (errEl) errEl.style.display = 'none'
@@ -530,7 +560,40 @@ function hasAnyPermission(list) {
   return list.some((perm) => _spPermissions.includes(perm));
 }
 
+function spJwtHasGranularLab() {
+  return _spPermissions.some((p) => String(p).toLowerCase().startsWith('storepilot.lab.'))
+}
+
+/** Strict default: require storepilot.lab.view. Legacy: dashboard.view when JWT has no storepilot.lab.*. */
+function canAccessSpLabOrdersMenu() {
+  const strict =
+    typeof window.cosmosRbacStrictEmptyPerms === 'function'
+      ? window.cosmosRbacStrictEmptyPerms()
+      : true
+  if (strict) {
+    return _spPermissions.includes('storepilot.lab.view')
+  }
+  if (!spJwtHasGranularLab()) {
+    return _spPermissions.includes('storepilot.dashboard.view')
+  }
+  return _spPermissions.includes('storepilot.lab.view')
+}
+
+/** Strict: require storepilot.lab.manage. Legacy: open mutations unless role has granular lab keys (then manage required). */
+function canStorePilotManageLab() {
+  const strict =
+    typeof window.cosmosRbacStrictEmptyPerms === 'function'
+      ? window.cosmosRbacStrictEmptyPerms()
+      : true
+  if (strict) {
+    return _spPermissions.includes('storepilot.lab.manage')
+  }
+  if (!spJwtHasGranularLab()) return true
+  return _spPermissions.includes('storepilot.lab.manage')
+}
+
 function canAccessSpView(id) {
+  if (id === 'lab-orders') return canAccessSpLabOrdersMenu()
   const perms = SP_MENU_PERM_MAP[id] || [];
   return hasAnyPermission(perms);
 }
@@ -542,11 +605,8 @@ function applyStorepilotPermissionNav() {
   const visibleMenuIds = [];
   nav.querySelectorAll('.nav-item[data-storepilot-menu]').forEach((item) => {
     const menuId = item.getAttribute('data-storepilot-menu');
-    const perms = (item.getAttribute('data-storepilot-permission') || '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const allowed = hasAnyPermission(perms);
+    if (!menuId) return;
+    const allowed = canAccessSpView(menuId);
     item.style.display = allowed ? '' : 'none';
     if (allowed && menuId) visibleMenuIds.push(menuId);
   });
@@ -585,7 +645,10 @@ function renderNoAccessState(reasonKey) {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  if (typeof window.cosmosLoadRbacBootstrap === 'function') {
+    await window.cosmosLoadRbacBootstrap()
+  }
   loadUser();
   if (_spNoAccess) return;
   loadDashboard();
@@ -624,7 +687,7 @@ function loadUser() {
     if (av) av.textContent = initials;
     if (nm) nm.textContent = name;
     if (rl) rl.textContent = ROLE_LABELS[u.role] || u.role || 'Store Pilot';
-    _spPermissions = Array.isArray(u.permissions) ? u.permissions : [];
+    _spPermissions = Array.isArray(u.permissions) ? u.permissions.map((x) => String(x).toLowerCase()) : [];
     _storeId   = u.store_id   || null;
     _storeName = u.store_name || null;
     if (typeof window.applyCosmosModuleSwitchNav === 'function') {

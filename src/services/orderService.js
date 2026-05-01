@@ -311,7 +311,9 @@ async function createOrderInTransaction(transaction, {
   gstRate,
   advPct,
   procurementMode,
-  cfg
+  cfg,
+  discountAmount = 0,
+  appliedOfferId = null
 }) {
   const vr = validateOrderLinesAgainstConfig(cfg, value)
   if (!vr.ok) {
@@ -333,8 +335,10 @@ async function createOrderInTransaction(transaction, {
     }
     subtotal += lineUnit * line.qty
   }
-  const gstAmount = roundMoney(subtotal * gstRate)
-  const totalAmount = roundMoney(subtotal + gstAmount)
+  const discAmt = Math.max(0, Math.min(roundMoney(Number(discountAmount) || 0), subtotal))
+  const taxable = roundMoney(subtotal - discAmt)
+  const gstAmount = roundMoney(taxable * gstRate)
+  const totalAmount = roundMoney(taxable + gstAmount)
 
   const rSeq = new sql.Request(transaction)
   rSeq.input('k', sql.VarChar(100), ORDER_SEQ_KEY)
@@ -367,6 +371,8 @@ async function createOrderInTransaction(transaction, {
   rIns.input('lab_advance_pct_snapshot', sql.Decimal(9, 2), advPct)
   rIns.input('procurement_mode_snapshot', sql.NVarChar(50), procurementMode)
   rIns.input('subtotal_amount', sql.Decimal(12, 2), subtotal)
+  rIns.input('discount_amount', sql.Decimal(12, 2), discAmt)
+  rIns.input('applied_offer_id', sql.Int, appliedOfferId || null)
   rIns.input('gst_amount', sql.Decimal(12, 2), gstAmount)
   rIns.input('total_amount', sql.Decimal(12, 2), totalAmount)
 
@@ -374,11 +380,11 @@ async function createOrderInTransaction(transaction, {
     INSERT INTO ${t.orders} (
       store_id, customer_id, created_by_user_id, order_no, order_source, order_kind,
       rx_snapshot, gst_rate_snapshot, lab_advance_pct_snapshot, procurement_mode_snapshot,
-      status, subtotal_amount, gst_amount, total_amount
+      status, subtotal_amount, discount_amount, applied_offer_id, gst_amount, total_amount
     ) VALUES (
       @store_id, @customer_id, @created_by_user_id, @order_no, @order_source, @order_kind,
       @rx_snapshot, @gst_rate_snapshot, @lab_advance_pct_snapshot, @procurement_mode_snapshot,
-      N'OPEN', @subtotal_amount, @gst_amount, @total_amount
+      N'OPEN', @subtotal_amount, @discount_amount, @applied_offer_id, @gst_amount, @total_amount
     );
     SELECT CAST(SCOPE_IDENTITY() AS INT) AS order_id;
   `)
@@ -493,6 +499,7 @@ async function createOrderInTransaction(transaction, {
     order_no: orderNo,
     order_kind: orderKind,
     subtotal_amount: subtotal,
+    discount_amount: discAmt,
     gst_amount: gstAmount,
     total_amount: totalAmount,
     sub_orders: subOrdersOut

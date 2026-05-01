@@ -2,15 +2,13 @@ const express = require('express')
 const sql = require('mssql')
 const { getPool } = require('../config/db')
 const { authJwt } = require('../middleware/authJwt')
-const { requireModule } = require('../middleware/authorize')
+const { requireModule, requireCxPermission } = require('../middleware/authorize')
 const orderService = require('../services/orderService')
 
 const router = express.Router()
 
-const CX_AUTH = [authJwt, requireModule('cx')]
-
 /** GET /api/cx/dashboard — summary + revenue_by_store */
-router.get('/dashboard', authJwt, requireModule('cx'), async (req, res, next) => {
+router.get('/dashboard', authJwt, requireModule('cx'), requireCxPermission('cx.dashboard.view'), async (req, res, next) => {
   try {
     const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
@@ -31,7 +29,7 @@ router.get('/dashboard', authJwt, requireModule('cx'), async (req, res, next) =>
 })
 
 /** GET /api/cx/customers?q=&limit= */
-router.get('/customers', authJwt, requireModule('cx'), async (req, res, next) => {
+router.get('/customers', authJwt, requireModule('cx'), requireCxPermission('cx.customers.view'), async (req, res, next) => {
   try {
     const search = String(req.query.q || '').trim() || null
     const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || '150'), 10) || 150))
@@ -45,7 +43,7 @@ router.get('/customers', authJwt, requireModule('cx'), async (req, res, next) =>
 })
 
 /** GET /api/cx/orders?q=&status=&limit= — recent orders all stores */
-router.get('/orders', authJwt, requireModule('cx'), async (req, res, next) => {
+router.get('/orders', authJwt, requireModule('cx'), requireCxPermission('cx.orders.view'), async (req, res, next) => {
   try {
     const search = String(req.query.q || '').trim() || null
     const statusFilter = String(req.query.status || '').trim() || null
@@ -79,10 +77,21 @@ async function handleCxMembershipPlans (_req, res, next) {
 }
 
 /** GET /api/cx/plans and /api/cx/membership-plans — Eyewoot Go plan catalogue */
-router.get(['/plans', '/membership-plans'], ...CX_AUTH, handleCxMembershipPlans)
+router.get(
+  ['/plans', '/membership-plans'],
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.membership.manage'),
+  handleCxMembershipPlans
+)
 
 /** GET /api/cx/customers/:id/membership — current active Eyewoot Go membership (if any) */
-router.get('/customers/:id/membership', ...CX_AUTH, async (req, res, next) => {
+router.get(
+  '/customers/:id/membership',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view', 'cx.membership.manage'),
+  async (req, res, next) => {
   try {
     const pool = await getPool()
     const customerId = parseInt(req.params.id, 10)
@@ -122,7 +131,7 @@ router.get('/customers/:id/membership', ...CX_AUTH, async (req, res, next) => {
  * Body: { plan_key, price_paid?, validity_days?, expires_at? (YYYY-MM-DD or ISO) }
  * Deactivates other active rows for this customer, then inserts a new membership.
  */
-router.post('/customers/:id/membership', ...CX_AUTH, async (req, res, next) => {
+router.post('/customers/:id/membership', authJwt, requireModule('cx'), requireCxPermission('cx.membership.manage'), async (req, res, next) => {
   try {
     const pool = await getPool()
     const customerId = parseInt(req.params.id, 10)
@@ -215,7 +224,7 @@ router.post('/customers/:id/membership', ...CX_AUTH, async (req, res, next) => {
 ══════════════════════════════════════════════════════════════ */
 
 /** POST /api/cx/customers/:id/eye-tests — staff enters prescription */
-router.post('/customers/:id/eye-tests', ...CX_AUTH, async (req, res, next) => {
+router.post('/customers/:id/eye-tests', authJwt, requireModule('cx'), requireCxPermission('cx.eye_tests.create'), async (req, res, next) => {
   try {
     const pool = await getPool()
     const customerId = parseInt(req.params.id, 10)
@@ -268,7 +277,7 @@ router.post('/customers/:id/eye-tests', ...CX_AUTH, async (req, res, next) => {
 ══════════════════════════════════════════════════════════════ */
 
 /** GET /api/cx/offers */
-router.get('/offers', ...CX_AUTH, async (req, res, next) => {
+router.get('/offers', authJwt, requireModule('cx'), requireCxPermission('cx.offers.view', 'cx.offers.manage'), async (req, res, next) => {
   try {
     const pool = await getPool()
     const r = await pool.request().query(`
@@ -285,7 +294,7 @@ router.get('/offers', ...CX_AUTH, async (req, res, next) => {
 })
 
 /** POST /api/cx/offers */
-router.post('/offers', ...CX_AUTH, async (req, res, next) => {
+router.post('/offers', authJwt, requireModule('cx'), requireCxPermission('cx.offers.manage'), async (req, res, next) => {
   try {
     const pool = await getPool()
     const {
@@ -327,7 +336,7 @@ router.post('/offers', ...CX_AUTH, async (req, res, next) => {
 })
 
 /** PATCH /api/cx/offers/:id */
-router.patch('/offers/:id', ...CX_AUTH, async (req, res, next) => {
+router.patch('/offers/:id', authJwt, requireModule('cx'), requireCxPermission('cx.offers.manage'), async (req, res, next) => {
   try {
     const pool = await getPool()
     const offerId = parseInt(req.params.id, 10)
@@ -374,7 +383,7 @@ router.patch('/offers/:id', ...CX_AUTH, async (req, res, next) => {
 })
 
 /** DELETE /api/cx/offers/:id — soft delete (deactivate) */
-router.delete('/offers/:id', ...CX_AUTH, async (req, res, next) => {
+router.delete('/offers/:id', authJwt, requireModule('cx'), requireCxPermission('cx.offers.manage'), async (req, res, next) => {
   try {
     const pool = await getPool()
     const offerId = parseInt(req.params.id, 10)

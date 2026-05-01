@@ -32,6 +32,7 @@
     --text2:   #475569;
     --text3:   #94A3B8;
     --sidebar: 252px;
+    --bg2:     #EDE9FE;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; display:flex; overflow:hidden; }
@@ -101,6 +102,7 @@
   .empty-ic { font-size:36px; margin-bottom:10px; }
 
   .fw6 { font-weight:600; }
+  .label-req { color:var(--red); }
   .xs { font-size:11.5px; }
   .td2 { color:var(--text2); }
   .td3 { color:var(--text3); }
@@ -109,6 +111,98 @@
   .mb4 { margin-bottom:20px; }
 
   .two-col { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px; }
+
+  /* Offer modal — preview card + section labels */
+  .of-preview-wrap {
+    padding: 14px 16px; border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--acc) 25%, var(--border));
+    background: var(--accL); display: flex; align-items: center; gap: 14px;
+    margin-bottom: 4px; grid-column: span 2;
+  }
+  .of-preview-icon {
+    width: 48px; height: 48px; border-radius: 10px; background: var(--card);
+    border: 1px solid var(--border); display: flex; align-items: center;
+    justify-content: center; font-size: 26px; flex-shrink: 0;
+  }
+  .of-preview-body { flex: 1; min-width: 0; }
+  .of-preview-title { font-size: 15px; font-weight: 700; color: var(--acc2); line-height: 1.3; }
+  .of-preview-desc  { font-size: 12.5px; color: var(--acc); margin-top: 4px; line-height: 1.35; }
+  .of-preview-pill  {
+    align-self: center; flex-shrink: 0; padding: 5px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; background: var(--acc); color: #fff;
+  }
+  .of-section-lbl {
+    font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text3); margin: 8px 0 4px; grid-column: span 2;
+  }
+  .of-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .of-span2 { grid-column: span 2; }
+  /* Emoji picker tile */
+  #of-emoji {
+    font-size: 22px; text-align: center; height: 44px; cursor: pointer;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* Plus-members toggle row */
+  .of-toggle-row {
+    grid-column: span 2; display: flex; align-items: center;
+    justify-content: space-between; padding: 12px 14px;
+    background: var(--accL); border: 1px solid color-mix(in srgb, var(--acc) 20%, var(--border));
+    border-radius: 10px;
+  }
+  .of-toggle-info { font-size: 13.5px; font-weight: 600; color: var(--text1); }
+  .of-toggle-sub  { font-size: 12px; color: var(--text2); margin-top: 3px; }
+  .of-toggle {
+    width: 38px; height: 22px; background: var(--border); border-radius: 11px;
+    position: relative; cursor: pointer; flex-shrink: 0; transition: background .18s;
+  }
+  .of-toggle.on { background: var(--acc); }
+  .of-toggle::after {
+    content: ''; width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    position: absolute; top: 3px; left: 3px; transition: left .15s;
+  }
+  .of-toggle.on::after { left: 19px; }
+
+  /* Modals — grant membership & offers */
+  .overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(4px); z-index:300; align-items:center; justify-content:center; }
+  .overlay.open, #modal-grant-membership-overlay[style*="flex"], #modal-eyetest-overlay[style*="flex"], #modal-offer-overlay[style*="flex"] { display:flex !important; }
+  .cx-modal { background:var(--card); border-radius:14px; box-shadow:0 20px 50px rgba(15,23,42,.18); width:100%; max-width:480px; max-height:92vh; overflow-y:auto; }
+  .cx-mh { display:flex; align-items:center; justify-content:space-between; padding:18px 20px 12px; border-bottom:1px solid var(--border); }
+  .cx-mt { font-size:16px; font-weight:700; color:var(--text1); }
+  .cx-mclose { background:none; border:none; font-size:18px; cursor:pointer; color:var(--text2); line-height:1; padding:4px 8px; border-radius:8px; }
+  .cx-mclose:hover { background:var(--redL); color:var(--red); }
+  .cx-mb { padding:18px 20px 20px; display:flex; flex-direction:column; gap:16px; }
+  .gm-hero {
+    display:flex; align-items:flex-start; gap:14px; padding:14px 16px; border-radius:12px;
+    background:linear-gradient(135deg, var(--goldL), var(--accL)); border:1px solid var(--border);
+  }
+  .gm-hero-av {
+    width:48px; height:48px; border-radius:50%; flex-shrink:0;
+    background:linear-gradient(135deg,var(--acc),var(--acc2)); color:#fff; font-size:14px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .gm-hero-meta { flex:1; min-width:0; }
+  .gm-hero-name { font-size:15px; font-weight:700; color:var(--text1); }
+  .gm-hero-sub { font-size:12.5px; color:var(--text2); margin-top:4px; line-height:1.4; }
+  .gm-hero-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
+  .gm-plan-badge {
+    display:inline-flex; align-items:center; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700;
+    background:var(--accL); color:var(--accD); border:1px solid var(--acc2);
+  }
+  .gm-expiry-line { font-size:12px; color:var(--text2); font-weight:500; }
+  .gm-info-banner {
+    display:flex; gap:10px; align-items:flex-start; padding:12px 14px; border-radius:10px;
+    background:var(--accL); border:1px solid var(--border); font-size:12.5px; color:var(--text2); line-height:1.45;
+  }
+  .gm-info-banner .ic { flex-shrink:0; width:22px; height:22px; border-radius:50%; background:var(--card); color:var(--acc); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .gm-divider-or {
+    display:flex; align-items:center; gap:12px; color:var(--text3); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; margin:4px 0;
+  }
+  .gm-divider-or::before, .gm-divider-or::after { content:''; flex:1; height:1px; background:var(--border); }
+  .fgrp select, .fgrp textarea { padding:8px 11px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'Inter',sans-serif; background:var(--card); color:var(--text1); outline:none; }
+  .fgrp select:focus, .fgrp textarea:focus { border-color:var(--acc2); }
+  .fgrp textarea { min-height:72px; resize:vertical; }
+  .gm-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:4px; }
 
   @media (max-width:1100px) {
     .sg4 { grid-template-columns:repeat(2,1fr); }
@@ -216,12 +310,12 @@
   <div class="page" id="page-offers">
     <div class="ph">
       <div class="pt">Customer Offers</div>
-      <div class="ps">Create and manage offers visible to Eyewoot Go customers.</div>
+      <div class="ps">Visible in Eyewoot Go. Primary administration: Command Unit → Promotion → Customer Offers.</div>
     </div>
     <div class="card mb4">
       <div class="ch">
         <div style="font-weight:600;font-size:14px;color:var(--text1)">Active Offers</div>
-        <button type="button" class="btn primary sm" onclick="openOfferModal()">+ New Offer</button>
+        <button type="button" class="btn primary sm" id="cx-btn-new-offer" onclick="openOfferModal()">+ New Offer</button>
       </div>
       <div class="tw">
         <table>
@@ -244,110 +338,151 @@
 </main>
 
 <!-- ── Offer Modal ──────────────────────────────────────────── -->
-<div class="overlay" id="modal-offer-overlay" style="display:none">
-  <div class="modal" style="max-width:520px">
-    <div class="mh">
-      <div class="mt" id="offer-modal-title">New Offer</div>
-      <button class="close-btn" onclick="closeOfferModal()">✕</button>
+<div class="overlay" id="modal-offer-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="of-modal-title" onclick="if(event.target===this)closeOfferModal()">
+  <div class="cx-modal" style="max-width:560px" onclick="event.stopPropagation()">
+    <div class="cx-mh">
+      <div class="cx-mt" id="offer-modal-title">Create offer</div>
+      <button type="button" class="cx-mclose" onclick="closeOfferModal()" aria-label="Close">✕</button>
     </div>
-    <div class="mb" style="display:flex;flex-direction:column;gap:14px">
+    <div class="cx-mb" style="padding-top:14px">
       <input type="hidden" id="offer-edit-id">
-      <div class="fgrp">
-        <label>Title *</label>
-        <input type="text" id="of-title" placeholder="e.g. 20% off all frames">
-      </div>
-      <div class="fgrp">
-        <label>Description</label>
-        <input type="text" id="of-desc" placeholder="All brands · Any store · Stackable with loyalty">
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="of-form-grid">
+
+        <div class="of-section-lbl">Preview</div>
+        <div class="of-preview-wrap of-span2">
+          <div class="of-preview-icon" id="of-preview-icon">🎁</div>
+          <div class="of-preview-body">
+            <div class="of-preview-title" id="of-preview-title">Offer title</div>
+            <div class="of-preview-desc" id="of-preview-desc">Description shown to customer</div>
+          </div>
+          <div class="of-preview-pill" id="of-preview-pill">—</div>
+        </div>
+
         <div class="fgrp">
-          <label>Icon Emoji</label>
-          <input type="text" id="of-emoji" placeholder="🎯" style="font-size:20px;text-align:center" maxlength="4">
+          <label for="of-title">Title <span class="label-req">*</span></label>
+          <input type="text" id="of-title" placeholder="e.g. 20% off all frames" autocomplete="off">
         </div>
         <div class="fgrp">
-          <label>Discount Type</label>
+          <label for="of-emoji">Icon</label>
+          <input type="text" id="of-emoji" maxlength="8" placeholder="🎁" autocomplete="off">
+        </div>
+        <div class="fgrp of-span2">
+          <label for="of-desc">Description <span style="font-weight:400;color:var(--text3)">(shown to customer)</span></label>
+          <textarea id="of-desc" placeholder="All brands · Any store · Stackable with loyalty" style="min-height:64px;resize:vertical;padding:8px 11px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text1)"></textarea>
+        </div>
+
+        <div class="of-section-lbl">Discount</div>
+        <div class="fgrp">
+          <label for="of-type">Type</label>
           <select id="of-type">
             <option value="PCT">Percentage (%)</option>
             <option value="FLAT">Flat (₹)</option>
             <option value="FREEBIE">Freebie</option>
           </select>
         </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="fgrp">
-          <label>Discount Value</label>
-          <input type="number" id="of-value" placeholder="20" min="0" step="any">
+          <label for="of-value">Value</label>
+          <input type="number" id="of-value" min="0" step="any" placeholder="20">
         </div>
+
+        <div class="of-section-lbl">Eligibility &amp; validity</div>
         <div class="fgrp">
-          <label>Eligible Tier (blank = all)</label>
+          <label for="of-tier">Eligible tier</label>
           <select id="of-tier">
-            <option value="">All Tiers</option>
+            <option value="">All tiers</option>
+            <option value="Silver">Silver+</option>
             <option value="Gold">Gold+</option>
             <option value="Platinum">Platinum only</option>
           </select>
         </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="fgrp">
-          <label>Valid From *</label>
+          <label for="of-sort">Sort order <span style="font-weight:400;color:var(--text3)">(lower = higher)</span></label>
+          <input type="number" id="of-sort" min="0" value="10">
+        </div>
+        <div class="fgrp">
+          <label for="of-from">Valid from <span class="label-req">*</span></label>
           <input type="date" id="of-from">
         </div>
         <div class="fgrp">
-          <label>Valid Until *</label>
+          <label for="of-to">Valid until <span class="label-req">*</span></label>
           <input type="date" id="of-to">
+          <div style="font-size:11px;color:var(--text3);margin-top:3px">Offers outside this window are hidden from customers.</div>
         </div>
+
+        <div class="of-toggle-row">
+          <div>
+            <div class="of-toggle-info">Plus members only</div>
+            <div class="of-toggle-sub">Hide this offer from non-subscribers</div>
+          </div>
+          <div class="of-toggle" id="of-plus-toggle" onclick="this.classList.toggle('on')" role="switch" aria-checked="false" tabindex="0" onkeydown="if(event.key===' '||event.key==='Enter'){this.classList.toggle('on');this.setAttribute('aria-checked',this.classList.contains('on'))}"></div>
+        </div>
+
+        <div class="fgrp" id="of-status-wrap" style="display:none">
+          <label>Status</label>
+          <select id="of-active"><option value="1">Active</option><option value="0">Inactive</option></select>
+        </div>
+
       </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <input type="checkbox" id="of-plus-only" style="width:16px;height:16px">
-        <label for="of-plus-only" style="font-size:13px;color:var(--text2);cursor:pointer">Plus members only (hide from non-subscribers)</label>
-      </div>
-      <div class="fgrp"><label>Sort Order <span style="color:var(--text3);font-weight:400">(lower = higher up)</span></label><input type="number" id="of-sort" value="0" min="0"></div>
-      <div id="offer-modal-error" style="color:var(--red);font-size:12px;display:none"></div>
-      <div style="display:flex;gap:10px;margin-top:6px">
-        <button type="button" class="btn primary" id="offer-save-btn" onclick="saveOffer()">Save Offer</button>
-        <button type="button" class="btn" onclick="closeOfferModal()">Cancel</button>
-      </div>
+      <div id="offer-modal-error" style="color:var(--red);font-size:12px;margin-top:10px;min-height:16px"></div>
+    </div>
+    <div style="display:flex;gap:10px;padding:14px 20px;border-top:1px solid var(--border);justify-content:flex-end">
+      <button type="button" class="btn primary" id="offer-save-btn" onclick="saveOffer()">Save offer</button>
+      <button type="button" class="btn" onclick="closeOfferModal()">Cancel</button>
     </div>
   </div>
 </div>
 
-<!-- ── Grant Eyewoot Go membership ───────────────────────── -->
-<div class="overlay" id="modal-grant-membership-overlay" style="display:none">
-  <div class="modal" style="max-width:480px">
-    <div class="mh">
-      <div class="mt">Grant Eyewoot Go membership</div>
-      <button class="close-btn" onclick="closeGrantMembershipModal()">✕</button>
+<!-- ── Grant / renew membership ───────────────────────── -->
+<div class="overlay" id="modal-grant-membership-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="gm-modal-title" onclick="if(event.target===this)closeGrantMembershipModal()">
+  <div class="cx-modal" onclick="event.stopPropagation()">
+    <div class="cx-mh">
+      <div class="cx-mt" id="gm-modal-title">Grant / renew membership</div>
+      <button type="button" class="cx-mclose" onclick="closeGrantMembershipModal()" aria-label="Close">✕</button>
     </div>
-    <div class="mb" style="display:flex;flex-direction:column;gap:14px">
+    <div class="cx-mb">
       <input type="hidden" id="gm-customer-id">
       <input type="hidden" id="gm-customer-name">
-      <div id="gm-customer-label" style="font-size:13px;color:var(--text2)"></div>
-      <div id="gm-current-status" style="font-size:12px;padding:10px 12px;border-radius:8px;background:var(--bg2);border:1px solid var(--border);color:var(--text2)"></div>
+      <div class="gm-hero" id="gm-hero">
+        <div class="gm-hero-av" id="gm-hero-av">—</div>
+        <div class="gm-hero-meta">
+          <div class="gm-hero-name" id="gm-hero-name">Customer</div>
+          <div class="gm-hero-sub" id="gm-hero-sub"></div>
+          <div class="gm-hero-row" id="gm-hero-badges" style="display:none">
+            <span class="gm-plan-badge" id="gm-active-plan-badge"></span>
+            <span class="gm-expiry-line" id="gm-active-expiry-line"></span>
+          </div>
+        </div>
+      </div>
+      <div class="gm-info-banner" id="gm-info-banner" style="display:none">
+        <span class="ic" aria-hidden="true">i</span>
+        <div id="gm-info-banner-text"></div>
+      </div>
+      <div id="gm-current-status"></div>
       <div class="fgrp">
-        <label>Plan *</label>
+        <label for="gm-plan">Plan <span class="label-req">*</span></label>
         <select id="gm-plan"></select>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="fgrp">
-          <label>Price paid (₹) *</label>
+          <label for="gm-price">Price paid (₹) <span class="label-req">*</span></label>
           <input type="number" id="gm-price" min="0" step="0.01">
         </div>
         <div class="fgrp">
-          <label>Validity (days)</label>
-          <input type="number" id="gm-days" min="1" placeholder="Plan default">
+          <label for="gm-days">Validity (days)</label>
+          <input type="number" id="gm-days" min="1" placeholder="365">
         </div>
       </div>
+      <div class="gm-divider-or">or set exact expiry date</div>
       <div class="fgrp">
-        <label>Or set exact expiry date (optional)</label>
+        <label for="gm-expires">Exact expiry date</label>
         <input type="date" id="gm-expires">
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">If set, overrides validity days.</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Leave blank to use validity days above.</div>
       </div>
       <div id="gm-modal-error" style="color:var(--red);font-size:12px;display:none"></div>
-      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">
+      <div class="gm-actions">
         <button type="button" class="btn primary" id="gm-save-btn" onclick="saveGrantMembership()">Save membership</button>
         <button type="button" class="btn" onclick="closeGrantMembershipModal()">Cancel</button>
-        <button type="button" class="btn sm" id="gm-eye-test-btn" onclick="gmOpenEyeTestFromGrant()">Add eye test…</button>
+        <button type="button" class="btn sm" id="gm-eye-test-btn" onclick="gmOpenEyeTestFromGrant()">+ Add eye test</button>
       </div>
     </div>
   </div>
@@ -408,12 +543,17 @@ function loadOffersPage() {
 
 async function refreshOffers() {
   var tbody = document.getElementById('cx-tbody-offers');
-  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text3);padding:20px;text-align:center">Loading…</td></tr>';
+  var canManage = typeof window.cosmosCxAllows === 'function' && window.cosmosCxAllows(['cx.offers.manage']);
+  if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('cx-tbody-offers', 6);
+  else tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text3);padding:20px;text-align:center">Loading…</td></tr>';
   try {
     var res = await cxApiFetch('GET', '/api/cx/offers');
     var rows = res.data || [];
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text3);padding:24px;text-align:center">No offers yet. Create one to get started.</td></tr>';
+      var emptyBtn = canManage
+        ? '<button class="btn primary" onclick="openOfferModal()">+ New Offer</button>'
+        : '';
+      tbody.innerHTML = '<tr><td colspan="6" style="border:none"><div class="empty"><div class="empty-ic">🎁</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No offers yet</div><div style="font-size:13px;color:var(--text2);margin-bottom:16px">Create your first offer to display in Eyewoot Go.</div>' + (emptyBtn ? '<div style="margin-top:16px">' + emptyBtn + '</div>' : '') + '</div></td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(function (o) {
@@ -423,25 +563,55 @@ async function refreshOffers() {
       var tierLabel = o.eligible_tier ? o.eligible_tier + '+' : 'All';
       var plusLabel = o.is_plus_only ? '<span style="font-size:11px;background:var(--accL);color:var(--acc2);padding:2px 7px;border-radius:10px">Plus</span>' : '';
       var status = o.is_active
-        ? '<span style="font-size:11px;background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px">Active</span>'
-        : '<span style="font-size:11px;background:var(--bg2);color:var(--text3);padding:2px 8px;border-radius:10px;border:1px solid var(--border)">Inactive</span>';
+        ? '<span style="font-size:11px;background:var(--greenL);color:var(--green);padding:2px 8px;border-radius:10px">Active</span>'
+        : '<span style="font-size:11px;background:var(--bg);color:var(--text3);padding:2px 8px;border-radius:10px;border:1px solid var(--border)">Inactive</span>';
+      var actions = '';
+      if (canManage) {
+        actions = '<button class="btn sm" onclick="editOffer(' + JSON.stringify(o).replace(/"/g, '&quot;') + ')" style="margin-right:6px">Edit</button>'
+          + (o.is_active ? '<button class="btn sm" style="color:var(--red)" onclick="deactivateOffer(' + o.offer_id + ')">Deactivate</button>' : '');
+      }
       return '<tr>'
         + '<td><span style="font-size:20px;margin-right:6px">' + o.icon_emoji + '</span>' + o.title + '</td>'
         + '<td>' + discLabel + '</td>'
         + '<td>' + tierLabel + ' ' + plusLabel + '</td>'
         + '<td>' + new Date(o.valid_to).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) + '</td>'
         + '<td>' + status + '</td>'
-        + '<td style="text-align:right">'
-        + '<button class="btn sm" onclick="editOffer(' + JSON.stringify(o).replace(/"/g, '&quot;') + ')" style="margin-right:6px">Edit</button>'
-        + (o.is_active ? '<button class="btn sm" style="color:var(--red)" onclick="deactivateOffer(' + o.offer_id + ')">Deactivate</button>' : '')
-        + '</td></tr>';
+        + '<td style="text-align:right">' + actions + '</td></tr>';
     }).join('');
   } catch (e) {
     tbody.innerHTML = '<tr><td colspan="6" style="color:var(--red);padding:16px">' + e.message + '</td></tr>';
   }
 }
 
-function openOfferModal(offer) {
+function syncOfferPreview() {
+  var icon  = document.getElementById('of-emoji').value || '🎁';
+  var title = document.getElementById('of-title').value.trim() || 'Offer title';
+  var desc  = document.getElementById('of-desc').value.trim() || 'Description shown to customer';
+  var type  = document.getElementById('of-type').value;
+  var val   = parseFloat(document.getElementById('of-value').value);
+  var pillTxt = isNaN(val) ? '—' : (type === 'PCT' ? val + '%' : type === 'FLAT' ? '₹' + val : 'Freebie');
+  document.getElementById('of-preview-icon').textContent  = icon;
+  document.getElementById('of-preview-title').textContent = title;
+  document.getElementById('of-preview-desc').textContent  = desc;
+  document.getElementById('of-preview-pill').textContent  = pillTxt;
+}
+
+function ofBindPreviewListeners() {
+  ['of-title','of-desc','of-emoji','of-type','of-value'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && !el.dataset.ofPreviewBound) {
+      el.addEventListener('input', syncOfferPreview);
+      el.addEventListener('change', syncOfferPreview);
+      el.dataset.ofPreviewBound = '1';
+    }
+  });
+}
+
+function openOfferModal() {
+  if (!window.cosmosCxAllows || !window.cosmosCxAllows(['cx.offers.manage'])) {
+    if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to create or edit offers.');
+    return;
+  }
   document.getElementById('offer-edit-id').value = '';
   document.getElementById('of-title').value = '';
   document.getElementById('of-desc').value = '';
@@ -449,75 +619,111 @@ function openOfferModal(offer) {
   document.getElementById('of-type').value = 'PCT';
   document.getElementById('of-value').value = '';
   document.getElementById('of-tier').value = '';
-  document.getElementById('of-from').value = new Date().toISOString().split('T')[0];
+  document.getElementById('of-from').value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   document.getElementById('of-to').value = '';
-  document.getElementById('of-plus-only').checked = false;
-  document.getElementById('of-sort').value = 0;
-  document.getElementById('offer-modal-title').textContent = 'New Offer';
-  document.getElementById('offer-modal-error').style.display = 'none';
+  document.getElementById('of-plus-toggle').classList.remove('on');
+  document.getElementById('of-plus-toggle').setAttribute('aria-checked', 'false');
+  document.getElementById('of-sort').value = 10;
+  document.getElementById('of-status-wrap').style.display = 'none';
+  document.getElementById('offer-modal-title').textContent = 'Create offer';
+  document.getElementById('offer-modal-error').textContent = '';
+  syncOfferPreview();
+  ofBindPreviewListeners();
   document.getElementById('modal-offer-overlay').style.display = 'flex';
 }
 
 function editOffer(o) {
+  if (!window.cosmosCxAllows || !window.cosmosCxAllows(['cx.offers.manage'])) {
+    if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to edit offers.');
+    return;
+  }
   document.getElementById('offer-edit-id').value = o.offer_id;
-  document.getElementById('of-title').value = o.title;
-  document.getElementById('of-desc').value = o.description;
-  document.getElementById('of-emoji').value = o.icon_emoji;
-  document.getElementById('of-type').value = o.discount_type;
-  document.getElementById('of-value').value = o.discount_value;
+  document.getElementById('of-title').value = o.title || '';
+  document.getElementById('of-desc').value = o.description || '';
+  document.getElementById('of-emoji').value = o.icon_emoji || '🎁';
+  document.getElementById('of-type').value = o.discount_type || 'PCT';
+  document.getElementById('of-value').value = o.discount_value != null ? o.discount_value : '';
   document.getElementById('of-tier').value = o.eligible_tier || '';
   document.getElementById('of-from').value = o.valid_from ? o.valid_from.split('T')[0] : '';
   document.getElementById('of-to').value = o.valid_to ? o.valid_to.split('T')[0] : '';
-  document.getElementById('of-plus-only').checked = !!o.is_plus_only;
-  document.getElementById('of-sort').value = o.sort_order || 0;
-  document.getElementById('offer-modal-title').textContent = 'Edit Offer';
-  document.getElementById('offer-modal-error').style.display = 'none';
+  var tog = document.getElementById('of-plus-toggle');
+  if (!!o.is_plus_only) { tog.classList.add('on'); tog.setAttribute('aria-checked','true'); }
+  else { tog.classList.remove('on'); tog.setAttribute('aria-checked','false'); }
+  document.getElementById('of-sort').value = o.sort_order != null ? o.sort_order : 10;
+  var sw = document.getElementById('of-status-wrap');
+  if (sw) { sw.style.display = ''; document.getElementById('of-active').value = o.is_active ? '1' : '0'; }
+  document.getElementById('offer-modal-title').textContent = 'Edit offer';
+  document.getElementById('offer-modal-error').textContent = '';
+  syncOfferPreview();
+  ofBindPreviewListeners();
   document.getElementById('modal-offer-overlay').style.display = 'flex';
 }
 
 function closeOfferModal() { document.getElementById('modal-offer-overlay').style.display = 'none'; }
 
 async function saveOffer() {
+  if (!window.cosmosCxAllows || !window.cosmosCxAllows(['cx.offers.manage'])) {
+    if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to save offers.');
+    return;
+  }
   var errEl = document.getElementById('offer-modal-error');
   var btn   = document.getElementById('offer-save-btn');
-  errEl.style.display = 'none';
-  var title  = document.getElementById('of-title').value.trim();
-  var valid_to = document.getElementById('of-to').value;
-  if (!title || !valid_to) { errEl.textContent = 'Title and Valid Until are required.'; errEl.style.display = 'block'; return; }
+  errEl.textContent = '';
+  var titleIn  = document.getElementById('of-title');
+  var toIn     = document.getElementById('of-to');
+  var title    = titleIn.value.trim();
+  var valid_to = toIn.value;
+  if (!title) {
+    if (typeof cosmosFieldError === 'function') cosmosFieldError(titleIn, 'Required');
+    errEl.textContent = 'Title is required.';
+    return;
+  }
+  if (!valid_to) {
+    if (typeof cosmosFieldError === 'function') cosmosFieldError(toIn, 'Required');
+    errEl.textContent = 'Valid Until date is required.';
+    return;
+  }
+  if (typeof cosmosFieldClear === 'function') { cosmosFieldClear(titleIn); cosmosFieldClear(toIn); }
 
   var body = {
     title,
-    description: document.getElementById('of-desc').value,
-    icon_emoji:  document.getElementById('of-emoji').value || '🎁',
+    description: document.getElementById('of-desc').value.trim(),
+    icon_emoji:  document.getElementById('of-emoji').value.trim() || '🎁',
     discount_type:  document.getElementById('of-type').value,
     discount_value: parseFloat(document.getElementById('of-value').value) || 0,
     eligible_tier:  document.getElementById('of-tier').value || null,
     valid_from:  document.getElementById('of-from').value,
     valid_to,
-    is_plus_only: document.getElementById('of-plus-only').checked,
+    is_plus_only: document.getElementById('of-plus-toggle').classList.contains('on'),
     sort_order: parseInt(document.getElementById('of-sort').value) || 0
   };
+  var editId = document.getElementById('offer-edit-id').value;
+  if (editId) body.is_active = document.getElementById('of-active').value === '1';
 
-  btn.disabled = true; btn.textContent = 'Saving…';
+  if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
   try {
-    var editId = document.getElementById('offer-edit-id').value;
     if (editId) {
       await cxApiFetch('PATCH', '/api/cx/offers/' + editId, body);
     } else {
       await cxApiFetch('POST', '/api/cx/offers', body);
     }
+    if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
     closeOfferModal();
     _cxOffersLoaded = false;
     refreshOffers();
-    cosmosToastSuccess('Offer saved.');
+    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Offer saved.');
   } catch (e) {
-    errEl.textContent = e.message; errEl.style.display = 'block';
-  } finally {
-    btn.disabled = false; btn.textContent = 'Save Offer';
+    if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+    errEl.textContent = e.message;
+    if (typeof cosmosToastError === 'function') cosmosToastError(e.message);
   }
 }
 
 async function deactivateOffer(id) {
+  if (!window.cosmosCxAllows || !window.cosmosCxAllows(['cx.offers.manage'])) {
+    if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to deactivate offers.');
+    return;
+  }
   if (!confirm('Deactivate this offer? Customers will no longer see it.')) return;
   try {
     await cxApiFetch('DELETE', '/api/cx/offers/' + id);
@@ -533,6 +739,10 @@ async function deactivateOffer(id) {
 var _etCustomerName = '';
 
 function openEyeTestModal(customerId, customerName) {
+  if (!window.cosmosCxAllows || !window.cosmosCxAllows(['cx.eye_tests.create'])) {
+    if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to record eye tests.');
+    return;
+  }
   _etCustomerName = customerName || '';
   document.getElementById('et-customer-id').value = customerId;
   document.getElementById('et-date').value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -547,6 +757,10 @@ function openEyeTestModal(customerId, customerName) {
 function closeEyeTestModal() { document.getElementById('modal-eyetest-overlay').style.display = 'none'; }
 
 function gmOpenEyeTestFromGrant() {
+  if (!window.cosmosCxAllows || !window.cosmosCxAllows(['cx.eye_tests.create'])) {
+    if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to record eye tests.');
+    return;
+  }
   var cid = document.getElementById('gm-customer-id').value
   var name = document.getElementById('gm-customer-name').value || ''
   if (typeof window.closeGrantMembershipModal === 'function') window.closeGrantMembershipModal()

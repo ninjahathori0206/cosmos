@@ -8,6 +8,15 @@ const router = express.Router();
 
 const settingsView = [requireModule('command_unit'), requirePermission('command_unit.settings.view')];
 const settingsManage = [requireModule('command_unit'), requirePermission('command_unit.settings.edit')];
+/** Eyewoot Go customer_offers — view/manage from Command Unit → Promotion (fallback to settings perm until roles are seeded). */
+const promotionsView = [
+  requireModule('command_unit'),
+  requirePermission('command_unit.promotions.view', 'command_unit.settings.view')
+];
+const promotionsManage = [
+  requireModule('command_unit'),
+  requirePermission('command_unit.promotions.manage', 'command_unit.settings.edit')
+];
 const posSettingsSchema = Joi.object({
   lab_advance_pct: Joi.number().min(0).max(100).required()
 });
@@ -288,6 +297,158 @@ router.delete('/leave-types/:id', ...settingsManage, async (req, res, next) => {
       leave_type_id: { type: sql.Int, value: id }
     });
     return res.json({ success: true, data: result.recordset && result.recordset[0] });
+  } catch (err) { return next(err); }
+});
+
+// ─── PROMOTION: CUSTOMER OFFERS (Eyewoot Go) ────────────────────────────────────
+
+const customerOfferCreateSchema = Joi.object({
+  title: Joi.string().max(200).required(),
+  description: Joi.string().max(500).allow('', null),
+  icon_emoji: Joi.string().max(10).allow('', null),
+  discount_type: Joi.string().valid('PCT', 'FLAT', 'FREEBIE').default('PCT'),
+  discount_value: Joi.number().min(0).default(0),
+  valid_from: Joi.any().optional(),
+  valid_to: Joi.any().required(),
+  eligible_tier: Joi.string().max(50).allow(null, ''),
+  is_plus_only: Joi.boolean().default(false),
+  sort_order: Joi.number().integer().min(0).default(0)
+});
+
+const customerOfferUpdateSchema = Joi.object({
+  title: Joi.string().max(200),
+  description: Joi.string().max(500).allow('', null),
+  icon_emoji: Joi.string().max(10).allow('', null),
+  discount_type: Joi.string().valid('PCT', 'FLAT', 'FREEBIE'),
+  discount_value: Joi.number().min(0),
+  valid_from: Joi.any().optional(),
+  valid_to: Joi.any(),
+  eligible_tier: Joi.string().max(50).allow(null, ''),
+  is_plus_only: Joi.boolean(),
+  is_active: Joi.boolean(),
+  sort_order: Joi.number().integer().min(0)
+}).min(1);
+
+router.get('/customer-offers', ...promotionsView, async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`
+      SELECT offer_id, title, description, icon_emoji, discount_type,
+             discount_value, valid_from, valid_to, eligible_tier,
+             is_plus_only, is_active, sort_order, created_at
+      FROM   dbo.customer_offers
+      ORDER BY is_active DESC, sort_order ASC, created_at DESC
+    `);
+    return res.json({ success: true, data: r.recordset || [] });
+  } catch (err) { return next(err); }
+});
+
+router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
+  try {
+    const { error, value } = customerOfferCreateSchema.validate(req.body || {});
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      });
+    }
+    const pool = await getPool();
+    const istWall = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T');
+    const vf = value.valid_from ? String(value.valid_from).trim() : istWall;
+    const vt = String(value.valid_to).trim();
+
+    const r = await pool.request()
+      .input('title', value.title)
+      .input('description', value.description || '')
+      .input('icon_emoji', value.icon_emoji || '🎁')
+      .input('discount_type', value.discount_type || 'PCT')
+      .input('discount_value', parseFloat(value.discount_value) || 0)
+      .input('valid_from', vf)
+      .input('valid_to', vt)
+      .input('eligible_tier', value.eligible_tier ? String(value.eligible_tier).trim() : null)
+      .input('is_plus_only', value.is_plus_only ? 1 : 0)
+      .input('sort_order', parseInt(value.sort_order, 10) || 0)
+      .input('uid', req.user && req.user.user_id ? Number(req.user.user_id) : null)
+      .query(`
+        INSERT INTO dbo.customer_offers
+          (title, description, icon_emoji, discount_type, discount_value,
+           valid_from, valid_to, eligible_tier, is_plus_only, sort_order,
+           created_by_user_id)
+        OUTPUT INSERTED.offer_id
+        VALUES
+          (@title, @description, @icon_emoji, @discount_type, @discount_value,
+           @valid_from, @valid_to, @eligible_tier, @is_plus_only, @sort_order,
+           @uid)
+      `);
+    return res.status(201).json({ success: true, offer_id: r.recordset[0].offer_id });
+  } catch (err) { return next(err); }
+});
+
+router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) => {
+  try {
+    const offerId = parseInt(req.params.id, 10);
+    if (!offerId) return res.status(400).json({ success: false, message: 'Invalid offer ID.' });
+
+    const { error, value } = customerOfferUpdateSchema.validate(req.body || {});
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      });
+    }
+
+    const pool = await getPool();
+    const {
+      title, description, icon_emoji, discount_type, discount_value,
+      valid_from, valid_to, eligible_tier, is_plus_only, is_active, sort_order
+    } = value;
+
+    await pool.request()
+      .input('id', offerId)
+      .input('title', title != null ? title : null)
+      .input('description', description !== undefined ? description : null)
+      .input('icon_emoji', icon_emoji !== undefined ? icon_emoji : null)
+      .input('discount_type', discount_type != null ? discount_type : null)
+      .input('discount_value', discount_value != null ? parseFloat(discount_value) : null)
+      .input('valid_from', valid_from !== undefined ? (valid_from ? String(valid_from).trim() : null) : null)
+      .input('valid_to', valid_to !== undefined ? String(valid_to).trim() : null)
+      .input('eligible_tier', eligible_tier !== undefined ? (eligible_tier ? String(eligible_tier).trim() : null) : null)
+      .input('is_plus_only', is_plus_only != null ? (is_plus_only ? 1 : 0) : null)
+      .input('is_active', is_active != null ? (is_active ? 1 : 0) : null)
+      .input('sort_order', sort_order != null ? parseInt(sort_order, 10) : null)
+      .query(`
+        UPDATE dbo.customer_offers SET
+          title          = ISNULL(@title,          title),
+          description    = ISNULL(@description,    description),
+          icon_emoji     = ISNULL(@icon_emoji,     icon_emoji),
+          discount_type  = ISNULL(@discount_type,  discount_type),
+          discount_value = ISNULL(@discount_value, discount_value),
+          valid_from     = ISNULL(@valid_from,     valid_from),
+          valid_to       = ISNULL(@valid_to,       valid_to),
+          eligible_tier  = ISNULL(@eligible_tier,  eligible_tier),
+          is_plus_only   = ISNULL(@is_plus_only,   is_plus_only),
+          is_active      = ISNULL(@is_active,      is_active),
+          sort_order     = ISNULL(@sort_order,     sort_order),
+          updated_at     = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+        WHERE offer_id = @id
+      `);
+    return res.json({ success: true });
+  } catch (err) { return next(err); }
+});
+
+router.delete('/customer-offers/:id', ...promotionsManage, async (req, res, next) => {
+  try {
+    const offerId = parseInt(req.params.id, 10);
+    if (!offerId) return res.status(400).json({ success: false, message: 'Invalid offer ID.' });
+    const pool = await getPool();
+    await pool.request().input('id', offerId).query(`
+      UPDATE dbo.customer_offers
+      SET is_active = 0, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      WHERE offer_id = @id
+    `);
+    return res.json({ success: true });
   } catch (err) { return next(err); }
 });
 

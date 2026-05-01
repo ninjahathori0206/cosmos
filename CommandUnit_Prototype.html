@@ -65,6 +65,11 @@
       <span class="icon">📅</span> Leave Types
     </div>
 
+    <div class="nav-section-label">Promotion</div>
+    <div class="nav-item" onclick="showPage('promotion', this)">
+      <span class="icon">🎁</span> Customer Offers
+    </div>
+
     <div class="nav-section-label">Foundry Masters</div>
     <div class="nav-item" onclick="showPage('foundry-settings', this)">
       <span class="icon">🔩</span> Foundry Settings
@@ -641,6 +646,34 @@
       </div>
       <div class="card" style="border:2px dashed var(--border);background:transparent;display:flex;align-items:center;justify-content:center;min-height:200px;cursor:pointer" onclick="openModal('modal-new-membership')">
         <div style="text-align:center;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">+</div><div style="font-size:13.5px;font-weight:500">Add Tier</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: PROMOTION — CUSTOMER OFFERS ═══ -->
+  <div class="page" id="page-promotion">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Promotion</div>
+        <div class="page-subtitle">Customer offers for Eyewoot Go and POS checkout reference. Same catalogue as CX; managed here under Command Unit.</div>
+      </div>
+      <button type="button" class="topbar-btn primary ml-auto" onclick="window.openCuPromotionOfferModal && window.openCuPromotionOfferModal()">+ New Offer</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Offer</th>
+              <th>Discount</th>
+              <th>Tier / Plus</th>
+              <th>Valid until</th>
+              <th>Status</th>
+              <th class="text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="cu-promotion-offers-tbody"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -1432,9 +1465,82 @@
   </div>
 </div>
 
+<!-- Customer Offer (Promotion) — layout aligned with Eyewoot Go create-offer UX -->
+<div class="modal-overlay" id="modal-cu-customer-offer">
+  <div class="modal" style="width:560px;max-width:96vw">
+    <div class="modal-header">
+      <div class="modal-title" id="cu-offer-modal-title">Create offer</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-customer-offer')">×</div>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cu-offer-edit-id" value="">
+      <div class="form-grid">
+        <div class="cu-offer-section-label">Preview</div>
+        <div class="cu-offer-preview-card" aria-hidden="true">
+          <div class="cu-offer-preview-icon" id="cu-offer-preview-icon">🎁</div>
+          <div class="cu-offer-preview-body">
+            <div class="cu-offer-preview-title" id="cu-offer-preview-title">Offer title</div>
+            <div class="cu-offer-preview-desc" id="cu-offer-preview-desc">Description shown to the customer</div>
+          </div>
+          <div class="cu-offer-preview-pill" id="cu-offer-preview-pill">—</div>
+        </div>
+
+        <div class="form-group span2"><label>Title <span class="label-req">*</span></label><input id="cu-offer-title" type="text" placeholder="e.g. 20% off all frames" autocomplete="off"></div>
+        <div class="form-group"><label>Icon</label><input id="cu-offer-emoji" type="text" maxlength="8" placeholder="🎁" autocomplete="off"></div>
+        <div class="form-group span2"><label>Description <span class="td-muted" style="font-weight:400">(shown to customer)</span></label><textarea id="cu-offer-desc" placeholder="All brands · Any store · Stackable with loyalty"></textarea></div>
+
+        <div class="cu-offer-section-label">Discount</div>
+        <div class="form-group"><label>Type</label>
+          <select id="cu-offer-type">
+            <option value="PCT">Percentage (%)</option>
+            <option value="FLAT">Flat (₹)</option>
+            <option value="FREEBIE">Freebie</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Value</label><input id="cu-offer-value" type="number" min="0" step="any" placeholder="20"></div>
+
+        <div class="cu-offer-section-label">Eligibility &amp; validity</div>
+        <div class="form-group"><label>Eligible tier</label>
+          <select id="cu-offer-tier">
+            <option value="">All tiers</option>
+            <option value="Silver">Silver+</option>
+            <option value="Gold">Gold+</option>
+            <option value="Platinum">Platinum only</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Sort order <span class="td-muted" style="font-weight:400">(lower = higher)</span></label><input id="cu-offer-sort" type="number" min="0" value="10"></div>
+        <div class="form-group"><label>Valid from <span class="label-req">*</span></label><input id="cu-offer-from" type="date"></div>
+        <div class="form-group"><label>Valid until <span class="label-req">*</span></label><input id="cu-offer-to" type="date">
+          <div class="form-hint">Required for Eyewoot Go and POS cart — offers outside this window are hidden.</div>
+        </div>
+
+        <div class="cu-offer-plus-block">
+          <label class="cu-offer-plus-row" for="cu-offer-plus-only">
+            <input id="cu-offer-plus-only" type="checkbox" class="cu-offer-plus-check">
+            <span>
+              <span class="cu-offer-plus-title">Plus members only</span>
+              <span class="form-hint" style="display:block;margin-top:4px">Hide this offer from non-subscribers.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="form-group" id="cu-offer-status-wrap" style="display:none">
+          <label>Status</label>
+          <select id="cu-offer-active"><option value="1">Active</option><option value="0">Inactive</option></select>
+        </div>
+      </div>
+      <div id="cu-offer-modal-error" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn primary" id="cu-offer-save-btn">Save offer</button>
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-customer-offer')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════ SCRIPTS ════════════ -->
 <script>
-function showPage(id, el) {
+function showPage(id, el, _opts) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
@@ -1444,6 +1550,7 @@ function showPage(id, el) {
     roles: 'Roles & Permissions', modules: 'Module Access Control',
     homebrands: 'Home Brand Management', locations: 'Location Type Config',
     settings: 'System Settings', 'pos-settings': 'POS Settings', membership: 'Membership Tiers',
+    promotion: 'Promotion · Customer Offers',
     leavetypes: 'Leave Types', 'foundry-settings': 'Foundry Settings', audit: 'Audit Logs',
     'cu-suppliers': 'Suppliers', 'cu-maker-master': 'Maker Master', 'cu-branding-agents': 'Branding Agents'
   };

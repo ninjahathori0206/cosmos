@@ -43,7 +43,7 @@ router.get('/', ...foundryMakersView, async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', ...foundryMakersView, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_MakerMaster_GetById', {
       maker_id: { type: sql.Int, value: Number(req.params.id) }

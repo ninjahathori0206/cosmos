@@ -394,4 +394,37 @@
       body.innerHTML = '<div style="color:var(--red,#dc2626);padding:16px">' + (err.message || 'Failed to load timeline.') + '</div>'
     }
   }
+
+  /** Mirrors server isRbacStrictEmptyPermissions — default true until bootstrap runs. */
+  window.cosmosRbacStrictEmptyPerms = function () {
+    if (typeof window.__COSMOS_RBAC_STRICT_EMPTY_PERMS === 'boolean') {
+      return window.__COSMOS_RBAC_STRICT_EMPTY_PERMS
+    }
+    try {
+      var s = sessionStorage.getItem('cosmos_rbac_strict_empty_perms')
+      if (s === '1') return true
+      if (s === '0') return false
+    } catch (_) {}
+    return true
+  }
+
+  window.cosmosLoadRbacBootstrap = async function () {
+    if (window.__COSMOS_RBAC_BOOTSTRAP_LOADED) return
+    try {
+      var res = await fetch('/config/bootstrap.json')
+      var j = await res.json()
+      var data = j && j.data ? j.data : {}
+      var strict = !!data.rbacStrictEmptyPermissions
+      window.__COSMOS_RBAC_STRICT_EMPTY_PERMS = strict
+      try {
+        sessionStorage.setItem('cosmos_rbac_strict_empty_perms', strict ? '1' : '0')
+      } catch (_) {}
+    } catch (_) {
+      window.__COSMOS_RBAC_STRICT_EMPTY_PERMS = true
+      try {
+        sessionStorage.setItem('cosmos_rbac_strict_empty_perms', '1')
+      } catch (_) {}
+    }
+    window.__COSMOS_RBAC_BOOTSTRAP_LOADED = true
+  }
 })()

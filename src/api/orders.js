@@ -2,7 +2,13 @@ const express = require('express')
 const Joi = require('joi')
 const sql = require('mssql')
 const { getPool, executeStoredProcedure } = require('../config/db')
-const { requireAnyModule, hasModuleAccess, hasPermission, isSuperAdmin } = require('../middleware/authorize')
+const {
+  requireAnyModule,
+  hasModuleAccess,
+  hasPermission,
+  isSuperAdmin,
+  isRbacStrictEmptyPermissions
+} = require('../middleware/authorize')
 const orderService = require('../services/orderService')
 
 const router = express.Router()
@@ -43,12 +49,60 @@ function normalizeLabStatusExcludes(input) {
 }
 
 function allowCrossStoreLab(req) {
+  if (hasModuleAccess(req, 'command_unit')) return true
+  if (!hasModuleAccess(req, 'foundry')) return false
+  if (isSuperAdmin(req)) return true
+  if (isRbacStrictEmptyPermissions()) {
+    return hasPermission(req, 'foundry.lab.view')
+  }
   const permsListed = Array.isArray(req.user && req.user.permissions) && req.user.permissions.length > 0
-  return (
-    hasModuleAccess(req, 'command_unit') ||
-    (hasModuleAccess(req, 'foundry') &&
-      (isSuperAdmin(req) || !permsListed || hasPermission(req, 'foundry.lab.view')))
-  )
+  return !permsListed || hasPermission(req, 'foundry.lab.view')
+}
+
+/** Normalised JWT permission strings (lowercase). */
+function jwtPermissionsLower(req) {
+  const p = req.user && req.user.permissions
+  if (!Array.isArray(p)) return []
+  return p.map((x) => String(x).toLowerCase())
+}
+
+/** Role has any storepilot.lab.* permission — switches StorePilot lab enforcement on (legacy = none). */
+function storepilotHasGranularLabPerms(req) {
+  return jwtPermissionsLower(req).some((x) => x.startsWith('storepilot.lab.'))
+}
+
+/**
+ * StorePilot lab queue listing (kind=LAB, store scope): legacy tokens stay unchanged.
+ * Once `storepilot.lab.*` is assigned to the role, require `storepilot.lab.view`.
+ */
+function gateStorepilotLabOrdersList(req, res, next) {
+  if (!hasModuleAccess(req, 'storepilot')) return next()
+  const kind = String(req.query.kind || '').toUpperCase()
+  if (kind !== 'LAB') return next()
+  const ps = jwtPermissionsLower(req)
+  if (isRbacStrictEmptyPermissions()) {
+    if (ps.includes('storepilot.lab.view')) return next()
+    return res.status(403).json({ success: false, message: 'Permission denied.' })
+  }
+  if (!storepilotHasGranularLabPerms(req)) return next()
+  if (ps.includes('storepilot.lab.view')) return next()
+  return res.status(403).json({ success: false, message: 'Permission denied.' })
+}
+
+/**
+ * Lab workflow updates / handover from StorePilot: legacy unchanged.
+ * With granular lab perms, require `storepilot.lab.manage`.
+ */
+function gateStorepilotLabMutations(req, res, next) {
+  if (!hasModuleAccess(req, 'storepilot')) return next()
+  const ps = jwtPermissionsLower(req)
+  if (isRbacStrictEmptyPermissions()) {
+    if (ps.includes('storepilot.lab.manage')) return next()
+    return res.status(403).json({ success: false, message: 'Permission denied.' })
+  }
+  if (!storepilotHasGranularLabPerms(req)) return next()
+  if (ps.includes('storepilot.lab.manage')) return next()
+  return res.status(403).json({ success: false, message: 'Permission denied.' })
 }
 
 function resolveActorRole(req, toStatus) {
@@ -71,7 +125,7 @@ function resolveActorRole(req, toStatus) {
   return String(req.user && req.user.role ? req.user.role : '')
 }
 
-router.get('/', requireAnyModule(['foundry', 'command_unit', 'storepilot']), async (req, res, next) => {
+router.get('/', requireAnyModule(['foundry', 'command_unit', 'storepilot']), gateStorepilotLabOrdersList, async (req, res, next) => {
   try {
     const { error, value } = listSchema.validate(req.query, { convert: true })
     if (error) {
@@ -157,7 +211,7 @@ router.post('/:id/lab-intake', requireAnyModule(['foundry', 'command_unit']), as
   }
 })
 
-router.post('/:id/lab-status', requireAnyModule(['foundry', 'command_unit', 'storepilot', 'pos']), async (req, res, next) => {
+router.post('/:id/lab-status', requireAnyModule(['foundry', 'command_unit', 'storepilot', 'pos']), gateStorepilotLabMutations, async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id, 10)
     if (!Number.isFinite(orderId)) {
@@ -289,7 +343,7 @@ const handoverSchema = Joi.object({
   return val
 })
 
-router.post('/:id/handover', requireAnyModule(['storepilot', 'pos']), async (req, res, next) => {
+router.post('/:id/handover', requireAnyModule(['storepilot', 'pos']), gateStorepilotLabMutations, async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id, 10)
     if (!orderId || orderId < 1) return res.status(400).json({ success: false, message: 'Invalid order id.' })

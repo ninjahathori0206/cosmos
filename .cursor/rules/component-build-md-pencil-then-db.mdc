@@ -1,0 +1,51 @@
+---
+description: New or changed UI components — document in .md, design in Pencil, get approval, then database and code
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Component builds — Markdown spec → Pencil → approve → database → code
+
+Applies when the work **creates or materially changes a user-facing component**: new screens, modals, panels, wizards, navigation blocks, or comparable layout/UX surfaces (including Store OS, Foundry, CX prototypes, and `src/public`).
+
+This rule **extends** **`ui-ux-pen-first-workflow.mdc`** with an explicit **Markdown specification** and a **hard ordering** for **database work**.
+
+---
+
+## Required order (unless the user waives explicitly)
+
+1. **Markdown UI specification**  
+   - Create or update a **`.md` file** that records the UI intent for this build (choose a stable path, e.g. **`docs/ui/<feature>.md`** — create `docs/ui/` if absent).  
+   - Include: purpose, user flow, main states (default / empty / loading / error if relevant), key copy, accessibility notes, and mapping to **Pencil frame names** (see **`pencil-pos-url-mapping.mdc`** for POS routes).  
+   - This file is the written contract alongside the visual source; keep it in sync when requirements change.
+
+2. **Pencil (`pencil-new.pen`)**  
+   - Implement structure, layout, and visuals **only** via **Pencil MCP**, per **`ui-ux-pen-first-workflow.mdc`** and **`pencil-mcp-no-notes.mdc`**.  
+   - Do **not** edit `.pen` with Read/Write/grep.
+
+3. **User approval**  
+   - After Pencil + `.md` reflect the design, **pause** until the user **approves** (review in Pencil and/or short sign-off on the `.md`).  
+   - **Do not** start production UI implementation or **database/schema** work in the same breath as the first design pass.
+
+4. **After approval — implementation**  
+   - **First:** HTML/CSS/JS (or prototypes) aligned with the **approved** Pencil frames and the `.md` spec. Follow **`ui-polish-rules.mdc`**.  
+   - **Then:** **Database migrations, schema changes, stored procedures, and API contracts** that exist **to support** the locked UI — not before UI approval, unless the user explicitly approves an exception.
+
+---
+
+## Exceptions (narrow)
+
+- **Hotfix / no new UI** (e.g. JS bug, typo in existing string, single-field validation): Pencil + `.md` optional; say why you skipped.  
+- **Pure backend** work with **zero** user-visible component change: normal migration/API practice; no Pencil required.  
+- User says **skip design** / **code only** / **DB first**: follow their instruction and note the waiver.
+
+---
+
+## Checklist before marking a component build “done”
+
+- [ ] `.md` UI spec updated for this component  
+- [ ] `.pen` updated via Pencil MCP (or documented exception)  
+- [ ] User approved design direction  
+- [ ] App/prototype code matches approval + **`ui-polish-rules.mdc`**  
+- [ ] Database/API changes, if any, **after** approval and aligned with UI contract  
+- [ ] `pencil-local` copy of `pencil-new.pen` synced if the repo uses it

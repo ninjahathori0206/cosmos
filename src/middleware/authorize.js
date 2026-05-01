@@ -24,6 +24,22 @@ function isSuperAdmin(req) {
   return normRole(req.user && req.user.role) === 'super_admin';
 }
 
+/**
+ * Default strict ON: missing scoped permission keys do NOT imply access (CX, StorePilot lab, Foundry cross-store lab, goods-transfer picker).
+ * Assign explicit rows in Command Unit; users re-login.
+ *
+ * Opt out (legacy implied-access semantics):
+ *   RBAC_LEGACY_EMPTY_PERMISSION_BYPASS=1  — restores old behaviour
+ *   RBAC_STRICT_EMPTY_PERMISSIONS=false — alias opt-out
+ */
+function isRbacStrictEmptyPermissions() {
+  const legacyBypass = String(process.env.RBAC_LEGACY_EMPTY_PERMISSION_BYPASS || '').toLowerCase();
+  if (legacyBypass === '1' || legacyBypass === 'true' || legacyBypass === 'yes') return false;
+  const strictEnv = String(process.env.RBAC_STRICT_EMPTY_PERMISSIONS || '').toLowerCase();
+  if (strictEnv === '0' || strictEnv === 'false' || strictEnv === 'no') return false;
+  return true;
+}
+
 /** Legacy tokens / empty module map = all modules allowed (matches pre-RBAC client behaviour). */
 function legacyModuleAllowAll(modules) {
   if (modules == null || typeof modules !== 'object') return true;
@@ -46,6 +62,13 @@ function getPermissions(req) {
   const p = req.user && req.user.permissions;
   if (!Array.isArray(p)) return [];
   return p.map((x) => String(x).toLowerCase());
+}
+
+/** True if JWT lists any permission with this prefix (e.g. "cx."). */
+function hasPermissionStartingWith(req, prefix) {
+  const pref = String(prefix || '').toLowerCase();
+  if (!pref) return false;
+  return getPermissions(req).some((p) => p.startsWith(pref));
 }
 
 function hasPermission(req, permissionKey) {
@@ -105,10 +128,26 @@ function requireAnyModule(moduleKeys) {
 }
 
 /**
+ * CX fine-grained permissions after module gate.
+ * Legacy bypass (RBAC_LEGACY_EMPTY_PERMISSION_BYPASS / RBAC_STRICT_EMPTY_PERMISSIONS=false): if JWT has no `cx.*` keys, allow full CX when module is on.
+ * Strict default: always require one of the listed keys (OR).
+ */
+function requireCxPermission(...permissionKeys) {
+  const keys = permissionKeys.flat().filter(Boolean).map((k) => String(k).toLowerCase());
+  return (req, res, next) => {
+    if (!keys.length) return next();
+    if (isSuperAdmin(req)) return next();
+    if (!isRbacStrictEmptyPermissions() && !hasPermissionStartingWith(req, 'cx.')) return next();
+    const have = getPermissions(req);
+    if (keys.some((k) => have.includes(k))) return next();
+    return res.status(403).json({ success: false, message: 'Permission denied.' });
+  };
+}
+
+/**
  * Goods Transfer destination picker — read-only store list.
- * super_admin: always. Others: Foundry or Command Unit module, then either
- * one of the usual permissions OR legacy JWT with empty permissions but Foundry access
- * (matches client nav when role_permissions are not fully seeded).
+ * Legacy bypass: Foundry module + empty JWT permissions bypass.
+ * Strict default: must match allow list explicitly.
  */
 function requireGoodsTransferDestinationStores(req, res, next) {
   if (isSuperAdmin(req)) return next();
@@ -124,7 +163,7 @@ function requireGoodsTransferDestinationStores(req, res, next) {
     'foundry.transfers.create',
     'command_unit.stores.view'
   ];
-  if (perms.length === 0 && hasF) return next();
+  if (!isRbacStrictEmptyPermissions() && perms.length === 0 && hasF) return next();
   if (allow.some((k) => perms.includes(k))) return next();
   return res.status(403).json({ success: false, message: 'Permission denied.' });
 }
@@ -135,9 +174,12 @@ module.exports = {
   isOneOfRoles,
   hasModuleAccess,
   hasPermission,
+  hasPermissionStartingWith,
+  isRbacStrictEmptyPermissions,
   requireModule,
   requirePermission,
   requireAllPermissions,
   requireAnyModule,
+  requireCxPermission,
   requireGoodsTransferDestinationStores
 };

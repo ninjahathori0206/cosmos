@@ -359,31 +359,34 @@
     </section>
     </div>
 
-    <aside class="pos-lk-cart-aside" aria-label="Offers and checkout">
+    <aside class="pos-lk-cart-aside" aria-label="Customer reference, offers and checkout">
+      <div class="pos-lk-side-card pos-lk-cart-customer-card" id="pos-lk-cart-customer-card">
+        <h3>Customer</h3>
+        <div id="pos-lk-cart-customer-body" class="pos-lk-cart-customer-body"></div>
+      </div>
       <div class="pos-lk-side-card">
-        <h3>Offers</h3>
-        <div id="pos-lk-offers-banner" class="pos-lk-offer-banner">
+        <h3>Active offers</h3>
+        <p class="pos-lk-offers-hint" id="pos-lk-offers-hint">Showing every active promo. Link a customer to see which offers apply to them. Same list on Payment.</p>
+        <div id="pos-lk-offers-list" class="pos-lk-offers-list" aria-live="polite"></div>
+        <div class="pos-lk-offer-banner pos-lk-cart-sale-banner">
           <div class="pos-lk-offer-row">
-            <span>🏷  On Sale item discount</span>
+            <span>Cart item discounts</span>
             <span id="pos-ob-discount-val">−₹0</span>
           </div>
         </div>
-        <button type="button" class="pos-lk-text-link" style="display:flex;justify-content:space-between;width:100%;align-items:center">
-          <span>View all coupons</span><span aria-hidden="true">›</span>
-        </button>
       </div>
       <div class="pos-lk-side-card" style="padding:0;overflow:hidden">
         <label class="pos-lk-radio-row" style="padding:14px;border-bottom:1px solid var(--lk-border)">
           <input type="radio" name="pos-lk-delivery" value="customer" tabindex="0">
           <span><strong>Deliver to customer</strong><br><span style="font-size:12px;color:var(--lk-text-muted)">Customer address on file</span></span>
         </label>
-        <label class="pos-lk-radio-row" style="padding:14px;background:#ECFDF5;border-bottom:none;flex-direction:column;align-items:flex-start;gap:6px">
+        <label class="pos-lk-radio-row pos-lk-radio-row-store" style="padding:14px;border-bottom:none;flex-direction:column;align-items:flex-start;gap:6px">
           <span style="display:flex;align-items:center;gap:10px">
             <input type="radio" name="pos-lk-delivery" value="store" checked tabindex="0">
             <strong>Deliver to Store</strong>
           </span>
           <span style="font-size:12px;color:var(--lk-text-muted);padding-left:28px" id="pos-lk-delivery-store-name">Pickup at this location</span>
-          <span style="display:inline-flex;background:#D1FAE5;color:#065F46;font-size:11px;font-weight:800;padding:4px 8px;border-radius:999px;margin-left:28px">Extra ₹100 OFF (Prepaid Only)</span>
+          <span class="pos-lk-delivery-pill">Extra ₹100 OFF (Prepaid Only)</span>
         </label>
       </div>
       <div class="pos-lk-side-card pos-lk-summary-card">
@@ -617,6 +620,11 @@
         <h3 style="font-size:14px">Order Summary</h3>
         <div id="pay-summary-lines" class="pos-lk-order-lines" aria-live="polite"></div>
       </div>
+      <div class="pos-lk-side-card pos-lk-pay-offers-card">
+        <h3 style="font-size:14px;margin-bottom:8px">Active promos</h3>
+        <p id="pos-lk-pay-offers-hint" class="pos-lk-offers-hint"></p>
+        <div id="pos-lk-pay-offers-list" class="pos-lk-offers-list pos-lk-pay-offers-list" aria-live="polite"></div>
+      </div>
       <div id="pos-lk-pay-savings" class="pos-lk-saving-banner" hidden>
         <span aria-hidden="true">🏆</span>
         <span id="pos-lk-pay-savings-text">You're saving ₹0 on this order</span>
@@ -821,6 +829,26 @@
     <span class="pos-sb-label">Logout</span>
   </button>
 </aside>
+
+<!-- Lens setup — “Customer not found” create modal (wired from pos.js) -->
+<div id="overlay-pos-lens-new-customer" class="pos-lens-newcust-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-lens-new-cust-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-lens-newcust-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-lens-new-cust-title" class="pos-lens-newcust-title">Customer not found</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-lens-new-cust-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <p id="pos-lens-new-cust-subtitle" class="pos-lens-newcust-sub"></p>
+    <label class="pos-field-label" for="pos-lens-new-cust-name">Full name</label>
+    <input id="pos-lens-new-cust-name" class="pos-search-input" type="text" autocomplete="name" style="width:100%;box-sizing:border-box;margin-bottom:10px" aria-required="true">
+    <label class="pos-field-label" for="pos-lens-new-cust-phone">Phone</label>
+    <input id="pos-lens-new-cust-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" style="width:100%;box-sizing:border-box;margin-bottom:16px" aria-required="true">
+    <div class="pos-lens-newcust-actions">
+      <button type="button" id="btn-pos-lens-new-cust-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
+      <button type="button" id="btn-pos-lens-new-cust-submit" class="pos-next-btn pos-lens-newcust-btn-submit">Create and link customer</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>

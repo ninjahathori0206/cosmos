@@ -800,6 +800,188 @@ body.pos-lk-flow .pos-ob-proceed-btn {
   font-weight: 700;
 }
 
+/* Cart sidebar — CX customer reference + loaded offers */
+.pos-lk-cart-customer-card h3 {
+  margin-bottom: 10px;
+}
+
+.pos-lk-cart-customer-body {
+  font-size: 13px;
+  color: var(--lk-text);
+  line-height: 1.45;
+}
+
+.pos-lk-cart-cust-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--lk-text);
+  margin-bottom: 4px;
+}
+
+.pos-lk-cart-cust-row {
+  font-size: 13px;
+  color: var(--lk-text-muted);
+  margin-bottom: 6px;
+}
+
+.pos-lk-cart-cust-meta {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lk-text-muted);
+  margin-top: 8px;
+}
+
+.pos-lk-cart-cust-walkin-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--lk-text-muted);
+  margin-bottom: 6px;
+}
+
+.pos-lk-cart-cust-walkin-sub {
+  font-size: 12px;
+  color: var(--lk-text-muted);
+  line-height: 1.4;
+}
+
+.pos-lk-offers-hint {
+  margin: 0 0 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--lk-text-muted);
+}
+
+.pos-lk-offers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  padding-right: 2px;
+}
+
+.pos-lk-pay-offers-list {
+  max-height: 240px;
+  margin-bottom: 0;
+}
+
+.pos-lk-pay-offers-card {
+  margin-bottom: 10px;
+}
+
+.pos-lk-cart-sale-banner {
+  margin-bottom: 0;
+}
+
+.pos-lk-offer-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--lk-border);
+  background: var(--lk-page-bg);
+}
+
+.pos-lk-offer-ico {
+  font-size: 22px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.pos-lk-offer-item-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.pos-lk-offer-item-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--lk-text);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.pos-lk-offer-item-desc {
+  font-size: 12px;
+  color: var(--lk-text-muted);
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+.pos-lk-offer-item-disc {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--lk-green);
+  margin-top: 6px;
+}
+
+.pos-lk-offer-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--lk-golden-bg);
+  color: var(--lk-golden);
+}
+
+.pos-lk-offer-tier {
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--lk-light-blue);
+  color: var(--lk-blue);
+}
+
+.pos-lk-offers-empty {
+  padding: 14px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--lk-border);
+  background: var(--lk-page-bg);
+  margin-bottom: 12px;
+}
+
+.pos-lk-offers-empty-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--lk-text);
+  margin-bottom: 4px;
+}
+
+.pos-lk-offers-empty-sub {
+  font-size: 12px;
+  color: var(--lk-text-muted);
+  line-height: 1.35;
+}
+
+.pos-lk-radio-row-store {
+  background: var(--lk-green-soft);
+}
+
+.pos-lk-delivery-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-left: 28px;
+  margin-top: 2px;
+  background: var(--lk-mint-bg);
+  color: var(--lk-green);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
 .pos-lk-radio-row {
   display: flex;
   align-items: flex-start;
@@ -2643,4 +2825,111 @@ body.pos-target-tablet-landscape.pos-lk-flow .pos-lk-page {
   body.pos-target-tablet-landscape.pos-lk-flow .pos-lens-shell {
     max-width: min(960px, 96vw);
   }
+}
+
+/* ═════════ Lens flow — create customer modal (no customers found) ═════════ */
+.pos-lens-newcust-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+}
+
+.pos-lens-newcust-overlay.open {
+  display: block;
+}
+
+.pos-lens-newcust-overlay.open .pos-lens-newcust-sheet {
+  animation: cosmosModalIn 0.2s cubic-bezier(0.34, 1.2, 0.64, 1) both;
+}
+
+.pos-lens-newcust-overlay.open .pos-lens-newcust-backdrop {
+  animation: cosmosOverlayIn 0.15s ease-out both;
+}
+
+.pos-lens-newcust-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 30, 53, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.pos-lens-newcust-sheet {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  width: 92%;
+  max-width: 440px;
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--lk-card, var(--card, #fff));
+  border: 1px solid var(--lk-border, var(--border, #e2e8f0));
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+}
+
+.pos-lens-newcust-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.pos-lens-newcust-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--lk-text, var(--text1, #0f172a));
+}
+
+.pos-lens-newcust-dismiss {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--lk-text-muted, var(--text2, #64748b));
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 6px;
+}
+
+.pos-lens-newcust-dismiss:hover {
+  background: var(--glass-hover, #f1f5f9);
+  color: var(--lk-text, var(--text1, #0f172a));
+}
+
+.pos-lens-newcust-sub {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--lk-text-muted, var(--text2, #64748b));
+  line-height: 1.45;
+}
+
+.pos-lens-newcust-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.pos-lens-newcust-btn-cancel {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--lk-border, var(--border, #e2e8f0));
+  background: var(--lk-page-bg, var(--bg, #f4f7f9));
+  color: var(--lk-text, var(--text1, #0f172a));
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.pos-lens-newcust-btn-submit {
+  flex: 1 1 180px;
+  margin: 0;
 }

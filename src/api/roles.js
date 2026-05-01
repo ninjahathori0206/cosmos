@@ -4,6 +4,7 @@ const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
 const { withCache, clearCacheByPrefix } = require('../cache/ttlCache');
 const { requireModule, requirePermission } = require('../middleware/authorize');
+const { getCataloguePermissionKeysSet } = require('../config/permissionsCatalogue');
 
 const router = express.Router();
 
@@ -127,18 +128,26 @@ router.put(
         return res.status(400).json({ success: false, message: 'permissions must be an array of strings.' });
       }
 
+      const allowed = getCataloguePermissionKeysSet();
+      const normalized = permissions.map((p) => String(p || '').trim().toLowerCase()).filter(Boolean);
+      const unknown = normalized.filter((p) => !allowed.has(p));
+      if (unknown.length) {
+        return res.status(400).json({
+          success: false,
+          message: `Unknown permission keys (not in catalogue): ${unknown.join(', ')}`
+        });
+      }
+
       // Clear existing permissions then insert each new one
       await executeStoredProcedure('sp_Role_ClearPermissions', {
         role_key: { type: sql.VarChar(50), value: roleKey }
       });
 
-      for (const perm of permissions) {
-        if (typeof perm === 'string' && perm.trim()) {
-          await executeStoredProcedure('sp_Role_AddPermission', {
-            role_key:   { type: sql.VarChar(50),  value: roleKey },
-            permission: { type: sql.VarChar(200), value: perm.trim() }
-          });
-        }
+      for (const perm of normalized) {
+        await executeStoredProcedure('sp_Role_AddPermission', {
+          role_key:   { type: sql.VarChar(50),  value: roleKey },
+          permission: { type: sql.VarChar(200), value: perm }
+        });
       }
 
       const result = await executeStoredProcedure('sp_Role_GetPermissions', {

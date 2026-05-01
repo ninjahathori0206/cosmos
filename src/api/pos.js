@@ -11,6 +11,17 @@ const orderService = require('../services/orderService')
 
 const router = express.Router()
 
+/** POS tablet JWT — same requirePermission as staff login pipeline (role_permissions → JWT.permissions). */
+const posCatalogue = [authJwt, requireModule('pos'), requirePermission('pos.catalogue.view')]
+const posPromotions = [authJwt, requireModule('pos'), requirePermission('pos.promotions.view')]
+const posCustomersView = [authJwt, requireModule('pos'), requirePermission('pos.customers.view')]
+const posCustomersCreate = [authJwt, requireModule('pos'), requirePermission('pos.customers.create')]
+const posOrdersView = [authJwt, requireModule('pos'), requirePermission('pos.orders.view')]
+const posOrdersCreate = [authJwt, requireModule('pos'), requirePermission('pos.orders.create')]
+const posPaymentCollect = [authJwt, requireModule('pos'), requirePermission('pos.payment.collect')]
+const posLabWorkflow = [authJwt, requireModule('pos'), requirePermission('pos.lab.workflow')]
+const posStaffPinSet = [authJwt, requireModule('pos'), requirePermission('pos.staff.pin.set')]
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function groupCatalogueRows(rows) {
@@ -124,9 +135,11 @@ const customerCreateSchema = Joi.object({
 })
 
 const createOrderSchema = Joi.object({
-  customer_id:  Joi.number().integer().positive().allow(null),
-  order_source: Joi.string().max(20).default('POS'),
-  rx_snapshot:  Joi.object().allow(null),
+  customer_id:      Joi.number().integer().positive().allow(null),
+  order_source:     Joi.string().max(20).default('POS'),
+  rx_snapshot:      Joi.object().allow(null),
+  discount_amount:  Joi.number().min(0).default(0),
+  applied_offer_id: Joi.number().integer().positive().allow(null),
   lines: Joi.array().items(
     Joi.object({
       sku_id:       Joi.number().integer().positive().required(),
@@ -343,7 +356,7 @@ router.get('/stores', async (req, res, next) => {
 //   scope  = "store" (default) | "global"
 //   q      = optional free-text search string
 //   brand  = optional exact display brand (from GET /api/pos/catalogue-brands)
-router.get('/catalogue', authJwt, requireModule('pos'), async (req, res, next) => {
+router.get('/catalogue', ...posCatalogue, async (req, res, next) => {
   try {
     const scope    = (req.query.scope || 'store').toLowerCase()
     const q        = (req.query.q || '').trim() || null
@@ -369,7 +382,7 @@ router.get('/catalogue', authJwt, requireModule('pos'), async (req, res, next) =
 
 // ── GET /api/pos/catalogue-brands ─────────────────────────────────────────────
 // Distinct brand names for filter dropdown (scope store | global).
-router.get('/catalogue-brands', authJwt, requireModule('pos'), async (req, res, next) => {
+router.get('/catalogue-brands', ...posCatalogue, async (req, res, next) => {
   try {
     const scope    = (req.query.scope || 'store').toLowerCase() === 'global' ? 'global' : 'store'
     const store_id = req.user.store_id
@@ -387,7 +400,7 @@ router.get('/catalogue-brands', authJwt, requireModule('pos'), async (req, res, 
 })
 
 // ── GET /api/pos/startup-config ──────────────────────────────────────────────
-router.get('/startup-config', authJwt, requireModule('pos'), async (req, res, next) => {
+router.get('/startup-config', ...posCatalogue, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_POS_GetStartupConfig', {})
     const data = mapStartupConfig(result)
@@ -398,7 +411,7 @@ router.get('/startup-config', authJwt, requireModule('pos'), async (req, res, ne
 })
 
 // ── GET /api/pos/lens-catalog ─────────────────────────────────────────────────
-router.get('/lens-catalog', authJwt, requireModule('pos'), async (req, res, next) => {
+router.get('/lens-catalog', ...posCatalogue, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_POS_GetLensCatalog', {})
     const data = buildLensCatalogPayload(result)
@@ -409,7 +422,7 @@ router.get('/lens-catalog', authJwt, requireModule('pos'), async (req, res, next
 })
 
 // ── GET /api/pos/settings ─────────────────────────────────────────────────────
-router.get('/settings', authJwt, requireModule('pos'), async (req, res, next) => {
+router.get('/settings', ...posCatalogue, async (req, res, next) => {
   try {
     const pool = await getPool()
     const q = await pool.request().query(`
@@ -441,8 +454,81 @@ router.get('/settings', authJwt, requireModule('pos'), async (req, res, next) =>
   }
 })
 
+// ── GET /api/pos/cart-offers — active Eyewoot Go offers for POS cart sidebar ───
+// Optional ?customer_id= — when set, applies same Plus / tier filters as the customer app.
+router.get('/cart-offers', ...posPromotions, async (req, res, next) => {
+  try {
+    const pool = await getPool()
+    const rawId = req.query.customer_id
+    const customerId = rawId != null && String(rawId).trim() !== ''
+      ? parseInt(String(rawId), 10)
+      : null
+
+    const nowIST = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T')
+
+    const r = await pool.request().input('now', nowIST).query(`
+      SELECT offer_id, title, description, icon_emoji, discount_type,
+             discount_value, valid_from, valid_to, eligible_tier,
+             is_plus_only, sort_order
+      FROM   dbo.customer_offers
+      WHERE  is_active = 1
+        AND  valid_from <= @now
+        AND  valid_to   >= @now
+      ORDER BY is_plus_only DESC, sort_order ASC, offer_id DESC
+    `)
+
+    let rows = r.recordset || []
+
+    if (customerId && !Number.isNaN(customerId)) {
+      const [balR, memR] = await Promise.all([
+        pool.request().input('cid', customerId).query(`
+          SELECT TOP 1 balance_after AS balance FROM dbo.pos_points_ledger
+          WHERE customer_id = @cid ORDER BY ledger_id DESC
+        `),
+        pool.request().input('cid', customerId).query(`
+          SELECT TOP 1 plan_key FROM dbo.customer_memberships
+          WHERE customer_id = @cid AND is_active = 1
+            AND expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
+          ORDER BY expires_at DESC
+        `)
+      ])
+      const balance = (balR.recordset[0] && balR.recordset[0].balance) || 0
+      const hasPlus = memR.recordset.length > 0
+      const tierR = await pool.request().input('pts', balance).query(`
+        SELECT TOP 1 tier_name FROM dbo.loyalty_tiers
+        WHERE min_points <= @pts AND (max_points = -1 OR max_points >= @pts)
+        ORDER BY display_order DESC
+      `)
+      const tierName = (tierR.recordset[0] && tierR.recordset[0].tier_name) || 'Silver'
+      const tierOrder = ['Silver', 'Gold', 'Platinum']
+      const tierIdx = tierOrder.indexOf(tierName)
+
+      rows = rows.filter((o) => {
+        if (o.is_plus_only && !hasPlus) return false
+        if (o.eligible_tier) {
+          const reqIdx = tierOrder.indexOf(o.eligible_tier)
+          if (reqIdx > tierIdx) return false
+        }
+        return true
+      })
+    }
+
+    const normalized = rows.map((row) => ({
+      ...row,
+      offer_id: row.offer_id != null ? Number(row.offer_id) : null,
+      discount_value: row.discount_value != null ? Number(row.discount_value) : 0,
+      sort_order: row.sort_order != null ? Number(row.sort_order) : 0,
+      is_plus_only: Boolean(row.is_plus_only)
+    }))
+
+    return res.json({ success: true, data: normalized })
+  } catch (err) {
+    return next(err)
+  }
+})
+
 // ── GET /api/pos/customer-search ──────────────────────────────────────────────
-router.get('/customer-search', authJwt, requireModule('pos'), async (req, res, next) => {
+router.get('/customer-search', ...posCustomersView, async (req, res, next) => {
   try {
     const q = (req.query.q || '').trim() || null
     const result = await executeStoredProcedure('sp_POS_CustomerSearch', {
@@ -455,7 +541,7 @@ router.get('/customer-search', authJwt, requireModule('pos'), async (req, res, n
 })
 
 // ── POST /api/pos/customer ────────────────────────────────────────────────────
-router.post('/customer', authJwt, requireModule('pos'), async (req, res, next) => {
+router.post('/customer', ...posCustomersCreate, async (req, res, next) => {
   try {
     const { error, value } = customerCreateSchema.validate(req.body)
     if (error) {
@@ -496,7 +582,7 @@ router.get('/all-orders', authJwt, requireModule('foundry'), requirePermission('
 })
 
 // ── GET /api/pos/orders ────────────────────────────────────────────────────────
-router.get('/orders', authJwt, requireModule('pos'), async (req, res, next) => {
+router.get('/orders', ...posOrdersView, async (req, res, next) => {
   try {
     const storeId = req.user.store_id
     if (!storeId) {
@@ -527,7 +613,7 @@ router.get('/orders', authJwt, requireModule('pos'), async (req, res, next) => {
 })
 
 // ── GET /api/pos/orders/:id ──────────────────────────────────────────────────
-router.get('/orders/:id', authJwt, requireModule('pos'), async (req, res, next) => {
+router.get('/orders/:id', ...posOrdersView, async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id, 10)
     if (!Number.isFinite(orderId)) {
@@ -560,7 +646,7 @@ router.get('/orders/:id', authJwt, requireModule('pos'), async (req, res, next) 
 })
 
 // ── POST /api/pos/orders ──────────────────────────────────────────────────────
-router.post('/orders', authJwt, requireModule('pos'), async (req, res, next) => {
+router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
   const storeId = req.user.store_id
   const employeeId = req.user.employee_id
   if (!storeId) {
@@ -598,7 +684,9 @@ router.post('/orders', authJwt, requireModule('pos'), async (req, res, next) => 
         gstRate,
         advPct,
         procurementMode,
-        cfg
+        cfg,
+        discountAmount: value.discount_amount || 0,
+        appliedOfferId: value.applied_offer_id || null
       })
 
       await transaction.commit()
@@ -610,6 +698,7 @@ router.post('/orders', authJwt, requireModule('pos'), async (req, res, next) => 
           order_no: out.order_no,
           order_kind: out.order_kind,
           subtotal_amount: out.subtotal_amount,
+          discount_amount: out.discount_amount,
           gst_amount: out.gst_amount,
           total_amount: out.total_amount,
           sub_orders: out.sub_orders,
@@ -664,7 +753,7 @@ router.post('/payment', authJwt, requireModule('pos'), async (req, res, next) =>
 })
 
 // ── POST /api/pos/orders/:id/status ───────────────────────────────────────────
-router.post('/orders/:id/status', authJwt, requireModule('pos'), async (req, res, next) => {
+router.post('/orders/:id/status', ...posLabWorkflow, async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id, 10)
     if (!Number.isFinite(orderId)) {
@@ -703,7 +792,7 @@ router.post('/orders/:id/status', authJwt, requireModule('pos'), async (req, res
 
 // ── POST /api/pos/staff/set-pin ───────────────────────────────────────────────
 // Protected (authJwt + super_admin or store_in_charge). Sets a staff member's POS PIN.
-router.post('/staff/set-pin', authJwt, requireModule('pos'), async (req, res, next) => {
+router.post('/staff/set-pin', ...posStaffPinSet, async (req, res, next) => {
   try {
     const { error, value } = setPinSchema.validate(req.body)
     if (error) {

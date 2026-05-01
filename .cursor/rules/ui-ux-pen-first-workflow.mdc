@@ -8,10 +8,13 @@ alwaysApply: true
 
 When the **user’s request is about UI, UX, layout, visuals, components, spacing, tablet/mobile behaviour, or screen structure** for Cosmos (prototypes or `src/public`), follow this order **unless** they explicitly waive it (e.g. “skip Pencil, code only” or “hotfix, no design”).
 
+**Component-level builds** (new or materially new UI surfaces): also follow **`component-build-md-pencil-then-db.mdc`** — companion **`.md` UI spec**, Pencil, **approval**, then app code and **only then** database/schema changes.
+
 ---
 
 ## 1. Update the design source (`.pen`)
 
+- For non-trivial components, add or update a **Markdown UI spec** (e.g. `docs/ui/<feature>.md`) as described in **`component-build-md-pencil-then-db.mdc`**.
 - Primary Store OS / POS design file: **`pencil-new.pen`** at repo root (and keep **`src/public/design/pencil-local/pencil-new.pen`** in sync when you finish, if that copy exists).
 - **Only** modify `.pen` files through the **Pencil MCP** (`batch_get`, `batch_design`, etc.) — do **not** edit `.pen` with Read/Write/grep.
 - Follow **`.cursor/rules/pencil-mcp-no-notes.mdc`** — **never** add **`type: "note"`** documentation boxes on screens unless the user explicitly requests a note.
