@@ -10,6 +10,60 @@ function roundMoney(n) {
 }
 
 /**
+ * POS totals: catalogue lines are summed as `subtotal`. Order-level discount (offers)
+ * reduces that amount first. Composition → no GST. GST-inclusive catalogue → GST
+ * backs out from (subtotal − discount). Otherwise exclusive GST on taxable.
+ */
+function computePosOrderTaxTotals({
+  subtotal,
+  discountAmount,
+  gstRate,
+  compositionScheme,
+  pricesGstInclusive
+}) {
+  const rawSub = roundMoney(Number(subtotal) || 0)
+  const r = Math.max(0, Number(gstRate) || 0)
+  const discAmt = Math.max(
+    0,
+    Math.min(roundMoney(Number(discountAmount) || 0), rawSub)
+  )
+  const netAfterDisc = roundMoney(rawSub - discAmt)
+
+  if (compositionScheme) {
+    return {
+      discAmt,
+      gstAmount: 0,
+      totalAmount: netAfterDisc,
+      snapshotRate: 0
+    }
+  }
+
+  if (pricesGstInclusive) {
+    const denom = 1 + r
+    const taxableBase = denom <= 0
+      ? netAfterDisc
+      : roundMoney(netAfterDisc / denom)
+    const gstAmount = roundMoney(netAfterDisc - taxableBase)
+    return {
+      discAmt,
+      gstAmount,
+      totalAmount: netAfterDisc,
+      snapshotRate: r
+    }
+  }
+
+  const taxable = netAfterDisc
+  const gstAmount = roundMoney(taxable * r)
+  const totalAmount = roundMoney(taxable + gstAmount)
+  return {
+    discAmt,
+    gstAmount,
+    totalAmount,
+    snapshotRate: r
+  }
+}
+
+/**
  * @param {import('mssql').ConnectionPool} pool
  * @returns {Promise<'legacy'|'shared'>}
  */
@@ -293,6 +347,7 @@ function mapOrderRowForApi(order) {
     lab_advance_pct_snapshot: order.lab_advance_pct_snapshot != null ? Number(order.lab_advance_pct_snapshot) : null,
     procurement_mode_snapshot: order.procurement_mode_snapshot,
     subtotal_amount: Number(order.subtotal_amount),
+    discount_amount: order.discount_amount != null ? Number(order.discount_amount) : 0,
     gst_amount: Number(order.gst_amount),
     total_amount: Number(order.total_amount),
     created_at: order.created_at
@@ -309,6 +364,8 @@ async function createOrderInTransaction(transaction, {
   storeId,
   employeeId,
   gstRate,
+  compositionScheme = false,
+  pricesGstInclusive = false,
   advPct,
   procurementMode,
   cfg,
@@ -335,10 +392,18 @@ async function createOrderInTransaction(transaction, {
     }
     subtotal += lineUnit * line.qty
   }
-  const discAmt = Math.max(0, Math.min(roundMoney(Number(discountAmount) || 0), subtotal))
-  const taxable = roundMoney(subtotal - discAmt)
-  const gstAmount = roundMoney(taxable * gstRate)
-  const totalAmount = roundMoney(taxable + gstAmount)
+  subtotal = roundMoney(subtotal)
+  const taxOut = computePosOrderTaxTotals({
+    subtotal,
+    discountAmount,
+    gstRate,
+    compositionScheme,
+    pricesGstInclusive
+  })
+  const discAmt = taxOut.discAmt
+  const gstAmount = taxOut.gstAmount
+  const totalAmount = taxOut.totalAmount
+  const gstRateStored = taxOut.snapshotRate
 
   const rSeq = new sql.Request(transaction)
   rSeq.input('k', sql.VarChar(100), ORDER_SEQ_KEY)
@@ -367,7 +432,7 @@ async function createOrderInTransaction(transaction, {
   rIns.input('order_source', sql.NVarChar(20), value.order_source || 'POS')
   rIns.input('order_kind', sql.NVarChar(20), orderKind)
   rIns.input('rx_snapshot', sql.NVarChar(sql.MAX), value.rx_snapshot ? JSON.stringify(value.rx_snapshot) : null)
-  rIns.input('gst_rate_snapshot', sql.Decimal(9, 4), gstRate)
+  rIns.input('gst_rate_snapshot', sql.Decimal(9, 4), gstRateStored)
   rIns.input('lab_advance_pct_snapshot', sql.Decimal(9, 2), advPct)
   rIns.input('procurement_mode_snapshot', sql.NVarChar(50), procurementMode)
   rIns.input('subtotal_amount', sql.Decimal(12, 2), subtotal)
@@ -650,7 +715,11 @@ async function autoCompleteLabSettlement(pool, mode, bundle, employeeId) {
     await pool.request()
       .input('oid', sql.Int, order.order_id)
       .input('invoice_no', sql.NVarChar(50), invoiceNo)
-      .input('taxable_amount', sql.Decimal(12, 2), Number(order.subtotal_amount) || 0)
+      .input(
+        'taxable_amount',
+        sql.Decimal(12, 2),
+        roundMoney(Number(order.total_amount) - Number(order.gst_amount || 0))
+      )
       .input('gst_amount', sql.Decimal(12, 2), Number(order.gst_amount) || 0)
       .input('total_amount', sql.Decimal(12, 2), Number(order.total_amount) || 0)
       .query(`

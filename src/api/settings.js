@@ -3,6 +3,12 @@ const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure, getPool } = require('../config/db');
 const { requireModule, requirePermission } = require('../middleware/authorize');
+const { SCOPE_DIMENSIONS, ALLOWED_SCOPE_KINDS } = require('../config/offerScopeDimensions');
+const {
+  validateScopeRefs,
+  replaceOfferScopes,
+  loadScopesGrouped
+} = require('../services/customerOfferDiscountService');
 
 const router = express.Router();
 
@@ -17,9 +23,44 @@ const promotionsManage = [
   requireModule('command_unit'),
   requirePermission('command_unit.promotions.manage', 'command_unit.settings.edit')
 ];
-const posSettingsSchema = Joi.object({
-  lab_advance_pct: Joi.number().min(0).max(100).required()
-});
+const posSettingsPutSchema = Joi.object({
+  lab_advance_pct: Joi.number().min(0).max(100),
+  gst_rate_pct: Joi.number().min(0).max(100),
+  composition_scheme: Joi.boolean(),
+  prices_gst_inclusive: Joi.boolean()
+}).min(1);
+
+async function upsertAppSetting(pool, {
+  settingKey,
+  settingValue,
+  settingGroup,
+  description
+}) {
+  await pool.request()
+    .input('setting_key', sql.NVarChar(100), settingKey)
+    .input('setting_value', sql.NVarChar(400), settingValue)
+    .input('setting_group', sql.NVarChar(50), settingGroup)
+    .input('description', sql.NVarChar(500), description)
+    .query(`
+        MERGE dbo.app_settings AS tgt
+        USING (SELECT @setting_key AS setting_key) AS src
+        ON tgt.setting_key = src.setting_key
+        WHEN MATCHED THEN
+          UPDATE SET
+            setting_value = @setting_value,
+            setting_group = @setting_group,
+            description = @description,
+            updated_at = DATEADD(MINUTE,330,SYSUTCDATETIME())
+        WHEN NOT MATCHED THEN
+          INSERT (setting_key, setting_value, setting_group, description)
+          VALUES (@setting_key, @setting_value, @setting_group, @description);
+    `);
+}
+
+function truthyPosSetting(val) {
+  const s = String(val ?? '').trim().toLowerCase();
+  return s === '1' || s === 'true' || s === 'yes';
+}
 
 // ─── POS SETTINGS ────────────────────────────────────────────────────────────
 router.get('/pos', ...settingsView, async (req, res, next) => {
@@ -28,7 +69,12 @@ router.get('/pos', ...settingsView, async (req, res, next) => {
     const rows = await pool.request().query(`
       SELECT setting_key, setting_value
       FROM dbo.app_settings
-      WHERE setting_key = N'lab_advance_pct'
+      WHERE setting_key IN (
+        N'lab_advance_pct',
+        N'pos_gst_rate',
+        N'pos_composition_scheme',
+        N'pos_prices_gst_inclusive'
+      )
     `);
 
     const map = {};
@@ -36,10 +82,14 @@ router.get('/pos', ...settingsView, async (req, res, next) => {
       map[row.setting_key] = row.setting_value;
     }
 
+    const gstDecimal = Number(map.pos_gst_rate || 0.05);
     return res.json({
       success: true,
       data: {
-        lab_advance_pct: Number(map.lab_advance_pct || 40)
+        lab_advance_pct: Number(map.lab_advance_pct || 40),
+        gst_rate_pct: Math.round(gstDecimal * 10000) / 100,
+        composition_scheme: truthyPosSetting(map.pos_composition_scheme),
+        prices_gst_inclusive: truthyPosSetting(map.pos_prices_gst_inclusive)
       }
     });
   } catch (err) { return next(err); }
@@ -47,7 +97,7 @@ router.get('/pos', ...settingsView, async (req, res, next) => {
 
 router.put('/pos', ...settingsManage, async (req, res, next) => {
   try {
-    const { error, value } = posSettingsSchema.validate(req.body);
+    const { error, value } = posSettingsPutSchema.validate(req.body);
     if (error) {
       return res.status(400).json({
         success: false,
@@ -57,29 +107,64 @@ router.put('/pos', ...settingsManage, async (req, res, next) => {
     }
 
     const pool = await getPool();
-    await pool.request()
-      .input('setting_key', sql.NVarChar(100), 'lab_advance_pct')
-      .input('setting_value', sql.NVarChar(400), String(value.lab_advance_pct))
-      .input('setting_group', sql.NVarChar(50), 'pos')
-      .input('description', sql.NVarChar(500), 'Lab order advance percent (0–100).')
-      .query(`
-        MERGE dbo.app_settings AS tgt
-        USING (SELECT @setting_key AS setting_key) AS src
-        ON tgt.setting_key = src.setting_key
-        WHEN MATCHED THEN
-          UPDATE SET
-            setting_value = @setting_value,
-            setting_group = @setting_group,
-            description = @description,
-            updated_at = SYSDATETIME()
-        WHEN NOT MATCHED THEN
-          INSERT (setting_key, setting_value, setting_group, description)
-          VALUES (@setting_key, @setting_value, @setting_group, @description);
-      `);
+    if (value.lab_advance_pct != null) {
+      await upsertAppSetting(pool, {
+        settingKey: 'lab_advance_pct',
+        settingValue: String(value.lab_advance_pct),
+        settingGroup: 'pos',
+        description: 'Lab order advance percent (0–100).'
+      });
+    }
+    if (value.gst_rate_pct != null) {
+      const dec = Math.round((Number(value.gst_rate_pct) / 100) * 10000) / 10000;
+      await upsertAppSetting(pool, {
+        settingKey: 'pos_gst_rate',
+        settingValue: String(dec),
+        settingGroup: 'pos',
+        description: 'POS bill GST rate as decimal (e.g. 0.05 for 5%).'
+      });
+    }
+    if (value.composition_scheme != null) {
+      await upsertAppSetting(pool, {
+        settingKey: 'pos_composition_scheme',
+        settingValue: value.composition_scheme ? '1' : '0',
+        settingGroup: 'pos',
+        description: 'Composition: no GST on POS bill.'
+      });
+    }
+    if (value.prices_gst_inclusive != null) {
+      await upsertAppSetting(pool, {
+        settingKey: 'pos_prices_gst_inclusive',
+        settingValue: value.prices_gst_inclusive ? '1' : '0',
+        settingGroup: 'pos',
+        description: 'Catalogue prices include GST; offers apply on that base.'
+      });
+    }
+
+    const rows = await pool.request().query(`
+      SELECT setting_key, setting_value
+      FROM dbo.app_settings
+      WHERE setting_key IN (
+        N'lab_advance_pct',
+        N'pos_gst_rate',
+        N'pos_composition_scheme',
+        N'pos_prices_gst_inclusive'
+      )
+    `);
+    const map = {};
+    for (const row of (rows.recordset || [])) {
+      map[row.setting_key] = row.setting_value;
+    }
+    const gstDecimal = Number(map.pos_gst_rate || 0.05);
 
     return res.json({
       success: true,
-      data: { lab_advance_pct: value.lab_advance_pct }
+      data: {
+        lab_advance_pct: Number(map.lab_advance_pct || 40),
+        gst_rate_pct: Math.round(gstDecimal * 10000) / 100,
+        composition_scheme: truthyPosSetting(map.pos_composition_scheme),
+        prices_gst_inclusive: truthyPosSetting(map.pos_prices_gst_inclusive)
+      }
     });
   } catch (err) { return next(err); }
 });
@@ -302,31 +387,41 @@ router.delete('/leave-types/:id', ...settingsManage, async (req, res, next) => {
 
 // ─── PROMOTION: CUSTOMER OFFERS (Eyewoot Go) ────────────────────────────────────
 
+const OFFER_DISCOUNT_TYPES = ['PCT', 'FLAT', 'FREEBIE', 'BOGO_LOWEST_FREE', 'BUY_FRAME_GET_LENS_FREE', 'BUY_LENS_GET_FRAME_FREE'];
+
+const scopeItemSchema = Joi.object({
+  kind: Joi.string().valid(...ALLOWED_SCOPE_KINDS).required(),
+  ref_int: Joi.number().integer().positive().allow(null),
+  ref_key: Joi.string().max(60).allow(null, '')
+}).or('ref_int', 'ref_key');
+
 const customerOfferCreateSchema = Joi.object({
   title: Joi.string().max(200).required(),
   description: Joi.string().max(500).allow('', null),
   icon_emoji: Joi.string().max(10).allow('', null),
-  discount_type: Joi.string().valid('PCT', 'FLAT', 'FREEBIE').default('PCT'),
+  discount_type: Joi.string().valid(...OFFER_DISCOUNT_TYPES).default('PCT'),
   discount_value: Joi.number().min(0).default(0),
   valid_from: Joi.any().optional(),
   valid_to: Joi.any().required(),
   eligible_tier: Joi.string().max(50).allow(null, ''),
   is_plus_only: Joi.boolean().default(false),
-  sort_order: Joi.number().integer().min(0).default(0)
+  sort_order: Joi.number().integer().min(0).default(0),
+  scopes: Joi.array().items(scopeItemSchema).default([])
 });
 
 const customerOfferUpdateSchema = Joi.object({
   title: Joi.string().max(200),
   description: Joi.string().max(500).allow('', null),
   icon_emoji: Joi.string().max(10).allow('', null),
-  discount_type: Joi.string().valid('PCT', 'FLAT', 'FREEBIE'),
+  discount_type: Joi.string().valid(...OFFER_DISCOUNT_TYPES),
   discount_value: Joi.number().min(0),
   valid_from: Joi.any().optional(),
   valid_to: Joi.any(),
   eligible_tier: Joi.string().max(50).allow(null, ''),
   is_plus_only: Joi.boolean(),
   is_active: Joi.boolean(),
-  sort_order: Joi.number().integer().min(0)
+  sort_order: Joi.number().integer().min(0),
+  scopes: Joi.array().items(scopeItemSchema)
 }).min(1);
 
 router.get('/customer-offers', ...promotionsView, async (req, res, next) => {
@@ -339,7 +434,31 @@ router.get('/customer-offers', ...promotionsView, async (req, res, next) => {
       FROM   dbo.customer_offers
       ORDER BY is_active DESC, sort_order ASC, created_at DESC
     `);
-    return res.json({ success: true, data: r.recordset || [] });
+    const offers = r.recordset || [];
+
+    const scopeRows = offers.length
+      ? await pool.request().query(`
+          SELECT offer_id, scope_kind, ref_int, ref_key
+          FROM   dbo.customer_offer_scope
+          WHERE  offer_id IN (${offers.map((o) => o.offer_id).join(',')})
+        `)
+      : { recordset: [] };
+
+    const scopesByOffer = {}
+    for (const sr of (scopeRows.recordset || [])) {
+      const oid = Number(sr.offer_id)
+      if (!scopesByOffer[oid]) scopesByOffer[oid] = []
+      scopesByOffer[oid].push({
+        kind: sr.scope_kind,
+        ref_int: sr.ref_int != null ? Number(sr.ref_int) : null,
+        ref_key: sr.ref_key != null ? String(sr.ref_key) : null
+      })
+    }
+
+    return res.json({
+      success: true,
+      data: offers.map((o) => ({ ...o, scopes: scopesByOffer[o.offer_id] || [] }))
+    });
   } catch (err) { return next(err); }
 });
 
@@ -354,6 +473,9 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
       });
     }
     const pool = await getPool();
+    const scopes = Array.isArray(value.scopes) ? value.scopes : [];
+    if (scopes.length) await validateScopeRefs(pool, scopes);
+
     const istWall = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T');
     const vf = value.valid_from ? String(value.valid_from).trim() : istWall;
     const vt = String(value.valid_to).trim();
@@ -381,8 +503,13 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
            @valid_from, @valid_to, @eligible_tier, @is_plus_only, @sort_order,
            @uid)
       `);
-    return res.status(201).json({ success: true, offer_id: r.recordset[0].offer_id });
-  } catch (err) { return next(err); }
+    const offerId = r.recordset[0].offer_id;
+    if (scopes.length) await replaceOfferScopes(pool, offerId, scopes);
+    return res.status(201).json({ success: true, offer_id: offerId });
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
+    return next(err);
+  }
 });
 
 router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) => {
@@ -402,8 +529,12 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
     const pool = await getPool();
     const {
       title, description, icon_emoji, discount_type, discount_value,
-      valid_from, valid_to, eligible_tier, is_plus_only, is_active, sort_order
+      valid_from, valid_to, eligible_tier, is_plus_only, is_active, sort_order,
+      scopes
     } = value;
+
+    const scopesList = Array.isArray(scopes) ? scopes : null;
+    if (scopesList && scopesList.length) await validateScopeRefs(pool, scopesList);
 
     await pool.request()
       .input('id', offerId)
@@ -434,8 +565,12 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
           updated_at     = DATEADD(MINUTE, 330, SYSUTCDATETIME())
         WHERE offer_id = @id
       `);
+    if (scopesList != null) await replaceOfferScopes(pool, offerId, scopesList);
     return res.json({ success: true });
-  } catch (err) { return next(err); }
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
+    return next(err);
+  }
 });
 
 router.delete('/customer-offers/:id', ...promotionsManage, async (req, res, next) => {
@@ -449,6 +584,43 @@ router.delete('/customer-offers/:id', ...promotionsManage, async (req, res, next
       WHERE offer_id = @id
     `);
     return res.json({ success: true });
+  } catch (err) { return next(err); }
+});
+
+// ─── OFFER SCOPE META ────────────────────────────────────────────────────────
+
+/**
+ * GET /api/settings/offer-scope-meta
+ * Returns the declarative scope dimension manifest for UI rendering.
+ * Both Command Unit and POS use this to build allocation pickers without hardcoding.
+ */
+router.get('/offer-scope-meta', ...promotionsView, (req, res) => {
+  const meta = SCOPE_DIMENSIONS.map((d) => ({
+    kind: d.kind,
+    label: d.label,
+    refField: d.refField,
+    pickerHint: d.pickerHint,
+    pickerApi: d.pickerApi
+  }));
+  return res.json({ success: true, data: meta });
+});
+
+// ─── POS PRODUCT TYPES ────────────────────────────────────────────────────────
+
+/**
+ * GET /api/settings/pos-product-types
+ * Returns distinct product_type keys from product_master that POS startup recognises.
+ * Command Unit uses this for the PRODUCT_TYPE scope picker — same source as POS catalogue.
+ */
+router.get('/pos-product-types', ...promotionsView, async (req, res, next) => {
+  try {
+    const { executeStoredProcedure: execSP } = require('../config/db');
+    const result = await execSP('sp_POS_GetStartupConfig', {});
+    const productRows = (result.recordsets || [])[0] || [];
+    const types = productRows
+      .map((r) => ({ key: String(r.product_type_key || ''), fulfillment_mode: String(r.fulfillment_mode || '') }))
+      .filter((r) => r.key);
+    return res.json({ success: true, data: types });
   } catch (err) { return next(err); }
 });
 

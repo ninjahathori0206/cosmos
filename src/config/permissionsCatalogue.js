@@ -20,7 +20,10 @@ const RAW_PERMISSION_GROUPS = [
     ['command_unit.settings.edit', 'Settings — Edit'],
     ['command_unit.promotions.view', 'Promotion — View customer offers'],
     ['command_unit.promotions.manage', 'Promotion — Manage customer offers'],
-    ['command_unit.audit.view', 'Audit Logs — View']
+    ['command_unit.audit.view', 'Audit Logs — View'],
+    ['command_unit.tablets.view', 'Store OS tablets — View by store'],
+    ['command_unit.tablets.create', 'Store OS tablets — Create'],
+    ['command_unit.tablets.edit', 'Store OS tablets — Reset PIN / Deactivate']
   ]],
   ['Foundry — Procurement', [
     ['foundry.purchases.view', 'Purchases — View'],

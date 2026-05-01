@@ -17,7 +17,8 @@ const COMMAND_UNIT_PAGE_PATHS = {
   'cu-suppliers': '/command-unit/cu-suppliers',
   'cu-maker-master': '/command-unit/cu-maker-master',
   'cu-branding-agents': '/command-unit/cu-branding-agents',
-  audit: '/command-unit/audit'
+  audit: '/command-unit/audit',
+  tablets: '/command-unit/tablets'
 }
 
 function getCommandUnitPageFromPath(pathname) {
@@ -56,6 +57,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const user = JSON.parse(userRaw);
+
+  function cuUserPermissionsLower() {
+    const raw = user && user.permissions;
+    if (!Array.isArray(raw) || !raw.length) return [];
+    return raw.map((p) => String(p).toLowerCase()).filter(Boolean);
+  }
+
+  function cuHasPermission(key) {
+    return cuUserPermissionsLower().includes(String(key || '').toLowerCase());
+  }
+
+  const cuNavTablets = document.getElementById('cu-nav-tablets');
+  if (cuNavTablets) {
+    cuNavTablets.style.display = cuHasPermission('command_unit.tablets.view') ? '' : 'none';
+  }
 
   /** When login returned a non-empty modules map, enforce it (missing key = allowed for backward compatibility). */
   function cosmosModuleAllowed(modKey) {
@@ -115,6 +131,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const pageId = getCommandUnitPageFromPath(window.location.pathname)
     window.showPage(pageId, getCommandUnitNavEl(pageId), { fromHistory: true })
   })
+
+  /** Open Command Unit modal by id — works even if global openModal is not on window yet. */
+  function cuOpenModal(modalId) {
+    const el = document.getElementById(modalId);
+    if (el) {
+      el.classList.add('open');
+      return;
+    }
+    if (typeof window.openModal === 'function') window.openModal(modalId);
+  }
+
+  function cuCloseModal(modalId) {
+    const el = document.getElementById(modalId);
+    if (el) el.classList.remove('open');
+    if (modalId === 'modal-cu-new-tablet') {
+      const s = document.getElementById('cu-new-tablet-store');
+      if (s) s.disabled = false;
+    }
+    if (!el && typeof window.closeModal === 'function') window.closeModal(modalId);
+  }
 
   // ─── HTTP helpers ──────────────────────────────────────────────────────────
 
@@ -205,36 +241,83 @@ document.addEventListener('DOMContentLoaded', () => {
     return Number.isFinite(n) && n > 0 ? n : null;
   }
 
+  function syncCuPosGstInputsDisabled() {
+    const comp = document.getElementById('cu-pos-composition-scheme');
+    const gstIn = document.getElementById('cu-pos-gst-rate-pct');
+    if (!gstIn) return;
+    const hide = !!(comp && comp.checked);
+    gstIn.disabled = hide;
+    gstIn.setAttribute('aria-disabled', hide ? 'true' : 'false');
+  }
+
   async function loadCuPosSettings() {
-    const input = document.getElementById('cu-pos-lab-advance-pct')
-    if (!input) return
+    const input = document.getElementById('cu-pos-lab-advance-pct');
+    if (!input) return;
     try {
-      const data = await apiGet('/api/settings/pos')
-      input.value = Number(data.lab_advance_pct || 40)
+      const data = await apiGet('/api/settings/pos');
+      input.value = Number(data.lab_advance_pct ?? 40);
+      const gstEl = document.getElementById('cu-pos-gst-rate-pct');
+      if (gstEl) {
+        const g = Number(data.gst_rate_pct);
+        gstEl.value = Number.isFinite(g) ? g : 5;
+      }
+      const compCb = document.getElementById('cu-pos-composition-scheme');
+      const incCb = document.getElementById('cu-pos-prices-gst-inclusive');
+      if (compCb) compCb.checked = !!data.composition_scheme;
+      if (incCb) incCb.checked = !!data.prices_gst_inclusive;
+      syncCuPosGstInputsDisabled();
     } catch (err) {
-      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
     }
   }
 
-  window.saveCuPosSettings = async function() {
-    const input = document.getElementById('cu-pos-lab-advance-pct')
-    const btn = document.getElementById('btn-cu-save-pos-settings')
-    if (!input) return
-    const pct = Number(input.value)
+  window.saveCuPosSettings = async function () {
+    const pctInput = document.getElementById('cu-pos-lab-advance-pct');
+    const gstInput = document.getElementById('cu-pos-gst-rate-pct');
+    const compCb = document.getElementById('cu-pos-composition-scheme');
+    const incCb = document.getElementById('cu-pos-prices-gst-inclusive');
+    const btn = document.getElementById('btn-cu-save-pos-settings');
+    if (!pctInput) return;
+    const pct = Number(pctInput.value);
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
-      if (typeof cosmosFieldError === 'function') cosmosFieldError(input, 'Enter a valid percentage (0-100)')
-      return
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(pctInput, 'Enter a valid percentage (0-100)');
+      return;
     }
-    if (typeof cosmosFieldClear === 'function') cosmosFieldClear(input)
-    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    if (typeof cosmosFieldClear === 'function') cosmosFieldClear(pctInput);
+
+    const comp = compCb ? !!compCb.checked : false;
+    let gstPct = gstInput ? Number(gstInput.value) : 5;
+    if (!comp) {
+      if (!Number.isFinite(gstPct) || gstPct < 0 || gstPct > 100) {
+        if (gstInput && typeof cosmosFieldError === 'function') cosmosFieldError(gstInput, 'Enter GST rate % (0–100)');
+        return;
+      }
+      if (gstInput && typeof cosmosFieldClear === 'function') cosmosFieldClear(gstInput);
+    }
+
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
     try {
-      await apiPut('/api/settings/pos', { lab_advance_pct: pct })
-      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
-      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('POS settings saved')
+      await apiPut('/api/settings/pos', {
+        lab_advance_pct: pct,
+        gst_rate_pct: gstPct,
+        composition_scheme: comp,
+        prices_gst_inclusive: incCb ? !!incCb.checked : false,
+      });
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('POS settings saved');
     } catch (err) {
-      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
-      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
     }
+  };
+
+  const cuPosCompositionEl = document.getElementById('cu-pos-composition-scheme');
+  if (cuPosCompositionEl) {
+    cuPosCompositionEl.addEventListener('change', () => {
+      syncCuPosGstInputsDisabled();
+      const gstIn = document.getElementById('cu-pos-gst-rate-pct');
+      if (gstIn && typeof cosmosFieldClear === 'function') cosmosFieldClear(gstIn);
+    });
   }
 
   /** Fill role dropdowns from cachedRoles (after /api/roles load). */
@@ -290,6 +373,32 @@ document.addEventListener('DOMContentLoaded', () => {
         modStore.appendChild(opt);
       });
       if (prev && [...modStore.options].some((o) => o.value === prev)) modStore.value = prev;
+    }
+
+    const cuTabletsFilter = document.getElementById('cu-tablets-store-filter');
+    if (cuTabletsFilter) {
+      const prevF = cuTabletsFilter.value;
+      cuTabletsFilter.innerHTML = '<option value="">— Select a store —</option>';
+      stores.forEach((s) => {
+        const opt = document.createElement('option');
+        opt.value = String(s.store_id);
+        opt.textContent = `${s.store_name || 'Store'} (${s.store_code || s.store_id})`;
+        cuTabletsFilter.appendChild(opt);
+      });
+      if (prevF && [...cuTabletsFilter.options].some((o) => o.value === prevF)) cuTabletsFilter.value = prevF;
+    }
+
+    const cuNewTabletStore = document.getElementById('cu-new-tablet-store');
+    if (cuNewTabletStore) {
+      const prevN = cuNewTabletStore.value;
+      cuNewTabletStore.innerHTML = '<option value="">— Select a store —</option>';
+      stores.forEach((s) => {
+        const opt = document.createElement('option');
+        opt.value = String(s.store_id);
+        opt.textContent = `${s.store_name || 'Store'} (${s.store_code || s.store_id})`;
+        cuNewTabletStore.appendChild(opt);
+      });
+      if (prevN && [...cuNewTabletStore.options].some((o) => o.value === prevN)) cuNewTabletStore.value = prevN;
     }
   }
 
@@ -508,7 +617,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const modal = document.getElementById('modal-store-detail');
     if (modal) modal.dataset.storeId = String(storeId);
+    const tabTablet = document.getElementById('cu-store-detail-tab-tablets');
+    if (tabTablet) {
+      tabTablet.style.display = cuHasPermission('command_unit.tablets.view') ? '' : 'none';
+    }
+    const addTabletStoreDetail = document.getElementById('cu-store-detail-add-tablet-btn');
+    if (addTabletStoreDetail) {
+      addTabletStoreDetail.style.display = cuHasPermission('command_unit.tablets.create') ? '' : 'none';
+    }
+    const smodal = document.getElementById('modal-store-detail');
+    const dt = smodal && smodal.querySelector('.tab[data-stab="stab-details"]');
+    if (dt && typeof window.switchTab === 'function') {
+      window.switchTab(dt, 'stab-details');
+    }
     window.openModal && window.openModal('modal-store-detail');
+    void loadStoreDetailTablets(storeId);
   }
 
   async function handleSaveStoreChanges() {
@@ -555,6 +678,109 @@ document.addEventListener('DOMContentLoaded', () => {
       await loadDashboard();
     } catch (err) {
       showError('edit-store-error', err.message || 'Failed to deactivate store');
+    }
+  }
+
+  async function cuReloadStoreModalTablets() {
+    const md = document.getElementById('modal-store-detail');
+    if (!md || !md.classList.contains('open')) return;
+    const sid = Number(md.dataset.storeId);
+    if (!Number.isFinite(sid) || sid <= 0) return;
+    await loadStoreDetailTablets(sid);
+  }
+  window.cuReloadStoreModalTablets = cuReloadStoreModalTablets;
+
+  async function refreshCuTabletUIs() {
+    const filter = document.getElementById('cu-tablets-store-filter');
+    if (filter && filter.value) {
+      await loadTablets();
+    }
+    const md = document.getElementById('modal-store-detail');
+    if (md && md.classList.contains('open') && md.dataset.storeId) {
+      await loadStoreDetailTablets(Number(md.dataset.storeId));
+    }
+  }
+
+  async function loadStoreDetailTablets(storeId) {
+    const tbody = document.getElementById('cu-store-detail-tablets-tbody');
+    if (!tbody) return;
+    if (!cuHasPermission('command_unit.tablets.view')) {
+      tbody.innerHTML =
+        '<tr><td colspan="4" class="td-muted" style="text-align:center;padding:20px">No permission to view tablets.</td></tr>';
+      return;
+    }
+    if (!Number.isFinite(storeId) || storeId <= 0) {
+      tbody.innerHTML =
+        '<tr><td colspan="4" class="td-muted" style="text-align:center;padding:20px">Invalid store.</td></tr>';
+      return;
+    }
+    if (typeof window.cosmosSkeletonTable === 'function') {
+      window.cosmosSkeletonTable('cu-store-detail-tablets-tbody', 4, 5);
+    } else {
+      tbody.innerHTML = '';
+    }
+    try {
+      const rows = await apiGet(`/api/tablets/${storeId}`);
+      const canEdit = cuHasPermission('command_unit.tablets.edit');
+      if (!Array.isArray(rows) || !rows.length) {
+        tbody.innerHTML = `<tr><td colspan="4" style="padding:0;border:none">
+          <div class="empty" style="padding:24px 16px">
+            <div class="empty-ic">📱</div>
+            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No tablets yet</div>
+            <div style="font-size:13px;color:var(--text2);margin-bottom:16px">Add a tablet to get a Tablet ID and PIN for Store OS on this store.</div>
+            ${cuHasPermission('command_unit.tablets.create')
+              ? '<button type="button" class="topbar-btn primary" onclick="document.getElementById(\'cu-store-detail-add-tablet-btn\').click()">+ Add tablet</button>'
+              : ''}
+          </div>
+        </td></tr>`;
+        return;
+      }
+      tbody.innerHTML = '';
+      rows.forEach((r) => {
+        const tr = document.createElement('tr');
+        const last = r.last_login_at ? fmtIstDateTime(r.last_login_at) : '—';
+        const tid = Number(r.tablet_id);
+        const sid = Number(r.store_id);
+        const nameEnc = encodeURIComponent(r.device_name || '');
+        let actions = '<span class="td-muted">—</span>';
+        if (canEdit) {
+          actions =
+            `<div class="cu-tablet-actions">` +
+            `<button type="button" class="topbar-btn primary cu-tablet-act cu-tablet-edit-btn" data-tablet-id="${tid}" data-store-id="${sid}" data-device-name-enc="${nameEnc}">Edit</button>` +
+            `<button type="button" class="topbar-btn cu-tablet-act cu-tablet-act--secondary cu-tablet-reset-btn" data-tablet-id="${tid}">Reset PIN</button>` +
+            `<button type="button" class="topbar-btn cu-tablet-act cu-tablet-act--secondary cu-tablet-deact-btn" data-tablet-id="${tid}">Deactivate</button>` +
+            `</div>`;
+        }
+        tr.innerHTML = `
+          <td class="font-mono text-xs">${escHtml(String(tid))}</td>
+          <td><div class="fw-600">${escHtml(r.device_name || '')}</div></td>
+          <td class="td-muted" style="font-size:12px">${escHtml(last)}</td>
+          <td>${actions}</td>`;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('.cu-tablet-edit-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = Number(btn.getAttribute('data-tablet-id'));
+          const sid = Number(btn.getAttribute('data-store-id'));
+          const enc = btn.getAttribute('data-device-name-enc') || '';
+          openCuTabletEditDetailModal(id, sid, enc);
+        });
+      });
+      tbody.querySelectorAll('.cu-tablet-reset-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = Number(btn.getAttribute('data-tablet-id'));
+          openCuTabletResetModal(id);
+        });
+      });
+      tbody.querySelectorAll('.cu-tablet-deact-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = Number(btn.getAttribute('data-tablet-id'));
+          openCuTabletDeactivateModal(id);
+        });
+      });
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="4" class="td-muted" style="text-align:center;padding:24px;color:var(--red)">Error: ${escHtml(err.message)}</td></tr>`;
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message);
     }
   }
 
@@ -1422,7 +1648,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!cachedCuOffers.length) {
         tbody.innerHTML = `<tr><td colspan="6" class="td-muted" style="padding:24px;text-align:center">
           <div style="font-weight:600;color:var(--text1,#0f172a);margin-bottom:6px">No offers yet</div>
-          <div style="font-size:13px">Create a promotion to show it in Eyewoot Go and on the POS cart reference panel.</div>
+          <div style="font-size:13px">Use <strong>+ Configure offer</strong> to define discounts for Eyewoot Go and the POS cart reference panel.</div>
         </td></tr>`;
         return;
       }
@@ -1443,7 +1669,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${escHtml(until)}</td>
           <td>${status}</td>
           <td style="text-align:right">
-            <button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px" data-cu-offer-edit="${o.offer_id}">Edit</button>
+            <button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px" data-cu-offer-edit="${o.offer_id}">Configure</button>
             ${o.is_active ? `<button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px;border-color:#DC2626;color:#DC2626" data-cu-offer-deactivate="${o.offer_id}">Deactivate</button>` : ''}
           </td>
         </tr>`;
@@ -1472,12 +1698,140 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ── Offer Scope / Allocation UI ──────────────────────────────────────────────
+
+  let cuOfferScopeMeta = null; // loaded once from /api/settings/offer-scope-meta
+  let cuOfferProductTypes = []; // loaded once from /api/settings/pos-product-types
+  let cuOfferBrands = []; // loaded once from /api/home-brands
+  let cuOfferCurrentScopes = []; // scopes attached to the currently open offer
+
+  async function ensureScopeMeta() {
+    if (cuOfferScopeMeta) return;
+    try {
+      const [meta, types, brands] = await Promise.all([
+        apiGet('/api/settings/offer-scope-meta'),
+        apiGet('/api/settings/pos-product-types'),
+        apiGet('/api/home-brands')
+      ]);
+      cuOfferScopeMeta = Array.isArray(meta) ? meta : [];
+      cuOfferProductTypes = Array.isArray(types) ? types : [];
+      cuOfferBrands = Array.isArray(brands) ? brands : [];
+    } catch (err) {
+      cuOfferScopeMeta = [];
+    }
+  }
+
+  function renderScopeChip(scope, idx) {
+    let label = '';
+    if (scope.kind === 'BRAND') {
+      const b = cuOfferBrands.find((br) => br.brand_id === scope.ref_int);
+      label = b ? escHtml(b.brand_name) : `Brand #${scope.ref_int}`;
+    } else if (scope.kind === 'SKU') {
+      label = `SKU #${scope.ref_int}`;
+    } else if (scope.kind === 'PRODUCT') {
+      label = `Product #${scope.ref_int}`;
+    } else if (scope.kind === 'PRODUCT_TYPE') {
+      label = escHtml(scope.ref_key || '');
+    } else {
+      label = escHtml(JSON.stringify(scope));
+    }
+    return `<span class="cu-scope-chip" data-scope-idx="${idx}" title="Remove">${label} <span class="cu-scope-chip-x" data-scope-idx="${idx}" onclick="cuRemoveScopeChip(${idx})">×</span></span>`;
+  }
+
+  function renderScopeSection(dim) {
+    const scopesForKind = cuOfferCurrentScopes.filter((s) => s.kind === dim.kind);
+    const chips = scopesForKind.map((s, i) => renderScopeChip(s, cuOfferCurrentScopes.indexOf(s))).join('');
+
+    let pickerHtml = '';
+    if (dim.kind === 'BRAND') {
+      const opts = cuOfferBrands.map((b) =>
+        `<option value="${b.brand_id}">${escHtml(b.brand_name)}</option>`
+      ).join('');
+      pickerHtml = `<select class="cu-scope-select" id="cu-scope-pick-${dim.kind}" style="flex:1;min-width:140px">
+        <option value="">Select brand…</option>${opts}
+      </select>
+      <button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap" onclick="cuAddScopeFromPicker('${dim.kind}', 'int')">+ Add</button>`;
+    } else if (dim.kind === 'PRODUCT_TYPE') {
+      const opts = cuOfferProductTypes.map((pt) =>
+        `<option value="${escHtml(pt.key)}">${escHtml(pt.key)}${pt.fulfillment_mode ? ` (${escHtml(pt.fulfillment_mode)})` : ''}</option>`
+      ).join('');
+      pickerHtml = `<select class="cu-scope-select" id="cu-scope-pick-${dim.kind}" style="flex:1;min-width:140px">
+        <option value="">Select type…</option>${opts}
+      </select>
+      <button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap" onclick="cuAddScopeFromPicker('${dim.kind}', 'key')">+ Add</button>`;
+    } else if (dim.kind === 'SKU' || dim.kind === 'PRODUCT') {
+      pickerHtml = `<input type="number" min="1" class="cu-scope-input" id="cu-scope-pick-${dim.kind}" placeholder="Enter ${dim.kind === 'SKU' ? 'SKU' : 'Product'} ID" style="flex:1;min-width:120px">
+      <button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap" onclick="cuAddScopeFromPicker('${dim.kind}', 'int')">+ Add</button>`;
+    }
+
+    return `<div class="cu-scope-section">
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">${escHtml(dim.label)}</div>
+      <div class="cu-scope-chips" id="cu-scope-chips-${dim.kind}">${chips || '<span style="font-size:12px;color:var(--text3)">All (no filter)</span>'}</div>
+      <div style="display:flex;gap:6px;margin-top:6px;align-items:center">${pickerHtml}</div>
+    </div>`;
+  }
+
+  async function renderAllocationSections(initialScopes) {
+    cuOfferCurrentScopes = Array.isArray(initialScopes) ? initialScopes.map((s) => ({ ...s })) : [];
+    const container = document.getElementById('cu-offer-scope-sections');
+    if (!container) return;
+    await ensureScopeMeta();
+    if (!cuOfferScopeMeta || !cuOfferScopeMeta.length) {
+      container.innerHTML = '<div style="font-size:12px;color:var(--text3)">Allocation not available (metadata failed to load).</div>';
+      return;
+    }
+    container.innerHTML = cuOfferScopeMeta.map((dim) => renderScopeSection(dim)).join('');
+  }
+
+  function refreshScopeChipsForKind(kind) {
+    const container = document.getElementById(`cu-scope-chips-${kind}`);
+    if (!container) return;
+    const scopesForKind = cuOfferCurrentScopes.filter((s) => s.kind === kind);
+    if (!scopesForKind.length) {
+      container.innerHTML = '<span style="font-size:12px;color:var(--text3)">All (no filter)</span>';
+      return;
+    }
+    container.innerHTML = scopesForKind.map((s) => renderScopeChip(s, cuOfferCurrentScopes.indexOf(s))).join('');
+  }
+
+  window.cuAddScopeFromPicker = function (kind, refType) {
+    const el = document.getElementById(`cu-scope-pick-${kind}`);
+    if (!el || !el.value) return;
+    const val = el.value;
+    if (refType === 'int') {
+      const id = parseInt(val, 10);
+      if (!id) return;
+      const already = cuOfferCurrentScopes.some((s) => s.kind === kind && s.ref_int === id);
+      if (!already) cuOfferCurrentScopes.push({ kind, ref_int: id, ref_key: null });
+    } else {
+      const key = String(val).trim();
+      if (!key) return;
+      const already = cuOfferCurrentScopes.some((s) => s.kind === kind && s.ref_key === key);
+      if (!already) cuOfferCurrentScopes.push({ kind, ref_int: null, ref_key: key });
+    }
+    el.value = '';
+    refreshScopeChipsForKind(kind);
+  };
+
+  window.cuRemoveScopeChip = function (idx) {
+    if (idx < 0 || idx >= cuOfferCurrentScopes.length) return;
+    const kind = cuOfferCurrentScopes[idx].kind;
+    cuOfferCurrentScopes.splice(idx, 1);
+    refreshScopeChipsForKind(kind);
+    // Re-render all chips since indices shifted
+    if (cuOfferScopeMeta) {
+      cuOfferScopeMeta.forEach((dim) => refreshScopeChipsForKind(dim.kind));
+    }
+  };
+
+  // ── Modal open / edit ─────────────────────────────────────────────────────────
+
   window.openCuPromotionOfferModal = function () {
     const hid = document.getElementById('cu-offer-edit-id');
     const titleEl = document.getElementById('cu-offer-modal-title');
     const statusWrap = document.getElementById('cu-offer-status-wrap');
     if (hid) hid.value = '';
-    if (titleEl) titleEl.textContent = 'Create offer';
+    if (titleEl) titleEl.textContent = 'Configure offer';
     if (statusWrap) statusWrap.style.display = 'none';
     document.getElementById('cu-offer-title').value = '';
     document.getElementById('cu-offer-desc').value = '';
@@ -1492,6 +1846,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cu-offer-sort').value = '10';
     showError('cu-offer-modal-error', '');
     syncCuOfferPreview();
+    renderAllocationSections([]);
     window.openModal && window.openModal('modal-cu-customer-offer');
   };
 
@@ -1502,7 +1857,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const titleEl = document.getElementById('cu-offer-modal-title');
     const statusWrap = document.getElementById('cu-offer-status-wrap');
     if (hid) hid.value = String(o.offer_id);
-    if (titleEl) titleEl.textContent = 'Edit offer';
+    if (titleEl) titleEl.textContent = 'Configure offer';
     if (statusWrap) statusWrap.style.display = '';
     document.getElementById('cu-offer-title').value = o.title || '';
     document.getElementById('cu-offer-desc').value = o.description || '';
@@ -1518,6 +1873,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (st) st.value = o.is_active ? '1' : '0';
     showError('cu-offer-modal-error', '');
     syncCuOfferPreview();
+    renderAllocationSections(Array.isArray(o.scopes) ? o.scopes : []);
     window.openModal && window.openModal('modal-cu-customer-offer');
   };
 
@@ -1553,7 +1909,12 @@ document.addEventListener('DOMContentLoaded', () => {
       valid_from: document.getElementById('cu-offer-from').value,
       valid_to: validTo,
       is_plus_only: document.getElementById('cu-offer-plus-only').checked,
-      sort_order: parseInt(document.getElementById('cu-offer-sort').value, 10) || 0
+      sort_order: parseInt(document.getElementById('cu-offer-sort').value, 10) || 0,
+      scopes: cuOfferCurrentScopes.map((s) => ({
+        kind: s.kind,
+        ref_int: s.ref_int != null ? Number(s.ref_int) : null,
+        ref_key: s.ref_key != null ? String(s.ref_key) : null
+      }))
     };
     if (editId) {
       body.is_active = document.getElementById('cu-offer-active').value === '1';
@@ -1567,7 +1928,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await apiPost('/api/settings/customer-offers', body);
       }
       window.closeModal && window.closeModal('modal-cu-customer-offer');
-      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess(editId ? 'Offer updated.' : 'Offer saved.');
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Offer configuration saved.');
       await loadCuPromotionOffers();
     } catch (err) {
       showError('cu-offer-modal-error', err.message || 'Save failed');
@@ -2600,6 +2961,361 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) { alert(err.message); }
   };
 
+  // ─── Store OS tablets (Command Unit) ─────────────────────────────────────
+  let cuTabletsDeactivateId = null;
+
+  async function loadTablets() {
+    const tbody = document.getElementById('cu-tablets-tbody');
+    const filter = document.getElementById('cu-tablets-store-filter');
+    const addBtn = document.getElementById('cu-tablets-add-btn');
+    if (addBtn) {
+      addBtn.style.display = cuHasPermission('command_unit.tablets.create') ? '' : 'none';
+    }
+    if (!tbody || !filter) return;
+    const storeId = Number(filter.value);
+    if (!Number.isFinite(storeId) || storeId <= 0) {
+      tbody.innerHTML =
+        '<tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px">Select a store to list tablets.</td></tr>';
+      return;
+    }
+    if (typeof window.cosmosSkeletonTable === 'function') {
+      window.cosmosSkeletonTable('cu-tablets-tbody', 5, 6);
+    } else {
+      tbody.innerHTML = '';
+    }
+    try {
+      const rows = await apiGet(`/api/tablets/${storeId}`);
+      const canEdit = cuHasPermission('command_unit.tablets.edit');
+      if (!Array.isArray(rows) || !rows.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="padding:0;border:none">
+          <div class="empty" style="padding:28px 20px">
+            <div class="empty-ic">📱</div>
+            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No tablets for this store</div>
+            <div style="font-size:13px;color:var(--text2);margin-bottom:16px">Register a device so staff can unlock Store OS with a tablet PIN, then sign in with their staff PIN.</div>
+            ${cuHasPermission('command_unit.tablets.create')
+              ? '<button type="button" class="topbar-btn primary" onclick="openModal(\'modal-cu-new-tablet\')">+ Add tablet</button>'
+              : ''}
+          </div>
+        </td></tr>`;
+        return;
+      }
+      tbody.innerHTML = '';
+      rows.forEach((r) => {
+        const tr = document.createElement('tr');
+        const last = r.last_login_at ? fmtIstDateTime(r.last_login_at) : '—';
+        const created = r.created_at ? fmtIstDateTime(r.created_at) : '—';
+        const tid = Number(r.tablet_id);
+        const sid = Number(r.store_id);
+        const nameEnc = encodeURIComponent(r.device_name || '');
+        const actions = canEdit
+          ? `<div class="cu-tablet-actions">` +
+            `<button type="button" class="topbar-btn primary cu-tablet-act cu-tablet-edit-btn" data-tablet-id="${tid}" data-store-id="${sid}" data-device-name-enc="${nameEnc}">Edit</button>` +
+            `<button type="button" class="topbar-btn cu-tablet-act cu-tablet-act--secondary cu-tablet-reset-btn" data-tablet-id="${tid}">Reset PIN</button>` +
+            `<button type="button" class="topbar-btn cu-tablet-act cu-tablet-act--secondary cu-tablet-deact-btn" data-tablet-id="${tid}">Deactivate</button>` +
+            `</div>`
+          : '<span class="td-muted">—</span>';
+        tr.innerHTML = `
+          <td class="font-mono text-xs">${escHtml(String(tid))}</td>
+          <td><div class="fw-600">${escHtml(r.device_name || '')}</div></td>
+          <td class="td-muted" style="font-size:12px">${escHtml(last)}</td>
+          <td class="td-muted" style="font-size:12px">${escHtml(created)}</td>
+          <td>${actions}</td>`;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('.cu-tablet-edit-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = Number(btn.getAttribute('data-tablet-id'));
+          const sid = Number(btn.getAttribute('data-store-id'));
+          const enc = btn.getAttribute('data-device-name-enc') || '';
+          openCuTabletEditDetailModal(id, sid, enc);
+        });
+      });
+      tbody.querySelectorAll('.cu-tablet-reset-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = Number(btn.getAttribute('data-tablet-id'));
+          openCuTabletResetModal(id);
+        });
+      });
+      tbody.querySelectorAll('.cu-tablet-deact-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = Number(btn.getAttribute('data-tablet-id'));
+          openCuTabletDeactivateModal(id);
+        });
+      });
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px;color:var(--red)">Error: ${escHtml(err.message)}</td></tr>`;
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message);
+    }
+  }
+
+  function openCuTabletEditDetailModal(tabletId, storeId, deviceNameEnc) {
+    const hid = document.getElementById('cu-tablet-edit-id');
+    const sidIn = document.getElementById('cu-tablet-edit-store-id');
+    const dsp = document.getElementById('cu-tablet-edit-id-display');
+    const inp = document.getElementById('cu-tablet-edit-name');
+    const err = document.getElementById('cu-tablet-edit-error');
+    let name = '';
+    try {
+      name = decodeURIComponent(deviceNameEnc || '');
+    } catch (_e) {
+      name = '';
+    }
+    if (hid) hid.value = String(tabletId);
+    if (sidIn) sidIn.value = String(storeId);
+    if (dsp) dsp.textContent = String(tabletId);
+    if (inp) {
+      inp.value = name;
+      if (typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(inp);
+    }
+    if (err) err.textContent = '';
+    cuOpenModal('modal-cu-tablet-edit-detail');
+  }
+
+  async function handleCuTabletEditSave() {
+    const errEl = document.getElementById('cu-tablet-edit-error');
+    const btn = document.getElementById('cu-tablet-edit-save-btn');
+    const hid = document.getElementById('cu-tablet-edit-id');
+    const sidIn = document.getElementById('cu-tablet-edit-store-id');
+    const inp = document.getElementById('cu-tablet-edit-name');
+    if (errEl) errEl.textContent = '';
+    const tabletId = hid ? Number(hid.value) : NaN;
+    const storeId = sidIn ? Number(sidIn.value) : NaN;
+    const deviceName = (inp && inp.value.trim()) || '';
+    if (!Number.isFinite(tabletId) || tabletId <= 0 || !Number.isFinite(storeId) || storeId <= 0) return;
+    if (!deviceName) {
+      if (inp && typeof window.cosmosFieldError === 'function') window.cosmosFieldError(inp, 'Required');
+      if (errEl) errEl.textContent = 'Enter a device name.';
+      return;
+    }
+    if (typeof window.cosmosBtnLoading === 'function' && btn) window.cosmosBtnLoading(btn);
+    try {
+      await apiPut(`/api/tablets/${tabletId}/details`, { store_id: storeId, device_name: deviceName });
+      cuCloseModal('modal-cu-tablet-edit-detail');
+      if (typeof window.cosmosToastSuccess === 'function') window.cosmosToastSuccess('Tablet updated.');
+      await refreshCuTabletUIs();
+      if (typeof window.cosmosBtnSuccess === 'function' && btn) window.cosmosBtnSuccess(btn);
+      else if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+    } catch (err) {
+      if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      if (errEl) errEl.textContent = err.message || 'Save failed.';
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message);
+    }
+  }
+
+  function openCuTabletResetModal(tabletId) {
+    const hid = document.getElementById('cu-tablet-reset-id');
+    const p1 = document.getElementById('cu-tablet-reset-pin');
+    const p2 = document.getElementById('cu-tablet-reset-pin2');
+    const err = document.getElementById('cu-tablet-reset-error');
+    if (hid) hid.value = String(tabletId);
+    if (p1) p1.value = '';
+    if (p2) p2.value = '';
+    if (err) err.textContent = '';
+    if (p1 && typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(p1);
+    if (p2 && typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(p2);
+    cuOpenModal('modal-cu-tablet-reset-pin');
+  }
+
+  function openCuTabletDeactivateModal(tabletId) {
+    cuTabletsDeactivateId = tabletId;
+    const sub = document.getElementById('cu-tablet-deact-sub');
+    if (sub) sub.textContent = `Tablet ID ${tabletId} will be deactivated and can no longer sign in to Store OS.`;
+    cuOpenModal('modal-cu-tablet-deactivate');
+  }
+
+  async function handleCuCreateTablet() {
+    const errEl = document.getElementById('cu-new-tablet-error');
+    const btn = document.getElementById('cu-new-tablet-save-btn');
+    const nameIn = document.getElementById('cu-new-tablet-name');
+    const storeSel = document.getElementById('cu-new-tablet-store');
+    const p1 = document.getElementById('cu-new-tablet-pin');
+    const p2 = document.getElementById('cu-new-tablet-pin2');
+    if (errEl) errEl.textContent = '';
+    if (nameIn && typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(nameIn);
+    if (storeSel && typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(storeSel);
+    if (p1 && typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(p1);
+    if (p2 && typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(p2);
+
+    const deviceName = (nameIn && nameIn.value.trim()) || '';
+    const storeId = storeSel ? Number(storeSel.value) : NaN;
+    const pin = (p1 && p1.value) || '';
+    const pin2 = (p2 && p2.value) || '';
+
+    if (!deviceName && nameIn) {
+      if (typeof window.cosmosFieldError === 'function') window.cosmosFieldError(nameIn, 'Required');
+      if (errEl) errEl.textContent = 'Enter a device name.';
+      return;
+    }
+    if (!Number.isFinite(storeId) || storeId <= 0) {
+      if (storeSel && typeof window.cosmosFieldError === 'function') window.cosmosFieldError(storeSel, 'Select a store');
+      if (errEl) errEl.textContent = 'Select a store.';
+      return;
+    }
+    if (!/^\d{4}$/.test(pin)) {
+      if (p1 && typeof window.cosmosFieldError === 'function') window.cosmosFieldError(p1, '4-digit PIN');
+      if (errEl) errEl.textContent = 'PIN must be exactly 4 digits.';
+      return;
+    }
+    if (pin !== pin2) {
+      if (p2 && typeof window.cosmosFieldError === 'function') window.cosmosFieldError(p2, 'Does not match');
+      if (errEl) errEl.textContent = 'PIN and confirmation must match.';
+      return;
+    }
+
+    if (typeof window.cosmosBtnLoading === 'function' && btn) window.cosmosBtnLoading(btn);
+    try {
+      const row = await apiPost('/api/tablets', { store_id: storeId, device_name: deviceName, pin });
+      cuCloseModal('modal-cu-new-tablet');
+      if (nameIn) nameIn.value = '';
+      if (p1) p1.value = '';
+      if (p2) p2.value = '';
+      const filter = document.getElementById('cu-tablets-store-filter');
+      if (filter) filter.value = String(storeId);
+      await refreshCuTabletUIs();
+      const tid = row && row.tablet_id != null ? row.tablet_id : '';
+      if (typeof window.cosmosBtnSuccess === 'function' && btn) window.cosmosBtnSuccess(btn);
+      else if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastSuccess === 'function') {
+        window.cosmosToastSuccess(tid ? `Tablet created (ID ${tid}). Use this ID on the device when unlocking Store OS.` : 'Tablet created.');
+      }
+    } catch (err) {
+      if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      if (errEl) errEl.textContent = err.message || 'Failed to create tablet.';
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message);
+    }
+  }
+
+  async function handleCuTabletResetSave() {
+    const errEl = document.getElementById('cu-tablet-reset-error');
+    const btn = document.getElementById('cu-tablet-reset-save-btn');
+    const hid = document.getElementById('cu-tablet-reset-id');
+    const p1 = document.getElementById('cu-tablet-reset-pin');
+    const p2 = document.getElementById('cu-tablet-reset-pin2');
+    if (errEl) errEl.textContent = '';
+    const tabletId = hid ? Number(hid.value) : NaN;
+    const pin = (p1 && p1.value) || '';
+    const pin2 = (p2 && p2.value) || '';
+    if (!Number.isFinite(tabletId) || tabletId <= 0) return;
+    if (!/^\d{4}$/.test(pin)) {
+      if (p1 && typeof window.cosmosFieldError === 'function') window.cosmosFieldError(p1, '4-digit PIN');
+      if (errEl) errEl.textContent = 'PIN must be exactly 4 digits.';
+      return;
+    }
+    if (pin !== pin2) {
+      if (p2 && typeof window.cosmosFieldError === 'function') window.cosmosFieldError(p2, 'Does not match');
+      if (errEl) errEl.textContent = 'PIN and confirmation must match.';
+      return;
+    }
+    if (typeof window.cosmosBtnLoading === 'function' && btn) window.cosmosBtnLoading(btn);
+    try {
+      await apiPut(`/api/tablets/${tabletId}/reset-pin`, { pin });
+      cuCloseModal('modal-cu-tablet-reset-pin');
+      await refreshCuTabletUIs();
+      if (typeof window.cosmosBtnSuccess === 'function' && btn) window.cosmosBtnSuccess(btn);
+      else if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastSuccess === 'function') window.cosmosToastSuccess('Tablet PIN reset.');
+    } catch (err) {
+      if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      if (errEl) errEl.textContent = err.message || 'Reset failed.';
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message);
+    }
+  }
+
+  async function handleCuTabletDeactivateConfirm() {
+    const btn = document.getElementById('cu-tablet-deact-confirm-btn');
+    const id = cuTabletsDeactivateId;
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (typeof window.cosmosBtnLoading === 'function' && btn) window.cosmosBtnLoading(btn);
+    try {
+      await apiDelete(`/api/tablets/${id}`);
+      cuCloseModal('modal-cu-tablet-deactivate');
+      cuTabletsDeactivateId = null;
+      await refreshCuTabletUIs();
+      if (typeof window.cosmosBtnSuccess === 'function' && btn) window.cosmosBtnSuccess(btn);
+      else if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastSuccess === 'function') window.cosmosToastSuccess('Tablet deactivated.');
+    } catch (err) {
+      if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message);
+    }
+  }
+
+  const cuTabletsFilterEl = document.getElementById('cu-tablets-store-filter');
+  if (cuTabletsFilterEl) {
+    cuTabletsFilterEl.addEventListener('change', () => {
+      void loadTablets();
+    });
+  }
+  const cuNewTabletSave = document.getElementById('cu-new-tablet-save-btn');
+  if (cuNewTabletSave) {
+    cuNewTabletSave.addEventListener('click', () => {
+      void handleCuCreateTablet();
+    });
+  }
+  const cuTabletResetSave = document.getElementById('cu-tablet-reset-save-btn');
+  if (cuTabletResetSave) {
+    cuTabletResetSave.addEventListener('click', () => {
+      void handleCuTabletResetSave();
+    });
+  }
+  const cuTabletDeactConfirm = document.getElementById('cu-tablet-deact-confirm-btn');
+  if (cuTabletDeactConfirm) {
+    cuTabletDeactConfirm.addEventListener('click', () => {
+      void handleCuTabletDeactivateConfirm();
+    });
+  }
+
+  const cuStoreDetailAddTablet = document.getElementById('cu-store-detail-add-tablet-btn');
+  if (cuStoreDetailAddTablet) {
+    cuStoreDetailAddTablet.addEventListener('click', () => {
+      const md = document.getElementById('modal-store-detail');
+      const sid = md ? Number(md.dataset.storeId) : NaN;
+      if (!Number.isFinite(sid) || sid <= 0) return;
+      refreshStoreDropdowns();
+      const storeSel = document.getElementById('cu-new-tablet-store');
+      if (storeSel) {
+        storeSel.value = String(sid);
+        storeSel.disabled = true;
+      }
+      const err = document.getElementById('cu-new-tablet-error');
+      const nameIn = document.getElementById('cu-new-tablet-name');
+      const p1 = document.getElementById('cu-new-tablet-pin');
+      const p2 = document.getElementById('cu-new-tablet-pin2');
+      if (nameIn) nameIn.value = '';
+      if (p1) p1.value = '';
+      if (p2) p2.value = '';
+      if (err) err.textContent = '';
+      cuOpenModal('modal-cu-new-tablet');
+    });
+  }
+
+  const cuTabletEditSaveBtn = document.getElementById('cu-tablet-edit-save-btn');
+  if (cuTabletEditSaveBtn) {
+    cuTabletEditSaveBtn.addEventListener('click', () => {
+      void handleCuTabletEditSave();
+    });
+  }
+  const cuTabletEditNameEl = document.getElementById('cu-tablet-edit-name');
+  if (cuTabletEditNameEl) {
+    cuTabletEditNameEl.addEventListener('input', () => {
+      if (typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(cuTabletEditNameEl);
+    });
+  }
+  ['cu-new-tablet-name', 'cu-new-tablet-store', 'cu-new-tablet-pin', 'cu-new-tablet-pin2'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      if (typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(el);
+    });
+  });
+  ['cu-tablet-reset-pin', 'cu-tablet-reset-pin2'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      if (typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(el);
+    });
+  });
+
   // Wire showPage nav triggers for new masters
   const _origShowPage = window.showPage;
   if (typeof _origShowPage === 'function') {
@@ -2611,6 +3327,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (id === 'cu-suppliers')       loadCuSuppliers();
       if (id === 'cu-maker-master')    loadCuMakers();
       if (id === 'cu-branding-agents') loadCuBrandingAgents();
+      if (id === 'tablets') void loadTablets();
     };
   }
 
@@ -2627,4 +3344,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadFoundrySettings();
   loadAuditLogs();
   loadDashboard();
+
+  const _cuBootPage = getCommandUnitPageFromPath(window.location.pathname);
+  if (_cuBootPage === 'tablets') void loadTablets();
 });

@@ -43,7 +43,9 @@
     <div class="nav-group" data-foundry-nav-group="catalogue">Catalogue</div>
     <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('sku-catalogue',this)"><span class="ic">🗂️</span> SKU Catalogue</div>
     <div class="nav-item" data-foundry-permission="foundry.stock.view" onclick="nav('stock-view',this)"><span class="ic">📦</span> Stock View</div>
-    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('lens-portfolio',this)"><span class="ic">👁️</span> Lens Portfolio</div>
+    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('lens-packages',this)"><span class="ic">👁️</span> Lens packages</div>
+    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('lens-addons',this)"><span class="ic">➕</span> Lens add-ons</div>
+    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('lens-package-addons',this)"><span class="ic">▦</span> Lens link matrix</div>
     <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('master-catalogue',this)"><span class="ic">📖</span> Master Catalogue</div>
 
     <div class="nav-group" data-foundry-nav-group="store-connect">Store Connect</div>
@@ -739,90 +741,95 @@
     <div class="st-feedback" id="st-toast"></div>
   </div>
 
-  <!-- ═══ LENS PORTFOLIO ═══ -->
-  <div class="page" id="page-lens-portfolio">
-    <div class="ph flex ic"><div><div class="pt">Lens Portfolio</div></div><button class="btn primary mla" onclick="openM('modal-new-lens')">+ Add Lens Product</button></div>
-
-    <div class="alert alert-blue"><span>🔒</span><div>Supplier confidentiality: <strong>Source Brand and Source Name are internal only</strong>. Only Lens Brand and Lens Name are shown publicly on POS, Store OS Browser, and Eyewoot Go.</div></div>
-
-    <div class="card mb4">
-      <div class="ch">
-        <div class="flex ic g3" style="flex:1">
-          <div class="sw" style="flex:1;max-width:260px"><span class="si">🔍</span><input placeholder="Search lens products..."></div>
-          <select style="min-width:150px"><option>All Lens Types</option><option>Single Vision</option><option>Progressive</option><option>Bifocal</option><option>Zero Power</option></select>
-          <select style="min-width:130px"><option>All Brands</option><option>EW Studio Lenses</option><option>Essilor</option><option>Hoya</option></select>
-          <select style="min-width:130px"><option>All Status</option><option>Active</option><option>Discontinued</option><option>Draft</option></select>
+  <!-- ═══ LENS CONFIG (packages / add-ons / matrix) ═══ -->
+  <div class="page" id="page-lens-packages">
+    <div class="ph flex ic flex-wrap g2">
+      <div><div class="pt">Lens packages</div></div>
+      <div class="flex g2 mla flex-wrap">
+        <button type="button" class="btn sm" id="lc-btn-add-cat" onclick="window.lcOpenNewCategory && window.lcOpenNewCategory()" style="display:none">+ Category</button>
+        <button type="button" class="btn primary sm" id="lc-btn-add-pkg" onclick="window.lcOpenNewPackage && window.lcOpenNewPackage()" style="display:none">+ Package</button>
+        <button type="button" class="btn sm" onclick="window.loadLensPackagesPage && window.loadLensPackagesPage()">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="alert alert-blue"><span>🔒</span><div><strong>POS</strong> only shows <strong>POS Brand</strong> and <strong>POS Name</strong>. Internal brand/name are for staff and suppliers.</div></div>
+    <div class="flex g3 flex-wrap" style="align-items:stretch">
+      <div class="card" style="flex:0 0 280px;max-width:100%;min-width:240px">
+        <div class="ch"><div class="ct">Categories</div></div>
+        <div class="cb" style="padding:0">
+          <table class="tbl w100"><tbody id="lc-cat-tbody"></tbody></table>
+        </div>
+      </div>
+      <div class="card" style="flex:1;min-width:280px">
+        <div class="ch"><div class="ct">Packages <span id="lc-pkg-cat-label" class="xs td2" style="font-weight:400"></span></div></div>
+        <div class="cb" style="padding:0;overflow-x:auto">
+          <table class="tbl w100">
+            <thead><tr><th>POS Brand</th><th>POS Name</th><th class="tc">₹</th><th class="tc">Active</th><th class="tc" id="lc-pkg-th-edit" style="display:none">Edit</th></tr></thead>
+            <tbody id="lc-pkg-tbody"></tbody>
+          </table>
         </div>
       </div>
     </div>
-
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
-      <div class="lens-card">
-        <div class="lens-name">EW ClearView BLU 1.56</div>
-        <div class="lens-type">Single Vision</div>
-        <div class="lens-tags">
-          <span class="b b-teal xs">BLU Screen</span>
-          <span class="b b-gray xs">1.56 Index</span>
-          <span class="b b-gray xs">Polycarbonate</span>
-          <span class="b b-gray xs">AR Coating</span>
+    <div class="card mt4" id="lc-pkg-editor-card">
+      <div class="ch"><div class="ct">Package detail</div><div class="xs td2" id="lc-pkg-editor-hint">Select a package row or create one.</div></div>
+      <div class="cb">
+        <div id="lc-pkg-editor-empty" class="empty" style="padding:8px 0">
+          <div class="empty-ic">📋</div>
+          <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No package selected</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:16px">Choose a category, then a package row, or add a new package.</div>
         </div>
-        <div class="xs td2 mb3">Blocks blue light, reduces digital eye strain. AR coating reduces reflections.</div>
-        <div class="flex ic" style="justify-content:space-between"><div class="lens-price">₹1,200</div><span class="b b-green xs">Active</span></div>
-        <div class="xs td2 mt4 mono" style="color:var(--text3)">EWL-SV-PC-156</div>
-        <hr class="sep">
-        <div class="flex g2"><button class="btn xs" onclick="openM('modal-lens-detail')">Edit</button><button class="btn xs">Store Activation</button></div>
-      </div>
-
-      <div class="lens-card">
-        <div class="lens-name">EW PhotoChrome 1.61</div>
-        <div class="lens-type">Single Vision</div>
-        <div class="lens-tags">
-          <span class="b b-orange xs">Photochromic</span>
-          <span class="b b-gray xs">1.61 Index</span>
-          <span class="b b-gray xs">High Index</span>
-          <span class="b b-gray xs">UV420</span>
+        <div id="lc-pkg-editor-form" style="display:none">
+          <input type="hidden" id="lc-pkg-id">
+          <div class="fg2 mb3">
+            <div class="fgrp"><label>POS Brand</label><input id="lc-pkg-pos-brand" type="text" maxlength="100" placeholder="e.g. Eyewoot" autocomplete="off"></div>
+            <div class="fgrp"><label>POS Name <span class="req">*</span></label><input id="lc-pkg-pos-name" type="text" maxlength="100" required placeholder="Shown on POS" autocomplete="off"></div>
+          </div>
+          <div class="fg2 mb3">
+            <div class="fgrp"><label>Internal brand</label><input id="lc-pkg-int-brand" type="text" maxlength="100" placeholder="Confidential" autocomplete="off"></div>
+            <div class="fgrp"><label>Internal name</label><input id="lc-pkg-int-name" type="text" maxlength="100" placeholder="SKU / supplier ref" autocomplete="off"></div>
+          </div>
+          <div class="fg3 mb3">
+            <div class="fgrp"><label>Price (₹) <span class="req">*</span></label><input id="lc-pkg-price" type="number" min="0" step="0.01"></div>
+            <div class="fgrp"><label>Sort</label><input id="lc-pkg-sort" type="number" min="0" step="1" value="0"></div>
+            <div class="fgrp" style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="lc-pkg-active" checked> Active</label></div>
+          </div>
+          <div class="mb3" id="lc-pkg-addons-wrap" style="display:none">
+            <div class="section-lbl">Allowed add-ons (POS)</div>
+            <div id="lc-pkg-addons-chk" class="flex g2 flex-wrap"></div>
+          </div>
+          <div class="flex g2" id="lc-pkg-save-row" style="display:none">
+            <button type="button" class="btn primary" id="lc-pkg-save-btn" onclick="window.lcSavePackage && window.lcSavePackage()">Save package</button>
+          </div>
         </div>
-        <div class="xs td2 mb3">Darkens automatically in sunlight. Full UV protection. Ideal for outdoor use.</div>
-        <div class="flex ic" style="justify-content:space-between"><div class="lens-price">₹2,400</div><span class="b b-green xs">Active</span></div>
-        <div class="xs td2 mt4 mono" style="color:var(--text3)">EWL-SV-HI-161</div>
-        <hr class="sep">
-        <div class="flex g2"><button class="btn xs">Edit</button><button class="btn xs">Store Activation</button></div>
       </div>
+    </div>
+  </div>
 
-      <div class="lens-card">
-        <div class="lens-name">EW Progressive Pro 1.67</div>
-        <div class="lens-type">Progressive</div>
-        <div class="lens-tags">
-          <span class="b b-blue xs">Progressive</span>
-          <span class="b b-gray xs">1.67 Index</span>
-          <span class="b b-gray xs">Trivex</span>
-          <span class="b b-gray xs">AR + Hardcoat</span>
-        </div>
-        <div class="xs td2 mb3">Premium no-line bifocal. Wide corridor design for comfortable transition zones.</div>
-        <div class="flex ic" style="justify-content:space-between"><div class="lens-price">₹4,800</div><span class="b b-green xs">Active</span></div>
-        <div class="xs td2 mt4 mono" style="color:var(--text3)">EWL-PR-TRX-167</div>
-        <hr class="sep">
-        <div class="flex g2"><button class="btn xs">Edit</button><button class="btn xs">Store Activation</button></div>
+  <div class="page" id="page-lens-addons">
+    <div class="ph flex ic flex-wrap g2">
+      <div><div class="pt">Lens add-ons</div></div>
+      <button type="button" class="btn primary mla sm" id="lc-addon-new-btn" onclick="window.lcOpenNewAddon && window.lcOpenNewAddon()" style="display:none">+ Add-on</button>
+      <button type="button" class="btn sm" onclick="window.loadLensAddonsPage && window.loadLensAddonsPage()">↻ Refresh</button>
+    </div>
+    <div class="alert alert-blue mb4"><span>🔒</span><div>Same four fields as packages. Global price per add-on; link to packages on <strong>Lens link matrix</strong> or in package detail.</div></div>
+    <div class="card">
+      <div class="cb" style="padding:0;overflow-x:auto">
+        <table class="tbl w100">
+          <thead><tr><th>POS Brand</th><th>POS Name</th><th>Internal brand</th><th>Internal name</th><th class="tc">₹</th><th class="tc">Active</th><th class="tc" id="lc-addon-th-actions" style="display:none"> </th></tr></thead>
+          <tbody id="lc-addon-tbody"></tbody>
+        </table>
       </div>
+    </div>
+  </div>
 
-      <div class="lens-card">
-        <div class="lens-name">EW ZeroBlue 1.50</div>
-        <div class="lens-type">Zero Power</div>
-        <div class="lens-tags">
-          <span class="b b-teal xs">BLU Screen</span>
-          <span class="b b-gray xs">1.50 Index</span>
-          <span class="b b-gray xs">CR-39</span>
-          <span class="b b-gray xs">UV420</span>
-        </div>
-        <div class="xs td2 mb3">Non-prescriptive blue light protection. Perfect for screen workers who don't need power correction.</div>
-        <div class="flex ic" style="justify-content:space-between"><div class="lens-price">₹800</div><span class="b b-green xs">Active</span></div>
-        <div class="xs td2 mt4 mono" style="color:var(--text3)">EWL-ZP-CR39-150</div>
-        <hr class="sep">
-        <div class="flex g2"><button class="btn xs">Edit</button><button class="btn xs">Store Activation</button></div>
-      </div>
-
-      <div class="lens-card" style="border:2px dashed var(--border);background:transparent;display:flex;align-items:center;justify-content:center;min-height:200px;cursor:pointer" onclick="openM('modal-new-lens')">
-        <div style="text-align:center;color:var(--text3)"><div style="font-size:28px;margin-bottom:8px">+</div><div class="sm-txt fw6">Add Lens Product</div></div>
+  <div class="page" id="page-lens-package-addons">
+    <div class="ph flex ic">
+      <div><div class="pt">Package ↔ add-on matrix</div></div>
+      <button type="button" class="btn sm mla" onclick="window.loadLensMatrixPage && window.loadLensMatrixPage()">↻ Refresh</button>
+    </div>
+    <p class="ps mb3" style="color:var(--text3)">Toggle cells to allow an add-on on a package. Changes save automatically.</p>
+    <div class="card">
+      <div class="cb" style="padding:0;overflow:auto">
+        <table class="tbl w100" id="lc-matrix-table" style="min-width:520px"><thead id="lc-matrix-thead"><tr><th>Package</th></tr></thead><tbody id="lc-matrix-tbody"></tbody></table>
       </div>
     </div>
   </div>
@@ -992,81 +999,50 @@
 
 </main>
 
-<!-- MODALS -->
-<div class="overlay" id="modal-new-lens">
-  <div class="modal">
-    <div class="mh"><div class="mt-title">Add Lens Product</div><div class="mc" onclick="closeM('modal-new-lens')">×</div></div>
+<!-- MODALS — Lens config -->
+<div class="overlay" id="lc-modal-cat">
+  <div class="modal" style="max-width:520px">
+    <div class="mh"><div class="mt-title">Category</div><div class="mc" onclick="closeM('lc-modal-cat')">×</div></div>
     <div class="mb">
-      <div class="alert alert-blue"><span>🔒</span><div><strong>Supplier Confidentiality:</strong> Source Brand and Source Name are internal only. Lens Brand and Lens Name are shown publicly.</div></div>
-      <div class="section-lbl">Public Identity</div>
-      <div class="fg2 mb4">
-        <div class="fgrp"><label>Lens Name (Public) <span class="req">*</span></label><input placeholder="e.g. EW ClearView BLU 1.56"></div>
-        <div class="fgrp"><label>Lens Brand (Public) <span class="req">*</span></label><input placeholder="e.g. EW Studio Lenses"></div>
+      <input type="hidden" id="lc-cat-id">
+      <div class="fg2 mb3">
+        <div class="fgrp"><label>POS Brand</label><input id="lc-cat-pos-brand" type="text" maxlength="100" autocomplete="off"></div>
+        <div class="fgrp"><label>POS Name <span class="req">*</span></label><input id="lc-cat-pos-name" type="text" maxlength="100" required autocomplete="off"></div>
       </div>
-      <div class="section-lbl">Internal / Supplier</div>
-      <div class="fg2 mb4">
-        <div class="fgrp"><label>Source Brand (Internal)</label><input placeholder="Supplier's brand name..."></div>
-        <div class="fgrp"><label>Source Name (Internal)</label><input placeholder="Supplier's product name/ref..."></div>
+      <div class="fg2 mb3">
+        <div class="fgrp"><label>Internal brand</label><input id="lc-cat-int-brand" type="text" maxlength="100" autocomplete="off"></div>
+        <div class="fgrp"><label>Internal name</label><input id="lc-cat-int-name" type="text" maxlength="100" autocomplete="off"></div>
       </div>
-      <div class="section-lbl">Lens Attributes</div>
-      <div class="fg3 mb4">
-        <div class="fgrp"><label>Lens Type <span class="req">*</span></label><select><option>Single Vision</option><option>Progressive</option><option>Bifocal</option><option>Zero Power</option></select></div>
-        <div class="fgrp"><label>Lens Material <span class="req">*</span></label><select><option>CR-39</option><option>Polycarbonate</option><option>Trivex</option><option>High Index</option></select></div>
-        <div class="fgrp"><label>Index <span class="req">*</span></label><select><option>1.50</option><option>1.56</option><option>1.61</option><option>1.67</option><option>1.74</option></select></div>
+      <div class="fg2 mb3">
+        <div class="fgrp"><label>Sort</label><input id="lc-cat-sort" type="number" min="0" step="1" value="0"></div>
+        <div class="fgrp" style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="lc-cat-active" checked> Active</label></div>
       </div>
-      <div class="fg2 mb4">
-        <div class="fgrp s2"><label>Lens Coatings</label><div style="display:flex;gap:8px;flex-wrap:wrap;padding:9px 11px;border:1.5px solid var(--border);border-radius:7px">
-          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer;font-size:12.5px"><input type="checkbox" checked> AR (Anti-Reflective)</label>
-          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer;font-size:12.5px"><input type="checkbox"> Hardcoat</label>
-          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer;font-size:12.5px"><input type="checkbox"> UV420</label>
-          <label style="display:flex;align-items:center;gap:4px;font-weight:400;cursor:pointer;font-size:12.5px"><input type="checkbox"> Mirror</label>
-        </div></div>
-      </div>
-      <div class="fg2 mb4">
-        <div class="fgrp"><label>Price MRP (₹) <span class="req">*</span></label><input type="number" placeholder="e.g. 1200"></div>
-        <div class="fgrp"><label>Catalogue Status</label><select><option>Active</option><option>Draft</option></select></div>
-        <div class="fgrp s2"><label>Benefits (Customer-Facing)</label><textarea placeholder="Key benefits in customer language..."></textarea></div>
-      </div>
+      <div class="fgrp mb3"><label>Notes</label><textarea id="lc-cat-notes" maxlength="500" rows="2" placeholder="Internal notes"></textarea></div>
     </div>
-    <div class="mf"><button class="btn" onclick="closeM('modal-new-lens')">Cancel</button><button class="btn primary">Save Lens Product</button></div>
+    <div class="mf"><button type="button" class="btn" onclick="closeM('lc-modal-cat')">Cancel</button><button type="button" class="btn primary" id="lc-cat-save-btn" onclick="window.lcSaveCategory && window.lcSaveCategory()">Save</button></div>
   </div>
 </div>
 
-<div class="overlay" id="modal-lens-detail">
-  <div class="modal narrow">
-    <div class="mh"><div><div class="mt-title">EW ClearView BLU 1.56</div><div style="font-size:11px;color:var(--text2);margin-top:2px" class="mono">EWL-SV-PC-156</div></div><div class="mc" onclick="closeM('modal-lens-detail')">×</div></div>
+<div class="overlay" id="lc-modal-addon">
+  <div class="modal" style="max-width:520px">
+    <div class="mh"><div class="mt-title">Add-on</div><div class="mc" onclick="closeM('lc-modal-addon')">×</div></div>
     <div class="mb">
-      <div class="tabs" style="margin-bottom:14px">
-        <div class="tab active" onclick="switchTab(this,'ltab-pub')">Public</div>
-        <div class="tab" onclick="switchTab(this,'ltab-int')">Internal</div>
-        <div class="tab" onclick="switchTab(this,'ltab-stores')">Store Activation</div>
+      <input type="hidden" id="lc-ad-id">
+      <div class="fg2 mb3">
+        <div class="fgrp"><label>POS Brand</label><input id="lc-ad-pos-brand" type="text" maxlength="100" autocomplete="off"></div>
+        <div class="fgrp"><label>POS Name <span class="req">*</span></label><input id="lc-ad-pos-name" type="text" maxlength="100" required autocomplete="off"></div>
       </div>
-      <div id="ltab-pub">
-        <div class="col-stack" style="gap:10px">
-          <div class="fgrp"><label>Lens Name</label><input value="EW ClearView BLU 1.56"></div>
-          <div class="fgrp"><label>Lens Brand</label><input value="EW Studio Lenses"></div>
-          <div class="fgrp"><label>Price MRP (₹)</label><input type="number" value="1200"></div>
-          <div class="fgrp"><label>Benefits</label><textarea>Blocks blue light, reduces digital eye strain. AR coating reduces reflections for clear vision.</textarea></div>
-        </div>
+      <div class="fg2 mb3">
+        <div class="fgrp"><label>Internal brand</label><input id="lc-ad-int-brand" type="text" maxlength="100" autocomplete="off"></div>
+        <div class="fgrp"><label>Internal name</label><input id="lc-ad-int-name" type="text" maxlength="100" autocomplete="off"></div>
       </div>
-      <div id="ltab-int" style="display:none">
-        <div class="alert alert-blue"><span>🔒</span><div>Visible to Super Admin and Foundry team only.</div></div>
-        <div class="col-stack" style="gap:10px">
-          <div class="fgrp"><label>Source Brand</label><input value="Essilor" class="mono"></div>
-          <div class="fgrp"><label>Source Name</label><input value="Crizal Easy UV" class="mono"></div>
-        </div>
-      </div>
-      <div id="ltab-stores" style="display:none">
-        <div class="xs td2 mb4">Toggle which stores offer this lens product. Default: OFF for all stores.</div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <div class="flex ic" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="sm-txt">Eyewoot Surat Main</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
-          <div class="flex ic" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="sm-txt">Franchise — Bharuch</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
-          <div class="flex ic" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="sm-txt">Franchise — Vadodara</span><div class="tog" onclick="this.classList.toggle('on')"></div></div>
-          <div class="flex ic" style="justify-content:space-between;padding:10px 0"><span class="sm-txt">Eyewoot Anand</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
-        </div>
+      <div class="fg3 mb3">
+        <div class="fgrp"><label>Price (₹) <span class="req">*</span></label><input id="lc-ad-price" type="number" min="0" step="0.01"></div>
+        <div class="fgrp"><label>Sort</label><input id="lc-ad-sort" type="number" min="0" step="1" value="0"></div>
+        <div class="fgrp" style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="lc-ad-active" checked> Active</label></div>
       </div>
     </div>
-    <div class="mf"><button class="btn" onclick="closeM('modal-lens-detail')">Cancel</button><button class="btn primary">Save Changes</button></div>
+    <div class="mf"><button type="button" class="btn" onclick="closeM('lc-modal-addon')">Cancel</button><button type="button" class="btn primary" id="lc-ad-save-btn" onclick="window.lcSaveAddon && window.lcSaveAddon()">Save</button></div>
   </div>
 </div>
 
@@ -1311,7 +1287,8 @@
 const bcMap = {
   dashboard:'Dashboard', purchases:'All Purchases', 'new-purchase':'New Purchase',
   'bill-verify':'Bill Verification', branding:'Branding', digitisation:'Digitisation',
-  'sku-catalogue':'SKU Catalogue', 'stock-view':'Stock View', 'lens-portfolio':'Lens Portfolio',
+  'sku-catalogue':'SKU Catalogue', 'stock-view':'Stock View',
+  'lens-packages':'Lens packages', 'lens-addons':'Lens add-ons', 'lens-package-addons':'Lens link matrix',
   'master-catalogue':'Master Catalogue', 'rate-intelligence':'Rate Intelligence',
   'transfer-requests':'Store Connect — Goods Request',
   'stock-transfer':   'Store Connect — Goods Transfer',

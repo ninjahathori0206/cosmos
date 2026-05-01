@@ -1,0 +1,132 @@
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.panel{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);width:440px;overflow:hidden}
+.panel-header{padding:16px 20px;border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:space-between}
+.panel-title{font-size:15px;font-weight:500}
+.close-btn{width:24px;height:24px;border-radius:50%;border:0.5px solid var(--color-border-secondary);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--color-text-secondary)}
+.form-body{padding:20px}
+.field-group{margin-bottom:16px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.field-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px}
+label{display:block;font-size:12px;color:var(--color-text-secondary);margin-bottom:5px;font-weight:500}
+select,input[type=text],input[type=number],input[type=date]{width:100%;height:36px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:0 10px;font-size:14px;background:var(--color-background-primary);color:var(--color-text-primary)}
+textarea{width:100%;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:8px 10px;font-size:14px;background:var(--color-background-primary);color:var(--color-text-primary);resize:vertical;min-height:60px;font-family:var(--font-sans)}
+select:focus,input:focus,textarea:focus{outline:none;border-color:#7F77DD;box-shadow:0 0 0 2px #EEEDFE}
+.emoji-picker{width:100%;height:44px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;background:var(--color-background-secondary)}
+.section-label{font-size:11px;font-weight:500;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;margin-top:4px}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);margin-bottom:16px}
+.toggle-info{font-size:13px}
+.toggle-sub{font-size:11px;color:var(--color-text-tertiary);margin-top:2px}
+.toggle{width:36px;height:20px;background:var(--color-border-secondary);border-radius:10px;position:relative;cursor:pointer;flex-shrink:0}
+.toggle.on{background:#534AB7}
+.toggle::after{content:'';width:14px;height:14px;border-radius:50%;background:#fff;position:absolute;top:3px;left:3px;transition:left 0.15s}
+.toggle.on::after{left:19px}
+.preview-card{background:#EEEDFE;border:0.5px solid #AFA9EC;border-radius:var(--border-radius-lg);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px}
+.preview-icon{font-size:24px;flex-shrink:0}
+.preview-title{font-size:14px;font-weight:500;color:#3C3489}
+.preview-desc{font-size:12px;color:#534AB7;margin-top:2px}
+.preview-badge{margin-left:auto;background:#534AB7;color:#fff;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:500;flex-shrink:0}
+.panel-footer{padding:12px 20px;border-top:0.5px solid var(--color-border-tertiary);display:flex;gap:8px}
+.btn-primary{height:36px;padding:0 16px;background:#534AB7;color:#fff;border:none;border-radius:var(--border-radius-md);font-size:14px;font-weight:500;cursor:pointer}
+.btn-secondary{height:36px;padding:0 14px;background:transparent;color:var(--color-text-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);font-size:14px;cursor:pointer}
+.hint{font-size:11px;color:var(--color-text-tertiary);margin-top:4px}
+</style>
+
+<h2 class="sr-only">Offer creation panel redesign for Cosmos ERP CX module</h2>
+
+<div style="padding:1rem 0">
+
+<p style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:0.05em">New offer</p>
+
+<div class="panel">
+  <div class="panel-header">
+    <span class="panel-title">Create offer</span>
+    <button class="close-btn">✕</button>
+  </div>
+
+  <div class="form-body">
+
+    <div class="section-label">Preview</div>
+    <div class="preview-card">
+      <div class="preview-icon">🎁</div>
+      <div>
+        <div class="preview-title">20% off all frames</div>
+        <div class="preview-desc">All brands · Any store · Stackable with loyalty</div>
+      </div>
+      <div class="preview-badge">20%</div>
+    </div>
+
+    <div class="field-row">
+      <div>
+        <label>Title</label>
+        <input type="text" value="20% off all frames" placeholder="e.g. 20% off all frames" />
+      </div>
+      <div>
+        <label>Icon</label>
+        <div class="emoji-picker">🎁</div>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label>Description <span style="font-weight:400;color:var(--color-text-tertiary)">(shown to customer)</span></label>
+      <textarea>All brands · Any store · Stackable with loyalty</textarea>
+    </div>
+
+    <div class="section-label" style="margin-top:4px">Discount</div>
+    <div class="field-row">
+      <div>
+        <label>Type</label>
+        <select>
+          <option>Percentage (%)</option>
+          <option>Fixed amount (₹)</option>
+        </select>
+      </div>
+      <div>
+        <label>Value</label>
+        <input type="number" value="20" placeholder="0" />
+      </div>
+    </div>
+
+    <div class="section-label">Eligibility & validity</div>
+    <div class="field-row">
+      <div>
+        <label>Eligible tier</label>
+        <select>
+          <option>All tiers</option>
+          <option>Plus only</option>
+          <option>Basic only</option>
+        </select>
+      </div>
+      <div>
+        <label>Sort order <span style="font-weight:400;color:var(--color-text-tertiary)">(lower = higher)</span></label>
+        <input type="number" value="10" placeholder="10" />
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div>
+        <label>Valid from</label>
+        <input type="date" value="2026-05-01" />
+      </div>
+      <div>
+        <label>Valid until</label>
+        <input type="date" />
+      </div>
+    </div>
+
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-info">Plus members only</div>
+        <div class="toggle-sub">Hide this offer from non-subscribers</div>
+      </div>
+      <div class="toggle" onclick="this.classList.toggle('on')"></div>
+    </div>
+
+  </div>
+
+  <div class="panel-footer">
+    <button class="btn-primary">Save offer</button>
+    <button class="btn-secondary">Cancel</button>
+  </div>
+</div>
+</div>

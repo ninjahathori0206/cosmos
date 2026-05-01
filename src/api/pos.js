@@ -5,9 +5,13 @@ const Joi     = require('joi')
 const bcrypt  = require('bcryptjs')
 const { executeStoredProcedure, getPool } = require('../config/db')
 const { authJwt }           = require('../middleware/authJwt')
+const { apiKeyAuth }        = require('../middleware/apiKeyAuth')
+const { requireTabletSession } = require('../middleware/requireTabletSession')
 const { requireModule, requirePermission } = require('../middleware/authorize')
+const { writeAuditLog }     = require('../services/auditService')
 const { resolveProcurementMode, readSetting } = require('../services/procurementService')
 const orderService = require('../services/orderService')
+const { resolveSkuFacts, computeOfferDiscountAmount } = require('../services/customerOfferDiscountService')
 
 const router = express.Router()
 
@@ -23,6 +27,11 @@ const posLabWorkflow = [authJwt, requireModule('pos'), requirePermission('pos.la
 const posStaffPinSet = [authJwt, requireModule('pos'), requirePermission('pos.staff.pin.set')]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function truthyPosSetting(val) {
+  const s = String(val ?? '').trim().toLowerCase()
+  return s === '1' || s === 'true' || s === 'yes'
+}
 
 function groupCatalogueRows(rows) {
   const map = new Map()
@@ -117,10 +126,36 @@ async function fetchCatalogueBrandNames(store_id, scope) {
 
 // ── Validation schemas ────────────────────────────────────────────────────────
 
-const staffLoginSchema = Joi.object({
-  pin:      Joi.string().min(4).max(20).required(),
-  store_id: Joi.number().integer().positive().required()
+const tabletLoginSchema = Joi.object({
+  tablet_id: Joi.number().integer().positive().required(),
+  pin: Joi.string().min(4).max(20).required()
 })
+
+const staffPinLoginSchema = Joi.object({
+  pin: Joi.string().min(4).max(20).required()
+})
+
+const selfSetPinSchema = Joi.object({
+  pin: Joi.string().length(4).pattern(/^\d{4}$/).required()
+})
+
+const sessionIdSchema = Joi.object({
+  session_id: Joi.number().integer().positive().optional(),
+  cancel_reason: Joi.string().max(200).allow('', null).optional()
+})
+
+async function getPosMaxPinAttempts() {
+  try {
+    const r = await executeStoredProcedure('sp_POS_GetSystemConfig', {
+      config_key: { type: sql.VarChar(100), value: 'pos_max_pin_attempts' }
+    })
+    const row = (r.recordset || [])[0]
+    const n = parseInt(String(row && row.config_value != null ? row.config_value : '3'), 10)
+    return Number.isFinite(n) && n > 0 ? n : 3
+  } catch (_e) {
+    return 3
+  }
+}
 
 const setPinSchema = Joi.object({
   employee_id: Joi.number().integer().positive().required(),
@@ -209,6 +244,24 @@ function mapStartupConfig(result) {
   return { productTypeConfig, lookups, labTransitions }
 }
 
+function posLensPublicLabel(brand, name, legacyName) {
+  const b = String(brand || '').trim()
+  const n = String(name || '').trim()
+  const leg = String(legacyName || '').trim()
+  if (b && n) return `${b} · ${n}`
+  if (n) return n
+  if (b) return b
+  return leg || '—'
+}
+
+/** Lowercase haystack for POS lens wizard power-type → category matching (not shown in UI). */
+function lensCategoryMatchHaystack(c) {
+  const parts = [c.name, c.pos_brand, c.pos_name, c.internal_brand, c.internal_name]
+    .map((x) => String(x || '').trim())
+    .filter(Boolean)
+  return parts.join(' ').toLowerCase()
+}
+
 function buildLensCatalogPayload(result) {
   const rs = result.recordsets || []
   const categories = rs[0] || []
@@ -220,7 +273,7 @@ function buildLensCatalogPayload(result) {
   for (const a of addons) {
     addonById.set(a.id, {
       id: a.id,
-      name: String(a.name || ''),
+      name: posLensPublicLabel(a.pos_brand, a.pos_name, a.name),
       price: Number(a.price) || 0,
       sort_order: Number(a.sort_order) || 0
     })
@@ -237,7 +290,7 @@ function buildLensCatalogPayload(result) {
           .sort((x, y) => (x.sort_order - y.sort_order) || x.id - y.id)
         return {
           id: p.id,
-          name: String(p.name || ''),
+          name: posLensPublicLabel(p.pos_brand, p.pos_name, p.name),
           price: Number(p.price) || 0,
           sort_order: Number(p.sort_order) || 0,
           addons: pkgAddons
@@ -246,8 +299,9 @@ function buildLensCatalogPayload(result) {
       .sort((a, b) => (a.sort_order - b.sort_order) || a.id - b.id)
     return {
       id: c.id,
-      name: String(c.name || ''),
+      name: posLensPublicLabel(c.pos_brand, c.pos_name, c.name),
       sort_order: Number(c.sort_order) || 0,
+      matchHaystack: lensCategoryMatchHaystack(c),
       packages: pkgs
     }
   })
@@ -256,25 +310,80 @@ function buildLensCatalogPayload(result) {
   return { categories: outCategories, addons: addonList }
 }
 
-// ── POST /api/pos/staff-login ─────────────────────────────────────────────────
-// Public (apiKeyAuth only — no JWT required).
-// Receives plain 4-digit PIN + store_id, returns a short-lived POS session token.
-router.post('/staff-login', async (req, res, next) => {
+// ── POST /api/pos/tablet-login ────────────────────────────────────────────────
+// Public + API key. Unlocks a physical tablet; returns short-lived tablet JWT (X-Tablet-Token).
+router.post('/tablet-login', apiKeyAuth, async (req, res, next) => {
   try {
-    const { error, value } = staffLoginSchema.validate(req.body)
+    const { error, value } = tabletLoginSchema.validate(req.body)
     if (error) {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.details.map(d => d.message)
+        errors: error.details.map((d) => d.message)
       })
     }
 
-    const { pin, store_id } = value
+    const tabResult = await executeStoredProcedure('sp_POS_ValidateTabletPin', {
+      tablet_id: { type: sql.Int, value: value.tablet_id }
+    })
+    const tab = (tabResult.recordset || [])[0]
+    if (!tab) {
+      return res.status(401).json({ success: false, message: 'Tablet not found or inactive.' })
+    }
 
-    // Fetch all active staff for this store (bcrypt compare done here in Node)
-    const staffResult = await executeStoredProcedure('sp_POS_GetStaffForStore', {
-      store_id: { type: sql.Int, value: store_id }
+    const ok = await bcrypt.compare(String(value.pin), String(tab.pin_hash || ''))
+    if (!ok) {
+      return res.status(401).json({ success: false, message: 'Invalid tablet PIN.' })
+    }
+
+    await executeStoredProcedure('sp_POS_UpdateTabletLastLogin', {
+      tablet_id: { type: sql.Int, value: tab.tablet_id }
+    })
+
+    const token = jwt.sign(
+      {
+        tablet_session: true,
+        tablet_id: tab.tablet_id,
+        store_id: tab.store_id,
+        device_name: String(tab.device_name || '')
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '12h' }
+    )
+
+    return res.json({
+      success: true,
+      data: {
+        token,
+        tablet_id: tab.tablet_id,
+        store_id: tab.store_id,
+        device_name: tab.device_name
+      }
+    })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── POST /api/pos/staff-login ─────────────────────────────────────────────────
+// API key + tablet session. Staff PIN; starts pos_order_sessions row; returns staff JWT.
+router.post('/staff-login', apiKeyAuth, requireTabletSession, async (req, res, next) => {
+  try {
+    const { error, value } = staffPinLoginSchema.validate(req.body)
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      })
+    }
+
+    const storeId = req.tablet.store_id
+    const tabletId = req.tablet.tablet_id
+    const pin = value.pin
+
+    const staffResult = await executeStoredProcedure('sp_POS_GetStaffForStore_v2', {
+      store_id: { type: sql.Int, value: storeId }
     })
 
     const staffList = staffResult.recordset || []
@@ -282,41 +391,91 @@ router.post('/staff-login', async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'No active staff found for this store.' })
     }
 
-    // Find matching staff by bcrypt comparing PIN against each pos_pin_hash
     let matched = null
     for (const staff of staffList) {
       if (!staff.pos_pin_hash && pin !== '0000') continue
-      const ok = pin === '0000' || await bcrypt.compare(String(pin), staff.pos_pin_hash)
-      if (ok) {
-        matched = staff; break }
+      const pinOk = pin === '0000' || (await bcrypt.compare(String(pin), String(staff.pos_pin_hash || '')))
+      if (pinOk) {
+        matched = staff
+        break
+      }
     }
 
+    const maxAttempts = await getPosMaxPinAttempts()
+
     if (!matched) {
+      const logResult = await executeStoredProcedure('sp_POS_LogPinAttempt', {
+        user_id: { type: sql.Int, value: null },
+        tablet_id: { type: sql.Int, value: tabletId },
+        store_id: { type: sql.Int, value: storeId },
+        success: { type: sql.Bit, value: 0 }
+      })
+      const fails = Number((logResult.recordset && logResult.recordset[0] && logResult.recordset[0].consecutive_failures) || 0)
+      if (fails >= maxAttempts) {
+        try {
+          await writeAuditLog({
+            userId: null,
+            action: 'POS_PIN_LOCKOUT_ALERT',
+            module: 'pos',
+            entityType: 'store',
+            entityId: storeId,
+            newValue: JSON.stringify({ tablet_id: tabletId, attempts: fails }),
+            ipAddress: req.ip || null
+          })
+        } catch (_a) {
+          /* non-fatal */
+        }
+      }
       return res.status(401).json({ success: false, message: 'Invalid PIN.' })
     }
 
-    // Fetch permissions for this role
+    await executeStoredProcedure('sp_POS_LogPinAttempt', {
+      user_id: { type: sql.Int, value: matched.employee_id },
+      tablet_id: { type: sql.Int, value: tabletId },
+      store_id: { type: sql.Int, value: storeId },
+      success: { type: sql.Bit, value: 1 }
+    })
+
+    const canRefund = Boolean(matched.can_initiate_refund)
+    const sessResult = await executeStoredProcedure('sp_POS_StartOrderSession', {
+      tablet_id: { type: sql.Int, value: tabletId },
+      user_id: { type: sql.Int, value: matched.employee_id },
+      store_id: { type: sql.Int, value: storeId },
+      role_key_snapshot: { type: sql.VarChar(50), value: String(matched.role || '') },
+      can_refund_snapshot: { type: sql.Bit, value: canRefund ? 1 : 0 }
+    })
+    const sessionRow = (sessResult.recordset || [])[0]
+    const sessionId = sessionRow && sessionRow.session_id != null ? Number(sessionRow.session_id) : null
+    if (!sessionId) {
+      return res.status(500).json({ success: false, message: 'Failed to start order session.' })
+    }
+
     let permissions = []
     try {
       const permResult = await executeStoredProcedure('sp_POS_GetStaffPermissions', {
         role_key: { type: sql.VarChar(100), value: matched.role }
       })
       permissions = (permResult.recordset || [])
-        .map(r => String(r.permission_key || '').toLowerCase())
+        .map((r) => String(r.permission_key || '').toLowerCase())
         .filter(Boolean)
     } catch (permErr) {
       console.warn('[pos/staff-login] sp_POS_GetStaffPermissions failed:', permErr.message)
     }
 
-    // Issue a POS-specific JWT (8-hour shift token)
     const payload = {
-      pos_session:  true,
-      employee_id:  matched.employee_id,
-      name:         matched.name,
-      role:         matched.role,
-      store_id:     matched.store_id,
+      pos_session: true,
+      session_id: sessionId,
+      tablet_id: tabletId,
+      user_id: matched.employee_id,
+      employee_id: matched.employee_id,
+      name: matched.name,
+      role: matched.role,
+      store_id: matched.store_id,
+      can_initiate_refund: canRefund,
+      can_view_reports: Boolean(matched.can_view_reports),
+      can_manage_staff: Boolean(matched.can_manage_staff),
       permissions,
-      modules:      { pos: true }
+      modules: { pos: true }
     }
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -327,13 +486,111 @@ router.post('/staff-login', async (req, res, next) => {
       success: true,
       data: {
         token,
-        employee_id:  matched.employee_id,
-        name:         matched.name,
-        role:         matched.role,
-        store_id:     matched.store_id,
+        session_id: sessionId,
+        employee_id: matched.employee_id,
+        name: matched.name,
+        role: matched.role,
+        store_id: matched.store_id,
         permissions
       }
     })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── POST /api/pos/session/complete ────────────────────────────────────────────
+router.post('/session/complete', authJwt, requireModule('pos'), async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.pos_session) {
+      return res.status(403).json({ success: false, message: 'POS staff session required.' })
+    }
+    const { error, value } = sessionIdSchema.validate(req.body || {})
+    if (error) {
+      return res.status(400).json({ success: false, message: error.details[0].message })
+    }
+    const sid = value.session_id != null ? Number(value.session_id) : Number(req.user.session_id)
+    if (!Number.isFinite(sid) || sid !== Number(req.user.session_id)) {
+      return res.status(400).json({ success: false, message: 'Invalid session.' })
+    }
+    const result = await executeStoredProcedure('sp_POS_CompleteOrderSession', {
+      session_id: { type: sql.Int, value: sid }
+    })
+    const rows = Number((result.recordset && result.recordset[0] && result.recordset[0].rows_updated) || 0)
+    if (!rows) {
+      return res.status(400).json({ success: false, message: 'Session could not be completed.' })
+    }
+    return res.json({ success: true })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── POST /api/pos/session/cancel ─────────────────────────────────────────────
+router.post('/session/cancel', authJwt, requireModule('pos'), async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.pos_session) {
+      return res.status(403).json({ success: false, message: 'POS staff session required.' })
+    }
+    const { error, value } = sessionIdSchema.validate(req.body || {})
+    if (error) {
+      return res.status(400).json({ success: false, message: error.details[0].message })
+    }
+    const sid = value.session_id != null ? Number(value.session_id) : Number(req.user.session_id)
+    if (!Number.isFinite(sid) || sid !== Number(req.user.session_id)) {
+      return res.status(400).json({ success: false, message: 'Invalid session.' })
+    }
+    const result = await executeStoredProcedure('sp_POS_CancelOrderSession', {
+      session_id: { type: sql.Int, value: sid },
+      cancel_reason: { type: sql.VarChar(200), value: value.cancel_reason || null }
+    })
+    const rows = Number((result.recordset && result.recordset[0] && result.recordset[0].rows_updated) || 0)
+    if (!rows) {
+      return res.status(400).json({ success: false, message: 'Session could not be cancelled.' })
+    }
+    return res.json({ success: true })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── PUT /api/pos/set-pin ─────────────────────────────────────────────────────
+// Self-service: logged-in staff sets own 4-digit POS PIN.
+router.put('/set-pin', authJwt, requireModule('pos'), async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.pos_session || req.user.employee_id == null) {
+      return res.status(403).json({ success: false, message: 'POS staff session required.' })
+    }
+    const { error, value } = selfSetPinSchema.validate(req.body)
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      })
+    }
+    const pinHash = await bcrypt.hash(value.pin, 12)
+    const result = await executeStoredProcedure('sp_POS_SetUserPin', {
+      user_id: { type: sql.Int, value: Number(req.user.employee_id) },
+      pin_hash: { type: sql.VarChar(200), value: pinHash }
+    })
+    const rows = Number((result.recordset && result.recordset[0] && result.recordset[0].rows_updated) || 0)
+    if (!rows) {
+      return res.status(400).json({ success: false, message: 'Could not update PIN for this user.' })
+    }
+    try {
+      await writeAuditLog({
+        userId: Number(req.user.employee_id),
+        action: 'POS_PIN_UPDATED',
+        module: 'pos',
+        entityType: 'user',
+        entityId: Number(req.user.employee_id),
+        ipAddress: req.ip || null
+      })
+    } catch (_a) {
+      /* non-fatal */
+    }
+    return res.json({ success: true, message: 'PIN updated.' })
   } catch (err) {
     return next(err)
   }
@@ -430,6 +687,8 @@ router.get('/settings', ...posCatalogue, async (req, res, next) => {
       WHERE setting_key IN (
         N'lab_advance_pct',
         N'pos_gst_rate',
+        N'pos_composition_scheme',
+        N'pos_prices_gst_inclusive',
         N'pos_invoice_prefix',
         N'pos_points_maturity_days',
         N'pos_procurement_mode',
@@ -443,6 +702,8 @@ router.get('/settings', ...posCatalogue, async (req, res, next) => {
     const data = {
       lab_advance_pct: Number(map.lab_advance_pct || 40),
       gst_rate: Number(map.pos_gst_rate || 0.05),
+      composition_scheme: truthyPosSetting(map.pos_composition_scheme),
+      prices_gst_inclusive: truthyPosSetting(map.pos_prices_gst_inclusive),
       invoice_prefix: map.pos_invoice_prefix || 'EW-INV-',
       points_maturity_days: Number(map.pos_points_maturity_days || 30),
       procurement_mode: map.pos_procurement_mode || 'STORE',
@@ -645,6 +906,23 @@ router.get('/orders/:id', ...posOrdersView, async (req, res, next) => {
   }
 })
 
+// ── GET /api/pos/catalogue-scope-facts ────────────────────────────────────────
+// Batch-resolve sku_ids → {brand_id, product_id, product_type} for client-side scope matching.
+// POS calls this after loading the cart to filter applicable scoped offers.
+router.get('/catalogue-scope-facts', authJwt, requireModule('pos'), async (req, res, next) => {
+  try {
+    const rawIds = String(req.query.sku_ids || '').split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => n > 0)
+    if (!rawIds.length) return res.json({ success: true, data: {} })
+    const pool = await getPool()
+    const factMap = await resolveSkuFacts(pool, rawIds)
+    const data = {}
+    for (const [skuId, facts] of factMap.entries()) {
+      data[skuId] = { brand_id: facts.brandId, product_id: facts.productId, product_type: facts.productTypeKey }
+    }
+    return res.json({ success: true, data })
+  } catch (err) { return next(err) }
+})
+
 // ── POST /api/pos/orders ──────────────────────────────────────────────────────
 router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
   const storeId = req.user.store_id
@@ -669,9 +947,32 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
 
     const gstRate = Number(await readSetting(pool, 'pos_gst_rate') || 0.05)
     const advPct = Number(await readSetting(pool, 'lab_advance_pct') || 40)
+    const compositionScheme = truthyPosSetting(await readSetting(pool, 'pos_composition_scheme'))
+    const pricesGstInclusive = truthyPosSetting(await readSetting(pool, 'pos_prices_gst_inclusive'))
     const firstPt = value.lines[0].product_type
     const procurementMode = await resolveProcurementMode(pool, storeId, firstPt)
     const mode = await orderService.getOrdersEngineMode(pool)
+
+    // Authoritative offer discount re-computation (prevents client-side manipulation)
+    let authorisedDiscountAmount = value.discount_amount || 0
+    if (value.applied_offer_id) {
+      const offerRow = await pool.request()
+        .input('offer_id', sql.Int, value.applied_offer_id)
+        .query(`
+          SELECT offer_id, discount_type, discount_value, is_active, valid_from, valid_to
+          FROM   dbo.customer_offers WHERE offer_id = @offer_id
+        `)
+      const offer = offerRow.recordset && offerRow.recordset[0]
+      if (!offer || !offer.is_active) {
+        return res.status(400).json({ success: false, message: 'Applied offer is no longer active.' })
+      }
+      const nowMs = Date.now()
+      const vt = offer.valid_to ? new Date(offer.valid_to).getTime() : NaN
+      if (Number.isFinite(vt) && nowMs > vt) {
+        return res.status(400).json({ success: false, message: 'Applied offer has expired.' })
+      }
+      authorisedDiscountAmount = await computeOfferDiscountAmount(pool, offer, value.lines)
+    }
 
     const transaction = new sql.Transaction(pool)
     await transaction.begin()
@@ -682,10 +983,12 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
         storeId,
         employeeId,
         gstRate,
+        compositionScheme,
+        pricesGstInclusive,
         advPct,
         procurementMode,
         cfg,
-        discountAmount: value.discount_amount || 0,
+        discountAmount: authorisedDiscountAmount,
         appliedOfferId: value.applied_offer_id || null
       })
 
@@ -806,11 +1109,26 @@ router.post('/staff/set-pin', ...posStaffPinSet, async (req, res, next) => {
     const { employee_id, pin } = value
     const pinHash = await bcrypt.hash(pin, 12)
 
-    const pool = await getPool()
-    await pool.request()
-      .input('uid',  sql.Int,         employee_id)
-      .input('hash', sql.VarChar(200), pinHash)
-      .query('UPDATE dbo.users SET pos_pin_hash = @hash WHERE user_id = @uid')
+    const result = await executeStoredProcedure('sp_POS_SetUserPin', {
+      user_id: { type: sql.Int, value: employee_id },
+      pin_hash: { type: sql.VarChar(200), value: pinHash }
+    })
+    const rows = Number((result.recordset && result.recordset[0] && result.recordset[0].rows_updated) || 0)
+    if (!rows) {
+      return res.status(400).json({ success: false, message: 'User not found or inactive.' })
+    }
+    try {
+      await writeAuditLog({
+        userId: req.user && req.user.user_id != null ? Number(req.user.user_id) : null,
+        action: 'POS_PIN_SET_BY_ADMIN',
+        module: 'pos',
+        entityType: 'user',
+        entityId: employee_id,
+        ipAddress: req.ip || null
+      })
+    } catch (_a) {
+      /* non-fatal */
+    }
 
     return res.json({ success: true, message: 'PIN set successfully.' })
   } catch (err) {

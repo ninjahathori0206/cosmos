@@ -226,6 +226,7 @@ window.cxNav = function (id, el, options) {
   if (id === 'dashboard') window.loadCxDashboardPage()
   if (id === 'customers') window.loadCxCustomersPage()
   if (id === 'offers' && typeof window.loadOffersPage === 'function') window.loadOffersPage()
+  document.body.classList.remove('cx-mob-nav-open')
 }
 
 function cxApplyRouteFromPath () {

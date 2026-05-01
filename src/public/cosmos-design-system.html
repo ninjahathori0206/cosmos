@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cosmos Design System</title>
+  <link rel="stylesheet" href="css/cosmos-design-system.css">
+  <script src="js/cosmos-components.js" defer></script>
+  <style>
+    /* Specific styles for the living reference page itself */
+    .docs-section { margin-bottom: var(--space-12); padding: var(--space-8); background: var(--surface); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); border: 1px solid var(--border); }
+    .docs-title { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: var(--font-bold); margin-bottom: var(--space-6); color: var(--text-1); border-bottom: 1px solid var(--border); padding-bottom: var(--space-4); }
+    .docs-component-demo { padding: var(--space-8); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); margin-bottom: var(--space-4); background: var(--bg); display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-start; justify-content: flex-start; }
+    .docs-code { background: var(--grey-900); color: var(--grey-100); padding: var(--space-4); border-radius: var(--radius-lg); font-family: var(--font-mono); font-size: var(--text-sm); overflow-x: auto; white-space: pre; }
+    .theme-switcher { margin-left: auto; }
+    .theme-switcher select { width: auto; min-width: 150px; font-weight: var(--font-bold); background-color: var(--accent-light); color: var(--accent-dark); border-color: var(--accent); cursor: pointer; }
+    body { padding-bottom: 100px; }
+  </style>
+</head>
+<body class="cosmos-page module-command">
+  <aside class="cosmos-sidebar">
+    <div class="cosmos-sidebar-logo">
+      <div style="width:24px;height:24px;background:var(--accent);border-radius:6px;box-shadow:0 0 10px var(--accent);"></div>
+      Cosmos DS
+    </div>
+    <div class="cosmos-nav-section">Components</div>
+    <a href="#buttons" class="cosmos-nav-item active">Buttons</a>
+    <a href="#badges" class="cosmos-nav-item">Badges & Pills</a>
+    <a href="#cards" class="cosmos-nav-item">Cards</a>
+    <a href="#inputs" class="cosmos-nav-item">Form Inputs</a>
+    <a href="#tables" class="cosmos-nav-item">Tables</a>
+    <a href="#modals" class="cosmos-nav-item">Modals</a>
+    <a href="#toasts" class="cosmos-nav-item">Toasts</a>
+    <a href="#alerts" class="cosmos-nav-item">Alerts</a>
+    <a href="#empty" class="cosmos-nav-item">Empty States</a>
+    <a href="#loaders" class="cosmos-nav-item">Loaders</a>
+  </aside>
+
+  <main class="cosmos-content">
+    <header class="cosmos-topbar">
+      <div>
+        <h1 style="font-size: var(--text-lg); font-weight: var(--font-bold);">Living Reference</h1>
+        <p style="font-size: var(--text-sm); color: var(--text-3);">Cosmos Design System v2.0</p>
+      </div>
+      <div class="theme-switcher">
+        <select id="moduleSelect" onchange="document.body.className = 'cosmos-page ' + this.value">
+          <option value="module-command">Command Unit (Blue)</option>
+          <option value="module-pos">Store OS (Indigo)</option>
+          <option value="module-foundry">Foundry (Teal)</option>
+          <option value="module-army">Army (Amber)</option>
+          <option value="module-finance">Finance (Violet)</option>
+          <option value="module-promoter">Promoter (Pink)</option>
+          <option value="module-go">Eyewoot Go (Emerald)</option>
+        </select>
+      </div>
+    </header>
+
+    <div style="padding: var(--space-8); overflow-y: auto;">
+      
+      <!-- Buttons -->
+      <section id="buttons" class="docs-section">
+        <h2 class="docs-title">Buttons</h2>
+        <div class="docs-component-demo">
+          <button class="btn btn-primary">Primary Button</button>
+          <button class="btn btn-secondary">Secondary Button</button>
+          <button class="btn btn-danger">Danger Button</button>
+          <button class="btn btn-ghost">Ghost Button</button>
+          <button class="btn btn-primary btn-sm">Small</button>
+          <button class="btn btn-primary btn-lg">Large Button</button>
+          <button class="btn btn-primary" disabled>Disabled</button>
+          <button class="btn btn-primary loading">Loading</button>
+        </div>
+        <div class="docs-code">&lt;button class="btn btn-primary"&gt;Primary Button&lt;/button&gt;
+&lt;button class="btn btn-secondary"&gt;Secondary Button&lt;/button&gt;
+&lt;button class="btn btn-ghost"&gt;Ghost Button&lt;/button&gt;</div>
+      </section>
+
+      <!-- Badges -->
+      <section id="badges" class="docs-section">
+        <h2 class="docs-title">Badges & Pills</h2>
+        <div class="docs-component-demo">
+          <span class="badge badge-accent">Accent</span>
+          <span class="badge badge-blue">Info</span>
+          <span class="badge badge-green">Success</span>
+          <span class="badge badge-amber">Warning</span>
+          <span class="badge badge-red">Danger</span>
+          <span class="badge badge-grey">Draft</span>
+          <span class="badge badge-outline">Outline</span>
+        </div>
+        <div class="docs-code">&lt;span class="badge badge-accent"&gt;Accent&lt;/span&gt;
+&lt;span class="badge badge-green"&gt;Success&lt;/span&gt;</div>
+      </section>
+
+      <!-- Cards -->
+      <section id="cards" class="docs-section">
+        <h2 class="docs-title">Cards (Glassmorphic)</h2>
+        <div class="docs-component-demo" style="background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); padding: var(--space-10);">
+          <div class="card" style="width: 400px;">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Order #1042</h3>
+                <p class="card-subtitle">Placed 2 mins ago</p>
+              </div>
+              <span class="badge badge-green">Paid</span>
+            </div>
+            <div class="card-body">
+              <p style="color: var(--text-2);">This is a beautiful glassmorphic card design. Notice the smooth shadow, the soft borders, and the beautiful typography.</p>
+            </div>
+            <div class="card-footer" style="display:flex; justify-content:flex-end; gap:8px;">
+              <button class="btn btn-ghost btn-sm">Cancel</button>
+              <button class="btn btn-primary btn-sm">Process Order</button>
+            </div>
+          </div>
+        </div>
+        <div class="docs-code">&lt;div class="card"&gt;
+  &lt;div class="card-header"&gt;
+    &lt;div&gt;
+      &lt;h3 class="card-title"&gt;Title&lt;/h3&gt;
+      &lt;p class="card-subtitle"&gt;Subtitle&lt;/p&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+  &lt;div class="card-body"&gt;...&lt;/div&gt;
+  &lt;div class="card-footer"&gt;...&lt;/div&gt;
+&lt;/div&gt;</div>
+      </section>
+
+      <!-- Form Inputs -->
+      <section id="inputs" class="docs-section">
+        <h2 class="docs-title">Form Inputs</h2>
+        <div class="docs-component-demo">
+          <div style="width: 100%; max-width: 400px;">
+            <div class="form-group">
+              <label>Full Name</label>
+              <input type="text" placeholder="e.g. John Doe">
+            </div>
+            <div class="form-group">
+              <label>Store Location</label>
+              <select>
+                <option>Select a store...</option>
+                <option>HSR Layout</option>
+                <option>Indiranagar</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Notes</label>
+              <textarea rows="3" placeholder="Add any special instructions..."></textarea>
+              <span class="field-hint">Maximum 500 characters.</span>
+            </div>
+          </div>
+        </div>
+        <div class="docs-code">&lt;div class="form-group"&gt;
+  &lt;label&gt;Full Name&lt;/label&gt;
+  &lt;input type="text" placeholder="e.g. John Doe"&gt;
+&lt;/div&gt;</div>
+      </section>
+
+      <!-- Tables -->
+      <section id="tables" class="docs-section">
+        <h2 class="docs-title">Tables</h2>
+        <div class="docs-component-demo">
+          <div class="table-wrap">
+            <table class="cosmos-table">
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Customer</th>
+                  <th>Status</th>
+                  <th>Amount</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="td-primary">#ORD-9021</td>
+                  <td>Jane Cooper<br><span class="td-muted">+91 98765 43210</span></td>
+                  <td><span class="badge badge-green">Completed</span></td>
+                  <td class="td-primary">₹4,500</td>
+                  <td class="td-actions">
+                    <button class="btn btn-ghost btn-sm">View</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="td-primary">#ORD-9022</td>
+                  <td>Wade Warren<br><span class="td-muted">+91 91234 56789</span></td>
+                  <td><span class="badge badge-amber">Processing</span></td>
+                  <td class="td-primary">₹12,200</td>
+                  <td class="td-actions">
+                    <button class="btn btn-ghost btn-sm">View</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Modals -->
+      <section id="modals" class="docs-section">
+        <h2 class="docs-title">Modals</h2>
+        <div class="docs-component-demo">
+          <button class="btn btn-primary" onclick="cosmosModal.open('demo-modal')">Open Modal</button>
+        </div>
+
+        <div id="demo-modal" class="modal-overlay">
+          <div class="modal">
+            <div class="modal-header">
+              <h3 class="modal-title">Create New Customer</h3>
+              <button class="modal-close" id="demo-modal-close" onclick="cosmosModal.close('demo-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label>Phone Number</label>
+                <input type="tel" placeholder="+91">
+              </div>
+              <div class="form-group">
+                <label>Full Name</label>
+                <input type="text">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost" onclick="cosmosModal.close('demo-modal')">Cancel</button>
+              <button class="btn btn-primary" onclick="cosmosModal.close('demo-modal')">Save Customer</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Toasts -->
+      <section id="toasts" class="docs-section">
+        <h2 class="docs-title">Toasts</h2>
+        <div class="docs-component-demo">
+          <button class="btn btn-secondary" onclick="cosmosToast.success('Order placed successfully!')">Success Toast</button>
+          <button class="btn btn-secondary" onclick="cosmosToast.error('Payment failed. Try again.')">Error Toast</button>
+          <button class="btn btn-secondary" onclick="cosmosToast.warning('Stock is running low.')">Warning Toast</button>
+          <button class="btn btn-secondary" onclick="cosmosToast.info('New update available.')">Info Toast</button>
+        </div>
+      </section>
+
+      <!-- Alerts -->
+      <section id="alerts" class="docs-section">
+        <h2 class="docs-title">Alerts</h2>
+        <div class="docs-component-demo" style="flex-direction: column;">
+          <div class="alert alert-info">
+            <div style="font-weight:bold; font-size:18px;">ℹ</div>
+            <div>Please complete your profile configuration before processing orders.</div>
+          </div>
+          <div class="alert alert-danger">
+            <div style="font-weight:bold; font-size:18px;">✕</div>
+            <div>Failed to connect to the payment gateway. Check your internet connection.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Empty States -->
+      <section id="empty" class="docs-section">
+        <h2 class="docs-title">Empty States</h2>
+        <div class="docs-component-demo" style="display:block;">
+          <div class="card">
+            <div class="empty-state">
+              <div class="empty-state-icon">📭</div>
+              <h3 class="empty-state-title">No orders found</h3>
+              <p class="empty-state-body">There are no pending orders for this store right now. Kick back and relax!</p>
+              <div class="empty-state-action">
+                <button class="btn btn-primary">Create Walk-in Order</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Loaders -->
+      <section id="loaders" class="docs-section">
+        <h2 class="docs-title">Loaders</h2>
+        <div class="docs-component-demo" style="gap: var(--space-8); align-items: center;">
+          <div class="spinner"></div>
+          <div class="spinner spinner-lg"></div>
+          
+          <div style="width: 250px; background: var(--surface); padding: var(--space-4); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); border: 1px solid var(--border);">
+            <div class="skeleton skeleton-circle" style="margin-bottom: var(--space-4);"></div>
+            <div class="skeleton skeleton-text"></div>
+            <div class="skeleton skeleton-text" style="width: 80%;"></div>
+            <div class="skeleton skeleton-text" style="width: 60%;"></div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+  
+  <script>
+    // Smooth scrolling for sidebar links
+    document.querySelectorAll('.cosmos-nav-item').forEach(link => {
+      link.addEventListener('click', e => {
+        document.querySelectorAll('.cosmos-nav-item').forEach(l => l.classList.remove('active'));
+        e.target.classList.add('active');
+      });
+    });
+  </script>
+</body>
+</html>

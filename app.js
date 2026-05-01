@@ -41,8 +41,10 @@ const transferRequestsRouter   = require('./src/api/transferRequests');
 const stockTransferDocsRouter  = require('./src/api/stockTransferDocs');
 const posRouter                = require('./src/api/pos');
 const cxRouter                 = require('./src/api/cx');
+const lensConfigRouter         = require('./src/api/lensConfig');
 const ordersRouter             = require('./src/api/orders');
 const metaRouter               = require('./src/api/meta');
+const tabletsRouter            = require('./src/api/tablets');
 const customerAuthRouter       = require('./src/api/customerAuth');
 const customerAppRouter        = require('./src/api/customerApp');
 const { executeStoredProcedure, healthCheck } = require('./src/config/db');
@@ -86,7 +88,6 @@ function assertAuthEnv() {
 
 const PORT = process.env.PORT || 4000;
 const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
-const PROTOTYPE_HTML_MAX_AGE_MS = Number(process.env.PROTOTYPE_HTML_MAX_AGE_MS || 10 * 60 * 1000);
 const API_RATE_LIMIT_WINDOW_MS = Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const API_RATE_LIMIT_MAX = Number(process.env.API_RATE_LIMIT_MAX || 1000);
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:4000')
@@ -136,20 +137,13 @@ if (process.env.RATE_LIMIT_REDIS_URL || process.env.REDIS_URL) {
 app.set('etag', 'strong');
 
 function sendPrototypeHtml(res, absolutePath) {
-  // In development, do not cache prototype shells (Foundry/POS/etc.): strong ETag + maxAge
-  // caused stale HTML while JS/CSS already revalidated — users saw "old" multi-page flows.
-  if (!isProductionEnv) {
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    return res.sendFile(absolutePath, {
-      maxAge: 0,
-      lastModified: true,
-      cacheControl: false
-    });
-  }
+  // Always bypass browser/CDN cache for *.html prototypes (POS, Foundry, etc.).
+  // Previously: prod cached shells + 7d static JS/CSS ⇒ users saw mismatched old UI/layouts.
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   return res.sendFile(absolutePath, {
-    maxAge: PROTOTYPE_HTML_MAX_AGE_MS,
+    maxAge: 0,
     lastModified: true,
-    cacheControl: true
+    cacheControl: false
   });
 }
 
@@ -286,8 +280,8 @@ app.use('/storeos', posSpaRouter);
 app.use('/pos', posSpaRouter);
 
 // Static assets
-// - Cache CSS/JS/media for faster repeat visits
-// - Keep HTML non-cached so deployments/pages refresh immediately
+// - Long-cache defaults for images/other; JS/CSS always revalidate (ERP UI changes often).
+// - HTML under src/public is non-cached; module shells remain root *_Prototype.html routes.
 app.use(
   express.static(path.join(__dirname, 'src', 'public'), {
     maxAge: '7d',
@@ -296,8 +290,8 @@ app.use(
         res.setHeader('Cache-Control', 'no-cache');
         return;
       }
-      // In development, always revalidate JS/CSS so UI edits appear immediately.
-      if (!isProductionEnv && /\.(js|css)$/i.test(filePath)) {
+      // Dev + prod: avoid stale bundled behaviour when HTML updated (classic /storeos "old UI" bug).
+      if (/\.(js|css)$/i.test(filePath)) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       }
     }
@@ -374,6 +368,7 @@ protectedApiRouter.use('/store-modules', moduleAccessRouter);
 protectedApiRouter.use('/user-modules', userModuleAccessRouter);
 protectedApiRouter.use('/role-modules', roleModuleAccessRouter);
 protectedApiRouter.use('/foundry-lookups', foundryLookupsRouter);
+protectedApiRouter.use('/foundry/lens-config', lensConfigRouter);
 protectedApiRouter.use('/maker-master', makerMasterRouter);
 protectedApiRouter.use('/branding-agents', brandingAgentsRouter);
 protectedApiRouter.use('/skus', skusRouter);
@@ -385,6 +380,7 @@ protectedApiRouter.use('/stock-transfer-docs', stockTransferDocsRouter);
 protectedApiRouter.use('/cx', cxRouter);
 protectedApiRouter.use('/orders', ordersRouter);
 protectedApiRouter.use('/meta', metaRouter);
+protectedApiRouter.use('/tablets', tabletsRouter);
 app.use('/api', protectedApiRouter);
 
 // 404 + error handling

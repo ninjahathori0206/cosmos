@@ -32,7 +32,10 @@
   await ensureCosmosApiKeyFromBootstrap()
 
   const POS_SESSION_KEY = 'pos_session'
+  /** SessionStorage flag: show welcome toast once on catalogue after PIN login */
+  const POS_CATALOGUE_WELCOME_ONCE = 'pos_catalogue_welcome_once'
   const POS_CART_KEY    = 'pos_cart'
+  const POS_TABLET_TOKEN_KEY = 'pos_tablet_token'
 
   function getPosSession() {
     try { return JSON.parse(sessionStorage.getItem(POS_SESSION_KEY) || 'null') } catch { return null }
@@ -85,11 +88,95 @@
     return body.data
   }
 
+  /** Decode JWT payload (no signature verify) — client-only store_id / exp check for tablet session. */
+  function decodeJwtPayloadUnverified(token) {
+    try {
+      const parts = String(token || '').split('.')
+      if (parts.length < 2) return null
+      let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+      const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : ''
+      const json = atob(b64 + pad)
+      return JSON.parse(json)
+    } catch (_e) {
+      return null
+    }
+  }
+
+  function getPosTabletToken() {
+    return sessionStorage.getItem(POS_TABLET_TOKEN_KEY) || ''
+  }
+
+  function isTabletJwtPayloadValid(p) {
+    if (!p || p.tablet_session !== true) return false
+    const exp = Number(p.exp)
+    if (!Number.isFinite(exp) || Date.now() / 1000 > exp - 15) return false
+    return true
+  }
+
+  /** Valid tablet JWT → bound store id, else null (no token / wrong shape / expired). */
+  function getTabletJwtStoreId() {
+    const p = decodeJwtPayloadUnverified(getPosTabletToken())
+    if (!isTabletJwtPayloadValid(p)) return null
+    const sid = Number(p.store_id)
+    return Number.isFinite(sid) && sid > 0 ? sid : null
+  }
+
+  function isTabletSessionValidForStore(storeId) {
+    const jwtSid = getTabletJwtStoreId()
+    if (jwtSid == null) return false
+    return Number(storeId) === Number(jwtSid)
+  }
+
+  function clearPosTabletToken() {
+    try {
+      sessionStorage.removeItem(POS_TABLET_TOKEN_KEY)
+    } catch (_e) { /* ignore */ }
+  }
+
+  async function publicPost(path, payload) {
+    await ensureCosmosApiKeyFromBootstrap()
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': getApiKey() },
+      body: JSON.stringify(payload || {})
+    })
+    const body = await res.json()
+    if (!res.ok || !body.success) throw new Error(body.message || 'Request failed')
+    return body
+  }
+
   async function apiPost(path, payload, token) {
     await ensureCosmosApiKeyFromBootstrap()
     const headers = { 'Content-Type': 'application/json', 'X-API-Key': getApiKey() }
     if (token) headers['Authorization'] = 'Bearer ' + token
     const res = await fetch(path, { method: 'POST', headers, body: JSON.stringify(payload) })
+    const body = await res.json()
+    if (!res.ok || !body.success) throw new Error(body.message || 'Request failed')
+    return body
+  }
+
+  async function apiPut(path, payload, token) {
+    await ensureCosmosApiKeyFromBootstrap()
+    const headers = { 'Content-Type': 'application/json', 'X-API-Key': getApiKey() }
+    if (token) headers['Authorization'] = 'Bearer ' + token
+    const res = await fetch(path, { method: 'PUT', headers: headers, body: JSON.stringify(payload || {}) })
+    const body = await res.json()
+    if (!res.ok || !body.success) throw new Error(body.message || 'Request failed')
+    return body
+  }
+
+  async function staffPinLogin(pin) {
+    await ensureCosmosApiKeyFromBootstrap()
+    const tabletTok = getPosTabletToken()
+    const res = await fetch('/api/pos/staff-login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': getApiKey(),
+        'X-Tablet-Token': tabletTok
+      },
+      body: JSON.stringify({ pin: pin })
+    })
     const body = await res.json()
     if (!res.ok || !body.success) throw new Error(body.message || 'Request failed')
     return body
@@ -112,7 +199,8 @@
     'screen-pos-lens':          'new-order',
     'screen-pos-payment':       'new-order',
     'screen-pos-confirm':       'new-order',
-    'screen-pos-orders':        'orders'
+    'screen-pos-orders':        'orders',
+    'screen-pos-set-pin':       'set-pin'
   }
 
   /** Show/hide the sidebar and set the active nav item. */
@@ -148,9 +236,13 @@
 
   // ── Screen navigation (internal — callers use navigate()) ───────────────
   function showScreen(id) {
+    if (id !== 'screen-login-tablet' && id !== 'screen-login-staff') {
+      document.documentElement.removeAttribute('data-pos-login-step')
+    }
     document.querySelectorAll('.pos-screen').forEach(function (el) { el.classList.remove('active') })
     var target = document.getElementById(id)
     if (target) target.classList.add('active')
+    document.body.classList.toggle('pos-store-login-shell', id === 'screen-login-tablet' || id === 'screen-login-staff')
     var lkFlowScreens = {
       'screen-pos-catalogue': true,
       'screen-pos-product': true,
@@ -173,10 +265,9 @@
 
   // ── SPA routing ──────────────────────────────────────────────────────────
   const POS_ROUTES = {
-    LOGIN:     '/storeos/login',
+    LOGIN:       '/storeos/login',
+    LOGIN_STAFF: '/storeos/login/staff',
     DASHBOARD: '/storeos/dashboard',
-    /** Post-PIN success screen (avoid path segment "session" — some proxies/ad lists block it). */
-    SESSION:   '/storeos/staff-ready',
     CATALOGUE: '/storeos/catalogue',
     /** Product detail — canonical form is /storeos/product/:productId/:skuId */
     PRODUCT:   '/storeos/product',
@@ -185,7 +276,8 @@
     LENS:      '/storeos/lens-config',
     PAYMENT:   '/storeos/payment',
     CONFIRM:   '/storeos/confirm',
-    ORDERS:    '/storeos/orders'
+    ORDERS:    '/storeos/orders',
+    SET_PIN:   '/storeos/set-pin'
   }
 
   function productRoute(productId, skuId) {
@@ -197,14 +289,20 @@
     '/pos': POS_ROUTES.LOGIN,
     '/storeos': POS_ROUTES.LOGIN,
     '/pos/login': POS_ROUTES.LOGIN,
+    '/pos/login/staff': POS_ROUTES.LOGIN_STAFF,
+    '/storeos/login/staff': POS_ROUTES.LOGIN_STAFF,
     '/pos/dashboard': POS_ROUTES.DASHBOARD,
-    '/pos/session': POS_ROUTES.SESSION,
-    '/storeos/session': POS_ROUTES.SESSION,
+    '/pos/session': POS_ROUTES.CATALOGUE,
+    '/storeos/session': POS_ROUTES.CATALOGUE,
+    '/storeos/staff-ready': POS_ROUTES.CATALOGUE,
+    '/pos/staff-ready': POS_ROUTES.CATALOGUE,
     '/pos/catelogue': POS_ROUTES.CATALOGUE,
     '/pos/catalog': POS_ROUTES.CATALOGUE,
     '/storeos/catelogue': POS_ROUTES.CATALOGUE,
     '/storeos/catalog': POS_ROUTES.CATALOGUE,
-    '/storeos/order': POS_ROUTES.ORDER
+    '/storeos/order': POS_ROUTES.ORDER,
+    '/pos/set-pin': POS_ROUTES.SET_PIN,
+    '/storeos/set-pin': POS_ROUTES.SET_PIN
   }
 
   function normalizePosPath(rawPath) {
@@ -235,6 +333,13 @@
     // Alias dashboard deep links to the live catalogue screen.
     if (path === POS_ROUTES.DASHBOARD) {
       navigate(POS_ROUTES.CATALOGUE)
+      return
+    }
+
+    if (path === POS_ROUTES.SET_PIN) {
+      if (!valid) { navigate(POS_ROUTES.LOGIN); return }
+      resetPosSetPinScreen()
+      showScreen('screen-pos-set-pin')
       return
     }
 
@@ -311,21 +416,35 @@
       return
     }
 
-    if (path === POS_ROUTES.SESSION) {
-      if (!valid) { navigate(POS_ROUTES.LOGIN); return }
-      document.getElementById('success-staff-name').textContent  = session.name || ''
-      document.getElementById('success-role-badge').textContent  = formatRole(session.role)
-      document.getElementById('success-store-name').textContent  = session.store_name || ''
-      document.getElementById('success-session-time').textContent = formatTime(new Date(session.logged_in_at))
-      showScreen('screen-login-success')
+    if (path === POS_ROUTES.LOGIN_STAFF) {
+      if (valid) { navigate(POS_ROUTES.CATALOGUE); return }
+      if (session) clearPosSession()
+      if (getTabletJwtStoreId() == null) {
+        history.replaceState({}, '', POS_ROUTES.LOGIN)
+        resolve(POS_ROUTES.LOGIN)
+        return
+      }
+      showScreen('screen-login-staff')
+      resetPin(false)
+      tabletPinDigits = []
+      pinDigits = []
+      resetTabletPin(false)
+      loadStores().then(function () {
+        syncStaffLoginStoreLine()
+      })
       return
     }
 
-    // /pos, /pos/login, or any unrecognised path → login
-    // If session is still valid, bounce to session screen (tablet returning from sleep)
-    if (valid) { navigate(POS_ROUTES.SESSION); return }
+    // /pos, /pos/login, or any unrecognised path → login (tablet unlock first)
+    // If session is still valid, open catalogue (e.g. tab restore)
+    if (valid) { navigate(POS_ROUTES.CATALOGUE); return }
     if (session) clearPosSession()
-    showScreen('screen-login')
+    showScreen('screen-login-tablet')
+    if (getTabletJwtStoreId() != null) {
+      history.replaceState({}, '', POS_ROUTES.LOGIN_STAFF)
+      resolve(POS_ROUTES.LOGIN_STAFF)
+      return
+    }
     loadStores()
   }
 
@@ -351,6 +470,12 @@
   let selectedStoreId   = null
   let selectedStoreName = ''
   let pinDigits         = []
+  let tabletPinDigits   = []
+  /** Stores list cache for staff-login store label — filled in loadStores. */
+  let cachedPosStores   = []
+  let posSetPinNew      = []
+  let posSetPinConfirm  = []
+  let posSetPinPhase    = 'new'
   const PIN_LENGTH      = 4
   let activeCatalogueScope = 'store'
   let selectedProductId = null
@@ -361,7 +486,7 @@
   let posCartOffers = []
   /** Selected POS / CX customer row for cart reference (name, phone, id). */
   let posSelectedCustomerSnapshot = null
-  let posSettings = { gst_rate: 0.05, lab_advance_pct: 40 }
+  let posSettings = { gst_rate: 0.05, lab_advance_pct: 40, composition_scheme: false, prices_gst_inclusive: false }
   let lensCatalogData = null
   let lensWizardLineIdx = -1
   let lensWizardBackRoute = POS_ROUTES.ORDER
@@ -390,18 +515,28 @@
   // against the category name). When `match` is null (e.g. Frame Only) the
   // wizard skips lens selection entirely.
   const POWER_TYPES = [
-    { key: 'with',         icon: '👁',  iconColor: '#2563EB', title: 'With Power',           sub: 'Most common - I have a prescription', match: 'single' },
-    { key: 'zero',         icon: '🛡',  iconColor: '#0D9F7B', title: 'Zero Power',           sub: 'BLU Screen lenses for digital devices', match: 'zero' },
-    { key: 'reading',      icon: '📖',  iconColor: '#D97706', title: 'Reading Power',        sub: '',                                       match: 'single' },
-    { key: 'progressive',  icon: '🪟',  iconColor: '#7C3AED', title: 'Progressive / Bifocals', sub: 'For both near and far vision',         match: 'bifocal' },
+    { key: 'with',         icon: '👁',  iconColor: '#2563EB', title: 'With Power',           sub: 'Most common - I have a prescription', match: ['single'] },
+    { key: 'zero',         icon: '🛡',  iconColor: '#0D9F7B', title: 'Zero Power',           sub: 'BLU Screen lenses for digital devices', match: ['zero'] },
+    { key: 'reading',      icon: '📖',  iconColor: '#D97706', title: 'Reading Power',        sub: '',                                       match: ['reading', 'single'] },
+    { key: 'progressive',  icon: '🪟',  iconColor: '#7C3AED', title: 'Progressive / Bifocals', sub: 'For both near and far vision',         match: ['progressive', 'bifocal'] },
     { key: 'frame',        icon: '⬜',  iconColor: '#64748B', title: 'Frame Only',           sub: 'No lenses required',                     match: null }
   ]
 
   function findCategoryForPowerType(powerType) {
     if (!powerType || !powerType.match || !lensCatalogData) return null
     const cats = lensCatalogData.categories || []
-    const needle = powerType.match.toLowerCase()
-    return cats.find(function (c) { return String(c.name || '').toLowerCase().indexOf(needle) >= 0 }) || cats[0] || null
+    const needles = Array.isArray(powerType.match) ? powerType.match : [powerType.match]
+    for (let ni = 0; ni < needles.length; ni++) {
+      const needle = String(needles[ni] || '').toLowerCase()
+      if (!needle) continue
+      const found = cats.find(function (c) {
+        const hay = String(c.matchHaystack || '').toLowerCase()
+        const disp = String(c.name || '').toLowerCase()
+        return hay.indexOf(needle) >= 0 || disp.indexOf(needle) >= 0
+      })
+      if (found) return found
+    }
+    return null
   }
 
   function escapeHtml(str) {
@@ -575,6 +710,7 @@
       const q = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
       const offers = await apiGet('/api/pos/cart-offers' + q, session.token)
       posCartOffers = Array.isArray(offers) ? offers : []
+      loadCartSkuScopeFacts(session)
       obRecalcTotals()
       if (!Array.isArray(offers) || !offers.length) {
         listEl.innerHTML =
@@ -670,11 +806,16 @@
   const storeSelectorBtn  = document.getElementById('store-selector-btn')
   const storeSelectorName = document.getElementById('store-selector-name')
   const storeDropdown     = document.getElementById('store-dropdown')
-  const pinDots           = document.querySelectorAll('.pos-pin-dot')
-  const pinError          = document.getElementById('pin-error')
-  const numpad            = document.getElementById('pos-numpad')
+  const pinDots           = document.querySelectorAll('#pos-staff-pin-block .pos-pin-dot')
+  const pinError          = document.getElementById('pin-error-staff')
+  const tabletPinDots     = document.querySelectorAll('#pos-tablet-pin-dots .pos-pin-dot')
+  const tabletPinError    = document.getElementById('pos-tablet-pin-error')
+  const posTabletIdInput  = document.getElementById('pos-tablet-id-input')
+  const btnUnlockTablet   = document.getElementById('btn-unlock-tablet')
+  const btnPosSignOutTablet = document.getElementById('btn-pos-sign-out-tablet')
+  const numpadTablet      = document.getElementById('pos-numpad-tablet')
+  const numpadStaff       = document.getElementById('pos-numpad-staff')
   const btnUnlock         = document.getElementById('btn-unlock-pos')
-  const btnEnterPos       = document.getElementById('btn-enter-pos')
   const catalogueStaff    = document.getElementById('pos-catalogue-staff')
   const catalogueStore    = document.getElementById('pos-catalogue-store')
   const btnScopeStore     = document.getElementById('btn-scope-store')
@@ -705,6 +846,7 @@
   const obRxSection       = document.getElementById('pos-ob-rx-section')
   const obSubtotal        = document.getElementById('pos-ob-subtotal')
   const obGst             = document.getElementById('pos-ob-gst')
+  const obGstLbl          = document.getElementById('pos-ob-gst-lbl')
   const obTotal           = document.getElementById('pos-ob-total')
   const obDiscountLine    = document.getElementById('pos-ob-discount-line')
   const obDiscountVal     = document.getElementById('pos-ob-discount-val')
@@ -724,7 +866,13 @@
       const cfg = await apiGet('/api/pos/startup-config', session.token)
       window.posConfig = Object.assign({}, cfg, { __loaded: true })
       const st = await apiGet('/api/pos/settings', session.token)
-      posSettings = st || posSettings
+      const defaults = {
+        gst_rate: 0.05,
+        lab_advance_pct: 40,
+        composition_scheme: false,
+        prices_gst_inclusive: false
+      }
+      posSettings = Object.assign(defaults, st || {})
       window.posSettings = posSettings
       window.__posSettingsLoaded = true
     } catch (err) {
@@ -846,17 +994,196 @@
     }
   }
 
+  function renderTabletPinDots() {
+    tabletPinDots.forEach(function (dot, i) {
+      dot.classList.toggle('filled', i < tabletPinDigits.length)
+      dot.classList.remove('error')
+    })
+  }
+
+  function resetTabletPin(withError) {
+    if (withError) {
+      tabletPinDots.forEach(function (dot) { dot.classList.add('error') })
+      setTimeout(function () {
+        tabletPinDigits = []
+        renderTabletPinDots()
+        clearTabletPinError()
+      }, 600)
+    } else {
+      tabletPinDigits = []
+      renderTabletPinDots()
+      clearTabletPinError()
+    }
+  }
+
+  function showTabletPinError(msg) {
+    if (tabletPinError) tabletPinError.textContent = msg || ''
+  }
+
+  function clearTabletPinError() {
+    if (tabletPinError) tabletPinError.textContent = ''
+  }
+
+  /** Resolve store display name for a store_id (uses cached list or fetches /api/pos/stores). */
+  async function resolveStoreDisplayNameForId(storeId) {
+    const sid = Number(storeId)
+    if (!Number.isFinite(sid) || sid <= 0) return ''
+    let row = cachedPosStores.find(function (s) { return Number(s.store_id) === Number(sid) })
+    if (row && row.store_name) return String(row.store_name)
+    try {
+      const stores = await publicGet('/api/pos/stores')
+      cachedPosStores = Array.isArray(stores) ? stores : []
+      row = cachedPosStores.find(function (s) { return Number(s.store_id) === Number(sid) })
+      return row ? String(row.store_name || '') : ''
+    } catch (_e) {
+      return ''
+    }
+  }
+
+  function syncStaffLoginStoreLine() {
+    var line = document.getElementById('pos-staff-store-line')
+    var jwtSid = getTabletJwtStoreId()
+    if (!line) return
+    if (jwtSid == null) {
+      line.textContent = ''
+      return
+    }
+    var row = cachedPosStores.find(function (s) { return Number(s.store_id) === Number(jwtSid) })
+    var name = row ? row.store_name : ''
+    if (!name && Number(selectedStoreId) === Number(jwtSid)) name = selectedStoreName
+    selectedStoreId = jwtSid
+    selectedStoreName = name || selectedStoreName
+    line.textContent = name ? name : ('Store #' + jwtSid)
+  }
+
+  function resetPosSetPinScreen() {
+    posSetPinNew = []
+    posSetPinConfirm = []
+    posSetPinPhase = 'new'
+    var stepEl = document.getElementById('pos-setpin-step-label')
+    if (stepEl) stepEl.textContent = 'New PIN (4 digits)'
+    var errEl = document.getElementById('pos-setpin-error')
+    if (errEl) errEl.textContent = ''
+    document.querySelectorAll('#pos-setpin-dots .pos-pin-dot').forEach(function (d) {
+      d.classList.remove('filled', 'error')
+    })
+  }
+
+  function renderPosSetPinDots() {
+    var dots = document.querySelectorAll('#pos-setpin-dots .pos-pin-dot')
+    var src = posSetPinPhase === 'new' ? posSetPinNew : posSetPinConfirm
+    dots.forEach(function (dot, i) {
+      dot.classList.toggle('filled', i < src.length)
+      dot.classList.remove('error')
+    })
+  }
+
+  function clearPosSetPinErr() {
+    var errEl = document.getElementById('pos-setpin-error')
+    if (errEl) errEl.textContent = ''
+  }
+
+  function posSetPinAddDigit(digit) {
+    var d = String(digit || '').replace(/\D/g, '').slice(-1)
+    if (!d) return
+    if (posSetPinPhase === 'new') {
+      if (posSetPinNew.length >= PIN_LENGTH) return
+      posSetPinNew.push(d)
+      renderPosSetPinDots()
+      clearPosSetPinErr()
+      if (posSetPinNew.length === PIN_LENGTH) {
+        posSetPinPhase = 'confirm'
+        var stepEl = document.getElementById('pos-setpin-step-label')
+        if (stepEl) stepEl.textContent = 'Confirm PIN (4 digits)'
+        renderPosSetPinDots()
+      }
+      return
+    }
+    if (posSetPinConfirm.length >= PIN_LENGTH) return
+    posSetPinConfirm.push(d)
+    renderPosSetPinDots()
+    clearPosSetPinErr()
+  }
+
+  function posSetPinRemoveDigit() {
+    if (posSetPinConfirm.length) {
+      posSetPinConfirm.pop()
+    } else if (posSetPinPhase === 'confirm') {
+      posSetPinPhase = 'new'
+      var stepEl = document.getElementById('pos-setpin-step-label')
+      if (stepEl) stepEl.textContent = 'New PIN (4 digits)'
+      posSetPinNew = []
+    } else if (posSetPinNew.length) {
+      posSetPinNew.pop()
+    }
+    renderPosSetPinDots()
+    clearPosSetPinErr()
+  }
+
+  async function handlePosSetPinSave() {
+    var errEl = document.getElementById('pos-setpin-error')
+    var btn = document.getElementById('btn-setpin-save')
+    if (posSetPinNew.length !== PIN_LENGTH || posSetPinConfirm.length !== PIN_LENGTH) {
+      if (errEl) errEl.textContent = 'Enter and confirm a 4-digit PIN.'
+      return
+    }
+    var a = posSetPinNew.join('')
+    var b = posSetPinConfirm.join('')
+    if (a !== b) {
+      document.querySelectorAll('#pos-setpin-dots .pos-pin-dot').forEach(function (dot) { dot.classList.add('error') })
+      if (errEl) errEl.textContent = 'PINs do not match. Start again.'
+      posSetPinPhase = 'new'
+      posSetPinNew = []
+      posSetPinConfirm = []
+      var stepEl = document.getElementById('pos-setpin-step-label')
+      if (stepEl) stepEl.textContent = 'New PIN (4 digits)'
+      setTimeout(function () {
+        document.querySelectorAll('#pos-setpin-dots .pos-pin-dot').forEach(function (dot) { dot.classList.remove('error') })
+        renderPosSetPinDots()
+      }, 450)
+      return
+    }
+    var session = getPosSession()
+    if (!session || !session.token) {
+      navigate(POS_ROUTES.LOGIN)
+      return
+    }
+    if (typeof cosmosBtnLoading === 'function' && btn) cosmosBtnLoading(btn)
+    try {
+      await apiPut('/api/pos/set-pin', { pin: a }, session.token)
+      if (typeof cosmosBtnSuccess === 'function' && btn) cosmosBtnSuccess(btn)
+      else if (typeof cosmosBtnDone === 'function' && btn) cosmosBtnDone(btn)
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('PIN updated. Use this on any Eyewoot store tablet.')
+      }
+      navigate(POS_ROUTES.CATALOGUE)
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function' && btn) cosmosBtnDone(btn)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+      if (errEl) errEl.textContent = err.message || 'Could not update PIN.'
+    }
+  }
+
   // ── Load stores ──────────────────────────────────────────────────────────
   async function loadStores() {
     storeSelectorName.textContent = 'Fetching stores'
     storeSelectorBtn.disabled = true
     try {
       const stores = await publicGet('/api/pos/stores')
+      cachedPosStores = Array.isArray(stores) ? stores : []
       renderStoreDropdown(stores)
       if (stores.length === 1) {
         selectStore(stores[0].store_id, stores[0].store_name)
       } else {
-        storeSelectorName.textContent = 'Select a store'
+        const jwtSid = getTabletJwtStoreId()
+        if (jwtSid != null) {
+          const row = stores.find(function (s) { return Number(s.store_id) === Number(jwtSid) })
+          if (row) {
+            selectStore(row.store_id, row.store_name)
+            return
+          }
+        }
+        storeSelectorName.textContent = 'Unlock tablet to link store'
         storeSelectorBtn.disabled = false
       }
     } catch (err) {
@@ -905,7 +1232,12 @@
     document.querySelectorAll('.pos-store-option').forEach(opt => {
       opt.classList.toggle('selected', Number(opt.dataset.storeId) === id)
     })
-    resetPin()
+    if (!isTabletSessionValidForStore(id)) {
+      clearPosTabletToken()
+    }
+    resetPin(false)
+    resetTabletPin(false)
+    if (posTabletIdInput) posTabletIdInput.value = ''
   }
 
   function openStoreDropdown() {
@@ -953,100 +1285,238 @@
   }
 
   function showPinError(msg) {
-    pinError.textContent = msg
+    if (pinError) pinError.textContent = msg || ''
   }
 
   function clearPinError() {
-    pinError.textContent = ''
+    if (pinError) pinError.textContent = ''
+  }
+
+  function loginTabletScreenActive() {
+    var el = document.getElementById('screen-login-tablet')
+    return Boolean(el && el.classList.contains('active'))
+  }
+
+  function loginStaffScreenActive() {
+    var el = document.getElementById('screen-login-staff')
+    return Boolean(el && el.classList.contains('active'))
   }
 
   function addDigit(digit) {
-    if (pinDigits.length >= PIN_LENGTH) return
-    pinDigits.push(digit)
-    renderPinDots()
-    clearPinError()
-    if (pinDigits.length === PIN_LENGTH) handleLogin()
+    if (loginTabletScreenActive()) {
+      if (tabletPinDigits.length >= PIN_LENGTH) return
+      tabletPinDigits.push(digit)
+      renderTabletPinDots()
+      clearTabletPinError()
+      return
+    }
+    if (loginStaffScreenActive()) {
+      if (pinDigits.length >= PIN_LENGTH) return
+      pinDigits.push(digit)
+      renderPinDots()
+      clearPinError()
+      if (pinDigits.length === PIN_LENGTH) handleLogin()
+      return
+    }
   }
 
   function removeDigit() {
-    if (!pinDigits.length) return
-    pinDigits.pop()
-    renderPinDots()
-    clearPinError()
+    if (loginTabletScreenActive()) {
+      if (!tabletPinDigits.length) return
+      tabletPinDigits.pop()
+      renderTabletPinDots()
+      clearTabletPinError()
+      return
+    }
+    if (loginStaffScreenActive()) {
+      if (!pinDigits.length) return
+      pinDigits.pop()
+      renderPinDots()
+      clearPinError()
+      return
+    }
   }
 
-  // ── Numpad events ────────────────────────────────────────────────────────
-  numpad.addEventListener('click', e => {
-    const btn = e.target.closest('.pos-numpad-btn')
-    if (!btn || btn.classList.contains('ghost')) return
-    if (btn.id === 'btn-backspace') { removeDigit(); return }
-    const digit = btn.dataset.digit
-    if (digit !== undefined) addDigit(digit)
+  function bindPosNumpad(tableEl, backspaceId) {
+    if (!tableEl) return
+    tableEl.addEventListener('click', function onNumpadClick(e) {
+      const btn = e.target.closest('.pos-numpad-btn')
+      if (!btn || btn.classList.contains('ghost')) return
+      if (btn.id === backspaceId) { removeDigit(); return }
+      const digit = btn.dataset.digit
+      if (digit !== undefined) addDigit(digit)
+    })
+    tableEl.addEventListener('keydown', function onNumpadKeydown(e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      const btn = e.target.closest('.pos-numpad-btn')
+      if (btn) btn.click()
+    })
+  }
+
+  bindPosNumpad(numpadTablet, 'btn-backspace-tablet')
+  bindPosNumpad(numpadStaff, 'btn-backspace-staff')
+
+  // Physical keyboard (dev / bluetooth keyboard): route digits to whichever login screen is active
+  document.addEventListener('keydown', function posLoginKeyboard(e) {
+    if (!loginTabletScreenActive() && !loginStaffScreenActive()) return
+    var tag = e.target && e.target.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+    if (e.key >= '0' && e.key <= '9') addDigit(e.key)
+    if (e.key === 'Backspace') removeDigit()
   })
 
-  numpad.addEventListener('keydown', e => {
-    if (e.key !== 'Enter' && e.key !== ' ') return
-    const btn = e.target.closest('.pos-numpad-btn')
-    if (btn) btn.click()
+  document.addEventListener('keydown', function (e) {
+    var sp = document.getElementById('screen-pos-set-pin')
+    if (!sp || !sp.classList.contains('active')) return
+    var tag = e.target && e.target.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+    if (e.key >= '0' && e.key <= '9') posSetPinAddDigit(e.key)
+    if (e.key === 'Backspace') posSetPinRemoveDigit()
   })
 
-  // Physical keyboard support (useful in dev / external keyboard on tablet)
-  document.addEventListener('keydown', e => {
-    if (document.getElementById('screen-login').classList.contains('active')) {
-      if (e.key >= '0' && e.key <= '9') addDigit(e.key)
-      if (e.key === 'Backspace') removeDigit()
+  async function handleTabletUnlock() {
+    var tidRaw = posTabletIdInput ? String(posTabletIdInput.value || '').trim() : ''
+    var tabletId = parseInt(tidRaw, 10)
+    if (!Number.isFinite(tabletId) || tabletId <= 0) {
+      if (typeof cosmosFieldError === 'function' && posTabletIdInput) cosmosFieldError(posTabletIdInput, 'Enter tablet ID')
+      showTabletPinError('Enter the tablet ID from Command Unit.')
+      return
     }
-  })
+    if (tabletPinDigits.length !== PIN_LENGTH) {
+      showTabletPinError('Enter the 4-digit tablet PIN.')
+      return
+    }
+    var tabPin = tabletPinDigits.join('')
+    if (btnUnlockTablet && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btnUnlockTablet)
+    try {
+      var body = await publicPost('/api/pos/tablet-login', { tablet_id: tabletId, pin: tabPin })
+      var tok = body.data && body.data.token
+      if (!tok) throw new Error('Tablet login failed.')
+      try {
+        sessionStorage.setItem(POS_TABLET_TOKEN_KEY, tok)
+      } catch (_e) { /* ignore */ }
+      var respStoreId = body.data && body.data.store_id != null ? Number(body.data.store_id) : NaN
+      if (!Number.isFinite(respStoreId) || respStoreId <= 0) {
+        clearPosTabletToken()
+        throw new Error('Tablet response missing store.')
+      }
+      var p = decodeJwtPayloadUnverified(tok)
+      if (p && Number(p.store_id) !== Number(respStoreId)) {
+        clearPosTabletToken()
+        throw new Error('Tablet session mismatch.')
+      }
+      var storeName = await resolveStoreDisplayNameForId(respStoreId)
+      if (!storeName) storeName = 'Store #' + String(respStoreId)
+      selectStore(respStoreId, storeName)
+      resetTabletPin(false)
+      if (btnUnlockTablet && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btnUnlockTablet)
+      else if (btnUnlockTablet && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnUnlockTablet)
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('Tablet unlocked — continue on the staff sign-in screen.')
+      }
+      navigate(POS_ROUTES.LOGIN_STAFF)
+    } catch (err) {
+      if (btnUnlockTablet && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnUnlockTablet)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+      showTabletPinError(err.message || 'Could not unlock tablet.')
+      resetTabletPin(true)
+    }
+  }
 
   // ── Login handler ────────────────────────────────────────────────────────
+  function getEffectiveLoginStoreContext() {
+    var sid = selectedStoreId
+    var name = selectedStoreName || ''
+    if (!sid) {
+      var j = getTabletJwtStoreId()
+      if (j != null && isTabletSessionValidForStore(j)) {
+        sid = j
+        if (!name) {
+          var opt = document.querySelector('.pos-store-option[data-store-id="' + String(j) + '"]')
+          if (opt) name = opt.getAttribute('data-store-name') || ''
+        }
+        if (!name) {
+          var row = cachedPosStores.find(function (s) { return Number(s.store_id) === Number(j) })
+          if (row) name = row.store_name || ''
+        }
+      }
+    }
+    return { storeId: sid, storeName: name }
+  }
+
   async function handleLogin() {
-    if (!selectedStoreId) {
+    var ctx = getEffectiveLoginStoreContext()
+    if (!ctx.storeId) {
       showPinError('Please select a store first.')
       resetPin(true)
       return
     }
+    if (!isTabletSessionValidForStore(ctx.storeId)) {
+      showPinError('Unlock this store’s tablet first.')
+      resetPin(true)
+      return
+    }
 
-    cosmosBtnLoading(btnUnlock)
+    if (btnUnlock && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btnUnlock)
 
     try {
       const pin = pinDigits.join('')
-      const result = await apiPost('/api/pos/staff-login', { pin, store_id: selectedStoreId })
+      const result = await staffPinLogin(pin)
 
       // Persist session
       savePosSession({
         token:       result.data.token,
         employee_id: result.data.employee_id,
+        session_id:  result.data.session_id != null ? result.data.session_id : null,
         name:        result.data.name,
         role:        result.data.role,
         store_id:    result.data.store_id,
-        store_name:  selectedStoreName,
+        store_name:  ctx.storeName || selectedStoreName,
         logged_in_at: new Date().toISOString()
       })
+      if (result.data.store_id != null) {
+        selectedStoreId = result.data.store_id
+        if (ctx.storeName) selectedStoreName = ctx.storeName
+      }
 
-      cosmosBtnSuccess(btnUnlock)
-      navigate(POS_ROUTES.SESSION)
+      if (btnUnlock && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btnUnlock)
+      else if (btnUnlock && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnUnlock)
+      try {
+        sessionStorage.setItem(POS_CATALOGUE_WELCOME_ONCE, '1')
+      } catch (_e) { /* storage unavailable */ }
+      navigate(POS_ROUTES.CATALOGUE)
     } catch (err) {
-      cosmosBtnDone(btnUnlock)
-      showPinError('Invalid PIN — try again')
+      if (btnUnlock && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnUnlock)
+      showPinError(err.message || 'Invalid PIN — try again')
       resetPin(true)
     }
   }
 
-  btnUnlock.addEventListener('click', () => {
-    if (pinDigits.length === PIN_LENGTH) handleLogin()
-    else showPinError('Enter your 4-digit PIN to continue.')
-  })
-
-  // ── Success screen ───────────────────────────────────────────────────────
-  function showSuccessScreen(data) {
-    document.getElementById('success-staff-name').textContent  = data.name || ''
-    document.getElementById('success-role-badge').textContent  = formatRole(data.role)
-    document.getElementById('success-store-name').textContent  = selectedStoreName
-    document.getElementById('success-session-time').textContent = formatTime(new Date())
-    showScreen('screen-login-success')
+  if (btnUnlockTablet) {
+    btnUnlockTablet.addEventListener('click', function () { void handleTabletUnlock() })
+  }
+  if (btnPosSignOutTablet) {
+    btnPosSignOutTablet.addEventListener('click', function () {
+      clearPosTabletToken()
+      resetPin(false)
+      tabletPinDigits = []
+      resetTabletPin(false)
+      if (typeof cosmosToastInfo === 'function') {
+        cosmosToastInfo('Tablet session cleared. Unlock this tablet again.')
+      }
+      navigate(POS_ROUTES.LOGIN)
+    })
+  }
+  if (posTabletIdInput && typeof cosmosFieldClear === 'function') {
+    posTabletIdInput.addEventListener('input', function () { cosmosFieldClear(posTabletIdInput) })
   }
 
-  btnEnterPos.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
+  if (btnUnlock) {
+    btnUnlock.addEventListener('click', () => {
+      if (pinDigits.length === PIN_LENGTH) handleLogin()
+      else showPinError('Enter your 4-digit PIN to continue.')
+    })
+  }
 
   // ── Catalogue helpers ────────────────────────────────────────────────────
 
@@ -1336,6 +1806,20 @@
       triggerCatalogueSearch()
     })
     showScreen('screen-pos-catalogue')
+    try {
+      if (sessionStorage.getItem(POS_CATALOGUE_WELCOME_ONCE)) {
+        sessionStorage.removeItem(POS_CATALOGUE_WELCOME_ONCE)
+        if (typeof cosmosToast === 'function') {
+          var n = session && session.name ? String(session.name).trim() : ''
+          var store = session && session.store_name ? String(session.store_name).trim() : ''
+          var welcomeMsg = n
+            ? ('Welcome back, ' + n + '!')
+            : 'Welcome!'
+          if (store) welcomeMsg += ' · ' + store
+          cosmosToast(welcomeMsg, 'success', 2800)
+        }
+      }
+    } catch (_e) { /* sessionStorage unavailable */ }
   }
 
   function showProductPageScreen(session) {
@@ -1646,7 +2130,7 @@
   function lensWizardNext() {
     const body = document.getElementById('lens-step-body')
     if (lensWizard.step === 0 && !lensWizard.category) {
-      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Pick a category.')
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Pick a power type.')
       return
     }
     if (lensWizard.step === 1 && !lensWizard.pkg) {
@@ -1718,6 +2202,11 @@
         if (pt.key === 'frame') {
           // Frame only — skip lens selection entirely; jump to Add Power CTA only.
           lensWizard.step = 2
+        } else if (!lensWizard.category) {
+          if (typeof cosmosToastWarn === 'function') {
+            cosmosToastWarn('No catalogue category matches this power type. Add or rename a category in Foundry (Lens packages) so its internal or POS name includes the right keyword (e.g. Single Vision, Zero, Progressive).')
+          }
+          lensWizard.step = 0
         } else {
           lensWizard.step = 1
         }
@@ -2164,31 +2653,10 @@
     if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('lens-step-body', 4)
     try {
       lensCatalogData = await apiGet('/api/pos/lens-catalog', sessionTok)
-      // Inject Mock Data if DB is empty for demonstration!
       if (!lensCatalogData.categories || lensCatalogData.categories.length === 0) {
-        lensCatalogData.categories = [
-          { id: 1, name: 'Single Vision', packages: [
-            { id: 101, name: 'Standard Anti-Glare', price: 500 },
-            { id: 102, name: 'Premium Blue-Cut', price: 1200 },
-            { id: 103, name: 'Ultra-Thin 1.67', price: 2500 }
-          ]},
-          { id: 2, name: 'Bifocal / Progressive', packages: [
-            { id: 201, name: 'Standard Progressive', price: 3000 },
-            { id: 202, name: 'Premium Wide-Corridor', price: 5500 }
-          ]},
-          { id: 3, name: 'Zero Power (Computer Glasses)', packages: [
-            { id: 301, name: 'Blue-Cut Blockers', price: 800 }
-          ]}
-        ]
-        // Add some mock addons
-        lensCatalogData.categories.forEach(c => {
-          c.packages.forEach(p => {
-            p.addons = [
-              { id: 901, name: 'Anti-Fog Coating', price: 300 },
-              { id: 902, name: 'Photochromic (Transitions)', price: 1500 }
-            ]
-          })
-        })
+        if (typeof cosmosToastWarn === 'function') {
+          cosmosToastWarn('Lens catalogue is empty. Add categories and packages in Foundry (Lens packages).')
+        }
       }
     } catch (err) {
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
@@ -2310,16 +2778,29 @@
         }
         linesEl.innerHTML = lh
       }
-      // Subtotal / GST / Total
-      const gstRate = Number(posSettings.gst_rate) || 0.05
-      const gstShown = Math.round((total - total / (1 + gstRate)) * 100) / 100
-      const subShown = Math.round((total - gstShown) * 100) / 100
+      // Subtotal / discount / GST / Total — align with persisted order row
       const sub = document.getElementById('pay-sub')
       const gstEl = document.getElementById('pay-gst')
+      const gstLblEl = document.getElementById('pay-gst-lbl')
       const totEl = document.getElementById('pay-total')
-      if (sub) sub.textContent = formatRupees(subShown)
-      if (gstEl) gstEl.textContent = formatRupees(gstShown)
-      if (totEl) totEl.textContent = formatRupees(total)
+      const discRow = document.getElementById('pay-discount-row')
+      const discEl = document.getElementById('pay-discount')
+      const orderSubtotal = Number(order.subtotal_amount)
+      const orderDisc = order.discount_amount != null ? Number(order.discount_amount) : 0
+      const gstOrderAmt = Number(order.gst_amount)
+      const totalOrderAmt = Number(order.total_amount)
+      if (sub) sub.textContent = formatRupees(orderSubtotal)
+      if (discRow && discEl) {
+        if (orderDisc > 0.009) {
+          discRow.style.display = ''
+          discEl.textContent = '−' + formatRupees(orderDisc)
+        } else {
+          discRow.style.display = 'none'
+        }
+      }
+      if (gstEl) gstEl.textContent = formatRupees(gstOrderAmt)
+      if (gstLblEl) gstLblEl.textContent = posGstLineLabel()
+      if (totEl) totEl.textContent = formatRupees(totalOrderAmt)
       // Savings banner (computed from line discounts when available)
       let savings = 0
       for (let li = 0; li < orderLines.length; li++) {
@@ -2382,7 +2863,15 @@
       const fallbackTotal = Number(lastCreatedOrder.total_amount) || 0
       const linesEl2 = document.getElementById('pay-summary-lines')
       if (linesEl2) linesEl2.innerHTML = '<div><span>Order ' + lastCreatedOrder.order_no + '</span><span>' + formatRupees(fallbackTotal) + '</span></div>'
+      const paySubFb = document.getElementById('pay-sub')
+      const payGstFb = document.getElementById('pay-gst')
+      const payGstLblFb = document.getElementById('pay-gst-lbl')
       const totEl2 = document.getElementById('pay-total')
+      const discRowFb = document.getElementById('pay-discount-row')
+      if (paySubFb) paySubFb.textContent = formatRupees(Number(lastCreatedOrder.subtotal_amount) || fallbackTotal)
+      if (discRowFb) discRowFb.style.display = 'none'
+      if (payGstFb) payGstFb.textContent = formatRupees(Number(lastCreatedOrder.gst_amount) || 0)
+      if (payGstLblFb) payGstLblFb.textContent = posGstLineLabel()
       if (totEl2) totEl2.textContent = formatRupees(fallbackTotal)
       const amtInput2 = document.getElementById('pay-amount-input')
       if (amtInput2) amtInput2.value = fallbackTotal
@@ -2594,6 +3083,101 @@
     return '₹' + Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   }
 
+  function posGstLineLabel() {
+    if (posSettings.composition_scheme) return 'GST (composition — not applicable)'
+    if (posSettings.prices_gst_inclusive) return 'GST (inclusive catalogue)'
+    return 'GST'
+  }
+
+  /** Match server totals for POS cart preview — discount on GST-inclusive subtotal when applicable. */
+  function computePosCartTotals(rawSubtotal, discount) {
+    var r = Number(posSettings.gst_rate) || 0
+    var sub = Math.round(Number(rawSubtotal) * 100) / 100
+    var disc = Math.max(0, Math.min(Math.round(Number(discount) * 100) / 100, sub))
+    var net = Math.round((sub - disc) * 100) / 100
+    if (posSettings.composition_scheme) {
+      return { gst: 0, total: net }
+    }
+    if (posSettings.prices_gst_inclusive) {
+      var denom = 1 + r
+      if (denom <= 0) return { gst: 0, total: net }
+      var taxable = Math.round((net / denom) * 100) / 100
+      var gst = Math.round((net - taxable) * 100) / 100
+      return { gst: gst, total: net }
+    }
+    var gstEx = Math.round(net * r * 100) / 100
+    return { gst: gstEx, total: Math.round((net + gstEx) * 100) / 100 }
+  }
+
+  // Cache: sku_id → {brand_id, product_id, product_type} loaded from /api/pos/catalogue-scope-facts
+  var posSkuScopeFacts = {}
+
+  /**
+   * Attempt to load scope facts for cart SKUs. Non-blocking — silently falls back to global matching on error.
+   */
+  function loadCartSkuScopeFacts(session) {
+    var skuIds = obCart.map(function(l) { return l.sku_id }).filter(function(id) { return id && id > 0 })
+    var missing = skuIds.filter(function(id) { return !posSkuScopeFacts[id] })
+    if (!missing.length) return
+    var url = '/api/pos/catalogue-scope-facts?sku_ids=' + missing.join(',')
+    apiGet(url, session.token).then(function(data) {
+      if (data && typeof data === 'object') {
+        Object.assign(posSkuScopeFacts, data)
+      }
+    }).catch(function() { /* silently ignore — scope facts are best-effort for client filter */ })
+  }
+
+  /**
+   * Evaluate whether all non-empty scope dimensions of an offer match the given line's SKU facts.
+   * AND across kinds, OR within each kind. Empty scopes = global (always match).
+   */
+  function offerScopeMatchesLine(offer, lineFacts) {
+    var scopes = Array.isArray(offer.scopes) ? offer.scopes : []
+    if (!scopes.length) return true
+    var groups = {}
+    for (var i = 0; i < scopes.length; i++) {
+      var s = scopes[i]
+      var k = String(s.kind || '')
+      if (!groups[k]) groups[k] = []
+      groups[k].push(s)
+    }
+    var kinds = Object.keys(groups)
+    for (var ki = 0; ki < kinds.length; ki++) {
+      var kind = kinds[ki]
+      var rows = groups[kind]
+      var lineVal = null
+      if (kind === 'BRAND') lineVal = lineFacts.brand_id
+      else if (kind === 'SKU') lineVal = lineFacts.sku_id
+      else if (kind === 'PRODUCT') lineVal = lineFacts.product_id
+      else if (kind === 'PRODUCT_TYPE') lineVal = lineFacts.product_type
+      if (lineVal == null || lineVal === '') return false
+      var matchAny = rows.some(function(r) {
+        if (r.ref_int != null) return Number(r.ref_int) === Number(lineVal)
+        if (r.ref_key != null) return String(r.ref_key).toLowerCase() === String(lineVal).toLowerCase()
+        return false
+      })
+      if (!matchAny) return false
+    }
+    return true
+  }
+
+  /**
+   * Compute eligible subtotal for an offer: sum of line totals whose SKU facts match offer scopes.
+   * Falls back to full subtotal when scope facts are unavailable.
+   */
+  function computeEligibleSubtotalForOffer(offer) {
+    var scopes = Array.isArray(offer.scopes) ? offer.scopes : []
+    if (!scopes.length) {
+      return obCart.reduce(function(s, l) { return s + computeLineDisplayUnit(l) * l.qty }, 0)
+    }
+    return obCart.reduce(function(s, l) {
+      var facts = posSkuScopeFacts[l.sku_id] || { brand_id: null, product_id: null, product_type: l.product_type || null, sku_id: l.sku_id }
+      facts.sku_id = l.sku_id
+      if (!offerScopeMatchesLine(offer, facts)) return s
+      return s + computeLineDisplayUnit(l) * l.qty
+    }, 0)
+  }
+
   function computeCartOfferDiscount(subtotal) {
     if (!posCartOffers || !posCartOffers.length || subtotal <= 0) return { amount: 0, offerId: null }
     var best = { amount: 0, offerId: null }
@@ -2604,10 +3188,13 @@
       var amt = 0
       if (t === 'PCT') {
         var p = effectiveOfferPct(o)
-        amt = Math.round(subtotal * (p / 100) * 100) / 100
+        var eligibleSub = computeEligibleSubtotalForOffer(o)
+        amt = Math.round(eligibleSub * (p / 100) * 100) / 100
       } else if (t === 'FLAT') {
-        amt = effectiveOfferFlat(o)
+        var eligibleSubFlat = computeEligibleSubtotalForOffer(o)
+        amt = Math.min(effectiveOfferFlat(o), eligibleSubFlat)
       }
+      // Structured types: skip client preview amount (server is authoritative)
       if (amt > subtotal) amt = subtotal
       if (amt > best.amount) best = { amount: amt, offerId: o.offer_id }
     }
@@ -2615,19 +3202,19 @@
   }
 
   function obRecalcTotals() {
-    const gstRate = Number(posSettings.gst_rate) || 0.05
     const subtotal = obCart.reduce(function (sum, line) {
       return sum + computeLineDisplayUnit(line) * line.qty
     }, 0)
     const offerDisc = computeCartOfferDiscount(subtotal)
     const discount = Math.min(offerDisc.amount, subtotal)
-    const taxable = Math.max(0, Math.round((subtotal - discount) * 100) / 100)
-    const gst = Math.round(taxable * gstRate * 100) / 100
-    const total = Math.round((taxable + gst) * 100) / 100
+    const tax = computePosCartTotals(subtotal, discount)
+    const gst = tax.gst
+    const total = tax.total
     if (obSubtotal) obSubtotal.textContent = formatRupees(subtotal)
     if (obDiscountLine) obDiscountLine.textContent = discount > 0 ? ('−' + formatRupees(discount)) : '−₹0'
     if (obDiscountVal) obDiscountVal.textContent = discount > 0 ? ('−' + formatRupees(discount)) : '−₹0'
     if (obGst) obGst.textContent = formatRupees(gst)
+    if (obGstLbl) obGstLbl.textContent = posGstLineLabel()
     if (obTotal) obTotal.textContent = formatRupees(total)
     if (btnObProceed) {
       btnObProceed.disabled = obCart.length === 0
@@ -2840,8 +3427,14 @@
     btnObProceed.addEventListener('click', () => { void handleProceedToPayment() })
   }
 
-  /** Clears POS tablet session, checkout state, and returns to PIN login (same tab). */
-  function performPosLogout() {
+  /** Ends staff POS session only — tablet JWT is kept until "Sign out this tablet". */
+  async function performPosStaffLogout() {
+    var sess = getPosSession()
+    if (sess && sess.token) {
+      try {
+        await apiPost('/api/pos/session/cancel', { cancel_reason: 'staff_logout' }, sess.token)
+      } catch (_e) { /* non-fatal */ }
+    }
     clearPosSession()
     obCart = []
     clearCartStorage()
@@ -2864,10 +3457,14 @@
     lastPaymentReceipt = null
     paySessionSnapshot = { stage: 'FULL', amount: 0 }
     resetPin(false)
+    tabletPinDigits = []
+    resetTabletPin(false)
+    pinDigits = []
     obRenderCart()
-    if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Logged out')
-    history.replaceState({}, '', POS_ROUTES.LOGIN)
-    resolve(POS_ROUTES.LOGIN)
+    var nextRoute = getTabletJwtStoreId() != null ? POS_ROUTES.LOGIN_STAFF : POS_ROUTES.LOGIN
+    if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Staff signed out. Tablet stays unlocked.')
+    history.replaceState({}, '', nextRoute)
+    resolve(nextRoute)
   }
 
   async function handleProceedToPayment() {
@@ -3156,7 +3753,7 @@
       var btn = e.target.closest('.pos-lk-logout-btn')
       if (!btn) return
       e.preventDefault()
-      performPosLogout()
+      void performPosStaffLogout()
     })
 
     // Sidebar navigation delegation
@@ -3166,8 +3763,32 @@
       var key = btn.getAttribute('data-pos-sb-nav')
       if (key === 'catalogue')  navigate(POS_ROUTES.CATALOGUE)
       if (key === 'new-order')  navigate(POS_ROUTES.CATALOGUE)
+      if (key === 'set-pin')    navigate(POS_ROUTES.SET_PIN)
       if (key === 'orders')     navigate(POS_ROUTES.ORDERS)
     })
+
+    var setpinNumpad = document.getElementById('pos-setpin-numpad')
+    if (setpinNumpad) {
+      setpinNumpad.addEventListener('click', function (e) {
+        var btn = e.target.closest('.pos-numpad-btn')
+        if (!btn || btn.classList.contains('ghost')) return
+        if (btn.id === 'btn-setpin-backspace') {
+          posSetPinRemoveDigit()
+          return
+        }
+        var dig = btn.getAttribute('data-sp-digit')
+        if (dig != null) posSetPinAddDigit(dig)
+      })
+      setpinNumpad.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        var btn = e.target.closest('.pos-numpad-btn')
+        if (btn) btn.click()
+      })
+    }
+    var btnSetPinSave = document.getElementById('btn-setpin-save')
+    if (btnSetPinSave) btnSetPinSave.addEventListener('click', function () { void handlePosSetPinSave() })
+    var btnSetPinBack = document.getElementById('btn-setpin-back')
+    if (btnSetPinBack) btnSetPinBack.addEventListener('click', function () { navigate(POS_ROUTES.CATALOGUE) })
 
     bindRxPlanoHandlers()
     bindCatalogueEvents()

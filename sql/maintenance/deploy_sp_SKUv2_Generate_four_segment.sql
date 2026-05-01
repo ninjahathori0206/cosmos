@@ -296,18 +296,25 @@ AS BEGIN
     DECLARE @brandPfx VARCHAR(10) = UPPER(LEFT(ISNULL(@brand_name, 'GEN'), 3));
     DECLARE @collPfx  VARCHAR(10) = UPPER(LEFT(REPLACE(ISNULL(@ew_collection, 'XX'), ' ', ''), 4));
     DECLARE @colPfx   VARCHAR(6)  = UPPER(LEFT(REPLACE(ISNULL(@colour_code, '00'), ' ', ''), 3));
-    DECLARE @seq      INT;
 
-    SELECT @seq = ISNULL(MAX(sku_id), 0) + 1 FROM dbo.skus;
+    DECLARE @skuCode VARCHAR(50) = @brandPfx + '-' + @collPfx + '-' + @colPfx;
 
-    DECLARE @skuCode VARCHAR(50) = @brandPfx + '-' + @collPfx + '-' + @colPfx + '-' + RIGHT('0000' + CAST(@seq AS VARCHAR), 4);
-    DECLARE @barcode VARCHAR(50) = 'EWS-' + @brandPfx + '-' + @colPfx + '-' + RIGHT('0000' + CAST(@seq AS VARCHAR), 4);
+    DECLARE @pidBase VARCHAR(80) = @skuCode + '-P' + CAST(@header_id AS VARCHAR(20));
+    DECLARE @pid VARCHAR(80) = @pidBase;
+    DECLARE @pidSuffix INT = 1;
+    WHILE EXISTS (SELECT 1 FROM dbo.skus WHERE pid = @pid)
+    BEGIN
+      SET @pid = @pidBase + '-' + CAST(@pidSuffix AS VARCHAR(10));
+      SET @pidSuffix = @pidSuffix + 1;
+    END;
+
+    DECLARE @barcode VARCHAR(100) = @pid;
 
     INSERT INTO dbo.skus
-      (product_master_id, sku_code, barcode, quantity, cost_price, sale_price,
+      (product_master_id, sku_code, barcode, pid, quantity, cost_price, sale_price,
        status, created_at, updated_at, header_id, item_id, item_colour_id, image_url, video_url)
     VALUES
-      (@product_master_id, @skuCode, @barcode, @quantity, @cost_price, @sale_price,
+      (@product_master_id, @skuCode, @barcode, @pid, @quantity, @cost_price, @sale_price,
        'LIVE', DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()), @header_id, @item_id, @item_colour_id, @colour_image_url, @colour_video_url);
 
     SELECT

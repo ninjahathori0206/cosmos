@@ -90,7 +90,7 @@
 
   .fgrp { display:flex; flex-direction:column; gap:5px; }
   .fgrp label { font-size:12px; font-weight:600; color:var(--text2); }
-  .fgrp input { padding:8px 11px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'Inter',sans-serif; background:var(--card); color:var(--text1); outline:none; min-width:200px; }
+  .fgrp input { padding:8px 11px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'Inter',sans-serif; background:var(--card); color:var(--text1); outline:none; min-width:0; width:100%; }
   .fgrp input:focus { border-color:var(--acc2); }
 
   .b { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap; }
@@ -172,6 +172,15 @@
   .cx-mclose { background:none; border:none; font-size:18px; cursor:pointer; color:var(--text2); line-height:1; padding:4px 8px; border-radius:8px; }
   .cx-mclose:hover { background:var(--redL); color:var(--red); }
   .cx-mb { padding:18px 20px 20px; display:flex; flex-direction:column; gap:16px; }
+  .cx-modal-ft {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    justify-content: flex-end;
+    flex-shrink: 0;
+  }
   .gm-hero {
     display:flex; align-items:flex-start; gap:14px; padding:14px 16px; border-radius:12px;
     background:linear-gradient(135deg, var(--goldL), var(--accL)); border:1px solid var(--border);
@@ -199,18 +208,154 @@
     display:flex; align-items:center; gap:12px; color:var(--text3); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; margin:4px 0;
   }
   .gm-divider-or::before, .gm-divider-or::after { content:''; flex:1; height:1px; background:var(--border); }
-  .fgrp select, .fgrp textarea { padding:8px 11px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'Inter',sans-serif; background:var(--card); color:var(--text1); outline:none; }
+  .fgrp select, .fgrp textarea { padding:8px 11px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'Inter',sans-serif; background:var(--card); color:var(--text1); outline:none; min-width:0; width:100%; }
   .fgrp select:focus, .fgrp textarea:focus { border-color:var(--acc2); }
   .fgrp textarea { min-height:72px; resize:vertical; }
   .gm-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:4px; }
+  .gm-price-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
   @media (max-width:1100px) {
     .sg4 { grid-template-columns:repeat(2,1fr); }
     .two-col { grid-template-columns:1fr; }
   }
+
+  /* ── Mobile nav backdrop (drawer over content) ── */
+  .cx-mob-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.48);
+    z-index: 350;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+  }
+  body.cx-mob-nav-open .cx-mob-backdrop {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  body.cx-mob-nav-open .main { overflow: hidden; }
+  .cx-mob-bar {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    flex-shrink: 0;
+  }
+  .cx-mob-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    color: var(--text1);
+    font-size: 18px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .cx-mob-menu-btn:hover { border-color: var(--acc2); color: var(--acc); }
+  .cx-mob-title { font-size: 14px; font-weight: 700; color: var(--text1); }
+
+  /* Eye test modal — same shell as cx-modal (no foundry CSS on this page) */
+  #modal-eyetest-overlay .cx-modal.et-wide { max-width: 560px; }
+  .et-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .et-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .et-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+  .et-section-lbl {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding-bottom: 2px;
+  }
+
+  @media (max-width: 768px) {
+    .sidebar {
+      transform: translateX(-100%);
+      transition: transform 0.22s ease;
+      z-index: 400;
+      box-shadow: none;
+      pointer-events: none;
+    }
+    body.cx-mob-nav-open .sidebar {
+      transform: translateX(0);
+      box-shadow: 8px 0 28px rgba(15, 23, 42, 0.25);
+      pointer-events: auto;
+    }
+    .main { margin-left: 0; }
+    .cx-mob-bar { display: flex; }
+    .sg4 { grid-template-columns: repeat(2, 1fr); }
+    .page { padding: 16px 14px; }
+    .topbar { padding: 0 14px; height: 48px; }
+    .gm-hero { flex-wrap: wrap; }
+    .et-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 600px) {
+    .overlay {
+      align-items: flex-end;
+      justify-content: stretch;
+      padding: 0;
+    }
+    .cx-modal,
+    #modal-eyetest-overlay .cx-modal {
+      border-radius: 18px 18px 0 0;
+      max-height: min(90dvh, 92vh);
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+    }
+    .sg4 { grid-template-columns: 1fr; }
+    .of-form-grid { grid-template-columns: 1fr; }
+    .of-preview-wrap,
+    .of-section-lbl,
+    .of-span2,
+    .of-toggle-row { grid-column: span 1; }
+    .of-preview-wrap { flex-wrap: wrap; }
+    .of-toggle-row { flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+    .et-grid-2 { grid-template-columns: 1fr; }
+    .btn,
+    .btn.sm,
+    .fgrp input,
+    .fgrp select,
+    .fgrp textarea,
+    #of-emoji {
+      min-height: 44px;
+    }
+    .btn.sm { padding: 8px 12px; }
+    .cx-mclose {
+      min-width: 40px;
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    .cx-modal-ft {
+      flex-direction: column-reverse;
+      align-items: stretch;
+    }
+    .cx-modal-ft .btn { justify-content: center; }
+  }
+
+  @media (max-width: 480px) {
+    .gm-price-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
+<div class="cx-mob-backdrop" onclick="document.body.classList.remove('cx-mob-nav-open')" aria-hidden="true"></div>
 
 <aside class="sidebar">
   <div class="sidebar-logo">
@@ -240,6 +385,10 @@
 </aside>
 
 <main class="main">
+  <div class="cx-mob-bar">
+    <button type="button" class="cx-mob-menu-btn" onclick="document.body.classList.add('cx-mob-nav-open')" aria-label="Open navigation menu" aria-expanded="false" id="cx-mob-menu-open">☰</button>
+    <span class="cx-mob-title">Cosmos · CX</span>
+  </div>
   <div class="topbar">
     <div class="breadcrumb">CX <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="cx-bc">Dashboard</span></div>
   </div>
@@ -310,7 +459,7 @@
   <div class="page" id="page-offers">
     <div class="ph">
       <div class="pt">Customer Offers</div>
-      <div class="ps">Visible in Eyewoot Go. Primary administration: Command Unit → Promotion → Customer Offers.</div>
+      <div class="ps">Visible in Eyewoot Go. Primary administration: Command Unit → Promotion → Configure Offer.</div>
     </div>
     <div class="card mb4">
       <div class="ch">
@@ -425,7 +574,7 @@
       </div>
       <div id="offer-modal-error" style="color:var(--red);font-size:12px;margin-top:10px;min-height:16px"></div>
     </div>
-    <div style="display:flex;gap:10px;padding:14px 20px;border-top:1px solid var(--border);justify-content:flex-end">
+    <div class="cx-modal-ft">
       <button type="button" class="btn primary" id="offer-save-btn" onclick="saveOffer()">Save offer</button>
       <button type="button" class="btn" onclick="closeOfferModal()">Cancel</button>
     </div>
@@ -462,7 +611,7 @@
         <label for="gm-plan">Plan <span class="label-req">*</span></label>
         <select id="gm-plan"></select>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="gm-price-grid">
         <div class="fgrp">
           <label for="gm-price">Price paid (₹) <span class="label-req">*</span></label>
           <input type="number" id="gm-price" min="0" step="0.01">
@@ -489,39 +638,39 @@
 </div>
 
 <!-- ── Add Eye Test Modal ──────────────────────────────────── -->
-<div class="overlay" id="modal-eyetest-overlay" style="display:none">
-  <div class="modal" style="max-width:560px">
-    <div class="mh">
-      <div class="mt">Add Eye Test Record</div>
-      <button class="close-btn" onclick="closeEyeTestModal()">✕</button>
+<div class="overlay" id="modal-eyetest-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="et-modal-title" onclick="if(event.target===this)closeEyeTestModal()">
+  <div class="cx-modal et-wide" onclick="event.stopPropagation()">
+    <div class="cx-mh">
+      <div class="cx-mt" id="et-modal-title">Add Eye Test Record</div>
+      <button type="button" class="cx-mclose" onclick="closeEyeTestModal()" aria-label="Close">✕</button>
     </div>
-    <div class="mb" style="display:flex;flex-direction:column;gap:14px">
+    <div class="cx-mb" style="gap:14px">
       <input type="hidden" id="et-customer-id">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="fgrp"><label>Test Date *</label><input type="date" id="et-date"></div>
-        <div class="fgrp"><label>Lens Type</label><input type="text" id="et-lens" placeholder="Progressive / SV / Bifocal"></div>
+      <div class="et-grid-2">
+        <div class="fgrp"><label for="et-date">Test Date <span class="label-req">*</span></label><input type="date" id="et-date"></div>
+        <div class="fgrp"><label for="et-lens">Lens Type</label><input type="text" id="et-lens" placeholder="Progressive / SV / Bifocal"></div>
       </div>
-      <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;padding-bottom:2px">Right Eye (RE)</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-        <div class="fgrp"><label>SPH</label><input type="number" step="0.25" id="et-re-sph" placeholder="-2.50"></div>
-        <div class="fgrp"><label>CYL</label><input type="number" step="0.25" id="et-re-cyl" placeholder="-0.75"></div>
-        <div class="fgrp"><label>AXIS</label><input type="number" id="et-re-axis" placeholder="180"></div>
-        <div class="fgrp"><label>ADD</label><input type="number" step="0.25" id="et-re-add" placeholder="+1.00"></div>
+      <div class="et-section-lbl">Right Eye (RE)</div>
+      <div class="et-grid-4">
+        <div class="fgrp"><label for="et-re-sph">SPH</label><input type="number" step="0.25" id="et-re-sph" placeholder="-2.50"></div>
+        <div class="fgrp"><label for="et-re-cyl">CYL</label><input type="number" step="0.25" id="et-re-cyl" placeholder="-0.75"></div>
+        <div class="fgrp"><label for="et-re-axis">AXIS</label><input type="number" id="et-re-axis" placeholder="180"></div>
+        <div class="fgrp"><label for="et-re-add">ADD</label><input type="number" step="0.25" id="et-re-add" placeholder="+1.00"></div>
       </div>
-      <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;padding-bottom:2px">Left Eye (LE)</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-        <div class="fgrp"><label>SPH</label><input type="number" step="0.25" id="et-le-sph" placeholder="-2.00"></div>
-        <div class="fgrp"><label>CYL</label><input type="number" step="0.25" id="et-le-cyl" placeholder="-0.50"></div>
-        <div class="fgrp"><label>AXIS</label><input type="number" id="et-le-axis" placeholder="175"></div>
-        <div class="fgrp"><label>ADD</label><input type="number" step="0.25" id="et-le-add" placeholder="+1.00"></div>
+      <div class="et-section-lbl">Left Eye (LE)</div>
+      <div class="et-grid-4">
+        <div class="fgrp"><label for="et-le-sph">SPH</label><input type="number" step="0.25" id="et-le-sph" placeholder="-2.00"></div>
+        <div class="fgrp"><label for="et-le-cyl">CYL</label><input type="number" step="0.25" id="et-le-cyl" placeholder="-0.50"></div>
+        <div class="fgrp"><label for="et-le-axis">AXIS</label><input type="number" id="et-le-axis" placeholder="175"></div>
+        <div class="fgrp"><label for="et-le-add">ADD</label><input type="number" step="0.25" id="et-le-add" placeholder="+1.00"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="fgrp"><label>PD (mm)</label><input type="number" step="0.5" id="et-pd" placeholder="63"></div>
-        <div class="fgrp"><label>VA (optional)</label><input type="text" id="et-va" placeholder="6/9"></div>
+      <div class="et-grid-2">
+        <div class="fgrp"><label for="et-pd">PD (mm)</label><input type="number" step="0.5" id="et-pd" placeholder="63"></div>
+        <div class="fgrp"><label for="et-va">VA (optional)</label><input type="text" id="et-va" placeholder="6/9"></div>
       </div>
-      <div class="fgrp"><label>Notes</label><input type="text" id="et-notes" placeholder="Any additional observations"></div>
+      <div class="fgrp"><label for="et-notes">Notes</label><input type="text" id="et-notes" placeholder="Any additional observations"></div>
       <div id="eyetest-modal-error" style="color:var(--red);font-size:12px;display:none"></div>
-      <div style="display:flex;gap:10px;margin-top:6px">
+      <div class="et-actions">
         <button type="button" class="btn primary" id="eyetest-save-btn" onclick="saveEyeTest()">Save Eye Test</button>
         <button type="button" class="btn" onclick="closeEyeTestModal()">Cancel</button>
       </div>
@@ -545,7 +694,7 @@ async function refreshOffers() {
   var tbody = document.getElementById('cx-tbody-offers');
   var canManage = typeof window.cosmosCxAllows === 'function' && window.cosmosCxAllows(['cx.offers.manage']);
   if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('cx-tbody-offers', 6);
-  else tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text3);padding:20px;text-align:center">Loading…</td></tr>';
+  else { tbody.innerHTML = ''; }
   try {
     var res = await cxApiFetch('GET', '/api/cx/offers');
     var rows = res.data || [];

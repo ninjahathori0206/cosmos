@@ -32,6 +32,9 @@
     <div class="nav-item" onclick="showPage('stores', this)">
       <span class="icon">🏪</span> Store Management
     </div>
+    <div class="nav-item" id="cu-nav-tablets" onclick="showPage('tablets', this)" style="display:none">
+      <span class="icon">📱</span> Store OS Tablets
+    </div>
     <div class="nav-item" onclick="showPage('users', this)">
       <span class="icon">👤</span> User Management
     </div>
@@ -67,7 +70,7 @@
 
     <div class="nav-section-label">Promotion</div>
     <div class="nav-item" onclick="showPage('promotion', this)">
-      <span class="icon">🎁</span> Customer Offers
+      <span class="icon">🎁</span> Configure Offer
     </div>
 
     <div class="nav-section-label">Foundry Masters</div>
@@ -271,6 +274,43 @@
           <thead><tr><th>Store</th><th>Code</th><th>Format</th><th>City</th><th>GSTIN</th><th>Modules</th><th>Status</th><th></th></tr></thead>
           <tbody>
             <tr><td colspan="8" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: STORE OS TABLETS ═══ -->
+  <div class="page" id="page-tablets">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Store OS Tablets</div>
+        <div class="page-subtitle">Prefer adding tablets from Store Management → open a store → Store OS tablets tab. This page lists all tablets by store.</div>
+      </div>
+      <button type="button" class="topbar-btn primary ml-auto" id="cu-tablets-add-btn" style="display:none" onclick="openModal('modal-cu-new-tablet')">+ Add tablet</button>
+    </div>
+    <div class="card">
+      <div class="card-header flex items-center" style="gap:12px;flex-wrap:wrap">
+        <label class="td-muted" style="font-size:13px;display:flex;align-items:center;gap:8px">
+          Store
+          <select id="cu-tablets-store-filter" style="min-width:220px;padding:6px 10px;border-radius:8px;border:1px solid var(--border)">
+            <option value="">— Select a store —</option>
+          </select>
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table class="cu-tablets-table">
+          <thead>
+            <tr>
+              <th>Tablet ID</th>
+              <th>Device name</th>
+              <th>Last login (IST)</th>
+              <th>Created (IST)</th>
+              <th class="cu-tablets-th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="cu-tablets-tbody">
+            <tr><td colspan="5" class="td-muted" style="text-align:center;padding:24px">Select a store to list tablets.</td></tr>
           </tbody>
         </table>
       </div>
@@ -594,13 +634,32 @@
   <div class="page" id="page-pos-settings">
     <div class="page-header">
       <div class="page-title">POS Settings</div>
-      <div class="page-subtitle">Configure minimum advance for lab orders. Instant orders always require 100% payment.</div>
+      <div class="page-subtitle">Lab advance (% of lab-portion catalogue value), GST mode (composition / inclusive catalogue), and default POS GST rate.</div>
     </div>
     <div class="card" style="max-width:620px">
       <div class="form-grid" style="grid-template-columns:1fr">
         <div class="form-group">
           <label>Lab Advance % (0-100)</label>
           <input id="cu-pos-lab-advance-pct" type="number" min="0" max="100" step="1" placeholder="40">
+        </div>
+        <label class="flex items-center gap-2" style="cursor:pointer;margin-top:4px">
+          <input id="cu-pos-composition-scheme" type="checkbox" tabindex="0" aria-describedby="cu-pos-comp-hint">
+          <span style="font-size:13px;color:var(--text1);font-weight:600">Composition scheme — no GST on POS bill</span>
+        </label>
+        <div id="cu-pos-comp-hint" style="font-size:12px;color:var(--text2);margin:-4px 0 8px 24px">
+          Turn off when you exit composition; GST is then computed from catalogue rate and inclusivity below.
+        </div>
+        <label class="flex items-center gap-2" style="cursor:pointer">
+          <input id="cu-pos-prices-gst-inclusive" type="checkbox" tabindex="0" aria-describedby="cu-pos-inc-hint">
+          <span style="font-size:13px;color:var(--text1);font-weight:600">Catalogue prices include GST</span>
+        </label>
+        <div id="cu-pos-inc-hint" style="font-size:12px;color:var(--text2);margin:-4px 0 12px 24px">
+          Offers/discount apply on the GST-inclusive cart subtotal before tax is backed out when GST applies.
+        </div>
+        <div class="form-group">
+          <label for="cu-pos-gst-rate-pct">POS GST rate when not in composition (%)</label>
+          <input id="cu-pos-gst-rate-pct" type="number" min="0" max="100" step="0.01" placeholder="5" aria-describedby="cu-pos-gst-hint">
+          <span id="cu-pos-gst-hint" style="font-size:12px;color:var(--text2)">Ignored on the bill while composition is on; kept for when you disable composition.</span>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
@@ -654,10 +713,10 @@
   <div class="page" id="page-promotion">
     <div class="page-header flex items-center">
       <div>
-        <div class="page-title">Promotion</div>
-        <div class="page-subtitle">Customer offers for Eyewoot Go and POS checkout reference. Same catalogue as CX; managed here under Command Unit.</div>
+        <div class="page-title">Configure Offer</div>
+        <div class="page-subtitle">Set up customer offers for Eyewoot Go and POS (cart reference). Same catalogue as CX; managed here.</div>
       </div>
-      <button type="button" class="topbar-btn primary ml-auto" onclick="window.openCuPromotionOfferModal && window.openCuPromotionOfferModal()">+ New Offer</button>
+      <button type="button" class="topbar-btn primary ml-auto" onclick="window.openCuPromotionOfferModal && window.openCuPromotionOfferModal()">+ Configure offer</button>
     </div>
     <div class="card">
       <div class="table-wrap">
@@ -909,6 +968,115 @@
 
 <!-- ════════════ MODALS ════════════ -->
 
+<!-- Store OS tablet — create -->
+<div class="modal-overlay" id="modal-cu-new-tablet">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add Store OS tablet</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-new-tablet')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group span2">
+          <label>Device name <span class="label-req">*</span></label>
+          <input id="cu-new-tablet-name" type="text" maxlength="100" placeholder="e.g. Floor 1 · Counter iPad" autocomplete="off">
+        </div>
+        <div class="form-group span2">
+          <label>Store <span class="label-req">*</span></label>
+          <select id="cu-new-tablet-store"><option value="">— Select a store —</option></select>
+        </div>
+        <div class="form-group">
+          <label>Tablet PIN (4 digits) <span class="label-req">*</span></label>
+          <input id="cu-new-tablet-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label>Confirm PIN <span class="label-req">*</span></label>
+          <input id="cu-new-tablet-pin2" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password">
+        </div>
+      </div>
+      <div id="cu-new-tablet-error" class="td-muted" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-new-tablet')">Cancel</button>
+      <button type="button" class="topbar-btn primary" id="cu-new-tablet-save-btn">Save tablet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Store OS tablet — reset PIN -->
+<div class="modal-overlay" id="modal-cu-tablet-reset-pin">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Reset tablet PIN</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-tablet-reset-pin')">×</div>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cu-tablet-reset-id" value="">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>New PIN (4 digits) <span class="label-req">*</span></label>
+          <input id="cu-tablet-reset-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label>Confirm PIN <span class="label-req">*</span></label>
+          <input id="cu-tablet-reset-pin2" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password">
+        </div>
+      </div>
+      <div id="cu-tablet-reset-error" class="td-muted" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-tablet-reset-pin')">Cancel</button>
+      <button type="button" class="topbar-btn primary" id="cu-tablet-reset-save-btn">Save PIN</button>
+    </div>
+  </div>
+</div>
+
+<!-- Store OS tablet — deactivate confirm -->
+<div class="modal-overlay" id="modal-cu-tablet-deactivate">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Deactivate tablet</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-tablet-deactivate')">×</div>
+    </div>
+    <div class="modal-body">
+      <p id="cu-tablet-deact-sub" class="td-muted" style="font-size:14px;line-height:1.5;color:var(--text2)"></p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-tablet-deactivate')">Cancel</button>
+      <button type="button" class="topbar-btn primary" id="cu-tablet-deact-confirm-btn" style="background:var(--red);border-color:var(--red)">Deactivate</button>
+    </div>
+  </div>
+</div>
+
+<!-- Store OS tablet — edit device name -->
+<div class="modal-overlay" id="modal-cu-tablet-edit-detail">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Edit tablet</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-tablet-edit-detail')">×</div>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cu-tablet-edit-id" value="">
+      <input type="hidden" id="cu-tablet-edit-store-id" value="">
+      <div class="form-grid">
+        <div class="form-group span2">
+          <label>Tablet ID</label>
+          <div id="cu-tablet-edit-id-display" class="font-mono" style="padding:10px 0;font-size:14px;color:var(--text1)">—</div>
+        </div>
+        <div class="form-group span2">
+          <label>Device name <span class="label-req">*</span></label>
+          <input id="cu-tablet-edit-name" type="text" maxlength="100" placeholder="e.g. Counter iPad" autocomplete="off">
+        </div>
+      </div>
+      <div id="cu-tablet-edit-error" class="td-muted" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-tablet-edit-detail')">Cancel</button>
+      <button type="button" class="topbar-btn primary" id="cu-tablet-edit-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- New Store -->
 <div class="modal-overlay" id="modal-new-store">
   <div class="modal">
@@ -1156,16 +1324,17 @@
 
 <!-- Store Detail Modal -->
 <div class="modal-overlay" id="modal-store-detail">
-  <div class="modal" style="width:680px">
+  <div class="modal" style="width:min(780px,96vw)">
     <div class="modal-header">
       <div><div class="modal-title" id="edit-store-title">Store</div><div id="edit-store-subtitle" style="font-size:12px;color:var(--text2);margin-top:2px"></div></div>
       <div class="modal-close" onclick="closeModal('modal-store-detail')">×</div>
     </div>
     <div class="modal-body">
       <div class="tabs" style="margin-bottom:16px">
-        <div class="tab active" onclick="switchTab(this,'stab-details')">Details</div>
-        <div class="tab" onclick="switchTab(this,'stab-modules')">Modules</div>
-        <div class="tab" onclick="switchTab(this,'stab-stats')">Stats</div>
+        <div class="tab active" data-stab="stab-details" onclick="switchTab(this,'stab-details')">Details</div>
+        <div class="tab" data-stab="stab-modules" onclick="switchTab(this,'stab-modules')">Modules</div>
+        <div class="tab" data-stab="stab-tablets" id="cu-store-detail-tab-tablets" onclick="switchTab(this,'stab-tablets'); if (window.cuReloadStoreModalTablets) window.cuReloadStoreModalTablets();">Store OS tablets</div>
+        <div class="tab" data-stab="stab-stats" onclick="switchTab(this,'stab-stats')">Stats</div>
       </div>
       <div id="stab-details">
         <div class="form-grid">
@@ -1180,6 +1349,23 @@
           <div class="form-group span2"><label>Address</label><textarea id="edit-store-address"></textarea></div>
         </div>
         <div id="edit-store-error" class="td-muted" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
+      </div>
+      <div id="stab-tablets" style="display:none">
+        <p class="td-muted" style="font-size:13px;line-height:1.55;margin-bottom:14px;color:var(--text2)">
+          <span style="font-weight:600;color:var(--text1)">Tablet ID</span> is the number entered on Store OS together with the device PIN.
+          The PIN is chosen when you add a tablet or via <span style="font-weight:600;color:var(--text1)">Reset PIN</span>; it is never shown in Command Unit.
+        </p>
+        <div class="flex items-center gap-2" style="margin-bottom:12px;flex-wrap:wrap">
+          <button type="button" class="topbar-btn primary" id="cu-store-detail-add-tablet-btn">+ Add tablet</button>
+        </div>
+        <div class="table-wrap">
+          <table class="cu-tablets-table cu-tablets-table--modal">
+            <thead><tr><th>Tablet ID</th><th>Device</th><th>Last login</th><th class="cu-tablets-th-actions">Actions</th></tr></thead>
+            <tbody id="cu-store-detail-tablets-tbody">
+              <tr><td colspan="4" class="td-muted" style="text-align:center;padding:20px">—</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <div id="stab-modules" style="display:none">
         <div class="toggle-row"><div><div class="toggle-label">🔩 Foundry</div></div><div class="toggle on" onclick="this.classList.toggle('on')"></div></div>
@@ -1465,11 +1651,11 @@
   </div>
 </div>
 
-<!-- Customer Offer (Promotion) — layout aligned with Eyewoot Go create-offer UX -->
+<!-- Offer configuration — aligns with Eyewoot Go UX -->
 <div class="modal-overlay" id="modal-cu-customer-offer">
-  <div class="modal" style="width:560px;max-width:96vw">
+  <div class="modal" style="width:640px;max-width:96vw">
     <div class="modal-header">
-      <div class="modal-title" id="cu-offer-modal-title">Create offer</div>
+      <div class="modal-title" id="cu-offer-modal-title">Configure offer</div>
       <div class="modal-close" onclick="closeModal('modal-cu-customer-offer')">×</div>
     </div>
     <div class="modal-body">
@@ -1528,6 +1714,11 @@
           <label>Status</label>
           <select id="cu-offer-active"><option value="1">Active</option><option value="0">Inactive</option></select>
         </div>
+
+        <div class="cu-offer-section-label">Allocation <span class="td-muted" style="font-weight:400;font-size:11px">(leave empty = applies to all)</span></div>
+        <div id="cu-offer-scope-sections" class="span2" style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:13px;color:var(--text3)">Loading allocation options…</div>
+        </div>
       </div>
       <div id="cu-offer-modal-error" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
     </div>
@@ -1550,19 +1741,28 @@ function showPage(id, el, _opts) {
     roles: 'Roles & Permissions', modules: 'Module Access Control',
     homebrands: 'Home Brand Management', locations: 'Location Type Config',
     settings: 'System Settings', 'pos-settings': 'POS Settings', membership: 'Membership Tiers',
-    promotion: 'Promotion · Customer Offers',
+    promotion: 'Configure Offer',
     leavetypes: 'Leave Types', 'foundry-settings': 'Foundry Settings', audit: 'Audit Logs',
-    'cu-suppliers': 'Suppliers', 'cu-maker-master': 'Maker Master', 'cu-branding-agents': 'Branding Agents'
+    'cu-suppliers': 'Suppliers', 'cu-maker-master': 'Maker Master', 'cu-branding-agents': 'Branding Agents',
+    tablets: 'Store OS Tablets'
   };
   document.getElementById('breadcrumb-current').textContent = labels[id] || id;
 }
 
 function openModal(id) {
-  document.getElementById(id).classList.add('open');
+  const el = document.getElementById(id);
+  if (el) el.classList.add('open');
 }
 function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('open');
+  if (id === 'modal-cu-new-tablet') {
+    const s = document.getElementById('cu-new-tablet-store');
+    if (s) s.disabled = false;
+  }
 }
+window.openModal = openModal;
+window.closeModal = closeModal;
 document.querySelectorAll('.modal-overlay').forEach(m => {
   m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
 });

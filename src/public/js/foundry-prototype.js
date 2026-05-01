@@ -2690,10 +2690,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         colours.forEach((col, colIdx) => {
           const existingSku = skus.find((sk) => sk.item_colour_id === col.colour_id);
-          const isExistingProductItem = Boolean(item.is_existing_product) || Boolean(item.home_brand_id);
+          // Locked restock UI only when a colour is tied to an existing LIVE SKU — must match API
+          // purchases.js:isRestock = Boolean(getRestockContext()?.linked_sku_id). Items with home_brand
+          // alone can still need a NEW colour variant → editable MRP until a link exists.
           const isRestockLinked = Boolean(col.linked_sku_id);
           const isRestockDone = Boolean(existingSku && (existingSku.is_restock || existingSku.stock_action === 'RESTOCK_EXISTING'));
-          const isRestock = isRestockLinked || isRestockDone || isExistingProductItem;
+          const isRestock = isRestockLinked || isRestockDone;
           const isDone = !!existingSku;
           const tabId  = `digi-panel-${item.item_id}-${col.colour_id}`;
           const imgId  = `clr-img-${item.item_id}-${col.colour_id}`;
@@ -4399,6 +4401,555 @@ document.addEventListener('DOMContentLoaded', () => {
     if (qEl) qEl.focus();
   };
 
+  // ── Lens config (POS catalogue) — /api/foundry/lens-config ────────────────────
+  const lcCanEdit = user.role === 'super_admin' || userPermissions.includes('foundry.catalogue.edit');
+  let _lcData = null;
+  let _lcSelCatId = null;
+  let _lcSelPkgId = null;
+  const _lcMatrixTimers = Object.create(null);
+
+  function lcEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function lcPosLabel(pb, pn, legacy) {
+    const b = String(pb || '').trim();
+    const n = String(pn || '').trim();
+    const l = String(legacy || '').trim();
+    if (b && n) return `${b} · ${n}`;
+    if (n) return n;
+    if (b) return b;
+    return l || '—';
+  }
+
+  function lcBool(v) {
+    if (v === true || v === 1) return true;
+    if (v === false || v === 0) return false;
+    if (typeof v === 'string' && (v === '1' || v === 'true')) return true;
+    return Boolean(v);
+  }
+
+  function lcApplyEditVisibility() {
+    ['lc-btn-add-cat', 'lc-btn-add-pkg', 'lc-pkg-th-edit', 'lc-pkg-save-row', 'lc-addon-new-btn', 'lc-addon-th-actions'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = lcCanEdit ? '' : 'none';
+    });
+    const wr = document.getElementById('lc-pkg-addons-wrap');
+    if (wr) wr.style.display = lcCanEdit && _lcSelPkgId ? '' : 'none';
+  }
+
+  async function lcFetchConfig() {
+    return apiGet('/api/foundry/lens-config');
+  }
+
+  function lcPackageAddonSet(pkgId) {
+    if (!_lcData || !pkgId) return [];
+    const set = new Set(
+      (_lcData.packageAddons || []).filter((l) => Number(l.package_id) === Number(pkgId)).map((l) => Number(l.addon_id))
+    );
+    return Array.from(set);
+  }
+
+  function lcScheduleMatrixSave(packageId) {
+    const pid = Number(packageId);
+    if (!lcCanEdit || !Number.isFinite(pid)) return;
+    const key = String(pid);
+    if (_lcMatrixTimers[key]) clearTimeout(_lcMatrixTimers[key]);
+    _lcMatrixTimers[key] = setTimeout(async () => {
+      delete _lcMatrixTimers[key];
+      const row = document.querySelector(`tr[data-lc-pkg-row="${pid}"]`);
+      if (!row) return;
+      const cbs = row.querySelectorAll('input[data-lc-aid]');
+      const ids = [];
+      cbs.forEach((cb) => {
+        if (cb.checked) ids.push(Number(cb.getAttribute('data-lc-aid')));
+      });
+      try {
+        await apiPut(`/api/foundry/lens-config/packages/${pid}/addons`, { addon_ids: ids });
+        if (_lcData && Array.isArray(_lcData.packageAddons)) {
+          _lcData.packageAddons = _lcData.packageAddons.filter((x) => Number(x.package_id) !== pid);
+          ids.forEach((aid) => _lcData.packageAddons.push({ package_id: pid, addon_id: aid }));
+        }
+      } catch (err) {
+        if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed');
+        if (typeof window.loadLensMatrixPage === 'function') window.loadLensMatrixPage();
+      }
+    }, 450);
+  }
+
+  function lcSchedulePkgEditorAddonPersist() {
+    const pid = Number(document.getElementById('lc-pkg-id') && document.getElementById('lc-pkg-id').value);
+    if (!lcCanEdit || !Number.isFinite(pid) || pid < 1) return;
+    const wrap = document.getElementById('lc-pkg-addons-chk');
+    if (!wrap) return;
+    const ids = [];
+    wrap.querySelectorAll('input[type="checkbox"][data-lc-pkg-addon]').forEach((cb) => {
+      if (cb.checked) ids.push(Number(cb.getAttribute('data-lc-pkg-addon')));
+    });
+    const key = 'editor-' + pid;
+    if (_lcMatrixTimers[key]) clearTimeout(_lcMatrixTimers[key]);
+    _lcMatrixTimers[key] = setTimeout(async () => {
+      delete _lcMatrixTimers[key];
+      try {
+        await apiPut(`/api/foundry/lens-config/packages/${pid}/addons`, { addon_ids: ids });
+        if (_lcData && Array.isArray(_lcData.packageAddons)) {
+          _lcData.packageAddons = _lcData.packageAddons.filter((x) => Number(x.package_id) !== pid);
+          ids.forEach((aid) => _lcData.packageAddons.push({ package_id: pid, addon_id: aid }));
+        }
+      } catch (err) {
+        if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Add-on links failed');
+      }
+    }, 400);
+  }
+
+  function lcRenderCategoryRows() {
+    const tb = document.getElementById('lc-cat-tbody');
+    if (!tb || !_lcData) return;
+    const cats = _lcData.categories || [];
+    if (!cats.length) {
+      tb.innerHTML = '<tr><td colspan="1" class="td2 p12" style="color:var(--text3)">No categories</td></tr>';
+      return;
+    }
+    tb.innerHTML = cats
+      .map((c) => {
+        const active = lcBool(c.is_active);
+        const sel = Number(_lcSelCatId) === Number(c.id);
+        const dot = active ? '<span class="b b-green xs">On</span>' : '<span class="b b-gray xs">Off</span>';
+        const btn = lcCanEdit
+          ? `<button type="button" class="btn xs" onclick="event.stopPropagation();window.lcEditCategory && window.lcEditCategory(${Number(c.id)})">Edit</button>`
+          : '';
+        return `<tr class="tr-link${sel ? ' lc-cat-sel' : ''}" data-lc-cat="${Number(c.id)}" style="${sel ? 'background:var(--accL);' : ''}"><td class="td2"><div class="fw6">${lcEsc(lcPosLabel(c.pos_brand, c.pos_name, c.name))}</div><div class="xs td2">${dot} ${btn}</div></td></tr>`;
+      })
+      .join('');
+    tb.querySelectorAll('tr[data-lc-cat]').forEach((tr) => {
+      tr.addEventListener('click', () => {
+        _lcSelCatId = Number(tr.getAttribute('data-lc-cat'));
+        lcRenderCategoryRows();
+        lcRenderPackageRows();
+        lcRefreshPkgEditor();
+      });
+    });
+  }
+
+  function lcRenderPackageRows() {
+    const tb = document.getElementById('lc-pkg-tbody');
+    const lbl = document.getElementById('lc-pkg-cat-label');
+    if (!tb || !_lcData) return;
+    const cats = _lcData.categories || [];
+    const cat = cats.find((c) => Number(c.id) === Number(_lcSelCatId));
+    if (lbl) lbl.textContent = cat ? `· ${lcPosLabel(cat.pos_brand, cat.pos_name, cat.name)}` : '';
+    const pkgs = (_lcData.packages || []).filter((p) => Number(p.category_id) === Number(_lcSelCatId));
+    if (!pkgs.length) {
+      tb.innerHTML = `<tr><td colspan="${lcCanEdit ? 5 : 4}" class="td2 p12" style="color:var(--text3)">No packages in this category</td></tr>`;
+      return;
+    }
+    const colspan = lcCanEdit ? 5 : 4;
+    tb.innerHTML = pkgs
+      .map((p) => {
+        const active = lcBool(p.is_active);
+        const dot = active ? '<span class="b b-green xs">Yes</span>' : '<span class="b b-gray xs">No</span>';
+        const edit = lcCanEdit
+          ? `<td class="tc"><button type="button" class="btn xs primary" onclick="event.stopPropagation();window.lcSelectPackage && window.lcSelectPackage(${Number(p.id)})">Edit</button></td>`
+          : '';
+        return `<tr class="tr-link${Number(_lcSelPkgId) === Number(p.id) ? ' lc-pkg-sel' : ''}" data-lc-pkg="${Number(p.id)}" style="${Number(_lcSelPkgId) === Number(p.id) ? 'background:var(--accL);' : ''}"><td>${lcEsc(String(p.pos_brand || '').trim() || '—')}</td><td>${lcEsc(String(p.pos_name || p.name || '').trim() || '—')}</td><td class="tc mono">${inr(p.price)}</td><td class="tc">${dot}</td>${edit}</tr>`;
+      })
+      .join('');
+    tb.querySelectorAll('tr[data-lc-pkg]').forEach((tr) => {
+      tr.addEventListener('click', () => {
+        window.lcSelectPackage(Number(tr.getAttribute('data-lc-pkg')));
+      });
+    });
+  }
+
+  function lcRefreshPkgEditor() {
+    const empty = document.getElementById('lc-pkg-editor-empty');
+    const form = document.getElementById('lc-pkg-editor-form');
+    const hint = document.getElementById('lc-pkg-editor-hint');
+    const aw = document.getElementById('lc-pkg-addons-wrap');
+    if (!_lcSelPkgId || !_lcData) {
+      if (empty) empty.style.display = '';
+      if (form) form.style.display = 'none';
+      if (hint) hint.textContent = 'Select a package row or create one.';
+      if (aw) aw.style.display = 'none';
+      lcApplyEditVisibility();
+      return;
+    }
+    const p = (_lcData.packages || []).find((x) => Number(x.id) === Number(_lcSelPkgId));
+    if (!p) {
+      if (empty) empty.style.display = '';
+      if (form) form.style.display = 'none';
+      lcApplyEditVisibility();
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    if (form) form.style.display = '';
+    if (hint) hint.textContent = `Editing package #${p.id}`;
+    document.getElementById('lc-pkg-id').value = String(p.id);
+    document.getElementById('lc-pkg-pos-brand').value = p.pos_brand || '';
+    document.getElementById('lc-pkg-pos-name').value = p.pos_name || p.name || '';
+    document.getElementById('lc-pkg-int-brand').value = p.internal_brand || '';
+    document.getElementById('lc-pkg-int-name').value = p.internal_name || p.name || '';
+    document.getElementById('lc-pkg-price').value = p.price != null ? String(p.price) : '';
+    document.getElementById('lc-pkg-sort').value = String(p.sort_order != null ? p.sort_order : 0);
+    document.getElementById('lc-pkg-active').checked = lcBool(p.is_active);
+    const chk = document.getElementById('lc-pkg-addons-chk');
+    if (chk && lcCanEdit) {
+      const allowed = new Set(lcPackageAddonSet(p.id));
+      const addons = (_lcData.addons || []).filter((a) => lcBool(a.is_active));
+      chk.innerHTML = addons
+        .map((a) => {
+          const id = Number(a.id);
+          const on = allowed.has(id);
+          return `<label class="flex ic g2" style="font-size:13px;cursor:pointer"><input type="checkbox" data-lc-pkg-addon="${id}" ${on ? 'checked' : ''}> ${lcEsc(lcPosLabel(a.pos_brand, a.pos_name, a.name))} <span class="xs td2 mono">(${inr(a.price)})</span></label>`;
+        })
+        .join('');
+      chk.querySelectorAll('input[data-lc-pkg-addon]').forEach((cb) => {
+        cb.addEventListener('change', () => lcSchedulePkgEditorAddonPersist());
+      });
+    }
+    if (aw) aw.style.display = lcCanEdit ? '' : 'none';
+    lcApplyEditVisibility();
+  }
+
+  window.lcSelectPackage = function (id) {
+    _lcSelPkgId = Number(id);
+    lcRenderPackageRows();
+    lcRefreshPkgEditor();
+  };
+
+  window.lcOpenNewPackage = function () {
+    if (!lcCanEdit) return;
+    if (!_lcSelCatId) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a category first.');
+      return;
+    }
+    _lcSelPkgId = null;
+    lcRenderPackageRows();
+    const empty = document.getElementById('lc-pkg-editor-empty');
+    const form = document.getElementById('lc-pkg-editor-form');
+    const hint = document.getElementById('lc-pkg-editor-hint');
+    if (empty) empty.style.display = 'none';
+    if (form) form.style.display = '';
+    if (hint) hint.textContent = 'New package (unsaved)';
+    document.getElementById('lc-pkg-id').value = '';
+    document.getElementById('lc-pkg-pos-brand').value = '';
+    document.getElementById('lc-pkg-pos-name').value = '';
+    document.getElementById('lc-pkg-int-brand').value = '';
+    document.getElementById('lc-pkg-int-name').value = '';
+    document.getElementById('lc-pkg-price').value = '0';
+    document.getElementById('lc-pkg-sort').value = '0';
+    document.getElementById('lc-pkg-active').checked = true;
+    const chk = document.getElementById('lc-pkg-addons-chk');
+    if (chk) chk.innerHTML = '';
+    document.getElementById('lc-pkg-addons-wrap').style.display = 'none';
+    lcApplyEditVisibility();
+  };
+
+  window.lcSavePackage = async function () {
+    if (!lcCanEdit) return;
+    const posNameEl = document.getElementById('lc-pkg-pos-name');
+    const priceEl = document.getElementById('lc-pkg-price');
+    if (!posNameEl || !String(posNameEl.value || '').trim()) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(posNameEl, 'Required');
+      return;
+    }
+    if (typeof cosmosFieldClear === 'function') cosmosFieldClear(posNameEl);
+    const price = parseFloat(priceEl && priceEl.value);
+    if (!Number.isFinite(price) || price < 0) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(priceEl, 'Valid price required');
+      return;
+    }
+    if (typeof cosmosFieldClear === 'function') cosmosFieldClear(priceEl);
+    const btn = document.getElementById('lc-pkg-save-btn');
+    if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    const body = {
+      category_id: Number(_lcSelCatId),
+      pos_brand: (document.getElementById('lc-pkg-pos-brand').value || '').trim(),
+      pos_name: String(posNameEl.value || '').trim(),
+      internal_brand: (document.getElementById('lc-pkg-int-brand').value || '').trim(),
+      internal_name: (document.getElementById('lc-pkg-int-name').value || '').trim() || String(posNameEl.value || '').trim(),
+      price,
+      sort_order: parseInt(document.getElementById('lc-pkg-sort').value, 10) || 0,
+      is_active: document.getElementById('lc-pkg-active').checked
+    };
+    const idStr = document.getElementById('lc-pkg-id').value;
+    try {
+      let newId;
+      if (idStr) {
+        await apiPut(`/api/foundry/lens-config/packages/${encodeURIComponent(idStr)}`, body);
+        newId = Number(idStr);
+      } else {
+        const r = await apiPost('/api/foundry/lens-config/packages', body);
+        newId = r && r.id ? Number(r.id) : null;
+      }
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Package saved');
+      if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      else if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      _lcData = await lcFetchConfig();
+      if (newId) _lcSelPkgId = newId;
+      document.getElementById('lc-pkg-id').value = _lcSelPkgId ? String(_lcSelPkgId) : '';
+      lcRenderCategoryRows();
+      lcRenderPackageRows();
+      lcRefreshPkgEditor();
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed');
+    }
+  };
+
+  window.loadLensPackagesPage = async function () {
+    const ctb = document.getElementById('lc-cat-tbody');
+    const ptb = document.getElementById('lc-pkg-tbody');
+    if (!ctb || !ptb) return;
+    if (typeof cosmosSkeletonTable === 'function') {
+      cosmosSkeletonTable('lc-cat-tbody', 1, 4);
+      cosmosSkeletonTable('lc-pkg-tbody', lcCanEdit ? 5 : 4, 6);
+    }
+    lcApplyEditVisibility();
+    try {
+      _lcData = await lcFetchConfig();
+      const cats = _lcData.categories || [];
+      if (!_lcSelCatId && cats.length) _lcSelCatId = Number(cats[0].id);
+      if (_lcSelCatId && !cats.some((c) => Number(c.id) === Number(_lcSelCatId))) {
+        _lcSelCatId = cats.length ? Number(cats[0].id) : null;
+      }
+      lcRenderCategoryRows();
+      lcRenderPackageRows();
+      if (_lcSelPkgId && !(_lcData.packages || []).some((p) => Number(p.id) === Number(_lcSelPkgId))) {
+        _lcSelPkgId = null;
+      }
+      lcRefreshPkgEditor();
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not load lens config');
+      ctb.innerHTML = '<tr><td class="td2 p12" style="color:var(--red)">Failed to load</td></tr>';
+      ptb.innerHTML = '';
+    }
+  };
+
+  window.lcEditCategory = function (id) {
+    if (!lcCanEdit || !_lcData) return;
+    const c = (_lcData.categories || []).find((x) => Number(x.id) === Number(id));
+    if (!c) return;
+    document.getElementById('lc-cat-id').value = String(c.id);
+    document.getElementById('lc-cat-pos-brand').value = c.pos_brand || '';
+    document.getElementById('lc-cat-pos-name').value = c.pos_name || c.name || '';
+    document.getElementById('lc-cat-int-brand').value = c.internal_brand || '';
+    document.getElementById('lc-cat-int-name').value = c.internal_name || c.name || '';
+    document.getElementById('lc-cat-sort').value = String(c.sort_order != null ? c.sort_order : 0);
+    document.getElementById('lc-cat-active').checked = lcBool(c.is_active);
+    document.getElementById('lc-cat-notes').value = c.notes || '';
+    openM('lc-modal-cat');
+  };
+
+  window.lcSaveCategory = async function () {
+    if (!lcCanEdit) return;
+    const posName = document.getElementById('lc-cat-pos-name');
+    if (!String(posName.value || '').trim()) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(posName, 'Required');
+      return;
+    }
+    if (typeof cosmosFieldClear === 'function') cosmosFieldClear(posName);
+    const btn = document.getElementById('lc-cat-save-btn');
+    if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    const body = {
+      pos_brand: (document.getElementById('lc-cat-pos-brand').value || '').trim(),
+      pos_name: String(posName.value || '').trim(),
+      internal_brand: (document.getElementById('lc-cat-int-brand').value || '').trim(),
+      internal_name: (document.getElementById('lc-cat-int-name').value || '').trim() || String(posName.value || '').trim(),
+      sort_order: parseInt(document.getElementById('lc-cat-sort').value, 10) || 0,
+      is_active: document.getElementById('lc-cat-active').checked,
+      notes: (document.getElementById('lc-cat-notes').value || '').trim() || null
+    };
+    const idStr = document.getElementById('lc-cat-id').value;
+    try {
+      if (idStr) {
+        await apiPut(`/api/foundry/lens-config/categories/${encodeURIComponent(idStr)}`, body);
+      } else {
+        await apiPost('/api/foundry/lens-config/categories', body);
+      }
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Category saved');
+      if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      else if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      closeM('lc-modal-cat');
+      _lcData = await lcFetchConfig();
+      const cats = _lcData.categories || [];
+      if (!_lcSelCatId && cats.length) _lcSelCatId = Number(cats[0].id);
+      lcRenderCategoryRows();
+      lcRenderPackageRows();
+      lcRefreshPkgEditor();
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed');
+    }
+  };
+
+  window.lcOpenNewCategory = function () {
+    if (!lcCanEdit) return;
+    document.getElementById('lc-cat-id').value = '';
+    document.getElementById('lc-cat-pos-brand').value = '';
+    document.getElementById('lc-cat-pos-name').value = '';
+    document.getElementById('lc-cat-int-brand').value = '';
+    document.getElementById('lc-cat-int-name').value = '';
+    document.getElementById('lc-cat-sort').value = '0';
+    document.getElementById('lc-cat-active').checked = true;
+    document.getElementById('lc-cat-notes').value = '';
+    openM('lc-modal-cat');
+  };
+
+  window.lcOpenNewAddon = function () {
+    if (!lcCanEdit) return;
+    document.getElementById('lc-ad-id').value = '';
+    document.getElementById('lc-ad-pos-brand').value = '';
+    document.getElementById('lc-ad-pos-name').value = '';
+    document.getElementById('lc-ad-int-brand').value = '';
+    document.getElementById('lc-ad-int-name').value = '';
+    document.getElementById('lc-ad-price').value = '0';
+    document.getElementById('lc-ad-sort').value = '0';
+    document.getElementById('lc-ad-active').checked = true;
+    openM('lc-modal-addon');
+  };
+
+  window.lcEditAddon = function (id) {
+    if (!lcCanEdit || !_lcData) return;
+    const a = (_lcData.addons || []).find((x) => Number(x.id) === Number(id));
+    if (!a) return;
+    document.getElementById('lc-ad-id').value = String(a.id);
+    document.getElementById('lc-ad-pos-brand').value = a.pos_brand || '';
+    document.getElementById('lc-ad-pos-name').value = a.pos_name || a.name || '';
+    document.getElementById('lc-ad-int-brand').value = a.internal_brand || '';
+    document.getElementById('lc-ad-int-name').value = a.internal_name || a.name || '';
+    document.getElementById('lc-ad-price').value = a.price != null ? String(a.price) : '0';
+    document.getElementById('lc-ad-sort').value = String(a.sort_order != null ? a.sort_order : 0);
+    document.getElementById('lc-ad-active').checked = lcBool(a.is_active);
+    openM('lc-modal-addon');
+  };
+
+  window.lcSaveAddon = async function () {
+    if (!lcCanEdit) return;
+    const nm = document.getElementById('lc-ad-pos-name');
+    const pr = document.getElementById('lc-ad-price');
+    if (!String(nm.value || '').trim()) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(nm, 'Required');
+      return;
+    }
+    const price = parseFloat(pr.value);
+    if (!Number.isFinite(price) || price < 0) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(pr, 'Valid price');
+      return;
+    }
+    if (typeof cosmosFieldClear === 'function') {
+      cosmosFieldClear(nm);
+      cosmosFieldClear(pr);
+    }
+    const btn = document.getElementById('lc-ad-save-btn');
+    if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    const body = {
+      pos_brand: (document.getElementById('lc-ad-pos-brand').value || '').trim(),
+      pos_name: String(nm.value || '').trim(),
+      internal_brand: (document.getElementById('lc-ad-int-brand').value || '').trim(),
+      internal_name: (document.getElementById('lc-ad-int-name').value || '').trim() || String(nm.value || '').trim(),
+      price,
+      sort_order: parseInt(document.getElementById('lc-ad-sort').value, 10) || 0,
+      is_active: document.getElementById('lc-ad-active').checked
+    };
+    const idStr = document.getElementById('lc-ad-id').value;
+    try {
+      if (idStr) {
+        await apiPut(`/api/foundry/lens-config/addons/${encodeURIComponent(idStr)}`, body);
+      } else {
+        await apiPost('/api/foundry/lens-config/addons', body);
+      }
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Add-on saved');
+      if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      else if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      closeM('lc-modal-addon');
+      _lcData = await lcFetchConfig();
+      if (document.getElementById('lc-addon-tbody')) window.loadLensAddonsPage();
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed');
+    }
+  };
+
+  window.loadLensAddonsPage = async function () {
+    const tb = document.getElementById('lc-addon-tbody');
+    if (!tb) return;
+    const ncol = lcCanEdit ? 7 : 6;
+    if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('lc-addon-tbody', ncol, 8);
+    lcApplyEditVisibility();
+    try {
+      if (!_lcData) _lcData = await lcFetchConfig();
+      const rows = _lcData.addons || [];
+      if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="${ncol}" class="td2 p12">No add-ons yet</td></tr>`;
+        return;
+      }
+      tb.innerHTML = rows
+        .map((a) => {
+          const on = lcBool(a.is_active);
+          const dot = on ? '<span class="b b-green xs">Yes</span>' : '<span class="b b-gray xs">No</span>';
+          const ed = lcCanEdit
+            ? `<td class="tc"><button type="button" class="btn xs" onclick="window.lcEditAddon(${Number(a.id)})">Edit</button></td>`
+            : '';
+          return `<tr><td>${lcEsc(String(a.pos_brand || '').trim() || '—')}</td><td>${lcEsc(String(a.pos_name || a.name || '').trim() || '—')}</td><td class="xs" style="color:var(--text3)">${lcEsc(String(a.internal_brand || '').trim() || '—')}</td><td class="xs" style="color:var(--gold)">${lcEsc(String(a.internal_name || a.name || '').trim() || '—')}</td><td class="tc mono">${inr(a.price)}</td><td class="tc">${dot}</td>${ed}</tr>`;
+        })
+        .join('');
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Load failed');
+    }
+  };
+
+  window.loadLensMatrixPage = async function () {
+    const thead = document.getElementById('lc-matrix-thead');
+    const tb = document.getElementById('lc-matrix-tbody');
+    if (!thead || !tb) return;
+    thead.innerHTML = '<tr><th>Package</th></tr>';
+    tb.innerHTML = '';
+    if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('lc-matrix-tbody', 4, 3);
+    try {
+      if (!_lcData) _lcData = await lcFetchConfig();
+      const addons = (_lcData.addons || []).slice().sort((a, b) => (Number(a.sort_order)||0) - (Number(b.sort_order)||0) || Number(a.id) - Number(b.id));
+      const pkgs = (_lcData.packages || []).slice().sort((a, b) => Number(a.category_id) - Number(b.category_id) || (Number(a.sort_order)||0) - (Number(b.sort_order)||0));
+      const thr = ['<th>Package</th>'].concat(
+        addons.map((a) => `<th class="tc xs">${lcEsc(lcPosLabel(a.pos_brand, a.pos_name, a.name))}</th>`)
+      );
+      thead.innerHTML = `<tr>${thr.join('')}</tr>`;
+      if (!pkgs.length) {
+        const span = 1 + addons.length;
+        tb.innerHTML = `<tr><td colspan="${span}" class="td2 p12">No packages</td></tr>`;
+        return;
+      }
+      tb.innerHTML = pkgs
+        .map((p) => {
+          const plab = lcEsc(lcPosLabel(p.pos_brand, p.pos_name, p.name));
+          const allowed = new Set(lcPackageAddonSet(p.id));
+          const cells = addons
+            .map((a) => {
+              const aid = Number(a.id);
+              const on = allowed.has(aid);
+              if (!lcCanEdit) {
+                return `<td class="tc">${on ? '●' : '—'}</td>`;
+              }
+              return `<td class="tc"><input type="checkbox" data-lc-aid="${aid}" ${on ? 'checked' : ''} aria-label="link"></td>`;
+            })
+            .join('');
+          return `<tr data-lc-pkg-row="${Number(p.id)}"><td class="td2 fw6">${plab}</td>${cells}</tr>`;
+        })
+        .join('');
+      if (lcCanEdit) {
+        tb.querySelectorAll('tr[data-lc-pkg-row]').forEach((tr) => {
+          const pid = Number(tr.getAttribute('data-lc-pkg-row'));
+          tr.querySelectorAll('input[data-lc-aid]').forEach((cb) => {
+            cb.addEventListener('change', () => lcScheduleMatrixSave(pid));
+          });
+        });
+      }
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Load failed');
+    }
+  };
+
   const FOUNDRY_PAGE_PATHS = {
     dashboard: '/foundry/dashboard',
     purchases: '/foundry/purchases',
@@ -4408,7 +4959,9 @@ document.addEventListener('DOMContentLoaded', () => {
     digitisation: '/foundry/digitisation',
     'sku-catalogue': '/foundry/sku-catalogue',
     'stock-view': '/foundry/stock-view',
-    'lens-portfolio': '/foundry/lens-portfolio',
+    'lens-packages': '/foundry/lens-packages',
+    'lens-addons': '/foundry/lens-addons',
+    'lens-package-addons': '/foundry/lens-package-addons',
     'master-catalogue': '/foundry/master-catalogue',
     'rate-intelligence': '/foundry/rate-intelligence',
     'stock-transfer': '/foundry/stock-transfer',
@@ -4419,6 +4972,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getFoundryPageFromPath(pathname) {
     const normalized = String(pathname || '').replace(/\/+$/, '') || '/foundry';
+    if (normalized === '/foundry/lens-portfolio') return 'lens-packages';
     const exact = Object.entries(FOUNDRY_PAGE_PATHS).find(([, route]) => route === normalized);
     if (exact) return exact[0];
     if (normalized === '/foundry') return 'dashboard';
@@ -4454,6 +5008,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id === 'stock-transfer')   stInit();
     if (id === 'transfer-requests') loadTransferRequests();
     if (id === 'movement-list')     loadMovementList();
+    if (id === 'lens-packages' && typeof window.loadLensPackagesPage === 'function') window.loadLensPackagesPage();
+    if (id === 'lens-addons' && typeof window.loadLensAddonsPage === 'function') window.loadLensAddonsPage();
+    if (id === 'lens-package-addons' && typeof window.loadLensMatrixPage === 'function') window.loadLensMatrixPage();
     // loadLabOrders is assigned later in this file; guard avoids ReferenceError + aborted init on /foundry/lab-orders refresh.
     if (id === 'lab-orders' && typeof window.loadLabOrders === 'function') window.loadLabOrders();
     // Only load the list when navigating from sidebar (not when opening a detail directly)
