@@ -8344,7 +8344,7 @@
       "id": "m7855f226e5",
       "x": -15822,
       "y": 1560,
-      "name": "Order Creation - Add Power · /pos/lens-config",
+      "name": "Order Creation - Add Power + optional add-ons · /pos/lens-config",
       "clip": true,
       "width": 1024,
       "height": 768,
@@ -8810,6 +8810,172 @@
                       "fontFamily": "Inter",
                       "fontSize": 13,
                       "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Iq8xb",
+                  "name": "addonOptionalBlock",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "aVTlW",
+                      "name": "addonTitle",
+                      "fill": "#0F172A",
+                      "content": "Optional add-ons",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "qC3aZ",
+                      "name": "addonSub",
+                      "fill": "#64748B",
+                      "content": "Configure upgrades linked to this package in Foundry → Lens link matrix.",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "FpqLz",
+                      "name": "addonCard",
+                      "width": "fill_container",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 12,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "layout": "vertical",
+                      "gap": 8,
+                      "padding": 14,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "PHF8c",
+                          "name": "rowA",
+                          "width": "fill_container",
+                          "gap": 12,
+                          "justifyContent": "space_between",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "hZhLD",
+                              "name": "rowAL",
+                              "width": "fill_container",
+                              "gap": 10,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "TlUgl",
+                                  "name": "cbA",
+                                  "width": 22,
+                                  "height": 22,
+                                  "cornerRadius": 6,
+                                  "stroke": {
+                                    "align": "inside",
+                                    "thickness": 2,
+                                    "fill": "#CBD5E1"
+                                  }
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "Qnrbf",
+                                  "name": "labA",
+                                  "fill": "#0F172A",
+                                  "content": "Blue cut lens",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 14,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "Q2pU1",
+                              "name": "prA",
+                              "fill": "#0D9F7B",
+                              "content": "+ ₹400",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ZTSOs",
+                          "name": "rowB",
+                          "width": "fill_container",
+                          "gap": 12,
+                          "justifyContent": "space_between",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "gcUjY",
+                              "name": "rowBL",
+                              "width": "fill_container",
+                              "gap": 10,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "cIjJI",
+                                  "name": "cbB",
+                                  "width": 22,
+                                  "height": 22,
+                                  "fill": "#2563EB",
+                                  "cornerRadius": 6,
+                                  "justifyContent": "center",
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "A1mVtb",
+                                      "name": "chkB",
+                                      "fill": "#FFFFFF",
+                                      "content": "✓",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "700"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "RB7R7",
+                                  "name": "labB",
+                                  "fill": "#0F172A",
+                                  "content": "Anti-reflective coating",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 14,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "E2bu4A",
+                              "name": "prB",
+                              "fill": "#0D9F7B",
+                              "content": "+ ₹499",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 },

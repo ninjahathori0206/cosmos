@@ -879,6 +879,15 @@ html {
   transform: scale(1.12);
 }
 
+.pos-sku-swatch--oos {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.pos-sku-swatch--oos:hover {
+  transform: none;
+}
+
 .pos-sku-swatch-count {
   font-size: 11px;
   color: var(--text2);
@@ -1817,7 +1826,6 @@ html {
 .pos-pdp-delivery { color: #0D9F7B; font-weight: 700; margin-top: 8px; }
 
 .pos-pdp-total-wrap { display: flex; flex-direction: column; }
-.pos-pdp-total-lbl { color: var(--pos-text-3); font-size: 12px; }
 .pos-pdp-total-val { color: var(--pos-text-1); font-size: 28px; font-weight: 800; line-height: 1; }
 
 .pos-confirm-check {

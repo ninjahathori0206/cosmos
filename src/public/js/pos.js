@@ -363,13 +363,13 @@
         const sId = Number(productPathMatch[2])
         const already = pendingOrderSelection
         if (already && already.product && already.product.product_id === pId && already.colour && already.colour.sku_id === sId) {
-          showProductPageScreen(session)
+          void showProductPageScreen(session)
         } else {
           void resolveProductByIds(session, pId, sId)
         }
         return
       }
-      showProductPageScreen(session)
+      void showProductPageScreen(session)
       return
     }
 
@@ -514,29 +514,13 @@
   // Each maps to the closest catalogue category by `match` (substring match
   // against the category name). When `match` is null (e.g. Frame Only) the
   // wizard skips lens selection entirely.
-  const POWER_TYPES = [
-    { key: 'with',         icon: '👁',  iconColor: '#2563EB', title: 'With Power',           sub: 'Most common - I have a prescription', match: ['single'] },
-    { key: 'zero',         icon: '🛡',  iconColor: '#0D9F7B', title: 'Zero Power',           sub: 'BLU Screen lenses for digital devices', match: ['zero'] },
-    { key: 'reading',      icon: '📖',  iconColor: '#D97706', title: 'Reading Power',        sub: '',                                       match: ['reading', 'single'] },
-    { key: 'progressive',  icon: '🪟',  iconColor: '#7C3AED', title: 'Progressive / Bifocals', sub: 'For both near and far vision',         match: ['progressive', 'bifocal'] },
-    { key: 'frame',        icon: '⬜',  iconColor: '#64748B', title: 'Frame Only',           sub: 'No lenses required',                     match: null }
-  ]
+  // wizard entries are now fully dynamic from /api/pos/lens-catalog (wizard_entries).
+  // POWER_TYPES is removed; findCategoryForPowerType is no longer used for step 0.
 
-  function findCategoryForPowerType(powerType) {
-    if (!powerType || !powerType.match || !lensCatalogData) return null
-    const cats = lensCatalogData.categories || []
-    const needles = Array.isArray(powerType.match) ? powerType.match : [powerType.match]
-    for (let ni = 0; ni < needles.length; ni++) {
-      const needle = String(needles[ni] || '').toLowerCase()
-      if (!needle) continue
-      const found = cats.find(function (c) {
-        const hay = String(c.matchHaystack || '').toLowerCase()
-        const disp = String(c.name || '').toLowerCase()
-        return hay.indexOf(needle) >= 0 || disp.indexOf(needle) >= 0
-      })
-      if (found) return found
-    }
-    return null
+  // CSS tone → CSS variable class (no hex in JS per ui-polish rules)
+  function lensWizardToneClass(tone) {
+    var toneMap = { 0: 'pos-lk-pt-tone0', 1: 'pos-lk-pt-tone1', 2: 'pos-lk-pt-tone2', 3: 'pos-lk-pt-tone3', 4: 'pos-lk-pt-tone4', 5: 'pos-lk-pt-tone5' }
+    return toneMap[Number(tone)] || 'pos-lk-pt-tone1'
   }
 
   function escapeHtml(str) {
@@ -893,6 +877,14 @@
       else raw = 'FRAMES'
     }
     return cfg.productTypeConfig.find(function (r) { return r.key === raw }) || null
+  }
+
+  /** Returns true if this product type can use the lens wizard (policy OPTIONAL or REQUIRED). */
+  function lensWizardAllowed(productTypeKey) {
+    const rule = getTypeRule(productTypeKey)
+    if (!rule) return false
+    const policy = String(rule.lens_wizard_policy || 'NEVER')
+    return policy === 'OPTIONAL' || policy === 'REQUIRED'
   }
 
   function defaultFulfillmentForRule(rule) {
@@ -1585,19 +1577,68 @@
     })
   }
 
-  function buildSwatches(product, activeSkuId) {
-    return product.colours.map(c => {
+  /** Trailing number is total colour count — only for compact catalogue rows; omit on PDP where every colour is already a swatch. */
+  function buildSwatches(product, activeSkuId, options) {
+    const showTrailingCount = options && options.showTrailingCount === true
+    return product.colours.map(function (c) {
       const isActive = c.sku_id === activeSkuId
       const hex = colourToHex(c.colour_name, c.colour_code)
-      return `<div class="pos-sku-swatch${isActive ? ' active' : ''}"
+      const nm = escapeHtml(String(c.colour_name || 'Colour').trim()) || 'Colour'
+      const oos = Number(c.store_qty || 0) <= 0
+      const oosNote = oos ? ' — out of stock at this store' : ''
+      return `<div class="pos-sku-swatch${isActive ? ' active' : ''}${oos ? ' pos-sku-swatch--oos' : ''}"
         style="background:${hex}"
         data-product-id="${product.product_id}"
         data-sku-id="${c.sku_id}"
-        title="${c.colour_name}"
+        title="${nm}"
         tabindex="0"
         role="button"
-        aria-label="${c.colour_name}${isActive ? ' selected' : ''}"></div>`
-    }).join('') + (product.colours.length > 1 ? `<span class="pos-sku-swatch-count">${product.colours.length}</span>` : '')
+        aria-label="${nm}${isActive ? ' selected' : ''}${oosNote}"></div>`
+    }).join('') + (showTrailingCount && product.colours.length > 1
+      ? `<span class="pos-sku-swatch-count" aria-hidden="true">${product.colours.length}</span>`
+      : '')
+  }
+
+  function renderPdpColourSwatches(session, product, colour) {
+    const block = document.getElementById('pos-pdp-colour-block')
+    const wrap = document.getElementById('pos-pdp-colour-swatches')
+    const nameEl = document.getElementById('pos-pdp-colour-name')
+    if (!wrap || !block) return
+    if (!product || !product.colours || product.colours.length < 2) {
+      wrap.innerHTML = ''
+      if (nameEl) nameEl.textContent = ''
+      block.hidden = true
+      return
+    }
+    block.hidden = false
+    wrap.innerHTML = buildSwatches(product, colour.sku_id, { showTrailingCount: false })
+    if (nameEl) nameEl.textContent = String(colour.colour_name || '').trim() || 'Selected colour'
+    wrap.querySelectorAll('.pos-sku-swatch').forEach(function (sw) {
+      sw.addEventListener('click', function (e) {
+        e.preventDefault()
+        e.stopPropagation()
+        const sid = Number(sw.getAttribute('data-sku-id'))
+        const c = product.colours.find(function (x) { return x.sku_id === sid })
+        if (!c) return
+        if (Number(c.store_qty || 0) <= 0) {
+          if (typeof cosmosToastWarn === 'function') {
+            cosmosToastWarn('This colour is not available at this store.')
+          }
+          return
+        }
+        selectedProductId = [product.product_id, c.sku_id]
+        pendingOrderSelection = { colour: c, product: product }
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({}, '', productRoute(product.product_id, c.sku_id))
+        }
+        void showProductPageScreen(session || getPosSession())
+      })
+      sw.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        sw.click()
+      })
+    })
   }
 
   function renderCatalogueCards(products, query) {
@@ -1613,7 +1654,8 @@
         ? (product.colours.find(c => c.sku_id === selectedProductId[1]) || product.colours[0])
         : product.colours[0]
       const isSelected = selectedProductId && selectedProductId[0] === product.product_id
-      const hasStock = activeColour.store_qty > 0
+      const hasAnyStock = product.colours.some(function (c) { return Number(c.store_qty || 0) > 0 })
+      const hasStock = hasAnyStock
       const lensCopy = String(product.lens_copy || '').trim()
       const deliveryCopy = product.delivery_copy || (hasStock ? 'Delivery by 6, May' : 'Click disabled in this state')
       const deliveryClass = hasStock ? '' : ' muted'
@@ -1624,16 +1666,37 @@
       card.setAttribute('role', 'button')
       const titleLine = formatPdpCollectionModelLine(product)
       const brandLine = String(product.brand_name || '').trim()
-      card.setAttribute('aria-label', [titleLine, brandLine].filter(Boolean).join(' — '))
+      const colourCountBit = product.colours.length > 1
+        ? (product.colours.length + ' colours')
+        : ''
+      card.setAttribute('aria-label', [titleLine, brandLine, colourCountBit].filter(Boolean).join(' — '))
       card.setAttribute('tabindex', '0')
       card.dataset.productId = String(product.product_id)
-      card.dataset.skuId = String(activeColour.sku_id)
+
+      const displayColour = Number(activeColour.store_qty || 0) > 0
+        ? activeColour
+        : (product.colours.find(function (c) { return Number(c.store_qty || 0) > 0 }) || activeColour)
+      card.dataset.skuId = String(displayColour.sku_id)
+      const swatchActiveId = (selectedProductId && selectedProductId[0] === product.product_id)
+        ? activeColour.sku_id
+        : displayColour.sku_id
+
+      const swatchRow = product.colours.length > 1
+        ? `<div class="pos-lk-cat-swatches pos-sku-swatches" role="group" aria-label="Colours in stock">${buildSwatches(product, swatchActiveId, { showTrailingCount: false })}</div>`
+        : ''
+      const variantBadge = product.colours.length > 1
+        ? `<span class="pos-lk-cat-variant-badge" aria-hidden="true">${product.colours.length} colours</span>`
+        : ''
 
       card.innerHTML = `
-        <div class="pos-lk-cat-img" aria-hidden="true">${typeEmoji(product.product_type)}</div>
+        <div class="pos-lk-cat-img-wrap">
+          <div class="pos-lk-cat-img" aria-hidden="true">${typeEmoji(product.product_type)}</div>
+          ${variantBadge}
+        </div>
         <div class="pos-lk-cat-title">${escapeHtml(titleLine)}</div>
         ${brandLine ? `<div class="pos-lk-cat-brand">${escapeHtml(brandLine)}</div>` : ''}
-        <div class="pos-lk-cat-price-line">${inrFormat(activeColour.sale_price)}${lensCopy ? ' ' + escapeHtml(lensCopy) : ''}</div>
+        ${swatchRow}
+        <div class="pos-lk-cat-price-line">${inrFormat(displayColour.sale_price)}${lensCopy ? ' ' + escapeHtml(lensCopy) : ''}</div>
         <div class="pos-lk-cat-meta${deliveryClass}">${deliveryCopy}</div>
       `
 
@@ -1643,17 +1706,36 @@
         navigate(productRoute(product.product_id, c.sku_id))
       }
 
+      card.querySelectorAll('.pos-sku-swatch').forEach(function (sw) {
+        sw.addEventListener('click', function (e) {
+          e.preventDefault()
+          e.stopPropagation()
+          if (!hasStock) return
+          const sid = Number(sw.getAttribute('data-sku-id'))
+          const c = product.colours.find(function (x) { return x.sku_id === sid })
+          if (!c) return
+          if (Number(c.store_qty || 0) <= 0) {
+            if (typeof cosmosToastWarn === 'function') {
+              cosmosToastWarn('This colour is not available at this store.')
+            }
+            return
+          }
+          openProductFor(c)
+        })
+      })
+
       card.addEventListener('click', e => {
         if (!hasStock) return
+        if (e.target.closest('.pos-sku-swatch')) return
         e.preventDefault()
         e.stopPropagation()
-        openProductFor(activeColour)
+        openProductFor(displayColour)
       })
 
       card.addEventListener('keydown', e => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          if (hasStock) openProductFor(activeColour)
+          if (hasStock) openProductFor(displayColour)
         }
       })
 
@@ -1822,7 +1904,11 @@
     } catch (_e) { /* sessionStorage unavailable */ }
   }
 
-  function showProductPageScreen(session) {
+  async function showProductPageScreen(session) {
+    const sess = session || getPosSession()
+    if (sess && sess.token) {
+      await loadPosBootstrap(sess)
+    }
     const selection = pendingOrderSelection
     if (!selection || !selection.colour || !selection.product) {
       navigate(POS_ROUTES.CATALOGUE)
@@ -1853,6 +1939,24 @@
       inStoreEl.textContent = inStock ? 'In Store' : 'Not at this store'
       inStoreEl.style.display = ''
     }
+    renderPdpColourSwatches(sess, product, colour)
+    const showWizard = lensWizardAllowed(product.product_type)
+    var pdpHint = document.querySelector('#screen-pos-product .pos-lk-step-hint')
+    if (pdpHint) {
+      pdpHint.textContent = showWizard
+        ? 'Step 1: review product details and tap Select Lenses.'
+        : 'Review details and add this frame to your cart.'
+    }
+    if (btnPdpSelectLens) {
+      btnPdpSelectLens.style.display = ''
+      if (showWizard) {
+        btnPdpSelectLens.textContent = 'Select Lenses'
+        btnPdpSelectLens.setAttribute('aria-label', 'Open lens setup wizard')
+      } else {
+        btnPdpSelectLens.textContent = 'Add to cart'
+        btnPdpSelectLens.setAttribute('aria-label', 'Add frame to cart — store pickup')
+      }
+    }
     showScreen('screen-pos-product')
   }
 
@@ -1866,7 +1970,7 @@
       if (colour.sku_id !== skuId) {
         history.replaceState({}, '', productRoute(cached.product_id, colour.sku_id))
       }
-      showProductPageScreen(session)
+      await showProductPageScreen(session)
       return
     }
     // Cache miss — fetch the single product from the API
@@ -1884,7 +1988,7 @@
       if (colour.sku_id !== skuId) {
         history.replaceState({}, '', productRoute(product.product_id, colour.sku_id))
       }
-      showProductPageScreen(session)
+      await showProductPageScreen(session)
     } catch (err) {
       if (typeof cosmosToastError === 'function') cosmosToastError('Could not load product: ' + err.message)
       navigate(POS_ROUTES.CATALOGUE)
@@ -2027,7 +2131,7 @@
       btnLensBack.addEventListener('click', function () {
         if (lensWizard && typeof lensWizard.step === 'number' && lensWizard.step > 0) {
           // Step inside the wizard if we are past the first step.
-          if (lensWizard.step === 2 && lensWizard.powerType && lensWizard.powerType.key === 'frame') {
+          if (lensWizard.step === 2 && lensWizard.powerType === 'frame_only') {
             lensWizard.step = 0
           } else {
             lensWizard.step -= 1
@@ -2096,7 +2200,22 @@
     }
 
     if (btnPdpBack) btnPdpBack.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
-    if (btnPdpSelectLens) btnPdpSelectLens.addEventListener('click', startLensFlowFromProduct)
+    if (btnPdpSelectLens) {
+      btnPdpSelectLens.addEventListener('click', function onPdpPrimaryClick() {
+        if (!pendingOrderSelection || !pendingOrderSelection.product || !pendingOrderSelection.colour) {
+          if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a product first.')
+          navigate(POS_ROUTES.CATALOGUE)
+          return
+        }
+        if (!lensWizardAllowed(pendingOrderSelection.product.product_type)) {
+          addToCart(pendingOrderSelection)
+          if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Added to cart.')
+          navigate(POS_ROUTES.ORDER)
+          return
+        }
+        startLensFlowFromProduct()
+      })
+    }
 
     // Breadcrumb navigation — clickable Cosmos brand link returns to its data-pos-nav target
     document.querySelectorAll('[data-pos-nav]').forEach(function (el) {
@@ -2164,50 +2283,67 @@
     if (lensWizard.step === 2) return renderLensStep2AddPower(body)
   }
 
-  // ── Lens step 0 — Pencil 02-power-type: 5 cards (icon + title + sub + ›) ──
+  // ── Lens step 0 — Dynamic wizard_entries from /api/pos/lens-catalog ─────────
   function renderLensStep0PowerType(body) {
     updateLensStepper(0)
+    const entries = (lensCatalogData && lensCatalogData.wizard_entries) || []
     const html = []
     html.push('<div class="pos-lk-lens-headrow">')
     html.push('  <div class="pos-lk-lens-section-title">Select your Power Type:</div>')
-    html.push('  <button type="button" class="pos-lk-text-link" aria-disabled="true">Learn more</button>')
     html.push('</div>')
-    html.push('<div class="pos-lk-pt-list">')
-    POWER_TYPES.forEach(function (pt) {
-      const sel = lensWizard.powerType && lensWizard.powerType.key === pt.key ? ' selected' : ''
+    if (entries.length === 0) {
       html.push(
-        '<button type="button" class="pos-lk-pt-card' + sel + '" data-pt-key="' + pt.key + '" tabindex="0">' +
-          '<span class="pos-lk-pt-left">' +
-            '<span class="pos-lk-pt-icon" style="color:' + pt.iconColor + '">' + pt.icon + '</span>' +
-            '<span class="pos-lk-pt-info">' +
-              '<span class="pos-lk-pt-title">' + escapeHtml(pt.title) + '</span>' +
-              (pt.sub ? '<span class="pos-lk-pt-sub">' + escapeHtml(pt.sub) + '</span>' : '') +
-            '</span>' +
-          '</span>' +
-          '<span class="pos-lk-pt-chevron" aria-hidden="true">›</span>' +
-        '</button>'
+        '<div class="pos-empty">' +
+          '<div class="empty-ic">👁</div>' +
+          '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No lens options configured</div>' +
+          '<div style="font-size:13px;color:var(--text2);margin-bottom:12px">Ask HQ to add lens categories in Foundry (Lens packages) and enable them for this product type.</div>' +
+        '</div>'
       )
-    })
-    html.push('</div>')
-    body.innerHTML = html.join('')
-    body.querySelectorAll('[data-pt-key]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        const key = btn.getAttribute('data-pt-key')
-        const pt = POWER_TYPES.find(function (x) { return x.key === key })
-        if (!pt) return
-        lensWizard.powerType = pt
-        lensWizard.category = findCategoryForPowerType(pt)
-        lensWizard.pkg = null
-        lensWizard.addonIds = []
-        if (pt.key === 'frame') {
-          // Frame only — skip lens selection entirely; jump to Add Power CTA only.
-          lensWizard.step = 2
-        } else if (!lensWizard.category) {
-          if (typeof cosmosToastWarn === 'function') {
-            cosmosToastWarn('No catalogue category matches this power type. Add or rename a category in Foundry (Lens packages) so its internal or POS name includes the right keyword (e.g. Single Vision, Zero, Progressive).')
-          }
-          lensWizard.step = 0
+    } else {
+      html.push('<div class="pos-lk-pt-list">')
+      entries.forEach(function (entry) {
+        var isSelected = false
+        if (entry.kind === 'frame_only') {
+          isSelected = lensWizard.powerType === 'frame_only'
         } else {
+          isSelected = lensWizard.category && lensWizard.category.id === entry.category_id
+        }
+        var sel = isSelected ? ' selected' : ''
+        var key = entry.kind === 'frame_only' ? 'frame_only' : ('cat_' + entry.category_id)
+        var toneClass = lensWizardToneClass(entry.tone)
+        html.push(
+          '<button type="button" class="pos-lk-pt-card' + sel + '" data-lw-entry-key="' + key + '" tabindex="0">' +
+            '<span class="pos-lk-pt-left">' +
+              '<span class="pos-lk-pt-icon ' + toneClass + '">' + escapeHtml(entry.icon || '👁') + '</span>' +
+              '<span class="pos-lk-pt-info">' +
+                '<span class="pos-lk-pt-title">' + escapeHtml(entry.title) + '</span>' +
+                (entry.subtitle ? '<span class="pos-lk-pt-sub">' + escapeHtml(entry.subtitle) + '</span>' : '') +
+              '</span>' +
+            '</span>' +
+            '<span class="pos-lk-pt-chevron" aria-hidden="true">›</span>' +
+          '</button>'
+        )
+      })
+      html.push('</div>')
+    }
+    body.innerHTML = html.join('')
+    body.querySelectorAll('[data-lw-entry-key]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var key = btn.getAttribute('data-lw-entry-key')
+        if (key === 'frame_only') {
+          lensWizard.powerType = 'frame_only'
+          lensWizard.category = null
+          lensWizard.pkg = null
+          lensWizard.addonIds = []
+          lensWizard.step = 2
+        } else {
+          var catId = Number(key.replace('cat_', ''))
+          var cat = (lensCatalogData.categories || []).find(function (c) { return c.id === catId })
+          if (!cat) return
+          lensWizard.powerType = 'category'
+          lensWizard.category = cat
+          lensWizard.pkg = null
+          lensWizard.addonIds = []
           lensWizard.step = 1
         }
         renderLensStep()
@@ -2215,7 +2351,7 @@
     })
   }
 
-  // ── Lens step 1 — Pencil 03-lens-selection: tab bar + 3-col lens cards ────
+  // ── Lens step 1 — lens packages for category chosen on step 0 (no category tabs) ────
   function renderLensStep1LensSelection(body) {
     updateLensStepper(1)
     if (!lensWizard.category) {
@@ -2223,26 +2359,17 @@
       lensWizard.step = 0
       return renderLensStep()
     }
-    const cats = lensCatalogData.categories || []
-    const tabCats = cats.length ? cats : [lensWizard.category]
     const pkgs = (lensWizard.category && lensWizard.category.packages) ? lensWizard.category.packages : []
+    const catName = String(lensWizard.category.name || '').trim()
 
     const html = []
     html.push('<div class="pos-lk-lens-headrow">')
     html.push('  <div class="pos-lk-lens-section-title">Choose your Lens:</div>')
     html.push('  <button type="button" class="pos-lk-text-link" aria-disabled="true">Learn more</button>')
     html.push('</div>')
-
-    html.push('<div class="pos-lk-tabs-row" role="tablist">')
-    tabCats.forEach(function (c) {
-      const isActive = lensWizard.category && c.id === lensWizard.category.id
-      html.push(
-        '<button type="button" class="pos-lk-tab' + (isActive ? ' active' : '') +
-        '" data-cat-id="' + c.id + '" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '">' +
-        escapeHtml(c.name) + '</button>'
-      )
-    })
-    html.push('</div>')
+    if (catName) {
+      html.push('<div class="pos-lk-lens-category-lock">' + escapeHtml(catName) + '</div>')
+    }
 
     html.push('<div class="pos-lk-lens-cards">')
     if (pkgs.length === 0) {
@@ -2277,17 +2404,6 @@
     html.push('</div>')
     body.innerHTML = html.join('')
 
-    body.querySelectorAll('[data-cat-id]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        const id = Number(btn.getAttribute('data-cat-id'))
-        const next = cats.find(function (c) { return c.id === id })
-        if (next) {
-          lensWizard.category = next
-          lensWizard.pkg = null
-          renderLensStep()
-        }
-      })
-    })
     body.querySelectorAll('[data-pkg-id]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         const id = Number(btn.getAttribute('data-pkg-id'))
@@ -2340,7 +2456,27 @@
       '</div>' +
     '</div>')
 
-    if (lensWizard.powerType && lensWizard.powerType.key === 'frame') {
+    if (lensWizard.powerType !== 'frame_only' && lensWizard.pkg && (lensWizard.pkg.addons || []).length) {
+      const addonRows = (lensWizard.pkg.addons || []).map(function (a) {
+        const id = Number(a.id)
+        const on = lensWizard.addonIds.indexOf(id) >= 0
+        const nm = escapeHtml(String(a.name || '').trim() || 'Add-on')
+        const pr = inrFormat(Number(a.price) || 0)
+        return '<button type="button" class="pos-lk-addon-row' + (on ? ' pos-lk-addon-row--on' : '') + '" data-addon-id="' + id + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+          '<span class="pos-lk-addon-row-l"><span class="pos-lk-addon-check" aria-hidden="true"></span>' +
+          '<span class="pos-lk-addon-name">' + nm + '</span></span>' +
+          '<span class="pos-lk-addon-price">+ ' + pr + '</span></button>'
+      }).join('')
+      html.push(
+        '<div class="pos-lk-addon-block" id="pos-lk-addon-block" role="region" aria-label="Optional lens add-ons">' +
+          '<div class="pos-lk-addon-title">Optional add-ons</div>' +
+          '<div class="pos-lk-addon-sub">Shown when this package has linked add-ons in Foundry (Lens link matrix).</div>' +
+          '<div class="pos-lk-addon-card">' + addonRows + '</div>' +
+        '</div>'
+      )
+    }
+
+    if (lensWizard.powerType === 'frame_only') {
       // Frame only — skip power entry; just show CTA.
       html.push('<div class="pos-lk-amber-banner" style="background:#ECFDF5;color:#065F46">' +
         '<span class="pos-lk-amber-banner-icon" style="color:#0D9F7B">✓</span>' +
@@ -2409,6 +2545,22 @@
 
     const cta = document.getElementById('pos-lk-continue-payment')
     if (cta) cta.addEventListener('click', confirmLensWizard)
+
+    const addonBlock = document.getElementById('pos-lk-addon-block')
+    if (addonBlock) {
+      addonBlock.querySelectorAll('.pos-lk-addon-row').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const id = Number(btn.getAttribute('data-addon-id'))
+          if (!Number.isFinite(id)) return
+          const ix = lensWizard.addonIds.indexOf(id)
+          if (ix >= 0) lensWizard.addonIds.splice(ix, 1)
+          else lensWizard.addonIds.push(id)
+          const on = lensWizard.addonIds.indexOf(id) >= 0
+          btn.classList.toggle('pos-lk-addon-row--on', on)
+          btn.setAttribute('aria-pressed', on ? 'true' : 'false')
+        })
+      })
+    }
   }
 
   function buildPowerCard(key, icon, color, title, sub) {
@@ -2597,7 +2749,7 @@
       if (typeof cosmosToastError === 'function') cosmosToastError('No product selected.')
       return
     }
-    const isFrameOnly = lensWizard.powerType && lensWizard.powerType.key === 'frame'
+    const isFrameOnly = lensWizard.powerType === 'frame_only'
     if (!isFrameOnly) {
       if (!lensWizard.powerType) {
         if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Choose a power type.')
@@ -2649,13 +2801,26 @@
 
   async function showLensWizardScreen(session) {
     await loadPosBootstrap(session)
+    const lensLine = lensWizardLineIdx >= 0 ? obCart[lensWizardLineIdx] : null
+    if (lensLine && !lensWizardAllowed(lensLine.product_type)) {
+      lensWizardLineIdx = -1
+      if (typeof cosmosToastInfo === 'function') {
+        cosmosToastInfo('Lens setup is off for this product type — use store pickup.')
+      }
+      navigate(lensWizardBackRoute || POS_ROUTES.ORDER)
+      return
+    }
     const sessionTok = session.token
     if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('lens-step-body', 4)
     try {
-      lensCatalogData = await apiGet('/api/pos/lens-catalog', sessionTok)
-      if (!lensCatalogData.categories || lensCatalogData.categories.length === 0) {
+      // Pass the current cart line's product_type so the API can filter wizard_entries correctly.
+      var cartLine = lensWizardLineIdx >= 0 ? obCart[lensWizardLineIdx] : null
+      var ptKey = cartLine ? String(cartLine.product_type || '').trim().toUpperCase() : ''
+      var catalogUrl = '/api/pos/lens-catalog' + (ptKey ? '?product_type=' + encodeURIComponent(ptKey) : '')
+      lensCatalogData = await apiGet(catalogUrl, sessionTok)
+      if (!lensCatalogData.wizard_entries || lensCatalogData.wizard_entries.length === 0) {
         if (typeof cosmosToastWarn === 'function') {
-          cosmosToastWarn('Lens catalogue is empty. Add categories and packages in Foundry (Lens packages).')
+          cosmosToastWarn('No lens options available for this product type. Configure in Foundry → Lens wizard rules.')
         }
       }
     } catch (err) {
@@ -3254,7 +3419,8 @@
       lines.forEach(function(line) {
         let idx = obCart.indexOf(line)
         const rule = getTypeRule(line.product_type)
-        const isDual = rule && rule.fulfillment_mode === 'DUAL'
+        const lwp = rule ? String(rule.lens_wizard_policy || 'NEVER') : 'NEVER'
+        const isDual = rule && rule.fulfillment_mode === 'DUAL' && lensWizardAllowed(line.product_type) && lwp !== 'REQUIRED'
         let fulfillHtml = ''
         if (isDual) {
           fulfillHtml =
@@ -3330,6 +3496,10 @@
       obCart[idx].lab_status = null
       obCart[idx].lens_bundle = null
     } else if (action === 'set-lab') {
+      if (!obCart[idx] || !lensWizardAllowed(obCart[idx].product_type)) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Lenses aren’t enabled for this product type.')
+        return
+      }
       lensWizardBackRoute = POS_ROUTES.ORDER
       obCart[idx].fulfillment = 'LAB'
       obCart[idx].lab_status = 'incomplete'
@@ -3341,6 +3511,10 @@
       navigate(POS_ROUTES.LENS)
       return
     } else if (action === 'configure-lens') {
+      if (!obCart[idx] || !lensWizardAllowed(obCart[idx].product_type)) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Lenses aren’t enabled for this product type.')
+        return
+      }
       lensWizardBackRoute = POS_ROUTES.ORDER
       lensWizardLineIdx = idx
       pendingResumeOrder = true
@@ -3358,7 +3532,11 @@
     const product = selection && selection.product
     if (!colour || !product) return
     const rule = getTypeRule(product.product_type)
-    const fulfillment = defaultFulfillmentForRule(rule)
+    let fulfillment = defaultFulfillmentForRule(rule)
+    const lwp = rule ? String(rule.lens_wizard_policy || 'NEVER') : 'NEVER'
+    if (rule && rule.fulfillment_mode === 'DUAL' && lwp === 'REQUIRED') {
+      fulfillment = 'LAB'
+    }
     const candidate = {
       product_id: product.product_id,
       sku_id: colour.sku_id,

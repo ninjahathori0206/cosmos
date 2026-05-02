@@ -1611,9 +1611,43 @@ body.pos-lk-flow .pos-lk-cat-card:hover {
   border-color: var(--lk-blue);
 }
 
+body.pos-lk-flow .pos-lk-cat-card:hover .pos-lk-cat-variant-badge {
+  border-color: var(--lk-blue);
+  color: var(--lk-blue);
+}
+
 body.pos-lk-flow .pos-lk-cat-card.active {
   border: 2px solid var(--lk-blue);
   padding: 11px;
+}
+
+/* Image stack: hero + variant count pill (bottom-right), does not overlap price/delivery */
+body.pos-lk-flow .pos-lk-cat-img-wrap {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+body.pos-lk-flow .pos-lk-cat-variant-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  max-width: calc(100% - 16px);
+  padding: 5px 9px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--lk-text-muted);
+  background: var(--lk-card);
+  border: 1px solid var(--lk-border);
+  box-shadow: var(--lk-shadow);
+  pointer-events: none;
 }
 
 .pos-lk-cat-img {
@@ -1661,6 +1695,32 @@ body.pos-lk-flow .pos-lk-cat-card.active {
   font-size: 12px;
   color: var(--lk-green);
   font-weight: 500;
+}
+
+.pos-lk-cat-swatches {
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+body.pos-lk-flow .pos-pdp-colour-block {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--lk-border);
+}
+
+body.pos-lk-flow .pos-pdp-colour-lbl {
+  margin-bottom: 8px;
+}
+
+body.pos-lk-flow .pos-pdp-colour-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lk-text-muted);
+  margin-top: 8px;
+}
+
+body.pos-lk-flow .pos-pdp-colour-swatches {
+  margin-bottom: 0;
 }
 
 .pos-lk-cat-meta.muted {
@@ -1872,11 +1932,6 @@ body.pos-lk-flow .pos-pdp-total-wrap {
   gap: 2px;
 }
 
-body.pos-lk-flow .pos-pdp-total-lbl {
-  font-size: 12px;
-  color: var(--lk-text-muted);
-}
-
 body.pos-lk-flow .pos-pdp-total-val {
   font-size: 24px;
   font-weight: 800;
@@ -1951,6 +2006,15 @@ body.pos-lk-flow .pos-lens-actions {
   color: var(--lk-green);
 }
 
+/* Locked category from step 0 — shown instead of category tab strip */
+.pos-lk-lens-category-lock {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lk-text-muted);
+  margin: 2px 0 12px;
+  line-height: 1.35;
+}
+
 /* ── Power Type cards (lens step 0) — Pencil 02-power-type ──────────── */
 .pos-lk-pt-list {
   display: flex;
@@ -2001,6 +2065,14 @@ body.pos-lk-flow .pos-lens-actions {
   font-size: 22px;
   flex-shrink: 0;
 }
+
+/* Wizard tone colour classes — uses design tokens, no hardcoded hex */
+.pos-lk-pt-tone1 { color: var(--acc2); }
+.pos-lk-pt-tone2 { color: var(--teal); }
+.pos-lk-pt-tone3 { color: var(--gold); }
+.pos-lk-pt-tone4 { color: var(--acc); }
+.pos-lk-pt-tone5 { color: var(--orange); }
+.pos-lk-pt-tone0 { color: var(--text3); }
 
 .pos-lk-pt-info {
   display: flex;
@@ -2244,6 +2316,112 @@ body.pos-lk-flow .pos-lens-actions {
   font-weight: 800;
   color: var(--lk-text);
   padding-top: 6px;
+}
+
+/* Optional lens add-ons (step 2) — matches Pencil Order Creation - Add Power + optional add-ons */
+.pos-lk-addon-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.pos-lk-addon-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--lk-text);
+}
+
+.pos-lk-addon-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lk-text-muted);
+  line-height: 1.35;
+}
+
+.pos-lk-addon-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--lk-card);
+  border: 1px solid var(--lk-border);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.pos-lk-addon-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 10px;
+  margin: 0;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pos-lk-addon-row:hover {
+  background: var(--glass-hover);
+}
+
+.pos-lk-addon-row--on {
+  border-color: rgba(13, 159, 123, 0.35);
+  background: var(--lk-mint-bg);
+}
+
+.pos-lk-addon-row-l {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pos-lk-addon-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 2px solid var(--lk-border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: transparent;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.pos-lk-addon-row--on .pos-lk-addon-check {
+  border-color: var(--lk-green);
+  background: var(--lk-green);
+  color: var(--lk-card);
+}
+
+.pos-lk-addon-row--on .pos-lk-addon-check::before {
+  content: '✓';
+}
+
+.pos-lk-addon-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--lk-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pos-lk-addon-price {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--lk-green);
+  flex-shrink: 0;
 }
 
 .pos-lk-power-list {

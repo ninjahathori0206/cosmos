@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
 <link rel="stylesheet" href="/css/lenskart-pos.css?v=sos-shell-2026c">
 <script src="/js/cosmos-ui-polish.js" defer></script>
-<script src="/js/pos.js?v=sos-shell-2026c" defer></script>
+<script src="/js/pos.js?v=sos-lens-addons-20260502" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -415,13 +415,17 @@
           <div id="pos-pdp-price" class="pos-pdp-price">₹0</div>
           <div id="pos-pdp-strike" class="pos-pdp-strike">₹0</div>
           <div id="pos-pdp-delivery" class="pos-pdp-delivery">⚡ Delivery by 6, May</div>
+          <div id="pos-pdp-colour-block" class="pos-pdp-colour-block" hidden>
+            <div class="pos-field-label pos-pdp-colour-lbl">COLOUR</div>
+            <div id="pos-pdp-colour-swatches" class="pos-sku-swatches pos-pdp-colour-swatches" role="group" aria-label="Frame colour"></div>
+            <div id="pos-pdp-colour-name" class="pos-pdp-colour-name" aria-live="polite"></div>
+          </div>
           <div class="pos-lk-pdp-chips">
             <span id="pos-pdp-chip-instore" class="pos-lk-pdp-chip-instore">In Store</span>
           </div>
         </div>
         <div class="pos-pdp-detail-footer">
           <div class="pos-pdp-total-wrap">
-            <div class="pos-pdp-total-lbl">Frame + Lens</div>
             <div id="pos-pdp-total" class="pos-pdp-total-val">₹0</div>
           </div>
           <button type="button" id="btn-pdp-select-lenses" class="pos-ob-proceed-btn" tabindex="0">Select Lenses</button>

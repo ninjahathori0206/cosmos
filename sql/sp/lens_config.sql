@@ -7,6 +7,7 @@ AS
 BEGIN
   SET NOCOUNT ON;
 
+  -- RS0: lens categories (inc wizard fields)
   SELECT
     id,
     name,
@@ -15,8 +16,12 @@ BEGIN
     internal_brand,
     internal_name,
     sort_order,
-    CAST(is_active AS BIT) AS is_active,
-    notes
+    CAST(is_active AS BIT)          AS is_active,
+    notes,
+    CAST(ISNULL(show_in_pos_wizard, 1) AS BIT) AS show_in_pos_wizard,
+    ISNULL(wizard_subtitle, N'')    AS wizard_subtitle,
+    ISNULL(wizard_icon, N'')        AS wizard_icon,
+    ISNULL(wizard_tone, 1)          AS wizard_tone
   FROM dbo.pos_lens_categories
   ORDER BY sort_order, id;
 
@@ -49,20 +54,39 @@ BEGIN
   FROM dbo.pos_lens_addons
   ORDER BY sort_order, id;
 
+  -- RS3: package–addon links
   SELECT package_id, addon_id
   FROM dbo.pos_lens_pkg_addons;
+
+  -- RS4: product type config with lens_wizard_policy (for Foundry matrix page)
+  SELECT
+    product_type_key,
+    ISNULL(lens_wizard_policy, N'NEVER') AS lens_wizard_policy,
+    fulfillment_mode,
+    CAST(is_active AS BIT) AS is_active
+  FROM dbo.pos_product_type_config
+  ORDER BY product_type_key;
+
+  -- RS5: bridge table (all rows, Foundry builds matrix from this)
+  SELECT product_type_key, lens_category_id, sort_order
+  FROM dbo.pos_product_type_lens_wizard_categories
+  ORDER BY product_type_key, sort_order, lens_category_id;
 END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_LensConfig_Category_Save
-  @id              INT           = NULL,
-  @pos_brand       NVARCHAR(100) = N'',
-  @pos_name        NVARCHAR(100) = NULL,
-  @internal_brand  NVARCHAR(100) = N'',
-  @internal_name   NVARCHAR(100) = NULL,
-  @sort_order      INT           = 0,
-  @is_active       BIT           = 1,
-  @notes           NVARCHAR(500) = NULL
+  @id                 INT           = NULL,
+  @pos_brand          NVARCHAR(100) = N'',
+  @pos_name           NVARCHAR(100) = NULL,
+  @internal_brand     NVARCHAR(100) = N'',
+  @internal_name      NVARCHAR(100) = NULL,
+  @sort_order         INT           = 0,
+  @is_active          BIT           = 1,
+  @notes              NVARCHAR(500) = NULL,
+  @show_in_pos_wizard BIT           = 1,
+  @wizard_subtitle    NVARCHAR(250) = NULL,
+  @wizard_icon        NVARCHAR(20)  = NULL,
+  @wizard_tone        TINYINT       = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -75,22 +99,34 @@ BEGIN
 
   IF @id IS NULL
   BEGIN
-    INSERT INTO dbo.pos_lens_categories (name, pos_brand, pos_name, internal_brand, internal_name, sort_order, is_active, notes)
-    VALUES (@nm, @pos_brand, @pos_name, @internal_brand, @internal_name, @sort_order, @is_active, @notes);
+    INSERT INTO dbo.pos_lens_categories (
+      name, pos_brand, pos_name, internal_brand, internal_name,
+      sort_order, is_active, notes,
+      show_in_pos_wizard, wizard_subtitle, wizard_icon, wizard_tone
+    )
+    VALUES (
+      @nm, @pos_brand, @pos_name, @internal_brand, @internal_name,
+      @sort_order, @is_active, @notes,
+      @show_in_pos_wizard, @wizard_subtitle, @wizard_icon, @wizard_tone
+    );
     SET @id = SCOPE_IDENTITY();
   END
   ELSE
   BEGIN
     UPDATE dbo.pos_lens_categories
     SET
-      name           = @nm,
-      pos_brand      = @pos_brand,
-      pos_name       = @pos_name,
-      internal_brand = @internal_brand,
-      internal_name  = @internal_name,
-      sort_order     = @sort_order,
-      is_active      = @is_active,
-      notes          = @notes
+      name                = @nm,
+      pos_brand           = @pos_brand,
+      pos_name            = @pos_name,
+      internal_brand      = @internal_brand,
+      internal_name       = @internal_name,
+      sort_order          = @sort_order,
+      is_active           = @is_active,
+      notes               = @notes,
+      show_in_pos_wizard  = @show_in_pos_wizard,
+      wizard_subtitle     = @wizard_subtitle,
+      wizard_icon         = @wizard_icon,
+      wizard_tone         = @wizard_tone
     WHERE id = @id;
   END
 
@@ -218,6 +254,58 @@ BEGIN
     IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
     DECLARE @em NVARCHAR(400) = ERROR_MESSAGE();
     RAISERROR(@em, 16, 1);
+  END CATCH
+END;
+GO
+
+-- ── sp_LensConfig_ProductTypeLensWizard_Set ───────────────────────────────────
+-- Replaces the allowed lens-category allow-list for one product_type_key.
+-- Passing an empty JSON array clears the allow-list (→ show all eligible categories).
+-- Also updates lens_wizard_policy for that product type.
+CREATE OR ALTER PROCEDURE dbo.sp_LensConfig_ProductTypeLensWizard_Set
+  @product_type_key NVARCHAR(100),
+  @lens_wizard_policy VARCHAR(20)  = NULL,   -- NULL = leave unchanged
+  @category_ids_json NVARCHAR(MAX) = N'[]'   -- JSON array of {id, sort_order}
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.pos_product_type_config WHERE product_type_key = @product_type_key)
+    RAISERROR('Product type not found.', 16, 1);
+
+  IF @lens_wizard_policy IS NOT NULL
+    AND @lens_wizard_policy NOT IN (N'NEVER', N'OPTIONAL', N'REQUIRED')
+    RAISERROR('lens_wizard_policy must be NEVER, OPTIONAL, or REQUIRED.', 16, 1);
+
+  BEGIN TRANSACTION;
+  BEGIN TRY
+    -- Optionally update policy
+    IF @lens_wizard_policy IS NOT NULL
+      UPDATE dbo.pos_product_type_config
+      SET lens_wizard_policy = @lens_wizard_policy
+      WHERE product_type_key = @product_type_key;
+
+    -- Replace bridge rows
+    DELETE FROM dbo.pos_product_type_lens_wizard_categories
+    WHERE product_type_key = @product_type_key;
+
+    INSERT INTO dbo.pos_product_type_lens_wizard_categories (product_type_key, lens_category_id, sort_order)
+    SELECT
+      @product_type_key,
+      CAST(j.id AS INT),
+      ISNULL(TRY_CAST(j.sort_order AS INT), 0)
+    FROM OPENJSON(@category_ids_json)
+      WITH (id INT '$.id', sort_order INT '$.sort_order') AS j
+    WHERE TRY_CAST(j.id AS INT) IS NOT NULL
+      AND EXISTS (SELECT 1 FROM dbo.pos_lens_categories c WHERE c.id = CAST(j.id AS INT));
+
+    COMMIT TRANSACTION;
+    SELECT @product_type_key AS product_type_key;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    DECLARE @em2 NVARCHAR(400) = ERROR_MESSAGE();
+    RAISERROR(@em2, 16, 1);
   END CATCH
 END;
 GO

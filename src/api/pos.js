@@ -220,7 +220,8 @@ function mapStartupConfig(result) {
     key: String(r.product_type_key || ''),
     fulfillment_mode: String(r.fulfillment_mode || ''),
     rx_required: Boolean(r.rx_required),
-    allow_qty_gt_1: Boolean(r.allow_qty_gt_1)
+    allow_qty_gt_1: Boolean(r.allow_qty_gt_1),
+    lens_wizard_policy: String(r.lens_wizard_policy || 'NEVER')
   }))
 
   const lookups = {}
@@ -268,6 +269,10 @@ function buildLensCatalogPayload(result) {
   const packages = rs[1] || []
   const addons = rs[2] || []
   const links = rs[3] || []
+  // RS4: single row with lens_wizard_policy (may be empty if no product_type passed)
+  const policyRow = (rs[4] || [])[0] || null
+  // RS5: allow-list bridge rows [{lens_category_id, sort_order}]
+  const allowList = rs[5] || []
 
   const addonById = new Map()
   for (const a of addons) {
@@ -278,6 +283,9 @@ function buildLensCatalogPayload(result) {
       sort_order: Number(a.sort_order) || 0
     })
   }
+
+  // Track which category ids have at least one active package (for wizard filter)
+  const catIdsWithPackages = new Set(packages.map((p) => p.category_id))
 
   const outCategories = categories.map((c) => {
     const pkgs = packages
@@ -302,12 +310,58 @@ function buildLensCatalogPayload(result) {
       name: posLensPublicLabel(c.pos_brand, c.pos_name, c.name),
       sort_order: Number(c.sort_order) || 0,
       matchHaystack: lensCategoryMatchHaystack(c),
+      show_in_pos_wizard: c.show_in_pos_wizard !== false && c.show_in_pos_wizard !== 0,
+      wizard_subtitle: String(c.wizard_subtitle || ''),
+      wizard_icon: String(c.wizard_icon || ''),
+      wizard_tone: Number(c.wizard_tone) || 1,
       packages: pkgs
     }
   })
 
   const addonList = Array.from(addonById.values()).sort((a, b) => (a.sort_order - b.sort_order) || a.id - b.id)
-  return { categories: outCategories, addons: addonList }
+
+  // ── Build wizard_entries ──────────────────────────────────────────────────
+  const policy = policyRow ? String(policyRow.lens_wizard_policy || 'NEVER') : 'OPTIONAL'
+  const wizardEntries = []
+
+  if (policy !== 'NEVER') {
+    // Base: categories with show_in_pos_wizard=1 AND has packages
+    let eligibleCats = outCategories.filter((c) =>
+      c.show_in_pos_wizard && catIdsWithPackages.has(c.id)
+    )
+
+    if (allowList.length > 0) {
+      // Apply allow-list: only include categories in bridge, in bridge sort order
+      const allowSet = new Map(allowList.map((r) => [Number(r.lens_category_id), Number(r.sort_order)]))
+      eligibleCats = eligibleCats
+        .filter((c) => allowSet.has(c.id))
+        .sort((a, b) => (allowSet.get(a.id) - allowSet.get(b.id)) || a.id - b.id)
+    }
+
+    for (const c of eligibleCats) {
+      wizardEntries.push({
+        kind: 'category',
+        category_id: c.id,
+        title: c.name,
+        subtitle: c.wizard_subtitle,
+        icon: c.wizard_icon,
+        tone: c.wizard_tone
+      })
+    }
+
+    // Frame only is always last for OPTIONAL
+    if (policy === 'OPTIONAL') {
+      wizardEntries.push({
+        kind: 'frame_only',
+        title: 'Frame Only',
+        subtitle: 'No lenses required',
+        icon: '⬜',
+        tone: 0
+      })
+    }
+  }
+
+  return { categories: outCategories, addons: addonList, wizard_entries: wizardEntries, lens_wizard_policy: policy }
 }
 
 // ── POST /api/pos/tablet-login ────────────────────────────────────────────────
@@ -668,9 +722,15 @@ router.get('/startup-config', ...posCatalogue, async (req, res, next) => {
 })
 
 // ── GET /api/pos/lens-catalog ─────────────────────────────────────────────────
+// Optional ?product_type=FRAMES (normalized uppercase) to filter wizard_entries
+// by lens_wizard_policy + per-product-type allow-list.
 router.get('/lens-catalog', ...posCatalogue, async (req, res, next) => {
   try {
-    const result = await executeStoredProcedure('sp_POS_GetLensCatalog', {})
+    const raw = String(req.query.product_type || '').trim().toUpperCase()
+    const ptKey = raw || null
+    const result = await executeStoredProcedure('sp_POS_GetLensCatalog', {
+      product_type_key: { type: sql.NVarChar(100), value: ptKey }
+    })
     const data = buildLensCatalogPayload(result)
     return res.json({ success: true, data })
   } catch (err) {

@@ -245,7 +245,8 @@ BEGIN
     product_type_key AS product_type_key,
     fulfillment_mode,
     rx_required,
-    allow_qty_gt_1
+    allow_qty_gt_1,
+    ISNULL(lens_wizard_policy, N'NEVER') AS lens_wizard_policy
   FROM dbo.pos_product_type_config
   WHERE is_active = 1
   ORDER BY product_type_key;
@@ -276,28 +277,59 @@ END;
 GO
 
 -- ─── sp_POS_GetLensCatalog ───────────────────────────────────────────────────
--- Four result sets: categories, packages, addons, package–addon links.
+-- Six result sets:
+--   0: categories (inc wizard presentation fields)
+--   1: packages
+--   2: addons
+--   3: package–addon links
+--   4: lens_wizard_policy for the supplied product_type_key (1 row or empty)
+--   5: wizard-category allow-list for the product_type_key (0+ rows)
 CREATE OR ALTER PROCEDURE dbo.sp_POS_GetLensCatalog
+  @product_type_key NVARCHAR(100) = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
-  SELECT id, name, pos_brand, pos_name, internal_brand, internal_name, sort_order
+
+  -- RS0: categories with wizard fields
+  SELECT
+    id, name, pos_brand, pos_name, internal_brand, internal_name, sort_order,
+    CAST(show_in_pos_wizard AS BIT) AS show_in_pos_wizard,
+    ISNULL(wizard_subtitle, N'')    AS wizard_subtitle,
+    ISNULL(wizard_icon, N'')        AS wizard_icon,
+    ISNULL(wizard_tone, 1)          AS wizard_tone
   FROM dbo.pos_lens_categories
   WHERE is_active = 1
   ORDER BY sort_order, id;
 
+  -- RS1: packages
   SELECT id, category_id, name, pos_brand, pos_name, internal_brand, internal_name, price, sort_order
   FROM dbo.pos_lens_packages
   WHERE is_active = 1
   ORDER BY category_id, sort_order, id;
 
+  -- RS2: addons
   SELECT id, name, pos_brand, pos_name, internal_brand, internal_name, price, sort_order
   FROM dbo.pos_lens_addons
   WHERE is_active = 1
   ORDER BY sort_order, id;
 
+  -- RS3: package–addon links
   SELECT package_id, addon_id
   FROM dbo.pos_lens_pkg_addons;
+
+  -- RS4: lens_wizard_policy for this product type (single row)
+  SELECT
+    product_type_key,
+    ISNULL(lens_wizard_policy, N'NEVER') AS lens_wizard_policy
+  FROM dbo.pos_product_type_config
+  WHERE product_type_key = @product_type_key
+    AND is_active = 1;
+
+  -- RS5: allow-list of lens categories for this product type (empty = show all)
+  SELECT lens_category_id, sort_order
+  FROM dbo.pos_product_type_lens_wizard_categories
+  WHERE product_type_key = @product_type_key
+  ORDER BY sort_order, lens_category_id;
 END;
 GO
 

@@ -4739,6 +4739,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('lc-cat-sort').value = String(c.sort_order != null ? c.sort_order : 0);
     document.getElementById('lc-cat-active').checked = lcBool(c.is_active);
     document.getElementById('lc-cat-notes').value = c.notes || '';
+    // Wizard fields
+    document.getElementById('lc-cat-show-wizard').checked = c.show_in_pos_wizard !== false && c.show_in_pos_wizard !== 0;
+    document.getElementById('lc-cat-wizard-subtitle').value = c.wizard_subtitle || '';
+    document.getElementById('lc-cat-wizard-icon').value = c.wizard_icon || '';
+    document.getElementById('lc-cat-wizard-tone').value = String(c.wizard_tone || 1);
     openM('lc-modal-cat');
   };
 
@@ -4759,7 +4764,11 @@ document.addEventListener('DOMContentLoaded', () => {
       internal_name: (document.getElementById('lc-cat-int-name').value || '').trim() || String(posName.value || '').trim(),
       sort_order: parseInt(document.getElementById('lc-cat-sort').value, 10) || 0,
       is_active: document.getElementById('lc-cat-active').checked,
-      notes: (document.getElementById('lc-cat-notes').value || '').trim() || null
+      notes: (document.getElementById('lc-cat-notes').value || '').trim() || null,
+      show_in_pos_wizard: document.getElementById('lc-cat-show-wizard').checked,
+      wizard_subtitle: (document.getElementById('lc-cat-wizard-subtitle').value || '').trim() || null,
+      wizard_icon: (document.getElementById('lc-cat-wizard-icon').value || '').trim() || null,
+      wizard_tone: parseInt(document.getElementById('lc-cat-wizard-tone').value, 10) || 1
     };
     const idStr = document.getElementById('lc-cat-id').value;
     try {
@@ -4794,6 +4803,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('lc-cat-sort').value = '0';
     document.getElementById('lc-cat-active').checked = true;
     document.getElementById('lc-cat-notes').value = '';
+    document.getElementById('lc-cat-show-wizard').checked = true;
+    document.getElementById('lc-cat-wizard-subtitle').value = '';
+    document.getElementById('lc-cat-wizard-icon').value = '';
+    document.getElementById('lc-cat-wizard-tone').value = '1';
     openM('lc-modal-cat');
   };
 
@@ -4950,6 +4963,162 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // ── Lens Wizard Rules page ─────────────────────────────────────────────────
+  let _lwrProductTypes = [];
+  let _lwrBridgeRows = [];
+  let _lwrCategories = [];
+  let _lwrSelectedPtKey = null;
+
+  const LWR_POLICY_LABELS = {
+    NEVER: 'Never (no lens wizard)',
+    OPTIONAL: 'Optional (frame-only or with lenses)',
+    REQUIRED: 'Required (always configure)'
+  };
+
+  function lwrRenderPolicyTable() {
+    const tb = document.getElementById('lwr-policy-tbody');
+    if (!tb) return;
+    if (!_lwrProductTypes.length) {
+      tb.innerHTML = '' +
+        '<tr><td colspan="3" class="p12">' +
+        '<div class="empty" style="text-align:left;padding:8px 0">' +
+        '<div class="empty-ic" aria-hidden="true">📋</div>' +
+        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No product types in POS config</div>' +
+        '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;max-width:52ch">' +
+        'The table <span class="mono">pos_product_type_config</span> has no rows. From the repo root run ' +
+        '<span class="mono">npm run deploy:pos-sql</span> (or re-run <span class="mono">sql/migrations/lens_wizard_dynamic.sql</span> in SSMS) so default product types are seeded.' +
+        '</div>' +
+        '<button type="button" class="btn primary sm" onclick="window.loadLensWizardRulesPage && window.loadLensWizardRulesPage()">↻ Refresh after deploy</button>' +
+        '</div></td></tr>';
+      return;
+    }
+    tb.innerHTML = _lwrProductTypes.map(function (pt) {
+      const opts = ['NEVER', 'OPTIONAL', 'REQUIRED'].map(function (v) {
+        return `<option value="${v}" ${pt.lens_wizard_policy === v ? 'selected' : ''}>${lcEsc(LWR_POLICY_LABELS[v] || v)}</option>`;
+      }).join('');
+      const activeRows = _lwrBridgeRows.filter(function (r) { return r.product_type_key === pt.product_type_key; });
+      const allowSummary = activeRows.length
+        ? `${activeRows.length} categor${activeRows.length > 1 ? 'ies' : 'y'} restricted`
+        : 'All eligible categories';
+      const ptKeyEsc = lcEsc(pt.product_type_key);
+      return `<tr class="tr-link" onclick="window.lwrSelectProductType && window.lwrSelectProductType('${ptKeyEsc}')">
+        <td class="fw6">${ptKeyEsc}</td>
+        <td>
+          ${lcCanEdit
+            ? `<select class="inp-sel xs" data-lwr-pt="${ptKeyEsc}" onclick="event.stopPropagation()" onchange="window.lwrPolicyChange && window.lwrPolicyChange(this)">${opts}</select>`
+            : `<span>${lcEsc(LWR_POLICY_LABELS[pt.lens_wizard_policy] || pt.lens_wizard_policy)}</span>`
+          }
+        </td>
+        <td class="xs td2">${pt.lens_wizard_policy === 'NEVER' ? '—' : lcEsc(allowSummary)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  window.lwrPolicyChange = async function (sel) {
+    const key = sel.getAttribute('data-lwr-pt');
+    const policy = sel.value;
+    try {
+      await apiPut(`/api/foundry/lens-config/product-type-rules/${encodeURIComponent(key)}`, { lens_wizard_policy: policy });
+      const pt = _lwrProductTypes.find(function (x) { return x.product_type_key === key; });
+      if (pt) pt.lens_wizard_policy = policy;
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Policy updated');
+      lwrRenderPolicyTable();
+      if (_lwrSelectedPtKey === key) window.lwrSelectProductType(key);
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to save');
+    }
+  };
+
+  window.lwrSelectProductType = function (key) {
+    _lwrSelectedPtKey = key;
+    const pt = _lwrProductTypes.find(function (x) { return x.product_type_key === key; });
+    const card = document.getElementById('lwr-allowlist-card');
+    const title = document.getElementById('lwr-allowlist-title');
+    const bodyEl = document.getElementById('lwr-allowlist-body');
+    if (!card || !bodyEl) return;
+    if (!pt || pt.lens_wizard_policy === 'NEVER') { card.style.display = 'none'; return; }
+    card.style.display = '';
+    if (title) title.textContent = `Lens categories for ${key}`;
+    const existingIds = new Set(_lwrBridgeRows
+      .filter(function (r) { return r.product_type_key === key; })
+      .map(function (r) { return r.lens_category_id; })
+    );
+    const cats = (_lwrCategories || []).filter(function (c) { return c.is_active !== false && c.is_active !== 0; });
+    if (!cats.length) {
+      bodyEl.innerHTML = '<span class="td2 xs">No categories found. Add them in Lens packages first.</span>';
+      return;
+    }
+    bodyEl.innerHTML = cats.map(function (c) {
+      const label = lcPosLabel(c.pos_brand, c.pos_name, c.name);
+      const checked = existingIds.has(Number(c.id));
+      return `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;min-width:180px;padding:4px 0">
+        <input type="checkbox" data-lwr-cat-id="${Number(c.id)}" ${checked ? 'checked' : ''} ${lcCanEdit ? '' : 'disabled'}>
+        ${lcEsc(label)}
+      </label>`;
+    }).join('');
+  };
+
+  window.lwrSaveAllowList = async function () {
+    if (!_lwrSelectedPtKey) return;
+    const bodyEl = document.getElementById('lwr-allowlist-body');
+    if (!bodyEl) return;
+    const checkboxes = bodyEl.querySelectorAll('input[data-lwr-cat-id]');
+    const anyChecked = Array.from(checkboxes).some(function (cb) { return cb.checked; });
+    const category_ids = anyChecked
+      ? Array.from(checkboxes).filter(function (cb) { return cb.checked; }).map(function (cb, i) {
+          return { id: Number(cb.getAttribute('data-lwr-cat-id')), sort_order: i };
+        })
+      : [];
+    const btn = document.getElementById('lwr-allowlist-save-btn');
+    if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      await apiPut(`/api/foundry/lens-config/product-type-rules/${encodeURIComponent(_lwrSelectedPtKey)}`, { category_ids });
+      if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      else if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      _lwrBridgeRows = _lwrBridgeRows.filter(function (r) { return r.product_type_key !== _lwrSelectedPtKey; });
+      category_ids.forEach(function (x, i) {
+        _lwrBridgeRows.push({ product_type_key: _lwrSelectedPtKey, lens_category_id: x.id, sort_order: i });
+      });
+      lwrRenderPolicyTable();
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Allow-list saved');
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to save');
+    }
+  };
+
+  window.loadLensWizardRulesPage = async function () {
+    const tb = document.getElementById('lwr-policy-tbody');
+    if (!tb) return;
+    if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('lwr-policy-tbody', 3, 3);
+    const card = document.getElementById('lwr-allowlist-card');
+    if (card) card.style.display = 'none';
+    try {
+      // Prefer full lens-config GET (includes productTypes + bridgeRows) so one round-trip
+      // works even if an older proxy/process lacks GET …/product-type-rules.
+      let data = await apiGetFirst([
+        '/api/foundry/lens-config',
+        '/api/foundry/lens-config/product-type-rules'
+      ]);
+      if (data && Array.isArray(data.categories)) {
+        _lcData = data;
+        _lwrProductTypes = data.productTypes || [];
+        _lwrBridgeRows = data.bridgeRows || [];
+        _lwrCategories = data.categories || [];
+      } else {
+        _lwrProductTypes = (data && data.productTypes) || [];
+        _lwrBridgeRows = (data && data.bridgeRows) || [];
+        if (!_lcData) _lcData = await lcFetchConfig();
+        _lwrCategories = (_lcData && _lcData.categories) || [];
+      }
+      lwrRenderPolicyTable();
+      if (_lwrSelectedPtKey) window.lwrSelectProductType(_lwrSelectedPtKey);
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not load rules');
+      if (tb) tb.innerHTML = '<tr><td colspan="3" style="color:var(--red);padding:12px">Failed to load</td></tr>';
+    }
+  };
+
   const FOUNDRY_PAGE_PATHS = {
     dashboard: '/foundry/dashboard',
     purchases: '/foundry/purchases',
@@ -4962,6 +5131,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'lens-packages': '/foundry/lens-packages',
     'lens-addons': '/foundry/lens-addons',
     'lens-package-addons': '/foundry/lens-package-addons',
+    'lens-wizard-rules': '/foundry/lens-wizard-rules',
     'master-catalogue': '/foundry/master-catalogue',
     'rate-intelligence': '/foundry/rate-intelligence',
     'stock-transfer': '/foundry/stock-transfer',
@@ -5011,6 +5181,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id === 'lens-packages' && typeof window.loadLensPackagesPage === 'function') window.loadLensPackagesPage();
     if (id === 'lens-addons' && typeof window.loadLensAddonsPage === 'function') window.loadLensAddonsPage();
     if (id === 'lens-package-addons' && typeof window.loadLensMatrixPage === 'function') window.loadLensMatrixPage();
+    if (id === 'lens-wizard-rules' && typeof window.loadLensWizardRulesPage === 'function') window.loadLensWizardRulesPage();
     // loadLabOrders is assigned later in this file; guard avoids ReferenceError + aborted init on /foundry/lab-orders refresh.
     if (id === 'lab-orders' && typeof window.loadLabOrders === 'function') window.loadLabOrders();
     // Only load the list when navigating from sidebar (not when opening a detail directly)

@@ -71,6 +71,11 @@ async function run() {
     path.join('sql', 'migrations', 'lens_catalog_zero_power_category.sql'),
     'migrations/lens_catalog_zero_power_category'
   )
+  await runBatches(
+    pool,
+    path.join('sql', 'migrations', 'lens_wizard_dynamic.sql'),
+    'migrations/lens_wizard_dynamic'
+  )
   await runBatches(pool, path.join('sql', 'sp', 'pos.sql'), 'sp/pos')
   await runBatches(pool, path.join('sql', 'sp', 'lens_config.sql'), 'sp/lens_config')
   for (const rel of POS_MIGRATION_FILES) {
