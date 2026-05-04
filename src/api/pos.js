@@ -33,6 +33,16 @@ function truthyPosSetting(val) {
   return s === '1' || s === 'true' || s === 'yes'
 }
 
+/** Validates POS JWT store context; rejects non-finite or missing IDs. */
+function posJwtStoreIdOr400(req, res) {
+  const sid = Number(req.user && req.user.store_id)
+  if (!Number.isFinite(sid) || sid < 1) {
+    res.status(400).json({ success: false, message: 'Invalid or missing store_id in session token.' })
+    return null
+  }
+  return sid
+}
+
 function groupCatalogueRows(rows) {
   const map = new Map()
   for (const row of rows) {
@@ -524,7 +534,7 @@ router.post('/staff-login', apiKeyAuth, requireTabletSession, async (req, res, n
       employee_id: matched.employee_id,
       name: matched.name,
       role: matched.role,
-      store_id: matched.store_id,
+      store_id: storeId,
       can_initiate_refund: canRefund,
       can_view_reports: Boolean(matched.can_view_reports),
       can_manage_staff: Boolean(matched.can_manage_staff),
@@ -544,7 +554,7 @@ router.post('/staff-login', apiKeyAuth, requireTabletSession, async (req, res, n
         employee_id: matched.employee_id,
         name: matched.name,
         role: matched.role,
-        store_id: matched.store_id,
+        store_id: storeId,
         permissions
       }
     })
@@ -674,11 +684,8 @@ router.get('/catalogue', ...posCatalogue, async (req, res, next) => {
     const brandRaw = (req.query.brand || '').trim()
     const brand    = brandRaw.length > 200 ? brandRaw.slice(0, 200) : brandRaw
     const brandParam = brand ? brand : null
-    const store_id = req.user.store_id
-
-    if (!store_id) {
-      return res.status(400).json({ success: false, message: 'store_id missing from session token.' })
-    }
+    const store_id = posJwtStoreIdOr400(req, res)
+    if (store_id == null) return
 
     const procName = scope === 'global' ? 'sp_POS_GlobalCatalogue' : 'sp_POS_StoreCatalogue'
 
@@ -696,11 +703,8 @@ router.get('/catalogue', ...posCatalogue, async (req, res, next) => {
 router.get('/catalogue-brands', ...posCatalogue, async (req, res, next) => {
   try {
     const scope    = (req.query.scope || 'store').toLowerCase() === 'global' ? 'global' : 'store'
-    const store_id = req.user.store_id
-
-    if (!store_id) {
-      return res.status(400).json({ success: false, message: 'store_id missing from session token.' })
-    }
+    const store_id = posJwtStoreIdOr400(req, res)
+    if (store_id == null) return
 
     const names = await fetchCatalogueBrandNames(store_id, scope)
 
@@ -872,7 +876,9 @@ router.post('/customer', ...posCustomersCreate, async (req, res, next) => {
         errors: error.details.map((d) => d.message)
       })
     }
-    const homeStore = value.home_store_id != null ? value.home_store_id : req.user.store_id
+    const homeRaw = Number(req.user && req.user.store_id)
+    const homeFallback = Number.isFinite(homeRaw) && homeRaw > 0 ? homeRaw : null
+    const homeStore = value.home_store_id != null ? value.home_store_id : homeFallback
     const result = await executeStoredProcedure('sp_POS_CustomerCreate', {
       full_name:     { type: sql.NVarChar(200), value: value.full_name },
       phone:         { type: sql.NVarChar(20),  value: value.phone },
@@ -905,13 +911,18 @@ router.get('/all-orders', authJwt, requireModule('foundry'), requirePermission('
 // ── GET /api/pos/orders ────────────────────────────────────────────────────────
 router.get('/orders', ...posOrdersView, async (req, res, next) => {
   try {
-    const storeId = req.user.store_id
-    if (!storeId) {
-      return res.status(400).json({ success: false, message: 'store_id missing from session token.' })
-    }
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
 
     const search = (req.query.q || '').trim() || null
     const statusFilter = (req.query.status || '').trim() || null
+    if (String(statusFilter || '').toUpperCase() === 'COMPLETED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Completed orders are not listed on Store OS. Open CX › Dashboard and use Completed orders.'
+      })
+    }
+
     const orderKind = (req.query.kind || '').trim() || null
     const labStatusFilter = (req.query.lab_status || '').trim() || null
     const excludeRaw = (req.query.exclude_lab_status || '').trim()
@@ -924,7 +935,8 @@ router.get('/orders', ...posOrdersView, async (req, res, next) => {
       statusFilter,
       orderKind,
       labStatusFilter,
-      labStatusExcludes
+      labStatusExcludes,
+      excludeOrderStatuses: statusFilter ? [] : ['COMPLETED']
     })
 
     return res.json({ success: true, data: orders })
@@ -940,10 +952,8 @@ router.get('/orders/:id', ...posOrdersView, async (req, res, next) => {
     if (!Number.isFinite(orderId)) {
       return res.status(400).json({ success: false, message: 'Invalid order id.' })
     }
-    const storeId = req.user.store_id
-    if (!storeId) {
-      return res.status(400).json({ success: false, message: 'store_id missing from session token.' })
-    }
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
     const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
     const bundle = await orderService.fetchOrderBundle(pool, orderId, storeId, mode)
@@ -985,12 +995,10 @@ router.get('/catalogue-scope-facts', authJwt, requireModule('pos'), async (req, 
 
 // ── POST /api/pos/orders ──────────────────────────────────────────────────────
 router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
-  const storeId = req.user.store_id
-  const employeeId = req.user.employee_id
-  if (!storeId) {
-    return res.status(400).json({ success: false, message: 'store_id missing from session token.' })
-  }
+  const storeId = posJwtStoreIdOr400(req, res)
+  if (storeId == null) return
 
+  const employeeId = req.user.employee_id
   try {
     const { error, value } = createOrderSchema.validate(req.body)
     if (error) {
@@ -1094,11 +1102,10 @@ router.post('/payment', authJwt, requireModule('pos'), async (req, res, next) =>
         errors: error.details.map((d) => d.message)
       })
     }
-    const storeId = req.user.store_id
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
+
     const employeeId = req.user.employee_id
-    const pool = await getPool()
-    const mode = await orderService.getOrdersEngineMode(pool)
-    const result = await orderService.recordPayment(pool, mode, storeId, employeeId, value)
     return res.json({
       success: true,
       message: result.message,
@@ -1130,10 +1137,10 @@ router.post('/orders/:id/status', ...posLabWorkflow, async (req, res, next) => {
         errors: error.details.map((d) => d.message)
       })
     }
-    const storeId = req.user.store_id
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
+
     const employeeId = req.user.employee_id
-    const actorRole = String(req.user.role || '')
-    const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
     const out = await orderService.updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
       orderId,

@@ -301,6 +301,87 @@ function cxLoadUser () {
   } catch (_) {}
 }
 
+function cxDashRecentOrdersQuerySuffix() {
+  var sel = document.getElementById('cx-dash-orders-status')
+  var v = sel && sel.value !== undefined && sel.value !== null ? String(sel.value) : ''
+  if (v === 'COMPLETED') return '&status=COMPLETED'
+  if (v === '__ALL__') return ''
+  return '&exclude_completed=1'
+}
+
+window.cxDashReloadOrdersTable = async function () {
+  var tbodyO = document.getElementById('cx-tbody-recent-orders')
+  if (!tbodyO) return
+  if (!window.cosmosCxAllows(['cx.orders.view'])) {
+    tbodyO.innerHTML =
+      '<tr><td colspan="6" style="padding:16px;font-size:13px;color:var(--text2)">Recent orders require <strong>CX — Orders list</strong> permission.</td></tr>'
+    return
+  }
+  if (typeof window.cosmosSkeletonTable === 'function') {
+    window.cosmosSkeletonTable('cx-tbody-recent-orders', 6, 8)
+  }
+  try {
+    var qs = 'limit=24' + cxDashRecentOrdersQuerySuffix()
+    var ordRes = await cxApiGet('/api/cx/orders?' + qs)
+    var orders = ordRes.data || []
+    var sel = document.getElementById('cx-dash-orders-status')
+    var filt = sel && sel.value ? String(sel.value) : ''
+    var emptyHead = 'No orders yet'
+    var emptySub = filt === 'COMPLETED'
+      ? 'Completed sales appear here. Store OS hides completed bills on the tablet Orders screen.'
+      : filt === '__ALL__'
+        ? 'No orders match across stores yet.'
+        : 'Active (non-completed) POS orders appear here. Use Completed filter for settled bills.'
+    if (!orders.length) {
+      tbodyO.innerHTML =
+        '<tr><td colspan="6" class="empty" style="border:none">' +
+        '<div class="empty-ic">\uD83E\uDDE9</div>' +
+        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">' +
+        emptyHead +
+        '</div>' +
+        '<div style="font-size:13px;color:var(--text2);margin-bottom:16px">' +
+        emptySub +
+        '</div>' +
+        '</td></tr>'
+      return
+    }
+    tbodyO.innerHTML = orders
+      .map(function (o) {
+        var cust =
+          escCx(o.customer_name || 'Walk-in') +
+          (o.customer_phone ? '<br><span class="xs td3">' + escCx(o.customer_phone) + '</span>' : '')
+        return (
+          '<tr>' +
+          '<td><span class="mono">' +
+          escCx(o.order_no) +
+          '</span></td>' +
+          '<td>' +
+          escCx(o.store_name || '') +
+          '</td>' +
+          '<td>' +
+          cust +
+          '</td>' +
+          '<td class="text-right mono fw6">' +
+          fmtCxRs(o.total_amount) +
+          '</td>' +
+          '<td>' +
+          cxOrderStatusBadge(o.status) +
+          '</td>' +
+          '<td class="td3" style="font-size:12px">' +
+          fmtCxDateTime(o.created_at) +
+          '</td>' +
+          '</tr>'
+        )
+      })
+      .join('')
+  } catch (err) {
+    var msg = err && err.message ? err.message : 'Could not load orders.'
+    if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg)
+    tbodyO.innerHTML =
+      '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--red)">Could not load orders.</td></tr>'
+  }
+}
+
 window.loadCxDashboardPage = async function () {
   var grid = document.getElementById('cx-dash-stats-grid')
   if (grid && typeof window.cosmosSkeletonCards === 'function') {
@@ -361,56 +442,7 @@ window.loadCxDashboardPage = async function () {
         .join('')
     }
 
-    var tbodyO = document.getElementById('cx-tbody-recent-orders')
-    if (!window.cosmosCxAllows(['cx.orders.view'])) {
-      if (tbodyO) {
-        tbodyO.innerHTML =
-          '<tr><td colspan="6" style="padding:16px;font-size:13px;color:var(--text2)">Recent orders require <strong>CX — Orders list</strong> permission.</td></tr>'
-      }
-    } else {
-      var ordRes = await cxApiGet('/api/cx/orders?limit=24')
-      var orders = ordRes.data || []
-      if (!orders.length && tbodyO) {
-        tbodyO.innerHTML =
-          '<tr><td colspan="6" class="empty" style="border:none">' +
-          '<div class="empty-ic">\uD83E\uDDE9</div>' +
-          '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No orders yet</div>' +
-          '<div style="font-size:13px;color:var(--text2);margin-bottom:16px">Recent POS orders will show here.</div>' +
-          '</td></tr>'
-      } else if (tbodyO) {
-        tbodyO.innerHTML = orders
-          .map(function (o) {
-            var cust =
-              escCx(o.customer_name || 'Walk-in') +
-              (o.customer_phone
-                ? '<br><span class="xs td3">' + escCx(o.customer_phone) + '</span>'
-                : '')
-            return (
-              '<tr>' +
-              '<td><span class="mono">' +
-              escCx(o.order_no) +
-              '</span></td>' +
-              '<td>' +
-              escCx(o.store_name || '') +
-              '</td>' +
-              '<td>' +
-              cust +
-              '</td>' +
-              '<td class="text-right mono fw6">' +
-              fmtCxRs(o.total_amount) +
-              '</td>' +
-              '<td>' +
-              cxOrderStatusBadge(o.status) +
-              '</td>' +
-              '<td class="td3" style="font-size:12px">' +
-              fmtCxDateTime(o.created_at) +
-              '</td>' +
-              '</tr>'
-            )
-          })
-          .join('')
-      }
-    }
+    await window.cxDashReloadOrdersTable()
   } catch (err) {
     var msg = err && err.message ? err.message : 'Could not load CX dashboard.'
     if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg)
@@ -700,6 +732,28 @@ document.addEventListener('DOMContentLoaded', function () {
       })
       inp.addEventListener('input', function () {
         if (typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(inp)
+      })
+    }
+    var cxDashSel = document.getElementById('cx-dash-orders-status')
+    if (cxDashSel && !cxDashSel.dataset.cxDashBound) {
+      cxDashSel.dataset.cxDashBound = '1'
+      cxDashSel.addEventListener('change', function () {
+        window.cxDashReloadOrdersTable().catch(function () {})
+      })
+    }
+    var cxDashRef = document.getElementById('btn-cx-dash-orders-refresh')
+    if (cxDashRef && !cxDashRef.dataset.cxDashBound) {
+      cxDashRef.dataset.cxDashBound = '1'
+      cxDashRef.addEventListener('click', function () {
+        if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(cxDashRef)
+        window
+          .cxDashReloadOrdersTable()
+          .then(function () {
+            if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(cxDashRef)
+          })
+          .catch(function () {
+            if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(cxDashRef)
+          })
       })
     }
   })()

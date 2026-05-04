@@ -42,15 +42,17 @@ router.get('/customers', authJwt, requireModule('cx'), requireCxPermission('cx.c
   }
 })
 
-/** GET /api/cx/orders?q=&status=&limit= — recent orders all stores */
+/** GET /api/cx/orders?q=&status=&limit=&exclude_completed=1 — orders across stores */
 router.get('/orders', authJwt, requireModule('cx'), requireCxPermission('cx.orders.view'), async (req, res, next) => {
   try {
     const search = String(req.query.q || '').trim() || null
     const statusFilter = String(req.query.status || '').trim() || null
     const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || '80'), 10) || 80))
+    const ec = ['1', 'true', 'yes'].includes(String(req.query.exclude_completed || '').trim().toLowerCase())
+    const excludeOrderStatuses = ec && !statusFilter ? ['COMPLETED'] : []
     const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
-    const orders = await orderService.fetchAllOrders(pool, mode, { search, statusFilter, limit })
+    const orders = await orderService.fetchAllOrders(pool, mode, { search, statusFilter, limit, excludeOrderStatuses })
     return res.json({ success: true, data: orders })
   } catch (err) {
     return next(err)

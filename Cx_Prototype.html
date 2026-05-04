@@ -412,7 +412,18 @@
         </div>
       </div>
       <div class="card">
-        <div class="ch"><div class="ct">Recent orders</div></div>
+        <div class="ch" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px">
+          <div class="ct">Recent orders</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <label for="cx-dash-orders-status" class="td3" style="font-size:12px;margin:0">View</label>
+            <select id="cx-dash-orders-status" class="inp" style="min-width:11rem;font-size:13px;padding:6px 8px" aria-label="Filter orders shown on dashboard">
+              <option value="">Active (excluding completed)</option>
+              <option value="COMPLETED">Completed only</option>
+              <option value="__ALL__">All statuses</option>
+            </select>
+            <button type="button" class="btn sm" id="btn-cx-dash-orders-refresh">Reload table</button>
+          </div>
+        </div>
         <div class="tw">
           <table>
             <thead><tr><th>Order</th><th>Store</th><th>Customer</th><th class="text-right">Total</th><th>Status</th><th>When</th></tr></thead>

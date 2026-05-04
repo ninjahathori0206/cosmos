@@ -963,8 +963,14 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
 /**
  * @param {import('mssql').ConnectionPool} pool
  */
-async function fetchAllOrders(pool, mode, { search, statusFilter, orderKind, labStatusFilter, labStatusExcludes = [], limit = 100 }) {
+async function fetchAllOrders(pool, mode, {
+  search, statusFilter, orderKind, labStatusFilter,
+  labStatusExcludes = [], limit = 100, excludeOrderStatuses = []
+}) {
   const t = tableNames(mode)
+  const exStat = Array.isArray(excludeOrderStatuses)
+    ? excludeOrderStatuses.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean)
+    : []
   
   let query = `
     SELECT o.order_id, o.store_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at,
@@ -983,6 +989,12 @@ async function fetchAllOrders(pool, mode, { search, statusFilter, orderKind, lab
   
   if (statusFilter) {
     query += ` AND o.status = @status `
+  } else if (exStat.length) {
+    const ph = []
+    for (let i = 0; i < exStat.length; i += 1) {
+      ph.push(`@oos_ex_${i}`)
+    }
+    query += ` AND o.status NOT IN (${ph.join(', ')}) `
   }
 
   if (orderKind) {
@@ -1047,6 +1059,11 @@ async function fetchAllOrders(pool, mode, { search, statusFilter, orderKind, lab
   if (search) {
     req.input('search', sql.NVarChar(200), '%' + search + '%')
   }
+  if (!statusFilter && exStat.length) {
+    for (let i = 0; i < exStat.length; i += 1) {
+      req.input(`oos_ex_${i}`, sql.NVarChar(30), exStat[i])
+    }
+  }
   
   const result = await req.query(query)
   
@@ -1073,8 +1090,14 @@ async function fetchAllOrders(pool, mode, { search, statusFilter, orderKind, lab
 /**
  * @param {import('mssql').ConnectionPool} pool
  */
-async function fetchStoreOrders(pool, storeId, mode, { search, statusFilter, orderKind, labStatusFilter, labStatusExcludes = [], limit = 50 }) {
+async function fetchStoreOrders(pool, storeId, mode, {
+  search, statusFilter, orderKind, labStatusFilter,
+  labStatusExcludes = [], limit = 50, excludeOrderStatuses = []
+}) {
   const t = tableNames(mode)
+  const exStat = Array.isArray(excludeOrderStatuses)
+    ? excludeOrderStatuses.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean)
+    : []
   
   let query = `
     SELECT o.order_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at,
@@ -1091,6 +1114,12 @@ async function fetchStoreOrders(pool, storeId, mode, { search, statusFilter, ord
   
   if (statusFilter) {
     query += ` AND o.status = @status `
+  } else if (exStat.length) {
+    const ph = []
+    for (let i = 0; i < exStat.length; i += 1) {
+      ph.push(`@ex_st_${i}`)
+    }
+    query += ` AND o.status NOT IN (${ph.join(', ')}) `
   }
 
   if (orderKind) {
@@ -1155,6 +1184,11 @@ async function fetchStoreOrders(pool, storeId, mode, { search, statusFilter, ord
   }
   if (search) {
     req.input('search', sql.NVarChar(200), '%' + search + '%')
+  }
+  if (!statusFilter && exStat.length) {
+    for (let i = 0; i < exStat.length; i += 1) {
+      req.input(`ex_st_${i}`, sql.NVarChar(30), exStat[i])
+    }
   }
   
   const result = await req.query(query)
