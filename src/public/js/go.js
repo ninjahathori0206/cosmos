@@ -634,16 +634,30 @@ var GO = (function () {
       var plusOffers  = offers.filter(function (o) { return o.is_plus_only; });
       var openOffers  = offers.filter(function (o) { return !o.is_plus_only; });
 
+      function goOfferSpendLabel(o) {
+        var t = String(o.discount_type || '').toUpperCase()
+        var v = Number(o.discount_value)
+        if (t === 'PCT') return Number.isFinite(v) ? 'Up to ' + v + '% off' : 'Exclusive rate'
+        if (t === 'FLAT') return Number.isFinite(v) ? 'Up to ₹' + v.toLocaleString('en-IN') + ' off' : 'Flat discount'
+        if (t === 'FREEBIE') return 'Member freebie'
+        if (t === 'BOGO_LOWEST_FREE') return 'BOGO (lab + frame / lab pairs)'
+        if (t === 'BUY_FRAME_GET_LENS_FREE') return 'Lens package credit'
+        if (t === 'BUY_LENS_GET_FRAME_FREE') return 'Frame credit'
+        return 'Promo'
+      }
+
       function offerCard(o, idx) {
-        var isPlus = o.is_plus_only;
+        var isPlus = o.is_plus_only
+        var spend = goOfferSpendLabel(o)
         return '<div class="offer-card' + (isPlus ? ' plus-offer' : '') + ' anim anim-' + (idx + 1) + '">'
           + '<div class="offer-icon-box" style="background:var(--plus-bg)">' + o.icon_emoji + '</div>'
           + '<div style="flex:1">'
           + (isPlus ? '<div style="margin-bottom:5px"><span class="pill pill-plus" style="font-size:10px">✦ Plus</span></div>' : '')
           + '<div style="font-size:14px;font-weight:600;color:var(--text)">' + o.title + '</div>'
           + '<div style="font-size:12px;color:var(--text3);margin-top:2px">' + o.description + '</div>'
+          + '<div style="font-size:11px;color:var(--text2);margin-top:6px">' + spend + '</div>'
           + '<div style="font-size:11px;color:var(--text3);margin-top:5px">Expires ' + fmtDate(o.valid_to) + '</div>'
-          + '</div></div>';
+          + '</div></div>'
       }
 
       body.innerHTML =

@@ -1681,9 +1681,16 @@
             <option value="PCT">Percentage (%)</option>
             <option value="FLAT">Flat (₹)</option>
             <option value="FREEBIE">Freebie</option>
+            <option value="BOGO_LOWEST_FREE">BOGO · lab eg + frame-only / lowest lab pairs</option>
+            <option value="BUY_FRAME_GET_LENS_FREE">Lens value off (LAB combo)</option>
+            <option value="BUY_LENS_GET_FRAME_FREE">Frame value off (LAB combo)</option>
           </select>
         </div>
-        <div class="form-group"><label>Value</label><input id="cu-offer-value" type="number" min="0" step="any" placeholder="20"></div>
+        <div class="form-group span2" id="cu-offer-value-row">
+          <label>Value</label><input id="cu-offer-value" type="number" min="0" step="any" placeholder="20">
+          <div class="form-hint" id="cu-offer-value-hint">For % or ₹ off. BOGO and some structured promos use Value as optional max discount cap in ₹ (&gt;0).</div>
+          <div class="form-hint" id="cu-offer-structured-hint" style="display:none;margin-top:4px;color:var(--text2);">LAB lines with lens package only. Allocation does not apply. Use Value as optional ₹ cap.</div>
+        </div>
 
         <div class="cu-offer-section-label">Eligibility &amp; validity</div>
         <div class="form-group"><label>Eligible tier</label>
@@ -1715,9 +1722,11 @@
           <select id="cu-offer-active"><option value="1">Active</option><option value="0">Inactive</option></select>
         </div>
 
-        <div class="cu-offer-section-label">Allocation <span class="td-muted" style="font-weight:400;font-size:11px">(leave empty = applies to all)</span></div>
-        <div id="cu-offer-scope-sections" class="span2" style="display:flex;flex-direction:column;gap:10px">
+        <div class="cu-offer-section-label">Allocation <span id="cu-offer-allocation-sub" class="td-muted" style="font-weight:400;font-size:11px">(percentage / flat — pick scopes below)</span></div>
+        <div id="cu-offer-scope-wrap" class="span2" style="display:flex;flex-direction:column;gap:10px">
+        <div id="cu-offer-scope-sections" style="display:flex;flex-direction:column;gap:10px">
           <div style="font-size:13px;color:var(--text3)">Loading allocation options…</div>
+        </div>
         </div>
       </div>
       <div id="cu-offer-modal-error" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
@@ -1781,6 +1790,6 @@ function switchTab(el, targetId) {
 
 // showRoleDetail is now handled dynamically by command-unit-prototype.js
 </script>
-<script src="/js/command-unit-prototype.js" defer></script>
+<script src="/js/command-unit-prototype.js?v=cu-prototype-bogo-scope-20260502" defer></script>
 </body>
 </html>

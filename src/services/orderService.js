@@ -176,7 +176,12 @@ function buildPaymentSummary(orderRow, labSubtotal, instantSubtotal, payments) {
  */
 function validatePaymentAgainstSummary(orderRow, summary, body) {
   const amount = roundMoney(body.amount)
-  if (amount <= 0) return { ok: false, message: 'Amount must be positive.' }
+  const remaining = roundMoney(summary.amount_remaining)
+  if (amount < 0) return { ok: false, message: 'Amount cannot be negative.' }
+  if (amount === 0 && remaining <= MONEY_EPS) {
+    return { ok: true }
+  }
+  if (amount <= 0) return { ok: false, message: 'Amount must be positive when a balance is due.' }
   const stage = String(body.stage || '')
   const kind = String(orderRow.order_kind || '')
   const paidAfter = roundMoney(summary.paid_total + amount)
@@ -370,7 +375,8 @@ async function createOrderInTransaction(transaction, {
   procurementMode,
   cfg,
   discountAmount = 0,
-  appliedOfferId = null
+  appliedOfferId = null,
+  inventoryDeferred = false
 }) {
   const vr = validateOrderLinesAgainstConfig(cfg, value)
   if (!vr.ok) {
@@ -440,16 +446,19 @@ async function createOrderInTransaction(transaction, {
   rIns.input('applied_offer_id', sql.Int, appliedOfferId || null)
   rIns.input('gst_amount', sql.Decimal(12, 2), gstAmount)
   rIns.input('total_amount', sql.Decimal(12, 2), totalAmount)
+  rIns.input('inventory_committed', sql.Bit, inventoryDeferred ? 0 : 1)
 
   const insOrder = await rIns.query(`
     INSERT INTO ${t.orders} (
       store_id, customer_id, created_by_user_id, order_no, order_source, order_kind,
       rx_snapshot, gst_rate_snapshot, lab_advance_pct_snapshot, procurement_mode_snapshot,
-      status, subtotal_amount, discount_amount, applied_offer_id, gst_amount, total_amount
+      status, subtotal_amount, discount_amount, applied_offer_id, gst_amount, total_amount,
+      inventory_committed
     ) VALUES (
       @store_id, @customer_id, @created_by_user_id, @order_no, @order_source, @order_kind,
       @rx_snapshot, @gst_rate_snapshot, @lab_advance_pct_snapshot, @procurement_mode_snapshot,
-      N'OPEN', @subtotal_amount, @discount_amount, @applied_offer_id, @gst_amount, @total_amount
+      N'OPEN', @subtotal_amount, @discount_amount, @applied_offer_id, @gst_amount, @total_amount,
+      @inventory_committed
     );
     SELECT CAST(SCOPE_IDENTITY() AS INT) AS order_id;
   `)
@@ -509,12 +518,14 @@ async function createOrderInTransaction(transaction, {
       err.statusCode = 400
       throw err
     }
-    await rStock.query(`
-      UPDATE dbo.stock_balances
-      SET qty = qty - @qty,
-          last_updated = DATEADD(MINUTE,330,SYSUTCDATETIME())
-      WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id AND qty >= @qty
-    `)
+    if (!inventoryDeferred) {
+      await rStock.query(`
+        UPDATE dbo.stock_balances
+        SET qty = qty - @qty,
+            last_updated = DATEADD(MINUTE,330,SYSUTCDATETIME())
+        WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id AND qty >= @qty
+      `)
+    }
 
     const rItem = new sql.Request(transaction)
     rItem.input('sub_order_id', sql.Int, subOrderId)
@@ -571,6 +582,74 @@ async function createOrderInTransaction(transaction, {
   }
 }
 
+function orderRowNeedsInventoryCommit(orderRow) {
+  if (!orderRow) return false
+  const v = orderRow.inventory_committed
+  return v === false || v === 0
+}
+
+/**
+ * Deduct stock for all order lines once the order is fully paid (POS deferred inventory).
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function commitInventoryForPaidOrder(pool, mode, storeId, orderId) {
+  const t = tableNames(mode)
+  const chk = await pool.request()
+    .input('oid', sql.Int, orderId)
+    .input('sid', sql.Int, storeId)
+    .query(`
+      SELECT inventory_committed FROM ${t.orders}
+      WHERE order_id = @oid AND store_id = @sid
+    `)
+  const head = chk.recordset && chk.recordset[0]
+  if (!head || !orderRowNeedsInventoryCommit(head)) return
+
+  const trx = new sql.Transaction(pool)
+  await trx.begin()
+  try {
+    const items = await new sql.Request(trx)
+      .input('oid', sql.Int, orderId)
+      .query(`
+        SELECT i.sku_id, i.qty
+        FROM ${t.order_items} i
+        INNER JOIN ${t.sub_orders} s ON s.sub_order_id = i.sub_order_id
+        WHERE s.order_id = @oid
+      `)
+    for (const row of items.recordset || []) {
+      const skuId = Number(row.sku_id)
+      const qty = Number(row.qty) || 0
+      if (!Number.isFinite(skuId) || skuId <= 0 || qty <= 0) continue
+      const rStock = new sql.Request(trx)
+      rStock.input('sku_id', sql.Int, skuId)
+      rStock.input('store_id', sql.Int, storeId)
+      rStock.input('qty', sql.Int, qty)
+      const stockRes = await rStock.query(`
+        SELECT balance_id, qty FROM dbo.stock_balances
+        WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id
+      `)
+      const sb = stockRes.recordset[0]
+      if (!sb || sb.qty < qty) {
+        const err = new Error(`Insufficient stock for SKU ${skuId} at this store (post-payment commit).`)
+        err.statusCode = 400
+        throw err
+      }
+      await rStock.query(`
+        UPDATE dbo.stock_balances
+        SET qty = qty - @qty,
+            last_updated = DATEADD(MINUTE,330,SYSUTCDATETIME())
+        WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id AND qty >= @qty
+      `)
+    }
+    await new sql.Request(trx)
+      .input('oid', sql.Int, orderId)
+      .query(`UPDATE ${t.orders} SET inventory_committed = 1 WHERE order_id = @oid`)
+    await trx.commit()
+  } catch (e) {
+    await trx.rollback()
+    throw e
+  }
+}
+
 /**
  * @param {import('mssql').ConnectionPool} pool
  */
@@ -592,7 +671,10 @@ async function recordPayment(pool, mode, storeId, employeeId, body) {
 
   let tendered = body.tendered
   let changeGiven = body.change_given
-  if (body.method === 'CASH' && tendered != null) {
+  if (roundMoney(body.amount) <= 0) {
+    tendered = null
+    changeGiven = null
+  } else if (body.method === 'CASH' && tendered != null) {
     changeGiven = roundMoney(Number(tendered) - Number(body.amount))
     if (changeGiven < 0) {
       const err = new Error('Tendered amount is less than payment amount.')
@@ -621,6 +703,9 @@ async function recordPayment(pool, mode, storeId, employeeId, body) {
   const isLabLike = refreshed && refreshed.order &&
     (String(refreshed.order.order_kind || '') === 'LAB' || String(refreshed.order.order_kind || '') === 'MIXED')
   const fullyPaid = refreshed && Number(refreshed.payment_summary.amount_remaining || 0) <= MONEY_EPS
+  if (fullyPaid && refreshed && refreshed.order && orderRowNeedsInventoryCommit(refreshed.order)) {
+    await commitInventoryForPaidOrder(pool, mode, storeId, body.order_id)
+  }
   // Auto-complete on BALANCE/FULL, OR when an ADVANCE covers the full order total (customer paid upfront).
   if (isLabLike && fullyPaid && (body.stage === 'BALANCE' || body.stage === 'FULL' || body.stage === 'ADVANCE')) {
     invoiceNo = await autoCompleteLabSettlement(pool, mode, refreshed, employeeId)
@@ -1320,6 +1405,7 @@ module.exports = {
   fetchOrderBundle,
   mapOrderRowForApi,
   createOrderInTransaction,
+  commitInventoryForPaidOrder,
   recordPayment,
   autoCompleteLabSettlement,
   updateLabSubOrderStatus,

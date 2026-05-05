@@ -1182,6 +1182,10 @@ body.pos-lk-flow .pos-ob-proceed-btn {
   margin-bottom: 12px;
 }
 
+.pos-lk-lens-toolbar--solo {
+  justify-content: center;
+}
+
 .pos-lk-lens-heading {
   margin: 0;
   flex: 1;
@@ -1968,6 +1972,19 @@ body.pos-lk-flow #btn-pdp-select-lenses {
   }
 }
 
+/* Lens page: column layout so the footer actions can sit at the bottom */
+#screen-pos-lens.active .pos-lk-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* Lens wizard — no Cosmos / Lens Setup strip or step hint above toolbar */
+#screen-pos-lens.active .pos-lk-page--lens-no-topbar {
+  padding-top: 12px;
+}
+
 /* ── Lens stepper — center body 640px ─────────────────────────────────── */
 body.pos-lk-flow .pos-lens-shell {
   max-width: 720px;
@@ -1975,17 +1992,47 @@ body.pos-lk-flow .pos-lens-shell {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 body.pos-lk-flow .pos-lens-body {
   background: transparent;
   border: none;
   padding: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Hide bottom Prev/Next button bar — flow-specific CTAs are inside step body */
+/* Sticky Prev/Next — required when add-ons view has no in-body CTA */
 body.pos-lk-flow .pos-lens-actions {
-  display: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  margin-top: auto;
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0));
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background: linear-gradient(to top, var(--lk-page-bg, var(--bg, #f4f7f9)) 72%, rgba(244, 247, 249, 0));
+}
+
+/* Lens step 1 — groups title, category, and brand chips (matches Pencil lensChooseCard) */
+.pos-lk-lens-choose-card {
+  background: var(--lk-card);
+  border: 1px solid var(--lk-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 0 0 14px;
+  box-shadow: var(--lk-shadow);
+}
+
+.pos-lk-lens-choose-card .pos-lk-lens-headrow {
+  padding-top: 0;
 }
 
 .pos-lk-lens-headrow {
@@ -2006,7 +2053,69 @@ body.pos-lk-flow .pos-lens-actions {
   color: var(--lk-green);
 }
 
-/* Locked category from step 0 — shown instead of category tab strip */
+/* Lens step 1 — title + category on the left, brand chips on the right */
+.pos-lk-lens-headrow--brands {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+
+.pos-lk-lens-head-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 160px;
+}
+
+.pos-lk-lens-category-inline {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lk-text-muted);
+  line-height: 1.35;
+}
+
+.pos-lk-lens-brand-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.pos-lk-brand-chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--lk-border);
+  background: var(--lk-card);
+  color: var(--lk-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.pos-lk-brand-chip:hover {
+  border-color: var(--lk-blue);
+  color: var(--lk-blue);
+}
+
+.pos-lk-brand-chip.is-active {
+  border-color: var(--lk-blue);
+  background: var(--lk-blue-soft);
+  color: var(--lk-blue);
+}
+
+.pos-lk-brand-chip:focus-visible {
+  outline: 2px solid var(--lk-blue);
+  outline-offset: 2px;
+}
+
+/* Locked category from step 0 — legacy; category now inline on lens step 1 */
 .pos-lk-lens-category-lock {
   font-size: 13px;
   font-weight: 600;
@@ -2424,6 +2533,13 @@ body.pos-lk-flow .pos-lens-actions {
   flex-shrink: 0;
 }
 
+.pos-lk-addon-next-hint {
+  font-size: 13px;
+  color: var(--lk-text-muted, var(--text2, #64748b));
+  margin: 12px 0 0;
+  line-height: 1.4;
+}
+
 .pos-lk-power-list {
   display: flex;
   flex-direction: column;
@@ -2551,24 +2667,6 @@ body.pos-lk-flow .pos-lens-actions {
   gap: 6px;
   font-size: 12px;
   margin-top: 8px;
-}
-
-.pos-lk-continue-payment {
-  width: 100%;
-  height: 50px;
-  border-radius: 12px;
-  background: var(--lk-navy-cta);
-  color: #fff;
-  font-size: 15px;
-  font-weight: 800;
-  border: none;
-  cursor: pointer;
-  margin-top: 6px;
-}
-
-.pos-lk-continue-payment:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 /* Inline customer search dropdown inside Add Power */
@@ -3110,4 +3208,126 @@ body.pos-target-tablet-landscape.pos-lk-flow .pos-lk-page {
 .pos-lens-newcust-btn-submit {
   flex: 1 1 180px;
   margin: 0;
+}
+
+/* ── 5-step lens strip (minimal tabs, #pos-lk-lens-checkout-5) — matches Pencil ─ */
+.pos-checkout-5.pos-checkout-5--lens {
+  display: block;
+  position: relative;
+  z-index: 1;
+  margin: 0 0 10px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.pos-lk-banner--ok {
+  background: var(--lk-mint-bg, var(--greenL, #ecfdf5)) !important;
+  color: var(--lk-green, var(--green, #0d9f7b)) !important;
+  border: 1px solid var(--lk-border, var(--border, #e2e8f0));
+}
+
+.pos-ob-draft-banner {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--lk-border, var(--border, #e2e8f0));
+  background: var(--lk-blue-soft, var(--accL, #e3f2fd));
+}
+
+.pos-ob-save-draft-btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--lk-border, var(--border, #e2e8f0));
+  background: var(--lk-page-bg, var(--bg, #f4f7f9));
+  color: var(--lk-text, var(--text1, #0f172a));
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pos-ob-save-draft-btn:hover {
+  border-color: var(--lk-blue, var(--acc, #0a58ca));
+  color: var(--lk-blue, var(--acc2, #0a58ca));
+}
+
+.pos-checkout-5__track {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0;
+  justify-content: space-between;
+  align-items: stretch;
+  max-width: 100%;
+  border-bottom: 1px solid var(--lk-border, var(--border, #e2e8f0));
+}
+
+.pos-checkout-5__track li {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+}
+
+.pos-checkout-5__tab {
+  width: 100%;
+  margin: 0;
+  padding: 8px 2px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--lk-text-muted, var(--text2, #64748b));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  line-height: 1.2;
+  font-family: inherit;
+}
+
+.pos-checkout-5__tab:hover:not(:disabled) {
+  color: var(--lk-text, var(--text1, #0f172a));
+}
+
+.pos-checkout-5__tab:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.pos-checkout-5__tab.is-active {
+  color: var(--lk-blue, var(--acc2, #2563eb));
+  border-bottom-color: var(--lk-blue, var(--acc2, #2563eb));
+}
+
+.pos-checkout-5__tab.is-done {
+  color: var(--lk-green, var(--green, #0d9f7b));
+}
+
+/* Lab line price breakdown in cart */
+.pos-lk-cart-lab-breakdown {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--lk-mint-bg, var(--accL, #ecfdf5));
+  border: 1px solid var(--lk-border, var(--border, #e2e8f0));
+  font-size: 12px;
+  color: var(--lk-text, var(--text1, #0f172a));
+}
+
+.pos-lk-cart-lab-breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0;
+}
+
+.pos-lk-cart-lab-breakdown-row span:first-child {
+  color: var(--lk-text-muted, var(--text2, #64748b));
 }

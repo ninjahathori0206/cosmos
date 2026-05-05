@@ -6,9 +6,9 @@
 <title>Store OS — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css">
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
-<link rel="stylesheet" href="/css/lenskart-pos.css?v=sos-shell-2026c">
+<link rel="stylesheet" href="/css/lenskart-pos.css?v=pos-lens-choose-card-20260502">
 <script src="/js/cosmos-ui-polish.js" defer></script>
-<script src="/js/pos.js?v=sos-lens-addons-20260502" defer></script>
+<script src="/js/pos.js?v=pos-cart-du-tdz-20260502" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -452,7 +452,7 @@
         <span class="pos-lk-crumb">Cart</span>
       </div>
     </header>
-    <p class="pos-lk-step-hint">Step 5: review items, delivery, and proceed to payment</p>
+    <p class="pos-lk-step-hint">Review items and delivery, then proceed to payment</p>
     <div class="pos-visually-hidden">
       <span id="pos-ob-staff"></span>
       <span id="pos-ob-store"></span>
@@ -463,7 +463,6 @@
     <button id="btn-ob-back" type="button" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Back</button>
     <div class="pos-lk-cart-main-head">
       <h2 class="pos-lk-cart-title">Cart (<span id="pos-lk-cart-count">0</span> items)</h2>
-      <button type="button" class="pos-lk-text-link" aria-disabled="true">Help</button>
     </div>
 
     <section class="pos-ob-section">
@@ -474,11 +473,14 @@
       </div>
     </section>
 
+    <div id="pos-ob-draft-banner" class="pos-ob-draft-banner" hidden role="region" aria-label="Saved draft"></div>
+
     <section class="pos-ob-section" style="background:transparent;border:none;padding:0">
       <div id="pos-ob-cart" class="pos-ob-cart" aria-live="polite"></div>
       <button id="btn-ob-add-more" class="pos-ob-add-more-btn" aria-label="Add more products" tabindex="0">
         + Add another product
       </button>
+      <button type="button" id="btn-ob-save-draft" class="pos-ob-save-draft-btn" tabindex="0">Save cart as draft</button>
     </section>
 
     <!-- Rx form was relocated into the Lens wizard's Add Power step (Pencil 04). -->
@@ -568,7 +570,7 @@
         <span class="pos-lk-crumb">Customer</span>
       </div>
     </header>
-    <p class="pos-lk-step-hint">Step 4: search or create a customer, then continue to cart</p>
+    <p class="pos-lk-step-hint">Search or create a customer, then continue to cart</p>
   <div class="pos-cust-shell">
     <div class="pos-lk-lens-toolbar" style="margin-bottom:0">
       <button type="button" id="btn-cust-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Back</button>
@@ -603,28 +605,19 @@
      SCREEN — Lens configuration wizard
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-pos-lens" class="pos-screen">
-  <div class="pos-lk-page">
-    <header class="pos-lk-header" aria-label="Store top bar">
-      <div class="pos-lk-header-left">
-        <span class="pos-lk-logo" aria-hidden="true">C</span>
-        <span class="pos-lk-brand">Cosmos</span>
-        <span class="pos-lk-crumb-sep">/</span>
-        <span class="pos-lk-crumb">Lens Setup</span>
-      </div>
-    </header>
-    <p class="pos-lk-step-hint">Steps 2–4: pick power type, choose your lens, and add power details</p>
+  <div class="pos-lk-page pos-lk-page--lens-no-topbar">
   <div class="pos-lens-shell">
-    <div class="pos-lk-lens-toolbar">
-      <button type="button" id="btn-lens-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Back</button>
+    <div class="pos-lk-lens-toolbar pos-lk-lens-toolbar--solo">
       <h1 class="pos-lk-lens-heading">Add Lens Details</h1>
-      <button type="button" class="pos-lk-text-link" aria-disabled="true">Help</button>
     </div>
-    <nav id="pos-lk-lens-stepper" class="pos-lk-stepper" aria-label="Lens setup progress">
-      <div class="pos-lk-stepper-track">
-        <div class="pos-lk-step-dot active" data-step="0"><span>1</span><span>Power Type</span></div>
-        <div class="pos-lk-step-dot" data-step="1"><span>2</span><span>Lenses</span></div>
-        <div class="pos-lk-step-dot" data-step="2"><span>3</span><span>Add Power</span></div>
-      </div>
+    <nav id="pos-lk-lens-checkout-5" class="pos-checkout-5 pos-checkout-5--lens" aria-label="Order steps (lens setup)">
+      <ol class="pos-checkout-5__track" role="list">
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="1" aria-label="Step 1: Lens type">Type</button></li>
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="2" aria-label="Step 2: Lenses">Lenses</button></li>
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="3" aria-label="Step 3: Add-ons">Add-ons</button></li>
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="4" aria-label="Step 4: Customer and Rx">Customer</button></li>
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="5" aria-label="Step 5: Cart">Cart</button></li>
+      </ol>
     </nav>
     <div id="lens-step-indicator" class="pos-lens-steps" aria-live="polite" style="display:none"></div>
     <div id="lens-step-body" class="pos-lens-body"></div>
@@ -649,7 +642,7 @@
         <span class="pos-lk-crumb">Payment</span>
       </div>
     </header>
-    <p class="pos-lk-step-hint">Step 6: choose payment method and confirm</p>
+    <p class="pos-lk-step-hint">Choose payment method and confirm</p>
   <div class="pos-lk-pay-grid">
     <div class="pos-lk-pay-main">
       <div class="pos-lk-lens-toolbar" style="margin-bottom:8px">

@@ -1578,6 +1578,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let cachedCuOffers = [];
 
+  var CU_STRUCTURED_OFFER_TYPES = ['BOGO_LOWEST_FREE', 'BUY_FRAME_GET_LENS_FREE', 'BUY_LENS_GET_FRAME_FREE'];
+
+  function cuIsStructuredDiscountType(typ) {
+    return CU_STRUCTURED_OFFER_TYPES.indexOf(String(typ || '').trim()) !== -1;
+  }
+
+  /** BOGO uses allocation scopes; other structured types do not. */
+  function cuOfferTypeSupportsAllocation(typ) {
+    return String(typ || '').trim().toUpperCase() === 'BOGO_LOWEST_FREE';
+  }
+
+  function cuStructuredPill(typ, val) {
+    var numOk = Number.isFinite(val);
+    if (typ === 'BOGO_LOWEST_FREE') return numOk && val > 0 ? 'BOGO · max ₹' + val.toLocaleString('en-IN') : 'BOGO';
+    if (typ === 'BUY_FRAME_GET_LENS_FREE') return numOk && val > 0 ? 'Lens off · cap ₹' + val.toLocaleString('en-IN') : 'Lens off combo';
+    if (typ === 'BUY_LENS_GET_FRAME_FREE') return numOk && val > 0 ? 'Frame off · cap ₹' + val.toLocaleString('en-IN') : 'Frame off combo';
+    return 'Promo';
+  }
+
+  function cuOfferDiscountLabel(o) {
+    var t = String(o.discount_type || '').trim();
+    var v = Number(o.discount_value);
+    if (t === 'PCT') return Number.isFinite(v) ? v + '%' : '—';
+    if (t === 'FLAT') return '₹' + Number(o.discount_value || 0).toLocaleString('en-IN');
+    if (t === 'FREEBIE') return 'Freebie';
+    if (cuIsStructuredDiscountType(t)) return cuStructuredPill(t, Number.isFinite(v) ? v : NaN);
+    return t || '—';
+  }
+
+  window.cuOnDiscountTypeChanged = function cuOnDiscountTypeChanged() {
+    var typSel = document.getElementById('cu-offer-type');
+    var typ = typSel ? typSel.value : 'PCT';
+    var wrap = document.getElementById('cu-offer-scope-wrap');
+    var stHit = document.getElementById('cu-offer-structured-hint');
+    var vf = document.getElementById('cu-offer-value-hint');
+    var allocSub = document.getElementById('cu-offer-allocation-sub');
+    var structured = cuIsStructuredDiscountType(typ);
+    var bogoAlloc = cuOfferTypeSupportsAllocation(typ);
+    if (wrap) wrap.style.display = structured && !bogoAlloc ? 'none' : '';
+    if (vf) vf.style.display = structured && !bogoAlloc ? 'none' : '';
+    if (stHit) {
+      if (bogoAlloc) {
+        stHit.style.display = 'block';
+        stHit.textContent =
+          'Pairs a prescription eyeglass lab line (lens package; not sunglasses type) with a frame-only INSTANT line. Qualifying sunglasses-with-lens lines pair with each other only. Optional Value = max discount cap in ₹.';
+      } else if (structured) {
+        stHit.style.display = 'block';
+        stHit.textContent =
+          'LAB lines with lens package only. Allocation does not apply. Use Value as optional ₹ cap.';
+      } else {
+        stHit.style.display = 'none';
+      }
+    }
+    if (allocSub) {
+      allocSub.textContent =
+        bogoAlloc || !structured
+          ? '(restrict brands, SKUs, products, or categories — empty = all eligible)'
+          : '(percentage / flat only — other structured promos skip this)';
+    }
+    if (structured && !bogoAlloc) {
+      cuOfferCurrentScopes = [];
+      void renderAllocationSections([]);
+    } else if (bogoAlloc) {
+      void renderAllocationSections(cuOfferCurrentScopes);
+    }
+    syncCuOfferPreview();
+  };
+
   function cuOfferDefaultFromDate() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   }
@@ -1606,7 +1674,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let pill = '—';
     if (typ === 'PCT') pill = numOk ? `${val}%` : '%';
     else if (typ === 'FLAT') pill = numOk ? `₹${val.toLocaleString('en-IN')}` : '₹';
-    else pill = 'Freebie';
+    else if (typ === 'FREEBIE') pill = 'Freebie';
+    else if (cuIsStructuredDiscountType(typ)) pill = cuStructuredPill(typ, numOk ? val : NaN);
+    else pill = '—';
     const pt = document.getElementById('cu-offer-preview-title');
     const pd = document.getElementById('cu-offer-preview-desc');
     const pi = document.getElementById('cu-offer-preview-icon');
@@ -1625,7 +1695,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('input', syncCuOfferPreview);
-      el.addEventListener('change', syncCuOfferPreview);
+      el.addEventListener('change', function () {
+        syncCuOfferPreview();
+        if (id === 'cu-offer-type' && typeof window.cuOnDiscountTypeChanged === 'function') window.cuOnDiscountTypeChanged();
+      });
     });
     const fromEl = document.getElementById('cu-offer-from');
     if (fromEl) {
@@ -1653,9 +1726,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       tbody.innerHTML = cachedCuOffers.map((o) => {
-        const discLabel = o.discount_type === 'PCT' ? `${Number(o.discount_value)}%`
-          : o.discount_type === 'FLAT' ? `₹${Number(o.discount_value).toLocaleString('en-IN')}`
-            : 'Freebie';
+        const discLabel = cuOfferDiscountLabel(o);
         const tierLabel = o.eligible_tier ? `${escHtml(String(o.eligible_tier))}+` : 'All';
         const plusLabel = o.is_plus_only ? '<span class="badge badge-purple" style="font-size:10px">Plus</span>' : '';
         const status = o.is_active
@@ -1846,7 +1917,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cu-offer-sort').value = '10';
     showError('cu-offer-modal-error', '');
     syncCuOfferPreview();
-    renderAllocationSections([]);
+    void renderAllocationSections([]);
+    cuOnDiscountTypeChanged();
     window.openModal && window.openModal('modal-cu-customer-offer');
   };
 
@@ -1873,7 +1945,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (st) st.value = o.is_active ? '1' : '0';
     showError('cu-offer-modal-error', '');
     syncCuOfferPreview();
-    renderAllocationSections(Array.isArray(o.scopes) ? o.scopes : []);
+    const rawScopes = Array.isArray(o.scopes) ? o.scopes : [];
+    const seedScopes =
+      cuOfferTypeSupportsAllocation(o.discount_type) || !cuIsStructuredDiscountType(o.discount_type) ? rawScopes : [];
+    void renderAllocationSections(seedScopes);
+    cuOnDiscountTypeChanged();
     window.openModal && window.openModal('modal-cu-customer-offer');
   };
 
@@ -1899,22 +1975,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (toIn && typeof cosmosFieldClear === 'function') cosmosFieldClear(toIn);
 
     const editId = document.getElementById('cu-offer-edit-id').value;
+    const dscTypeEl = document.getElementById('cu-offer-type');
+    const dscType = dscTypeEl ? dscTypeEl.value : 'PCT';
+    const scopesPayload =
+      cuIsStructuredDiscountType(dscType) && !cuOfferTypeSupportsAllocation(dscType)
+        ? []
+        : cuOfferCurrentScopes.map((s) => ({
+            kind: s.kind,
+            ref_int: s.ref_int != null ? Number(s.ref_int) : null,
+            ref_key: s.ref_key != null ? String(s.ref_key) : null
+          }));
     const body = {
       title,
       description: document.getElementById('cu-offer-desc').value.trim(),
       icon_emoji: document.getElementById('cu-offer-emoji').value.trim() || '🎁',
-      discount_type: document.getElementById('cu-offer-type').value,
+      discount_type: dscType,
       discount_value: parseFloat(document.getElementById('cu-offer-value').value) || 0,
       eligible_tier: document.getElementById('cu-offer-tier').value || null,
       valid_from: document.getElementById('cu-offer-from').value,
       valid_to: validTo,
       is_plus_only: document.getElementById('cu-offer-plus-only').checked,
       sort_order: parseInt(document.getElementById('cu-offer-sort').value, 10) || 0,
-      scopes: cuOfferCurrentScopes.map((s) => ({
-        kind: s.kind,
-        ref_int: s.ref_int != null ? Number(s.ref_int) : null,
-        ref_key: s.ref_key != null ? String(s.ref_key) : null
-      }))
+      scopes: scopesPayload
     };
     if (editId) {
       body.is_active = document.getElementById('cu-offer-active').value === '1';

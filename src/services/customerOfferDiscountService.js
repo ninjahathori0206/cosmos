@@ -177,6 +177,42 @@ function evaluateLineAgainstScopes(lineFacts, scopesGrouped) {
   return true
 }
 
+function getSkuFactForLine(line, skuFactMap) {
+  const id = Number(line.sku_id)
+  if (!skuFactMap || !Number.isFinite(id) || id <= 0) return null
+  return skuFactMap.get(id) || null
+}
+
+/**
+ * Lines whose facts match offer scopes (empty scope groups = match all lines).
+ * @param {Array} lines
+ * @param {Record<string, Array>} scopesGrouped
+ * @param {Map<number, object>|null} skuFactMap
+ */
+function filterLinesByOfferScopes(lines, scopesGrouped, skuFactMap) {
+  const map = skuFactMap || new Map()
+  const out = []
+  for (const line of lines || []) {
+    if (!line) continue
+    const skuFact = getSkuFactForLine(line, map)
+    const facts = buildLineFacts(line, skuFact)
+    if (!evaluateLineAgainstScopes(facts, scopesGrouped || {})) continue
+    out.push(line)
+  }
+  return out
+}
+
+/** Sunglasses product master type — excluded from non-sun lab-primary BOGO slot. */
+function isSunglassesProductTypeKey(key) {
+  return String(key || '')
+    .trim()
+    .toLowerCase() === 'sunglasses'
+}
+
+function fulfillmentIsInstant(line) {
+  return String(line.fulfillment || '').trim().toUpperCase() === 'INSTANT'
+}
+
 /**
  * Compute eligible subtotal: sum of line totals that match offer scopes.
  * @param {Array} lines - order lines
@@ -207,10 +243,19 @@ function computeEligibleSubtotal(lines, scopesGrouped, skuFactMap, { cartPreview
 
 /**
  * Applies discount_value as a cap when > 0 (max discount allowed for this rule).
+ * Uses scopesGrouped + skuFactMap when passed (BOGO and LAB combo promos respect allocation).
+ *
+ * BOGO_LOWEST_FREE: Rule V for lab(non-sun)+INSTANT pairs — discount equals the instant line
+ * (secondary) frame total so the customer pays the lab order total; lab-only remainder pairs use min-pair.
+ *
  * @returns {number|null} null if offer type uses legacy POS discount (PCT/FLAT/FREEBIE)
  */
 function computeStructuredOfferDiscount(offerRow, lines, opts = {}) {
   const cartPreview = !!opts.cartPreview
+  const scopesGrouped = opts.scopesGrouped || {}
+  const skuFactMap = opts.skuFactMap || new Map()
+  const scopedLines = filterLinesByOfferScopes(lines, scopesGrouped, skuFactMap)
+
   const typ = String((offerRow && offerRow.discount_type) || '').trim().toUpperCase()
   const capRaw = Number(offerRow && offerRow.discount_value)
   const cap = Number.isFinite(capRaw) && capRaw > 0 ? roundMoney(capRaw) : null
@@ -221,25 +266,44 @@ function computeStructuredOfferDiscount(offerRow, lines, opts = {}) {
 
   switch (typ) {
     case 'BOGO_LOWEST_FREE': {
-      const totals = []
-      for (const line of lines || []) {
-        if (!qualifies(line)) continue
-        totals.push(lineFullLabComboTotal(line))
+      const primaryTotals = []
+      const secondaryTotals = []
+      const labSunTotals = []
+      for (const line of scopedLines) {
+        const skuFact = getSkuFactForLine(line, skuFactMap)
+        const ptKey = skuFact ? skuFact.productTypeKey : String(line.product_type || '')
+        const sun = isSunglassesProductTypeKey(ptKey)
+        const q = qualifies(line)
+
+        if (q && !sun) {
+          primaryTotals.push(lineFullLabComboTotal(line))
+        } else if (fulfillmentIsInstant(line)) {
+          secondaryTotals.push(lineFrameTotal(line))
+        } else if (q && sun) {
+          labSunTotals.push(lineFullLabComboTotal(line))
+        }
       }
-      totals.sort((a, b) => b - a)
-      for (let i = 0; i + 1 < totals.length; i += 2) {
-        gross += Math.min(totals[i], totals[i + 1])
+      primaryTotals.sort((a, b) => b - a)
+      secondaryTotals.sort((a, b) => b - a)
+      const pairCount = Math.min(primaryTotals.length, secondaryTotals.length)
+      for (let i = 0; i < pairCount; i++) {
+        gross += secondaryTotals[i]
+      }
+      const labPool = [...primaryTotals.slice(pairCount), ...labSunTotals]
+      labPool.sort((a, b) => b - a)
+      for (let i = 0; i + 1 < labPool.length; i += 2) {
+        gross += Math.min(labPool[i], labPool[i + 1])
       }
       break
     }
     case 'BUY_FRAME_GET_LENS_FREE': {
-      for (const line of lines || []) {
+      for (const line of scopedLines) {
         if (qualifies(line)) gross += lineLensTotal(line)
       }
       break
     }
     case 'BUY_LENS_GET_FRAME_FREE': {
-      for (const line of lines || []) {
+      for (const line of scopedLines) {
         if (qualifies(line)) gross += lineFrameTotal(line)
       }
       break
@@ -259,28 +323,32 @@ function computeStructuredOfferDiscount(offerRow, lines, opts = {}) {
 
 /**
  * Server-authoritative offer discount computation.
- * Handles PCT / FLAT (scoped) and all structured types.
+ * Handles PCT / FLAT (scoped) and structured types (scopes respected for BOGO + LAB promos).
  *
  * @param {import('mssql').ConnectionPool} pool
  * @param {object} offerRow   - from customer_offers
  * @param {Array}  orderLines - from POS POST /orders payload (validated)
+ * @param {{ cartPreview?: boolean }} [runOpts] cartPreview=true uses lab_status complete for qualifying combos (cart sidebar).
  * @returns {Promise<number>} - discount amount (≥ 0)
  */
-async function computeOfferDiscountAmount(pool, offerRow, orderLines) {
+async function computeOfferDiscountAmount(pool, offerRow, orderLines, runOpts = {}) {
+  const cartPreview = !!runOpts.cartPreview
   const typ = String(offerRow.discount_type || '').trim().toUpperCase()
 
-  // Structured types ignore scope (apply to qualifying combo lines)
-  const structured = computeStructuredOfferDiscount(offerRow, orderLines, { cartPreview: false })
-  if (structured !== null) return structured
-
-  // Scope-aware PCT / FLAT
   const offerId = Number(offerRow.offer_id)
   const scopesGrouped = offerId ? await loadScopesGrouped(pool, offerId) : {}
 
   const skuIds = (orderLines || []).map((l) => Number(l.sku_id)).filter((id) => id > 0)
   const skuFactMap = skuIds.length ? await resolveSkuFacts(pool, skuIds) : new Map()
 
-  const eligibleSubtotal = computeEligibleSubtotal(orderLines, scopesGrouped, skuFactMap, { cartPreview: false })
+  const structured = computeStructuredOfferDiscount(offerRow, orderLines, {
+    cartPreview,
+    scopesGrouped,
+    skuFactMap
+  })
+  if (structured !== null) return structured
+
+  const eligibleSubtotal = computeEligibleSubtotal(orderLines, scopesGrouped, skuFactMap, { cartPreview })
 
   const val = Number(offerRow.discount_value) || 0
 
@@ -308,9 +376,10 @@ function offerIsEligibleRow(row, nowMs) {
 /**
  * Server: when POS sends applied_offer_id and type is structured, authoritative discount amount.
  */
-function coerceStructuredDiscountOrNull(offerRow, lines, clientDiscountAmount) {
-  const computed = computeStructuredOfferDiscount(offerRow, lines, { cartPreview: false })
-  if (computed === null) return null
+async function coerceStructuredDiscountOrNull(pool, offerRow, lines, clientDiscountAmount, runOpts = {}) {
+  const { isStructuredOfferType } = require('../config/customerOfferDiscountTypes')
+  if (!isStructuredOfferType(offerRow && offerRow.discount_type)) return null
+  const computed = await computeOfferDiscountAmount(pool, offerRow, lines, runOpts)
   const client = roundMoney(Number(clientDiscountAmount) || 0)
   if (Math.abs(computed - client) > MONEY_EPS) {
     const err = new Error(
@@ -378,6 +447,9 @@ module.exports = {
   loadScopesGrouped,
   buildLineFacts,
   evaluateLineAgainstScopes,
+  filterLinesByOfferScopes,
+  getSkuFactForLine,
+  isSunglassesProductTypeKey,
   offerIsEligibleRow,
   coerceStructuredDiscountOrNull,
   validateScopeRefs,

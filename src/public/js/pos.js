@@ -484,6 +484,9 @@
   let pendingResumeOrder = false
   let posSelectedCustomerId = null
   let posCartOffers = []
+  let posServerDiscountPreview = null
+  let posServerDiscountPreviewTimer = null
+  let posDiscountPreviewSeq = 0
   /** Selected POS / CX customer row for cart reference (name, phone, id). */
   let posSelectedCustomerSnapshot = null
   let posSettings = { gst_rate: 0.05, lab_advance_pct: 40, composition_scheme: false, prices_gst_inclusive: false }
@@ -492,12 +495,35 @@
   let lensWizardBackRoute = POS_ROUTES.ORDER
   let lensWizard = {
     step: 0,
+    subPhase: 'profile',
+    brandFilter: 'all',
     powerType: null,
     category: null,
     pkg: null,
     addonIds: [],
     powerMode: null,
     rx: { od: { sph: '', cyl: '', axis: '', plano: false }, os: { sph: '', cyl: '', axis: '', plano: false }, pd: '', doctor: '' }
+  }
+
+  /** Coerce wizard step to 0–2 so strict === checks in navigation never silently fail. */
+  function syncLensWizardStepNumber() {
+    var s = Number(lensWizard.step)
+    if (!Number.isFinite(s)) lensWizard.step = 0
+    else lensWizard.step = Math.max(0, Math.min(2, Math.floor(s)))
+  }
+
+  /** Cart line for lens wizard — prefer lensWizardLineIdx, else first incomplete LAB line. */
+  function resolveLensWizardCartLine() {
+    var idx = lensWizardLineIdx
+    if (Number.isFinite(idx) && idx >= 0 && idx < obCart.length) return obCart[idx]
+    var i = obCart.findIndex(function (l) {
+      if (!l) return false
+      var f = String(l.fulfillment || '').toUpperCase()
+      var st = l.lab_status
+      return f === 'LAB' && (!st || st === 'incomplete' || st === 'pending_power')
+    })
+    if (i >= 0) return obCart[i]
+    return obCart.length ? obCart[0] : null
   }
   let lastCreatedOrder = null
   let lastPaymentReceipt = null
@@ -641,7 +667,10 @@
       return '₹' + f.toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' off'
     }
     if (t === 'FREEBIE') return 'Freebie'
-    return ''
+    if (t === 'BOGO_LOWEST_FREE') return 'BOGO · lab eg + frame-only / lab pairs'
+    if (t === 'BUY_FRAME_GET_LENS_FREE') return 'Lens value off (with frame)'
+    if (t === 'BUY_LENS_GET_FRAME_FREE') return 'Frame value off (with lens)'
+    return 'Promo'
   }
 
   function renderCartCustomerRef() {
@@ -683,11 +712,11 @@
       if (forPayment) {
         hintEl.textContent = posSelectedCustomerId
           ? 'Same filters as the cart (Plus & tier). Best eligible offer is included in billed totals when you linked a customer before checkout.'
-          : 'Active promos for this store. Link a Plus customer before placing the order to include membership discounts in totals.'
+          : 'Walk-in: only promos that do not require Plus or a loyalty tier are listed. Link a customer to see Plus and tier-gated offers in totals.'
       } else {
         hintEl.textContent = posSelectedCustomerId
           ? 'Filtered for Plus / loyalty tier. The strongest eligible discount below is applied to cart subtotal and GST.'
-          : 'Showing active promos for reference. Link a customer to filter Plus / tier offers and apply the best discount.'
+          : 'Walk-in: Plus-only and tier-gated offers are hidden. Link a customer to see those offers and apply the best eligible discount.'
       }
     }
     try {
@@ -2016,11 +2045,13 @@
   function resetLensWizardState() {
     lensWizard = {
       step: 0,
+      subPhase: 'profile',
       powerType: null,
       category: null,
       pkg: null,
       addonIds: [],
       powerMode: null,
+      brandFilter: 'all',
       customerName: lensWizard && lensWizard.customerName ? lensWizard.customerName : null,
       rx: { od: { sph: '', cyl: '', axis: '', plano: false }, os: { sph: '', cyl: '', axis: '', plano: false }, pd: '', doctor: '' }
     }
@@ -2126,22 +2157,6 @@
     const btnC = document.getElementById('btn-cust-create')
     if (btnC) btnC.addEventListener('click', () => { void handleCustomerCreate() })
 
-    const btnLensBack = document.getElementById('btn-lens-back')
-    if (btnLensBack) {
-      btnLensBack.addEventListener('click', function () {
-        if (lensWizard && typeof lensWizard.step === 'number' && lensWizard.step > 0) {
-          // Step inside the wizard if we are past the first step.
-          if (lensWizard.step === 2 && lensWizard.powerType === 'frame_only') {
-            lensWizard.step = 0
-          } else {
-            lensWizard.step -= 1
-          }
-          renderLensStep()
-          return
-        }
-        navigate(lensWizardBackRoute || POS_ROUTES.ORDER)
-      })
-    }
     const btnLensPrev = document.getElementById('btn-lens-prev')
     const btnLensNext = document.getElementById('btn-lens-next')
     if (btnLensPrev) btnLensPrev.addEventListener('click', lensWizardPrev)
@@ -2240,15 +2255,37 @@
   }
 
   function lensWizardPrev() {
+    syncLensWizardStepNumber()
+    const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
+    if (lensWizard.step === 0) {
+      navigate(lensWizardBackRoute || POS_ROUTES.ORDER)
+      return
+    }
+    if (lensWizard.step === 2 && !isInstantFrame && lensWizard.subPhase === 'profile' && lensWizard.pkg && (lensWizard.pkg.addons || []).length) {
+      lensWizard.subPhase = 'addons'
+      renderLensStep()
+      return
+    }
+    if (lensWizard.step === 2 && lensWizard.subPhase === 'addons') {
+      lensWizard.step = 1
+      lensWizard.subPhase = 'profile'
+      renderLensStep()
+      return
+    }
     if (lensWizard.step > 0) {
-      lensWizard.step -= 1
+      if (lensWizard.step === 2 && isInstantFrame) {
+        lensWizard.step = 0
+      } else {
+        lensWizard.step -= 1
+      }
       renderLensStep()
     }
   }
 
   function lensWizardNext() {
+    syncLensWizardStepNumber()
     const body = document.getElementById('lens-step-body')
-    if (lensWizard.step === 0 && !lensWizard.category) {
+    if (lensWizard.step === 0 && !lensWizard.category && lensWizard.powerType !== 'frame_only' && lensWizard.powerType !== 'frame_sunglasses') {
       if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Pick a power type.')
       return
     }
@@ -2261,31 +2298,28 @@
       renderLensStep()
       return
     }
+    if (lensWizard.step === 2 && lensWizard.subPhase === 'addons') {
+      lensWizard.subPhase = 'profile'
+      renderLensStep()
+      return
+    }
     if (lensWizard.step === 2) {
       confirmLensWizard()
     }
   }
 
-  function updateLensStepper(step) {
-    const wrap = document.getElementById('pos-lk-lens-stepper')
-    if (!wrap) return
-    wrap.querySelectorAll('.pos-lk-step-dot').forEach(function (dot, i) {
-      dot.classList.toggle('active', i === step)
-      dot.classList.toggle('done', i < step)
-    })
-  }
-
   function renderLensStep() {
+    syncLensWizardStepNumber()
     const body = document.getElementById('lens-step-body')
     if (!body || !lensCatalogData) return
-    if (lensWizard.step === 0) return renderLensStep0PowerType(body)
-    if (lensWizard.step === 1) return renderLensStep1LensSelection(body)
-    if (lensWizard.step === 2) return renderLensStep2AddPower(body)
+    if (lensWizard.step === 0) renderLensStep0PowerType(body)
+    else if (lensWizard.step === 1) renderLensStep1LensSelection(body)
+    else if (lensWizard.step === 2) renderLensStep2AddPower(body)
+    refreshCheckout5Nav()
   }
 
   // ── Lens step 0 — Dynamic wizard_entries from /api/pos/lens-catalog ─────────
   function renderLensStep0PowerType(body) {
-    updateLensStepper(0)
     const entries = (lensCatalogData && lensCatalogData.wizard_entries) || []
     const html = []
     html.push('<div class="pos-lk-lens-headrow">')
@@ -2305,11 +2339,13 @@
         var isSelected = false
         if (entry.kind === 'frame_only') {
           isSelected = lensWizard.powerType === 'frame_only'
+        } else if (entry.kind === 'frame_sunglasses') {
+          isSelected = lensWizard.powerType === 'frame_sunglasses'
         } else {
           isSelected = lensWizard.category && lensWizard.category.id === entry.category_id
         }
         var sel = isSelected ? ' selected' : ''
-        var key = entry.kind === 'frame_only' ? 'frame_only' : ('cat_' + entry.category_id)
+        var key = entry.kind === 'frame_only' ? 'frame_only' : (entry.kind === 'frame_sunglasses' ? 'frame_sunglasses' : ('cat_' + entry.category_id))
         var toneClass = lensWizardToneClass(entry.tone)
         html.push(
           '<button type="button" class="pos-lk-pt-card' + sel + '" data-lw-entry-key="' + key + '" tabindex="0">' +
@@ -2336,6 +2372,14 @@
           lensWizard.pkg = null
           lensWizard.addonIds = []
           lensWizard.step = 2
+          lensWizard.subPhase = 'profile'
+        } else if (key === 'frame_sunglasses') {
+          lensWizard.powerType = 'frame_sunglasses'
+          lensWizard.category = null
+          lensWizard.pkg = null
+          lensWizard.addonIds = []
+          lensWizard.step = 2
+          lensWizard.subPhase = 'profile'
         } else {
           var catId = Number(key.replace('cat_', ''))
           var cat = (lensCatalogData.categories || []).find(function (c) { return c.id === catId })
@@ -2344,6 +2388,7 @@
           lensWizard.category = cat
           lensWizard.pkg = null
           lensWizard.addonIds = []
+          lensWizard.brandFilter = 'all'
           lensWizard.step = 1
         }
         renderLensStep()
@@ -2353,27 +2398,52 @@
 
   // ── Lens step 1 — lens packages for category chosen on step 0 (no category tabs) ────
   function renderLensStep1LensSelection(body) {
-    updateLensStepper(1)
     if (!lensWizard.category) {
       // Cannot show lens packages without a power type → fall back.
       lensWizard.step = 0
       return renderLensStep()
     }
-    const pkgs = (lensWizard.category && lensWizard.category.packages) ? lensWizard.category.packages : []
+    const pkgsAll = (lensWizard.category && lensWizard.category.packages) ? lensWizard.category.packages : []
+    const brandSet = {}
+    pkgsAll.forEach(function (p) {
+      const b = String((p && p.brand_label) || 'Other').trim() || 'Other'
+      brandSet[b] = true
+    })
+    const brandList = Object.keys(brandSet).sort()
+    const bf = lensWizard.brandFilter && lensWizard.brandFilter !== 'all' ? lensWizard.brandFilter : 'all'
+    const pkgs = bf === 'all' ? pkgsAll : pkgsAll.filter(function (p) {
+      return (String((p && p.brand_label) || 'Other').trim() || 'Other') === bf
+    })
     const catName = String(lensWizard.category.name || '').trim()
 
     const html = []
-    html.push('<div class="pos-lk-lens-headrow">')
-    html.push('  <div class="pos-lk-lens-section-title">Choose your Lens:</div>')
-    html.push('  <button type="button" class="pos-lk-text-link" aria-disabled="true">Learn more</button>')
-    html.push('</div>')
+    html.push('<div class="pos-lk-lens-choose-card" role="region" aria-label="Lens package filter">')
+    html.push('<div class="pos-lk-lens-headrow pos-lk-lens-headrow--brands">')
+    html.push('  <div class="pos-lk-lens-head-left">')
+    html.push('    <div class="pos-lk-lens-section-title">Choose your Lens:</div>')
     if (catName) {
-      html.push('<div class="pos-lk-lens-category-lock">' + escapeHtml(catName) + '</div>')
+      html.push('    <div class="pos-lk-lens-category-inline">' + escapeHtml(catName) + '</div>')
     }
+    html.push('  </div>')
+    if (brandList.length > 1) {
+      html.push('  <div class="pos-lk-lens-brand-chips" role="toolbar" aria-label="Filter lens packages by brand">')
+      html.push(
+        '<button type="button" class="pos-lk-brand-chip' + (bf === 'all' ? ' is-active' : '') + '" data-brand-filter="all" aria-pressed="' + (bf === 'all' ? 'true' : 'false') + '" tabindex="0">All</button>'
+      )
+      brandList.forEach(function (b) {
+        const on = bf === b
+        html.push(
+          '<button type="button" class="pos-lk-brand-chip' + (on ? ' is-active' : '') + '" data-brand-filter="' + escapeHtml(b) + '" aria-pressed="' + (on ? 'true' : 'false') + '" tabindex="0">' + escapeHtml(b) + '</button>'
+        )
+      })
+      html.push('  </div>')
+    }
+    html.push('</div>')
+    html.push('</div>')
 
     html.push('<div class="pos-lk-lens-cards">')
     if (pkgs.length === 0) {
-      html.push('<div class="pos-empty"><div class="pos-empty-sub">No lens packages available for this category.</div></div>')
+      html.push('<div class="pos-empty"><div class="pos-empty-sub">No lens packages for this filter. Try another brand.</div></div>')
     }
     pkgs.forEach(function (p, ix) {
       const isSel = lensWizard.pkg && lensWizard.pkg.id === p.id
@@ -2404,6 +2474,13 @@
     html.push('</div>')
     body.innerHTML = html.join('')
 
+    body.querySelectorAll('[data-brand-filter]').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        lensWizard.brandFilter = chip.getAttribute('data-brand-filter') || 'all'
+        renderLensStep()
+      })
+    })
+
     body.querySelectorAll('[data-pkg-id]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         const id = Number(btn.getAttribute('data-pkg-id'))
@@ -2412,6 +2489,7 @@
           lensWizard.pkg = pkg
           lensWizard.addonIds = []
           lensWizard.step = 2
+          lensWizard.subPhase = (pkg.addons && pkg.addons.length) ? 'addons' : 'profile'
           renderLensStep()
         }
       })
@@ -2428,35 +2506,43 @@
   }
 
   function renderLensStep2AddPower(body) {
-    updateLensStepper(2)
     const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected customer #' + posSelectedCustomerId : 'Walk-in customer')
     const initial = customerName ? customerName.trim().charAt(0).toUpperCase() : 'W'
+    const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
+    const hasPkgAddons = !isInstantFrame && lensWizard.pkg && (lensWizard.pkg.addons || []).length
+    const showAddonsOnly = Boolean(hasPkgAddons && lensWizard.subPhase === 'addons')
+    const showProfile = !showAddonsOnly
+    if (showProfile && !isInstantFrame && !lensWizard.powerMode) {
+      lensWizard.powerMode = 'later'
+    }
 
     const html = []
-    html.push('<div class="pos-lk-customer-card" id="pos-lk-customer-card">' +
-      '<div class="pos-lk-customer-left">' +
-        '<div class="pos-lk-customer-avatar">' + escapeHtml(initial) + '</div>' +
-        '<div class="pos-lk-customer-meta">' +
-          '<span class="pos-lk-customer-lbl">Shopping for</span>' +
-          '<span class="pos-lk-customer-name" id="pos-lk-customer-name">' + escapeHtml(customerName) + '</span>' +
+    if (showProfile) {
+      html.push('<div class="pos-lk-customer-card" id="pos-lk-customer-card">' +
+        '<div class="pos-lk-customer-left">' +
+          '<div class="pos-lk-customer-avatar">' + escapeHtml(initial) + '</div>' +
+          '<div class="pos-lk-customer-meta">' +
+            '<span class="pos-lk-customer-lbl">Shopping for</span>' +
+            '<span class="pos-lk-customer-name" id="pos-lk-customer-name">' + escapeHtml(customerName) + '</span>' +
+          '</div>' +
         '</div>' +
-      '</div>' +
-      '<button type="button" class="pos-lk-text-link" id="pos-lk-customer-change">Change</button>' +
-    '</div>')
+        '<button type="button" class="pos-lk-text-link" id="pos-lk-customer-change">Change</button>' +
+      '</div>')
 
-    html.push('<div class="pos-lk-cust-dropdown" id="pos-lk-cust-dropdown" style="display:none">' +
-      '<div class="pos-search-input-wrap">' +
-        '<input id="pos-lk-cust-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Search by phone or name" aria-label="Search customers">' +
-        '<button type="button" id="pos-lk-cust-btn" class="pos-search-btn">Search</button>' +
-      '</div>' +
-      '<div class="pos-lk-cust-results" id="pos-lk-cust-results"></div>' +
-      '<div style="font-size:12px;color:var(--text2);margin-top:4px">Walk-in is allowed if no customer is linked. Enter at least 2–3 digits of a phone number or the start of a name when searching.</div>' +
-      '<div style="margin-top:12px">' +
-        '<button type="button" class="pos-lk-text-link" id="pos-lk-walk-in-btn">Remove customer · continue as walk-in</button>' +
-      '</div>' +
-    '</div>')
+      html.push('<div class="pos-lk-cust-dropdown" id="pos-lk-cust-dropdown" style="display:none">' +
+        '<div class="pos-search-input-wrap">' +
+          '<input id="pos-lk-cust-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Search by phone or name" aria-label="Search customers">' +
+          '<button type="button" id="pos-lk-cust-btn" class="pos-search-btn">Search</button>' +
+        '</div>' +
+        '<div class="pos-lk-cust-results" id="pos-lk-cust-results"></div>' +
+        '<div style="font-size:12px;color:var(--text2);margin-top:4px">Walk-in is allowed if no customer is linked. Enter at least 2–3 digits of a phone number or the start of a name when searching.</div>' +
+        '<div style="margin-top:12px">' +
+          '<button type="button" class="pos-lk-text-link" id="pos-lk-walk-in-btn">Remove customer · continue as walk-in</button>' +
+        '</div>' +
+      '</div>')
+    }
 
-    if (lensWizard.powerType !== 'frame_only' && lensWizard.pkg && (lensWizard.pkg.addons || []).length) {
+    if (showAddonsOnly && hasPkgAddons) {
       const addonRows = (lensWizard.pkg.addons || []).map(function (a) {
         const id = Number(a.id)
         const on = lensWizard.addonIds.indexOf(id) >= 0
@@ -2468,38 +2554,50 @@
           '<span class="pos-lk-addon-price">+ ' + pr + '</span></button>'
       }).join('')
       html.push(
-        '<div class="pos-lk-addon-block" id="pos-lk-addon-block" role="region" aria-label="Optional lens add-ons">' +
-          '<div class="pos-lk-addon-title">Optional add-ons</div>' +
-          '<div class="pos-lk-addon-sub">Shown when this package has linked add-ons in Foundry (Lens link matrix).</div>' +
+        '<div class="pos-lk-addon-block" id="pos-lk-addon-block" role="region" aria-label="Lens add-ons">' +
+          '<div class="pos-lk-addon-title">Lens add-ons</div>' +
+          '<div class="pos-lk-addon-sub">From Foundry lens link matrix for this package.</div>' +
           '<div class="pos-lk-addon-card">' + addonRows + '</div>' +
         '</div>'
       )
+      html.push('<p class="pos-lk-addon-next-hint">Use <strong>Next</strong> (footer) for customer &amp; prescription.</p>')
+    } else if (showProfile && hasPkgAddons) {
+      const selNames = (lensWizard.pkg.addons || []).filter(function (a) {
+        return lensWizard.addonIds.indexOf(Number(a.id)) >= 0
+      }).map(function (a) { return escapeHtml(String(a.name || '').trim()) })
+      const line = selNames.length ? selNames.join(', ') : 'None selected'
+      html.push('<div class="pos-lk-addon-summary" style="margin:12px 0;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card)">' +
+        '<div style="font-size:12px;font-weight:600;color:var(--text1);margin-bottom:4px">Add-ons</div>' +
+        '<div style="font-size:13px;color:var(--text2)">' + line + '</div></div>')
     }
 
-    if (lensWizard.powerType === 'frame_only') {
-      // Frame only — skip power entry; just show CTA.
-      html.push('<div class="pos-lk-amber-banner" style="background:#ECFDF5;color:#065F46">' +
-        '<span class="pos-lk-amber-banner-icon" style="color:#0D9F7B">✓</span>' +
-        '<span>Frame Only — no lens power required.</span>' +
-      '</div>')
-    } else {
-      html.push('<div class="pos-lk-amber-banner">' +
-        '<span class="pos-lk-amber-banner-icon">ⓘ</span>' +
-        '<span>Not sure which power option to choose?</span>' +
-        '<button type="button" class="pos-lk-amber-banner-link">Learn more</button>' +
-      '</div>')
+    if (showProfile) {
+      if (lensWizard.powerType === 'frame_only') {
+        html.push('<div class="pos-lk-amber-banner pos-lk-banner--ok">' +
+          '<span class="pos-lk-amber-banner-icon" aria-hidden="true">✓</span>' +
+          '<span>Frame only — no lens power required.</span>' +
+        '</div>')
+      } else if (lensWizard.powerType === 'frame_sunglasses') {
+        html.push('<div class="pos-lk-amber-banner pos-lk-banner--ok">' +
+          '<span class="pos-lk-amber-banner-icon" aria-hidden="true">✓</span>' +
+          '<span>Frame / sunglasses — no prescription lens package.</span>' +
+        '</div>')
+      } else {
+        html.push('<div class="pos-lk-amber-banner">' +
+          '<span class="pos-lk-amber-banner-icon">ⓘ</span>' +
+          '<span>Not sure which power option to choose? Use <strong>Submit Power Later</strong> or ask staff.</span>' +
+        '</div>')
 
-      html.push('<div class="pos-lk-section-lbl">I don\'t know my power</div>')
-      html.push(buildPowerCard('later',  '🕒', '#0D9F7B', 'Submit Power Later', 'Within 15 days of order delivery'))
+        html.push('<div class="pos-lk-section-lbl">I don\'t know my power</div>')
+        html.push(buildPowerCard('later',  '🕒', '#0D9F7B', 'Submit Power Later', 'Within 15 days of order delivery'))
 
-      html.push('<div class="pos-lk-section-lbl">I know my power</div>')
-      html.push(buildPowerCard('saved',   '🔖', '#2563EB', 'Saved Power',           '3 saved prescriptions for this customer'))
-      html.push(buildPowerCard('manual',  '✎',  '#7C3AED', 'Enter Power Manually',  'Type SPH/CYL/AXIS values'))
-      html.push('<div id="pos-lk-rx-inline"></div>')
-      html.push(buildPowerCard('upload',  '⬆',  '#D97706', 'Upload Prescription',   'JPG / PDF up to 5 MB'))
+        html.push('<div class="pos-lk-section-lbl">I know my power</div>')
+        html.push(buildPowerCard('saved',   '🔖', '#2563EB', 'Saved Power',           '3 saved prescriptions for this customer'))
+        html.push(buildPowerCard('manual',  '✎',  '#7C3AED', 'Enter Power Manually',  'Type SPH/CYL/AXIS values'))
+        html.push('<div id="pos-lk-rx-inline"></div>')
+        html.push(buildPowerCard('upload',  '⬆',  '#D97706', 'Upload Prescription',   'JPG / PDF up to 5 MB'))
+      }
     }
-
-    html.push('<button type="button" id="pos-lk-continue-payment" class="pos-lk-continue-payment">Continue to Payment</button>')
 
     body.innerHTML = html.join('')
 
@@ -2542,9 +2640,6 @@
         if (e.key === 'Enter') { e.preventDefault(); void runInlineCustomerSearch() }
       })
     }
-
-    const cta = document.getElementById('pos-lk-continue-payment')
-    if (cta) cta.addEventListener('click', confirmLensWizard)
 
     const addonBlock = document.getElementById('pos-lk-addon-block')
     if (addonBlock) {
@@ -2744,54 +2839,65 @@
   }
 
   function confirmLensWizard() {
-    const line = obCart[lensWizardLineIdx >= 0 ? lensWizardLineIdx : 0]
+    syncLensWizardStepNumber()
+    const line = resolveLensWizardCartLine()
     if (!line) {
       if (typeof cosmosToastError === 'function') cosmosToastError('No product selected.')
       return
     }
-    const isFrameOnly = lensWizard.powerType === 'frame_only'
-    if (!isFrameOnly) {
-      if (!lensWizard.powerType) {
-        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Choose a power type.')
-        lensWizard.step = 0
-        renderLensStep()
-        return
-      }
-      if (!lensWizard.pkg) {
-        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Choose a lens package.')
-        lensWizard.step = 1
-        renderLensStep()
-        return
-      }
-      if (!lensWizard.powerMode) {
-        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Pick a power option (later, saved, manual or upload).')
-        return
-      }
-      const selAddons = (lensWizard.pkg.addons || []).filter(function (a) {
-        return lensWizard.addonIds.indexOf(a.id) >= 0
-      })
-      const addonPrices = selAddons.map(function (a) { return Number(a.price) || 0 })
-      line.lens_bundle = {
-        category_id: lensWizard.category.id,
-        package_id: lensWizard.pkg.id,
-        addon_ids: lensWizard.addonIds.slice(),
-        package_price: Number(lensWizard.pkg.price) || 0,
-        addon_prices: addonPrices
-      }
-      line.power_mode = lensWizard.powerMode
-      if (lensWizard.powerMode === 'manual') {
-        line.rx = JSON.parse(JSON.stringify(lensWizard.rx))
+    const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
+    try {
+      if (!isInstantFrame) {
+        if (!lensWizard.powerType) {
+          if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Choose a power type.')
+          lensWizard.step = 0
+          renderLensStep()
+          return
+        }
+        if (!lensWizard.pkg) {
+          if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Choose a lens package.')
+          lensWizard.step = 1
+          renderLensStep()
+          return
+        }
+        if (!lensWizard.category) {
+          if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Lens category missing. Go back and pick a power type again.')
+          lensWizard.step = 0
+          renderLensStep()
+          return
+        }
+        if (!lensWizard.powerMode) {
+          lensWizard.powerMode = 'later'
+        }
+        const selAddons = (lensWizard.pkg.addons || []).filter(function (a) {
+          return lensWizard.addonIds.indexOf(a.id) >= 0
+        })
+        const addonPrices = selAddons.map(function (a) { return Number(a.price) || 0 })
+        line.lens_bundle = {
+          category_id: lensWizard.category.id,
+          package_id: lensWizard.pkg.id,
+          addon_ids: lensWizard.addonIds.slice(),
+          package_price: Number(lensWizard.pkg.price) || 0,
+          addon_prices: addonPrices
+        }
+        line.power_mode = lensWizard.powerMode
+        if (lensWizard.powerMode === 'manual') {
+          line.rx = JSON.parse(JSON.stringify(lensWizard.rx))
+        } else {
+          line.rx = null
+        }
+        line.lab_status = lensWizard.powerMode === 'later' ? 'pending_power' : 'complete'
+        line.fulfillment = 'LAB'
       } else {
+        line.lens_bundle = null
+        line.power_mode = lensWizard.powerType === 'frame_sunglasses' ? 'frame_sunglasses' : 'frame_only'
         line.rx = null
+        line.lab_status = 'complete'
+        line.fulfillment = 'INSTANT'
       }
-      line.lab_status = lensWizard.powerMode === 'later' ? 'pending_power' : 'complete'
-      line.fulfillment = 'LAB'
-    } else {
-      line.lens_bundle = null
-      line.power_mode = 'frame_only'
-      line.rx = null
-      line.lab_status = 'complete'
-      line.fulfillment = 'INSTANT'
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err && err.message ? err.message : 'Could not save lens setup.')
+      return
     }
     saveCart()
     lensWizardLineIdx = -1
@@ -2830,7 +2936,7 @@
     }
     // Preserve any choices the user already made (back navigation), only reset
     // when explicitly starting a fresh flow (handled in startLensFlowFromProduct).
-    if (typeof lensWizard.step !== 'number') resetLensWizardState()
+    syncLensWizardStepNumber()
     renderLensStep()
     showScreen('screen-pos-lens')
   }
@@ -2844,6 +2950,7 @@
       if (payHint) payHint.textContent = ''
     }
     showScreen('screen-pos-payment')
+    setPosDeliveryMode(posDeliveryMode)
     if (!session || !session.token) {
       clearPaymentOffersPanel()
       return
@@ -3083,9 +3190,13 @@
     const amtInputEl = document.getElementById('pay-amount-input')
     if (amtInputEl && amtInputEl.value) paySessionSnapshot.amount = Math.max(0, Number(amtInputEl.value) || 0)
     const amt = Math.max(0, Number(paySessionSnapshot.amount) || 0)
-    if (amt <= 0) {
-      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Nothing to collect — return to catalogue or refresh payment.')
+    const orderDue = Math.max(0, Number(lastCreatedOrder.total_amount) || 0)
+    if (amt <= 0 && orderDue > 0.009) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Enter a payment amount greater than zero.')
       return
+    }
+    if (amt <= 0 && orderDue <= 0.009) {
+      /* Fully discounted / zero payable — still record settlement so invoice workflow runs. */
     }
     if (paySessionSnapshot.stage === 'ADVANCE' && amt + 0.01 < payMinimumAdvanceAmount) {
       if (typeof cosmosToastWarn === 'function') {
@@ -3095,14 +3206,15 @@
     }
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
-      const payRes = await apiPost('/api/pos/payment', {
+      const payBody = {
         order_id: lastCreatedOrder.order_id,
         stage: paySessionSnapshot.stage,
-        method: method,
-        amount: amt,
-        tendered: method === 'CASH' ? tendered : null,
-        external_ref: method === 'CARD' ? externalRef : null
-      }, session.token)
+        method: orderDue <= 0.009 ? 'NONE' : method,
+        amount: orderDue <= 0.009 ? 0 : amt,
+        tendered: orderDue <= 0.009 ? null : method === 'CASH' ? tendered : null,
+        external_ref: orderDue <= 0.009 ? null : method === 'CARD' ? externalRef : null
+      }
+      const payRes = await apiPost('/api/pos/payment', payBody, session.token)
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
       if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Payment recorded')
       // For ADVANCE stage: check if full balance is now settled (amount_remaining ≈ 0).
@@ -3289,6 +3401,8 @@
       if (data && typeof data === 'object') {
         Object.assign(posSkuScopeFacts, data)
       }
+      obRecalcTotals()
+      scheduleServerDiscountPreview(session)
     }).catch(function() { /* silently ignore — scope facts are best-effort for client filter */ })
   }
 
@@ -3343,6 +3457,81 @@
     }, 0)
   }
 
+  function buildPosOrderLinesFromObCart() {
+    return obCart.map(function (line) {
+      var b = line.lens_bundle
+      var qty = Math.max(1, parseInt(String(line.qty), 10) || 1)
+      var unitPrice = Math.max(0, Number(line.frame_unit_price) || 0)
+      var out = {
+        sku_id: Number(line.sku_id),
+        qty: qty,
+        unit_price: unitPrice,
+        product_type: String(line.product_type || '').trim(),
+        fulfillment: line.fulfillment === 'LAB' ? 'LAB' : 'INSTANT',
+        line_key: cartLineKey(line),
+        lens_bundle: null
+      }
+      if (out.fulfillment === 'LAB' && b && b.package_id) {
+        out.lens_bundle = {
+          category_id: b.category_id != null ? Number(b.category_id) : null,
+          package_id: Number(b.package_id),
+          addon_ids: Array.isArray(b.addon_ids) ? b.addon_ids.map(function (x) { return Number(x) }) : [],
+          package_price: Number(b.package_price) || 0,
+          addon_prices: Array.isArray(b.addon_prices) ? b.addon_prices.map(function (x) { return Number(x) || 0 }) : []
+        }
+      }
+      return out
+    })
+  }
+
+  function buildObCartFingerprint() {
+    return JSON.stringify({
+      c: posSelectedCustomerId || 0,
+      lines: buildPosOrderLinesFromObCart()
+    })
+  }
+
+  function scheduleServerDiscountPreview(session) {
+    if (!session || !session.token) return
+    if (!obCart.length) return
+    if (posServerDiscountPreviewTimer) clearTimeout(posServerDiscountPreviewTimer)
+    posServerDiscountPreviewTimer = setTimeout(function () {
+      posServerDiscountPreviewTimer = null
+      void runServerDiscountPreview(session)
+    }, 280)
+  }
+
+  async function runServerDiscountPreview(session) {
+    var gen = ++posDiscountPreviewSeq
+    if (!obCart.length) {
+      posServerDiscountPreview = null
+      obRecalcTotals()
+      return
+    }
+    var sig = buildObCartFingerprint()
+    var lines = buildPosOrderLinesFromObCart()
+    if (!lines.length) {
+      posServerDiscountPreview = null
+      obRecalcTotals()
+      return
+    }
+    try {
+      var q = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
+      var res = await apiPost('/api/pos/preview-order-discount' + q, { lines: lines }, session.token)
+      if (gen !== posDiscountPreviewSeq) return
+      var d = res && res.data ? res.data : {}
+      posServerDiscountPreview = {
+        amount: Math.max(0, Number(d.discount_amount) || 0),
+        offerId: d.applied_offer_id != null && Number(d.applied_offer_id) > 0 ? Number(d.applied_offer_id) : null,
+        cartSig: sig
+      }
+    } catch (_e) {
+      if (gen !== posDiscountPreviewSeq) return
+      posServerDiscountPreview = null
+    }
+    if (gen === posDiscountPreviewSeq) obRecalcTotals()
+  }
+
   function computeCartOfferDiscount(subtotal) {
     if (!posCartOffers || !posCartOffers.length || subtotal <= 0) return { amount: 0, offerId: null }
     var best = { amount: 0, offerId: null }
@@ -3370,7 +3559,19 @@
     const subtotal = obCart.reduce(function (sum, line) {
       return sum + computeLineDisplayUnit(line) * line.qty
     }, 0)
-    const offerDisc = computeCartOfferDiscount(subtotal)
+    const sig = buildObCartFingerprint()
+    let offerDisc = { amount: 0, offerId: null }
+    if (
+      posServerDiscountPreview &&
+      posServerDiscountPreview.cartSig === sig
+    ) {
+      offerDisc = {
+        amount: posServerDiscountPreview.amount,
+        offerId: posServerDiscountPreview.offerId
+      }
+    } else {
+      offerDisc = computeCartOfferDiscount(subtotal)
+    }
     const discount = Math.min(offerDisc.amount, subtotal)
     const tax = computePosCartTotals(subtotal, discount)
     const gst = tax.gst
@@ -3392,6 +3593,10 @@
         headerCartCountEl.textContent = String(n)
         headerCartCountEl.hidden = n <= 0
       }
+    }
+    const sessionRecalc = getPosSession()
+    if (sessionRecalc && sessionRecalc.token && obCart.length) {
+      scheduleServerDiscountPreview(sessionRecalc)
     }
   }
 
@@ -3419,6 +3624,7 @@
       lines.forEach(function(line) {
         let idx = obCart.indexOf(line)
         const rule = getTypeRule(line.product_type)
+        const du = computeLineDisplayUnit(line)
         const lwp = rule ? String(rule.lens_wizard_policy || 'NEVER') : 'NEVER'
         const isDual = rule && rule.fulfillment_mode === 'DUAL' && lensWizardAllowed(line.product_type) && lwp !== 'REQUIRED'
         let fulfillHtml = ''
@@ -3430,10 +3636,26 @@
             '</div>'
         }
         let labBadge = ''
+        let labBreakdown = ''
         if (line.fulfillment === 'LAB') {
           labBadge = line.lab_status === 'complete'
             ? '<div class="pos-ob-lab-badge configured">✓ Lenses configured</div>'
             : '<div class="pos-ob-lab-badge error">⚠ Action required</div>'
+          if (line.lab_status === 'complete' && line.lens_bundle) {
+            const b = line.lens_bundle
+            const frameP = Number(line.frame_unit_price) || 0
+            const lensP = Number(b.package_price) || 0
+            let addonTotal = 0
+            const aps = b.addon_prices || []
+            for (let ai = 0; ai < aps.length; ai++) addonTotal += Number(aps[ai]) || 0
+            labBreakdown =
+              '<div class="pos-lk-cart-lab-breakdown">' +
+              '<div class="pos-lk-cart-lab-breakdown-row"><span>Frame (unit)</span><span>' + formatRupees(frameP) + '</span></div>' +
+              '<div class="pos-lk-cart-lab-breakdown-row"><span>Lens package</span><span>' + formatRupees(lensP) + '</span></div>' +
+              (addonTotal > 0.005 ? '<div class="pos-lk-cart-lab-breakdown-row"><span>Add-ons</span><span>' + formatRupees(addonTotal) + '</span></div>' : '') +
+              '<div class="pos-lk-cart-lab-breakdown-row" style="font-weight:700;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)"><span>Lab line total (×' + line.qty + ')</span><span>' + formatRupees(du * line.qty) + '</span></div>' +
+              '</div>'
+          }
         }
         let lensTag = ''
         if (line.fulfillment === 'LAB' && line.lab_status === 'complete' && line.lens_bundle) {
@@ -3444,7 +3666,6 @@
         const delTag = line.fulfillment === 'LAB'
           ? '<span class="pos-lk-cart-tag">' + (line.lab_status === 'complete' ? '5 day delivery' : 'Lens setup pending') + '</span>'
           : '<span class="pos-lk-cart-tag">Store pickup</span>'
-        const du = computeLineDisplayUnit(line)
         html += '<div class="pos-lk-cart-item">' +
           '<button type="button" class="pos-lk-cart-remove" data-action="remove" data-idx="' + idx + '" aria-label="Remove line" tabindex="0">×</button>' +
           '<div class="pos-lk-cart-item-media" aria-hidden="true">' + typeEmoji(line.product_type) + '</div>' +
@@ -3454,6 +3675,7 @@
             '<div class="pos-lk-cart-item-tags">' + lensTag + delTag + '</div>' +
             fulfillHtml +
             labBadge +
+            labBreakdown +
             (line.fulfillment === 'LAB' && line.lab_status !== 'complete'
               ? '<button type="button" class="pos-ob-mini-btn action-btn" data-action="configure-lens" data-idx="' + idx + '">Select Lenses →</button>'
               : '') +
@@ -3571,6 +3793,12 @@
     }
   }
 
+  function syncCartDeliveryRadiosFromState() {
+    document.querySelectorAll('input[name="pos-lk-delivery"]').forEach(function (r) {
+      r.checked = (r.value === 'customer' && posDeliveryMode === 'HOME') || (r.value === 'store' && posDeliveryMode === 'STORE')
+    })
+  }
+
   function showOrderBuilderScreen(session, selection) {
     obStaffEl.textContent = session.name + ' • ' + formatRole(session.role)
     obStoreEl.textContent = session.store_name
@@ -3580,9 +3808,11 @@
     updateKindChip()
     syncRxSectionVisibility()
     syncCartDeliveryStoreName(session)
+    syncCartDeliveryRadiosFromState()
     obRenderCart()
     refreshCartSidebar(session)
     showScreen('screen-pos-order-builder')
+    void tryOfferCheckoutDraftBanner(session)
   }
 
   function showOrderBuilderScreenResume(session) {
@@ -3591,9 +3821,11 @@
     updateKindChip()
     syncRxSectionVisibility()
     syncCartDeliveryStoreName(session)
+    syncCartDeliveryRadiosFromState()
     obRenderCart()
     refreshCartSidebar(session)
     showScreen('screen-pos-order-builder')
+    void tryOfferCheckoutDraftBanner(session)
   }
 
   function bindOrderBuilderEvents() {
@@ -3603,6 +3835,125 @@
     obCart_el.addEventListener('click', obHandleCartClick)
 
     btnObProceed.addEventListener('click', () => { void handleProceedToPayment() })
+
+    document.querySelectorAll('input[name="pos-lk-delivery"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        posDeliveryMode = radio.value === 'customer' ? 'HOME' : 'STORE'
+        if (typeof setPosDeliveryMode === 'function') setPosDeliveryMode(posDeliveryMode)
+      })
+    })
+
+    const btnDraft = document.getElementById('btn-ob-save-draft')
+    if (btnDraft) {
+      btnDraft.addEventListener('click', function () { void savePosCheckoutDraft(btnDraft) })
+    }
+  }
+
+  async function savePosCheckoutDraft(btn) {
+    const session = getPosSession()
+    if (!session || !session.token) return
+    if (!obCart.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Cart is empty — nothing to save.')
+      return
+    }
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      await apiPost('/api/pos/checkout-draft', {
+        cart_json: obCart,
+        checkout_stage: 5,
+        delivery_mode: posDeliveryMode,
+        customer_id: posSelectedCustomerId
+      }, session.token)
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Draft saved for this tablet & staff.')
+      const ban = document.getElementById('pos-ob-draft-banner')
+      if (ban) { ban.hidden = true; ban.innerHTML = '' }
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    } finally {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+    }
+  }
+
+  async function posFetchDeleteDraft(session) {
+    await ensureCosmosApiKeyFromBootstrap()
+    await fetch('/api/pos/checkout-draft', {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': getApiKey(),
+        Authorization: 'Bearer ' + session.token
+      }
+    })
+  }
+
+  async function tryOfferCheckoutDraftBanner(session) {
+    const ban = document.getElementById('pos-ob-draft-banner')
+    if (!ban || !session || !session.token || obCart.length > 0) {
+      if (ban) { ban.hidden = true; ban.innerHTML = '' }
+      return
+    }
+    try {
+      const data = await apiGet('/api/pos/checkout-draft', session.token)
+      const d = data && data.draft
+      if (!d || !d.cart || !Array.isArray(d.cart) || d.cart.length === 0) {
+        ban.hidden = true
+        ban.innerHTML = ''
+        return
+      }
+      const updated = d.updated_at ? new Date(d.updated_at).toLocaleString('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      }) : ''
+      ban.hidden = false
+      ban.innerHTML =
+        '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between">' +
+        '<div style="font-size:13px;color:var(--text1)">Saved draft' + (updated ? ' · ' + updated : '') + '</div>' +
+        '<div style="display:flex;gap:8px">' +
+        '<button type="button" class="pos-ob-mini-btn" id="pos-ob-draft-dismiss">Dismiss</button>' +
+        '<button type="button" class="pos-ob-mini-btn action-btn" id="pos-ob-draft-restore">Restore draft</button>' +
+        '</div></div>'
+      const dismiss = document.getElementById('pos-ob-draft-dismiss')
+      const restore = document.getElementById('pos-ob-draft-restore')
+      if (dismiss) {
+        dismiss.addEventListener('click', async function () {
+          try {
+            await posFetchDeleteDraft(session)
+          } catch (_e) { /* ignore */ }
+          ban.hidden = true
+          ban.innerHTML = ''
+        })
+      }
+      if (restore) {
+        restore.addEventListener('click', async function () {
+          obCart = d.cart
+          saveCart()
+          if (d.delivery_mode === 'HOME' || d.delivery_mode === 'STORE') {
+            posDeliveryMode = d.delivery_mode === 'HOME' ? 'HOME' : 'STORE'
+            document.querySelectorAll('input[name="pos-lk-delivery"]').forEach(function (r) {
+              r.checked = (r.value === 'customer' && posDeliveryMode === 'HOME') || (r.value === 'store' && posDeliveryMode === 'STORE')
+            })
+            setPosDeliveryMode(posDeliveryMode)
+          }
+          if (d.customer_id) {
+            posSelectedCustomerId = Number(d.customer_id)
+          }
+          ban.hidden = true
+          ban.innerHTML = ''
+          obRenderCart()
+          refreshCartSidebar(session)
+          if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Draft restored into cart.')
+          try {
+            await posFetchDeleteDraft(session)
+          } catch (_e) { /* ignore */ }
+        })
+      }
+    } catch (_err) {
+      if (ban) { ban.hidden = true; ban.innerHTML = '' }
+    }
   }
 
   /** Ends staff POS session only — tablet JWT is kept until "Sign out this tablet". */
@@ -3624,11 +3975,13 @@
     lensWizardBackRoute = POS_ROUTES.ORDER
     lensWizard = {
       step: 0,
+      subPhase: 'profile',
       powerType: null,
       category: null,
       pkg: null,
       addonIds: [],
       powerMode: null,
+      brandFilter: 'all',
       rx: { od: { sph: '', cyl: '', axis: '', plano: false }, os: { sph: '', cyl: '', axis: '', plano: false }, pd: '', doctor: '' }
     }
     lastCreatedOrder = null
@@ -3659,7 +4012,7 @@
     // Rx is now collected per-line inside the Lens wizard's Add Power step.
     // A line that uses 'Submit Power Later' is intentionally exempt.
     const linesNeedingRx = obCart.filter(function (l) {
-      return l.fulfillment === 'LAB' && l.rx_required && l.power_mode !== 'later' && l.power_mode !== 'frame_only'
+      return l.fulfillment === 'LAB' && l.rx_required && l.power_mode !== 'later' && l.power_mode !== 'frame_only' && l.power_mode !== 'frame_sunglasses'
     })
     const missingRx = linesNeedingRx.some(function (l) {
       if (!l.rx) return true
@@ -3677,37 +4030,25 @@
     const session = getPosSession()
     if (!session || !session.token) return
     await loadPosBootstrap(session)
-    const lines = obCart.map(function (line) {
-      const b = line.lens_bundle
-      const qty = Math.max(1, parseInt(String(line.qty), 10) || 1)
-      const unitPrice = Math.max(0, Number(line.frame_unit_price) || 0)
-      const out = {
-        sku_id: Number(line.sku_id),
-        qty: qty,
-        unit_price: unitPrice,
-        product_type: String(line.product_type || '').trim(),
-        fulfillment: line.fulfillment === 'LAB' ? 'LAB' : 'INSTANT',
-        line_key: cartLineKey(line),
-        lens_bundle: null
-      }
-      if (out.fulfillment === 'LAB' && b && b.package_id) {
-        out.lens_bundle = {
-          category_id: b.category_id != null ? Number(b.category_id) : null,
-          package_id: Number(b.package_id),
-          addon_ids: Array.isArray(b.addon_ids) ? b.addon_ids.map(function (x) { return Number(x) }) : [],
-          package_price: Number(b.package_price) || 0,
-          addon_prices: Array.isArray(b.addon_prices) ? b.addon_prices.map(function (x) { return Number(x) || 0 }) : []
-        }
-      }
-      return out
-    })
+    const lines = buildPosOrderLinesFromObCart()
     // Pick the first cart line that captured a per-line Rx in the Lens wizard.
     const rxLine = obCart.find(function (l) { return l.rx })
     const rxSnap = rxLine ? rxLine.rx : null
     const subtotalForDisc = obCart.reduce(function (sum, line) {
       return sum + computeLineDisplayUnit(line) * line.qty
     }, 0)
-    const discInfo = computeCartOfferDiscount(subtotalForDisc)
+    let discInfo = { amount: 0, offerId: null }
+    try {
+      var qp = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
+      var prevBody = await apiPost('/api/pos/preview-order-discount' + qp, { lines: lines }, session.token)
+      var prevD = prevBody && prevBody.data ? prevBody.data : {}
+      discInfo = {
+        amount: Math.max(0, Number(prevD.discount_amount) || 0),
+        offerId: prevD.applied_offer_id != null && Number(prevD.applied_offer_id) > 0 ? Number(prevD.applied_offer_id) : null
+      }
+    } catch (_e) {
+      discInfo = computeCartOfferDiscount(subtotalForDisc)
+    }
     if (btnObProceed && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btnObProceed)
     try {
       const res = await apiPost('/api/pos/orders', {
@@ -3716,6 +4057,7 @@
         rx_snapshot: rxSnap,
         discount_amount: discInfo.amount || 0,
         applied_offer_id: discInfo.offerId || null,
+        inventory_deferred: true,
         lines: lines
       }, session.token)
       lastCreatedOrder = res.data
@@ -3925,6 +4267,97 @@
     })
   }
 
+  // ── 5-step lens checkout strip (hoisted; cart & pay are off this bar) ─────
+  var checkout5NavBound = false
+  function inferPosCheckoutStage() {
+    const path = normalizePosPath(window.location.pathname.replace(/\/+$/, '') || '')
+    if (path === POS_ROUTES.CONFIRM) return 7
+    if (path === POS_ROUTES.PAYMENT) return 6
+    if (path === POS_ROUTES.ORDER) return 5
+    if (path === POS_ROUTES.LENS) {
+      syncLensWizardStepNumber()
+      if (lensWizard.step === 0) return 1
+      if (lensWizard.step === 1) return 2
+      if (lensWizard.step === 2) return lensWizard.subPhase === 'addons' ? 3 : 4
+    }
+    return 0
+  }
+  function applyLensCheckoutStageTarget(targetStage) {
+    if (targetStage <= 1) {
+      lensWizard.step = 0
+      lensWizard.subPhase = 'profile'
+      return
+    }
+    if (targetStage === 2) {
+      lensWizard.step = 1
+      lensWizard.subPhase = 'profile'
+      return
+    }
+    lensWizard.step = 2
+    if (targetStage === 3 && lensWizard.pkg && (lensWizard.pkg.addons || []).length) {
+      lensWizard.subPhase = 'addons'
+      return
+    }
+    lensWizard.subPhase = 'profile'
+  }
+  function goCheckoutStageBack(targetStage) {
+    const cur = inferPosCheckoutStage()
+    if (targetStage >= cur || targetStage < 1) return
+    const session = getPosSession()
+    if (!session || !isSessionValid(session)) {
+      navigate(POS_ROUTES.LOGIN)
+      return
+    }
+    if (targetStage <= 4) {
+      if (lensWizardLineIdx < 0) {
+        const idx = obCart.findIndex(function (l) { return l.fulfillment === 'LAB' })
+        if (idx < 0) {
+          if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No lab line to open in lens setup.')
+          return
+        }
+        lensWizardLineIdx = idx
+      }
+      lensWizardBackRoute = POS_ROUTES.ORDER
+      applyLensCheckoutStageTarget(targetStage)
+      navigate(POS_ROUTES.LENS)
+      return
+    }
+    if (targetStage === 5) {
+      navigate(POS_ROUTES.ORDER)
+      return
+    }
+    if (targetStage === 6 && lastCreatedOrder) {
+      navigate(POS_ROUTES.PAYMENT)
+    }
+  }
+  function refreshCheckout5Nav() {
+    const nav = document.getElementById('pos-lk-lens-checkout-5')
+    if (!nav) return
+    const path = normalizePosPath(window.location.pathname.replace(/\/+$/, '') || '')
+    if (path !== POS_ROUTES.LENS) return
+    const stage = inferPosCheckoutStage()
+    if (stage < 1 || stage > 5) return
+    nav.querySelectorAll('[data-checkout-stage]').forEach(function (btn) {
+      const n = Number(btn.getAttribute('data-checkout-stage'))
+      btn.classList.toggle('is-active', n === stage)
+      btn.classList.toggle('is-done', n < stage)
+      btn.disabled = n > stage
+    })
+  }
+  function bindCheckout5NavOnce() {
+    if (checkout5NavBound) return
+    checkout5NavBound = true
+    const nav = document.getElementById('pos-lk-lens-checkout-5')
+    if (!nav) return
+    nav.addEventListener('click', function (e) {
+      const btn = e.target.closest('[data-checkout-stage]')
+      if (!btn || btn.disabled) return
+      const n = Number(btn.getAttribute('data-checkout-stage'))
+      const cur = inferPosCheckoutStage()
+      if (n < cur) goCheckoutStageBack(n)
+    })
+  }
+
   // ── Boot ─────────────────────────────────────────────────────────────────
   ;(function boot() {
     document.body.addEventListener('click', function onPosLogoutClick(e) {
@@ -3972,6 +4405,7 @@
     bindCatalogueEvents()
     bindCustomerLensPayEvents()
     bindOrderBuilderEvents()
+    bindCheckout5NavOnce()
     loadSavedCart()
     bindPosLensNewCustomerModal()
     resolve()

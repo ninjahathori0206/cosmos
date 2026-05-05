@@ -22,6 +22,8 @@ const posCustomersView = [authJwt, requireModule('pos'), requirePermission('pos.
 const posCustomersCreate = [authJwt, requireModule('pos'), requirePermission('pos.customers.create')]
 const posOrdersView = [authJwt, requireModule('pos'), requirePermission('pos.orders.view')]
 const posOrdersCreate = [authJwt, requireModule('pos'), requirePermission('pos.orders.create')]
+/** Matches cart sidebar: promo visibility + checkout — either may preview discount math. */
+const posPreviewDiscount = [authJwt, requireModule('pos'), requirePermission('pos.orders.create', 'pos.promotions.view')]
 const posPaymentCollect = [authJwt, requireModule('pos'), requirePermission('pos.payment.collect')]
 const posLabWorkflow = [authJwt, requireModule('pos'), requirePermission('pos.lab.workflow')]
 const posStaffPinSet = [authJwt, requireModule('pos'), requirePermission('pos.staff.pin.set')]
@@ -179,36 +181,49 @@ const customerCreateSchema = Joi.object({
   home_store_id: Joi.number().integer().positive().allow(null)
 })
 
+const posOrderLineItemSchema = Joi.object({
+  sku_id:       Joi.number().integer().positive().required(),
+  qty:          Joi.number().integer().positive().required(),
+  unit_price:   Joi.number().min(0).required(),
+  product_type: Joi.string().max(50).required(),
+  fulfillment:  Joi.string().valid('INSTANT', 'LAB').required(),
+  line_key:     Joi.string().max(300).required(),
+  lens_bundle: Joi.object({
+    package_id: Joi.number().integer().positive().required(),
+    category_id: Joi.number().integer().positive().allow(null),
+    addon_ids: Joi.array().items(Joi.number().integer().positive()).default([]),
+    package_price: Joi.number().min(0).default(0),
+    addon_prices: Joi.array().items(Joi.number().min(0)).default([])
+  }).allow(null).optional()
+})
+
 const createOrderSchema = Joi.object({
   customer_id:      Joi.number().integer().positive().allow(null),
   order_source:     Joi.string().max(20).default('POS'),
   rx_snapshot:      Joi.object().allow(null),
   discount_amount:  Joi.number().min(0).default(0),
   applied_offer_id: Joi.number().integer().positive().allow(null),
-  lines: Joi.array().items(
-    Joi.object({
-      sku_id:       Joi.number().integer().positive().required(),
-      qty:          Joi.number().integer().positive().required(),
-      unit_price:   Joi.number().min(0).required(),
-      product_type: Joi.string().max(50).required(),
-      fulfillment:  Joi.string().valid('INSTANT', 'LAB').required(),
-      line_key:     Joi.string().max(300).required(),
-      lens_bundle: Joi.object({
-        package_id: Joi.number().integer().positive().required(),
-        category_id: Joi.number().integer().positive().allow(null),
-        addon_ids: Joi.array().items(Joi.number().integer().positive()).default([]),
-        package_price: Joi.number().min(0).default(0),
-        addon_prices: Joi.array().items(Joi.number().min(0)).default([])
-      }).allow(null).optional()
-    })
-  ).min(1).required()
+  /** When true, stock is deducted only after the order is fully paid (see orderService.commitInventoryForPaidOrder). */
+  inventory_deferred: Joi.boolean().default(false),
+  lines: Joi.array().items(posOrderLineItemSchema).min(1).required()
+})
+
+const checkoutDraftSchema = Joi.object({
+  cart_json: Joi.alternatives().try(Joi.array(), Joi.object(), Joi.string()).required(),
+  checkout_stage: Joi.number().integer().min(1).max(7).default(5),
+  delivery_mode: Joi.string().valid('STORE', 'HOME').allow(null, ''),
+  customer_id: Joi.number().integer().positive().allow(null)
+})
+
+const previewOrderDiscountSchema = Joi.object({
+  lines: Joi.array().items(posOrderLineItemSchema).min(1).required()
 })
 
 const paymentSchema = Joi.object({
   order_id:      Joi.number().integer().positive().required(),
   stage:         Joi.string().valid('ADVANCE', 'BALANCE', 'FULL').required(),
   method:        Joi.string().max(20).required(),
-  amount:        Joi.number().positive().required(),
+  amount:        Joi.number().min(0).required(),
   tendered:      Joi.number().min(0).allow(null),
   change_given:  Joi.number().min(0).allow(null),
   external_ref:  Joi.string().max(200).allow('', null)
@@ -273,7 +288,7 @@ function lensCategoryMatchHaystack(c) {
   return parts.join(' ').toLowerCase()
 }
 
-function buildLensCatalogPayload(result) {
+function buildLensCatalogPayload(result, productTypeKey) {
   const rs = result.recordsets || []
   const categories = rs[0] || []
   const packages = rs[1] || []
@@ -306,9 +321,11 @@ function buildLensCatalogPayload(result) {
           .map((id) => addonById.get(id))
           .filter(Boolean)
           .sort((x, y) => (x.sort_order - y.sort_order) || x.id - y.id)
+        const brandLabel = String(p.pos_brand || '').trim() || 'Other'
         return {
           id: p.id,
           name: posLensPublicLabel(p.pos_brand, p.pos_name, p.name),
+          brand_label: brandLabel,
           price: Number(p.price) || 0,
           sort_order: Number(p.sort_order) || 0,
           addons: pkgAddons
@@ -360,6 +377,16 @@ function buildLensCatalogPayload(result) {
     }
 
     // Frame only is always last for OPTIONAL
+    const ptUpper = String(productTypeKey || '').trim().toUpperCase()
+    if (ptUpper === 'SUNGLASSES') {
+      wizardEntries.push({
+        kind: 'frame_sunglasses',
+        title: 'Frame / Sunglasses',
+        subtitle: 'Sun pair without prescription lens package',
+        icon: '🕶',
+        tone: 2
+      })
+    }
     if (policy === 'OPTIONAL') {
       wizardEntries.push({
         kind: 'frame_only',
@@ -735,7 +762,7 @@ router.get('/lens-catalog', ...posCatalogue, async (req, res, next) => {
     const result = await executeStoredProcedure('sp_POS_GetLensCatalog', {
       product_type_key: { type: sql.NVarChar(100), value: ptKey }
     })
-    const data = buildLensCatalogPayload(result)
+    const data = buildLensCatalogPayload(result, ptKey)
     return res.json({ success: true, data })
   } catch (err) {
     return next(err)
@@ -779,6 +806,102 @@ router.get('/settings', ...posCatalogue, async (req, res, next) => {
   }
 })
 
+/**
+ * Active Eyewoot Go offers for POS + scope rows (for client PCT/FLAT preview).
+ * @param {import('mssql').ConnectionPool} pool
+ * @param {number|null} customerId
+ */
+async function fetchEligibleCartOffersForPos(pool, customerId) {
+  const nowIST = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T')
+
+  const r = await pool.request().input('now', nowIST).query(`
+    SELECT offer_id, title, description, icon_emoji, discount_type,
+           discount_value, valid_from, valid_to, eligible_tier,
+           is_plus_only, sort_order
+    FROM   dbo.customer_offers
+    WHERE  is_active = 1
+      AND  valid_from <= @now
+      AND  valid_to   >= @now
+    ORDER BY is_plus_only DESC, sort_order ASC, offer_id DESC
+  `)
+
+  let rows = r.recordset || []
+
+  if (customerId && !Number.isNaN(customerId)) {
+    const [balR, memR] = await Promise.all([
+      pool.request().input('cid', customerId).query(`
+        SELECT TOP 1 balance_after AS balance FROM dbo.pos_points_ledger
+        WHERE customer_id = @cid ORDER BY ledger_id DESC
+      `),
+      pool.request().input('cid', customerId).query(`
+        SELECT TOP 1 plan_key FROM dbo.customer_memberships
+        WHERE customer_id = @cid AND is_active = 1
+          AND expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
+        ORDER BY expires_at DESC
+      `)
+    ])
+    const balance = (balR.recordset[0] && balR.recordset[0].balance) || 0
+    const hasPlus = memR.recordset.length > 0
+    const tierR = await pool.request().input('pts', balance).query(`
+      SELECT TOP 1 tier_name FROM dbo.loyalty_tiers
+      WHERE min_points <= @pts AND (max_points = -1 OR max_points >= @pts)
+      ORDER BY display_order DESC
+    `)
+    const tierName = (tierR.recordset[0] && tierR.recordset[0].tier_name) || 'Silver'
+    const tierOrder = ['Silver', 'Gold', 'Platinum']
+    const tierIdx = tierOrder.indexOf(tierName)
+
+    rows = rows.filter((o) => {
+      if (o.is_plus_only && !hasPlus) return false
+      if (o.eligible_tier) {
+        const reqIdx = tierOrder.indexOf(o.eligible_tier)
+        if (reqIdx > tierIdx) return false
+      }
+      return true
+    })
+  } else {
+    // Walk-in: no customer context — hide Plus-only and tier-gated offers (same as Eyewoot Go expectations).
+    rows = rows.filter((o) => {
+      if (o.is_plus_only) return false
+      const et = o.eligible_tier != null ? String(o.eligible_tier).trim() : ''
+      if (et) return false
+      return true
+    })
+  }
+
+  const normalized = rows.map((row) => ({
+    ...row,
+    offer_id: row.offer_id != null ? Number(row.offer_id) : null,
+    discount_value: row.discount_value != null ? Number(row.discount_value) : 0,
+    sort_order: row.sort_order != null ? Number(row.sort_order) : 0,
+    is_plus_only: Boolean(row.is_plus_only)
+  }))
+
+  const ids = normalized.map((o) => o.offer_id).filter((id) => Number.isFinite(Number(id)) && Number(id) > 0)
+  const scopesByOffer = {}
+  if (ids.length) {
+    const sr = await pool.request().query(`
+      SELECT offer_id, scope_kind, ref_int, ref_key
+      FROM   dbo.customer_offer_scope
+      WHERE  offer_id IN (${ids.join(',')})
+    `)
+    for (const row of sr.recordset || []) {
+      const oid = Number(row.offer_id)
+      if (!scopesByOffer[oid]) scopesByOffer[oid] = []
+      scopesByOffer[oid].push({
+        kind: row.scope_kind,
+        ref_int: row.ref_int != null ? Number(row.ref_int) : null,
+        ref_key: row.ref_key != null ? String(row.ref_key) : null
+      })
+    }
+  }
+
+  return normalized.map((row) => ({
+    ...row,
+    scopes: scopesByOffer[row.offer_id] || []
+  }))
+}
+
 // ── GET /api/pos/cart-offers — active Eyewoot Go offers for POS cart sidebar ───
 // Optional ?customer_id= — when set, applies same Plus / tier filters as the customer app.
 router.get('/cart-offers', ...posPromotions, async (req, res, next) => {
@@ -788,65 +911,57 @@ router.get('/cart-offers', ...posPromotions, async (req, res, next) => {
     const customerId = rawId != null && String(rawId).trim() !== ''
       ? parseInt(String(rawId), 10)
       : null
+    const data = await fetchEligibleCartOffersForPos(pool, customerId)
+    return res.json({ success: true, data })
+  } catch (err) {
+    return next(err)
+  }
+})
 
-    const nowIST = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T')
-
-    const r = await pool.request().input('now', nowIST).query(`
-      SELECT offer_id, title, description, icon_emoji, discount_type,
-             discount_value, valid_from, valid_to, eligible_tier,
-             is_plus_only, sort_order
-      FROM   dbo.customer_offers
-      WHERE  is_active = 1
-        AND  valid_from <= @now
-        AND  valid_to   >= @now
-      ORDER BY is_plus_only DESC, sort_order ASC, offer_id DESC
-    `)
-
-    let rows = r.recordset || []
-
-    if (customerId && !Number.isNaN(customerId)) {
-      const [balR, memR] = await Promise.all([
-        pool.request().input('cid', customerId).query(`
-          SELECT TOP 1 balance_after AS balance FROM dbo.pos_points_ledger
-          WHERE customer_id = @cid ORDER BY ledger_id DESC
-        `),
-        pool.request().input('cid', customerId).query(`
-          SELECT TOP 1 plan_key FROM dbo.customer_memberships
-          WHERE customer_id = @cid AND is_active = 1
-            AND expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
-          ORDER BY expires_at DESC
-        `)
-      ])
-      const balance = (balR.recordset[0] && balR.recordset[0].balance) || 0
-      const hasPlus = memR.recordset.length > 0
-      const tierR = await pool.request().input('pts', balance).query(`
-        SELECT TOP 1 tier_name FROM dbo.loyalty_tiers
-        WHERE min_points <= @pts AND (max_points = -1 OR max_points >= @pts)
-        ORDER BY display_order DESC
-      `)
-      const tierName = (tierR.recordset[0] && tierR.recordset[0].tier_name) || 'Silver'
-      const tierOrder = ['Silver', 'Gold', 'Platinum']
-      const tierIdx = tierOrder.indexOf(tierName)
-
-      rows = rows.filter((o) => {
-        if (o.is_plus_only && !hasPlus) return false
-        if (o.eligible_tier) {
-          const reqIdx = tierOrder.indexOf(o.eligible_tier)
-          if (reqIdx > tierIdx) return false
-        }
-        return true
+// ── POST /api/pos/preview-order-discount — best Offer discount using server formulas ──
+router.post('/preview-order-discount', ...posPreviewDiscount, async (req, res, next) => {
+  try {
+    const { error, value } = previewOrderDiscountSchema.validate(req.body || {})
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
       })
     }
 
-    const normalized = rows.map((row) => ({
-      ...row,
-      offer_id: row.offer_id != null ? Number(row.offer_id) : null,
-      discount_value: row.discount_value != null ? Number(row.discount_value) : 0,
-      sort_order: row.sort_order != null ? Number(row.sort_order) : 0,
-      is_plus_only: Boolean(row.is_plus_only)
-    }))
+    const pool = await getPool()
+    const rawId = req.query.customer_id
+    const customerId = rawId != null && String(rawId).trim() !== ''
+      ? parseInt(String(rawId), 10)
+      : null
 
-    return res.json({ success: true, data: normalized })
+    const offers = await fetchEligibleCartOffersForPos(pool, customerId)
+    let bestAmt = 0
+    let bestId = null
+
+    for (const o of offers) {
+      const offerRowRes = await pool.request()
+        .input('offer_id', sql.Int, o.offer_id)
+        .query(`
+          SELECT offer_id, discount_type, discount_value
+          FROM   dbo.customer_offers
+          WHERE  offer_id = @offer_id AND is_active = 1
+        `)
+      const offerRow = offerRowRes.recordset && offerRowRes.recordset[0]
+      if (!offerRow) continue
+      const amt = await computeOfferDiscountAmount(pool, offerRow, value.lines, { cartPreview: true })
+      const numAmt = typeof amt === 'number' && Number.isFinite(amt) ? Math.max(0, amt) : 0
+      if (numAmt > bestAmt) {
+        bestAmt = numAmt
+        bestId = o.offer_id
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: { discount_amount: bestAmt, applied_offer_id: bestId }
+    })
   } catch (err) {
     return next(err)
   }
@@ -1039,7 +1154,7 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
       if (Number.isFinite(vt) && nowMs > vt) {
         return res.status(400).json({ success: false, message: 'Applied offer has expired.' })
       }
-      authorisedDiscountAmount = await computeOfferDiscountAmount(pool, offer, value.lines)
+      authorisedDiscountAmount = await computeOfferDiscountAmount(pool, offer, value.lines, { cartPreview: false })
     }
 
     const transaction = new sql.Transaction(pool)
@@ -1057,7 +1172,8 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
         procurementMode,
         cfg,
         discountAmount: authorisedDiscountAmount,
-        appliedOfferId: value.applied_offer_id || null
+        appliedOfferId: value.applied_offer_id || null,
+        inventoryDeferred: Boolean(value.inventory_deferred)
       })
 
       await transaction.commit()
@@ -1087,12 +1203,140 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
     if (err.message && err.message.includes('Insufficient stock')) {
       return res.status(400).json({ success: false, message: err.message })
     }
+    if (err.message && (err.message.includes('inventory_committed') || err.message.includes('Invalid column name'))) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database migration required: run sql/migrations/pos_checkout_inventory_drafts.sql (inventory_committed on orders).'
+      })
+    }
+    return next(err)
+  }
+})
+
+// ── POST /api/pos/checkout-draft — persist cart for resume (one row per staff + store) ──
+router.post('/checkout-draft', ...posOrdersCreate, async (req, res, next) => {
+  try {
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
+    const { error, value } = checkoutDraftSchema.validate(req.body)
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      })
+    }
+    const employeeId = req.user.employee_id
+    if (employeeId == null || !Number.isFinite(Number(employeeId))) {
+      return res.status(400).json({ success: false, message: 'Staff context required to save a draft.' })
+    }
+    const cartStr = typeof value.cart_json === 'string' ? value.cart_json : JSON.stringify(value.cart_json)
+    const pool = await getPool()
+    await pool.request()
+      .input('store_id', sql.Int, storeId)
+      .input('staff_user_id', sql.Int, Number(employeeId))
+      .query('DELETE FROM dbo.pos_checkout_drafts WHERE store_id = @store_id AND staff_user_id = @staff_user_id')
+    await pool.request()
+      .input('store_id', sql.Int, storeId)
+      .input('staff_user_id', sql.Int, Number(employeeId))
+      .input('cart_json', sql.NVarChar(sql.MAX), cartStr)
+      .input('checkout_stage', sql.TinyInt, value.checkout_stage || 5)
+      .input('delivery_mode', sql.NVarChar(20), value.delivery_mode ? String(value.delivery_mode).toUpperCase() : null)
+      .input('customer_id', sql.Int, value.customer_id || null)
+      .query(`
+        INSERT INTO dbo.pos_checkout_drafts (store_id, staff_user_id, cart_json, checkout_stage, delivery_mode, customer_id)
+        VALUES (@store_id, @staff_user_id, @cart_json, @checkout_stage, @delivery_mode, @customer_id)
+      `)
+    return res.json({ success: true, data: { saved: true } })
+  } catch (err) {
+    if (err.message && err.message.includes('pos_checkout_drafts')) {
+      return res.status(503).json({
+        success: false,
+        message: 'Draft table missing. Run sql/migrations/pos_checkout_inventory_drafts.sql on the database.'
+      })
+    }
+    return next(err)
+  }
+})
+
+// ── GET /api/pos/checkout-draft — latest draft for current staff + store ─────
+router.get('/checkout-draft', ...posOrdersCreate, async (req, res, next) => {
+  try {
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
+    const employeeId = req.user.employee_id
+    if (employeeId == null || !Number.isFinite(Number(employeeId))) {
+      return res.json({ success: true, data: { draft: null } })
+    }
+    const pool = await getPool()
+    const r = await pool.request()
+      .input('store_id', sql.Int, storeId)
+      .input('staff_user_id', sql.Int, Number(employeeId))
+      .query(`
+        SELECT TOP 1 draft_id, cart_json, checkout_stage, delivery_mode, customer_id, updated_at
+        FROM dbo.pos_checkout_drafts
+        WHERE store_id = @store_id AND staff_user_id = @staff_user_id
+        ORDER BY updated_at DESC
+      `)
+    const row = r.recordset && r.recordset[0]
+    if (!row) return res.json({ success: true, data: { draft: null } })
+    let parsed = row.cart_json
+    try {
+      parsed = JSON.parse(String(row.cart_json || '[]'))
+    } catch (_e) {
+      parsed = []
+    }
+    return res.json({
+      success: true,
+      data: {
+        draft: {
+          draft_id: row.draft_id,
+          cart: parsed,
+          checkout_stage: row.checkout_stage,
+          delivery_mode: row.delivery_mode,
+          customer_id: row.customer_id,
+          updated_at: row.updated_at
+        }
+      }
+    })
+  } catch (err) {
+    if (err.message && err.message.includes('pos_checkout_drafts')) {
+      return res.json({ success: true, data: { draft: null } })
+    }
+    return next(err)
+  }
+})
+
+// ── DELETE /api/pos/checkout-draft — clear draft for current staff + store ───
+router.delete('/checkout-draft', ...posOrdersCreate, async (req, res, next) => {
+  try {
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
+    const employeeId = req.user.employee_id
+    if (employeeId == null || !Number.isFinite(Number(employeeId))) {
+      return res.json({ success: true, data: { deleted: 0 } })
+    }
+    const pool = await getPool()
+    const r = await pool.request()
+      .input('store_id', sql.Int, storeId)
+      .input('staff_user_id', sql.Int, Number(employeeId))
+      .query(`
+        DELETE FROM dbo.pos_checkout_drafts
+        OUTPUT DELETED.draft_id
+        WHERE store_id = @store_id AND staff_user_id = @staff_user_id
+      `)
+    const n = (r.recordset || []).length
+    return res.json({ success: true, data: { deleted: n } })
+  } catch (err) {
+    if (err.message && err.message.includes('pos_checkout_drafts')) {
+      return res.json({ success: true, data: { deleted: 0 } })
+    }
     return next(err)
   }
 })
 
 // ── POST /api/pos/payment ─────────────────────────────────────────────────────
-router.post('/payment', authJwt, requireModule('pos'), async (req, res, next) => {
+router.post('/payment', posPaymentCollect, async (req, res, next) => {
   try {
     const { error, value } = paymentSchema.validate(req.body)
     if (error) {
@@ -1106,6 +1350,9 @@ router.post('/payment', authJwt, requireModule('pos'), async (req, res, next) =>
     if (storeId == null) return
 
     const employeeId = req.user.employee_id
+    const pool = await getPool()
+    const mode = await orderService.getOrdersEngineMode(pool)
+    const result = await orderService.recordPayment(pool, mode, storeId, employeeId, value)
     return res.json({
       success: true,
       message: result.message,

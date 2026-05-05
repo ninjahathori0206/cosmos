@@ -9,6 +9,11 @@ const {
   replaceOfferScopes,
   loadScopesGrouped
 } = require('../services/customerOfferDiscountService');
+const {
+  OFFER_DISCOUNT_TYPES,
+  isStructuredOfferType,
+  structuredOfferTypeRespectsAllocation
+} = require('../config/customerOfferDiscountTypes');
 
 const router = express.Router();
 
@@ -387,8 +392,6 @@ router.delete('/leave-types/:id', ...settingsManage, async (req, res, next) => {
 
 // ─── PROMOTION: CUSTOMER OFFERS (Eyewoot Go) ────────────────────────────────────
 
-const OFFER_DISCOUNT_TYPES = ['PCT', 'FLAT', 'FREEBIE', 'BOGO_LOWEST_FREE', 'BUY_FRAME_GET_LENS_FREE', 'BUY_LENS_GET_FRAME_FREE'];
-
 const scopeItemSchema = Joi.object({
   kind: Joi.string().valid(...ALLOWED_SCOPE_KINDS).required(),
   ref_int: Joi.number().integer().positive().allow(null),
@@ -473,7 +476,10 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
       });
     }
     const pool = await getPool();
-    const scopes = Array.isArray(value.scopes) ? value.scopes : [];
+    const rawScopes = Array.isArray(value.scopes) ? value.scopes : [];
+    const discountType = value.discount_type || 'PCT';
+    const scopes =
+      isStructuredOfferType(discountType) && !structuredOfferTypeRespectsAllocation(discountType) ? [] : rawScopes;
     if (scopes.length) await validateScopeRefs(pool, scopes);
 
     const istWall = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T');
@@ -533,7 +539,21 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
       scopes
     } = value;
 
-    const scopesList = Array.isArray(scopes) ? scopes : null;
+    let scopesList = Array.isArray(scopes) ? scopes : null;
+    let typeForScopes = discount_type != null ? discount_type : null;
+    if (scopesList != null && typeForScopes == null) {
+      const tr = await pool.request().input('id', sql.Int, offerId).query(`
+        SELECT discount_type FROM dbo.customer_offers WHERE offer_id = @id
+      `);
+      typeForScopes = tr.recordset[0] ? tr.recordset[0].discount_type : null;
+    }
+    if (
+      scopesList != null &&
+      isStructuredOfferType(typeForScopes) &&
+      !structuredOfferTypeRespectsAllocation(typeForScopes)
+    ) {
+      scopesList = [];
+    }
     if (scopesList && scopesList.length) await validateScopeRefs(pool, scopesList);
 
     await pool.request()
@@ -565,7 +585,16 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
           updated_at     = DATEADD(MINUTE, 330, SYSUTCDATETIME())
         WHERE offer_id = @id
       `);
-    if (scopesList != null) await replaceOfferScopes(pool, offerId, scopesList);
+
+    const curTr = await pool.request().input('id', sql.Int, offerId).query(`
+      SELECT discount_type FROM dbo.customer_offers WHERE offer_id = @id
+    `)
+    const finalType = curTr.recordset[0] && curTr.recordset[0].discount_type
+    if (isStructuredOfferType(finalType) && !structuredOfferTypeRespectsAllocation(finalType)) {
+      await replaceOfferScopes(pool, offerId, [])
+    } else if (scopesList != null) {
+      await replaceOfferScopes(pool, offerId, scopesList)
+    }
     return res.json({ success: true });
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });

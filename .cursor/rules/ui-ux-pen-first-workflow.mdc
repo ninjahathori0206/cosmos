@@ -1,12 +1,17 @@
 ---
-description: UI/UX requests — design in .pen first (Pencil MCP), user approves, then implement in HTML/CSS/JS
+description: >-
+  UI/UX — Pencil (.pen) first with strong visual craft matching existing theme;
+  explicit user approval before any live HTML/CSS/JS. Applies to Cosmos
+  prototypes and src/public.
 globs: ["**/*.pen", "**/*Prototype*.html", "**/src/public/**/*.html", "**/src/public/css/**/*.css", "**/src/public/js/**/*.js"]
 alwaysApply: true
 ---
 
 # UI/UX change workflow — Pencil first, then code
 
-When the **user’s request is about UI, UX, layout, visuals, components, spacing, tablet/mobile behaviour, or screen structure** for Cosmos (prototypes or `src/public`), follow this order **unless** they explicitly waive it (e.g. “skip Pencil, code only” or “hotfix, no design”).
+Whenever there is a **change to how something looks, reads, or flows** on screen (UI, UX, layout, visuals, components, spacing, tablet/mobile behaviour, or screen structure) for Cosmos (prototypes or `src/public`), use **Pencil with strong UI/UX craft** so the design **matches the existing theme** and is **visibly excellent** — then **wait for the user to see and approve** before touching live code. **Do not** ship layout/visual work in the app in the same turn as the Pencil pass unless the user has **already approved** that design.
+
+Personal skill (all projects): **`pencil-first-ui-ux`** in `~/.cursor/skills/pencil-first-ui-ux/SKILL.md`.
 
 **Component-level builds** (new or materially new UI surfaces): also follow **`component-build-md-pencil-then-db.mdc`** — companion **`.md` UI spec**, Pencil, **approval**, then app code and **only then** database/schema changes.
 
@@ -19,13 +24,14 @@ When the **user’s request is about UI, UX, layout, visuals, components, spacin
 - **Only** modify `.pen` files through the **Pencil MCP** (`batch_get`, `batch_design`, etc.) — do **not** edit `.pen` with Read/Write/grep.
 - Follow **`.cursor/rules/pencil-mcp-no-notes.mdc`** — **never** add **`type: "note"`** documentation boxes on screens unless the user explicitly requests a note.
 - Match the affected **screen/frame** to the real app (see `.cursor/rules/pencil-pos-url-mapping.mdc` for path labels on frames).
-- Apply **Cosmos UI polish** principles in the implementation phase; in Pencil, aim for the same hierarchy and density the user asked for.
+- In Pencil, mirror the **current design system**: blues/greens/surfaces consistent with existing frames, **legible type**, clear **primary vs secondary** actions, and **comfortable tap targets** — not wireframe placeholders unless the user asks for low-fi only.
+- Apply **Cosmos UI polish** principles in the **implementation** phase (`ui-polish-rules.mdc`); in Pencil, aim for the same **hierarchy and density** the user asked for.
 
 ---
 
 ## 2. Pause for user approval
 
-- After the `.pen` update, **do not** implement in HTML/CSS/JS in the **same turn** unless the user has **already approved** the design.
+- After the `.pen` update, **do not** implement in HTML/CSS/JS in the **same turn** unless the user has **already approved** the design (this is **non-negotiable** for UI/UX changes).
 - Ask the user to **approve** the Pencil change (e.g. review in Pencil, or request a **`get_screenshot`** / export of the relevant node if helpful).
 - If they request tweaks, adjust **`.pen` first** again, then re-seek approval.
 
