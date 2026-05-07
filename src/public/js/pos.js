@@ -236,6 +236,7 @@
 
   // ── Screen navigation (internal — callers use navigate()) ───────────────
   function showScreen(id) {
+    closeAllPosLensOverlays()
     if (id !== 'screen-login-tablet' && id !== 'screen-login-staff') {
       document.documentElement.removeAttribute('data-pos-login-step')
     }
@@ -351,7 +352,11 @@
 
     if (path === POS_ROUTES.CUSTOMER) {
       if (!valid) { navigate(POS_ROUTES.LOGIN); return }
-      showCustomerScreen(session)
+      showOrderBuilderScreenResume(session)
+      if (window.history && window.history.replaceState) {
+        history.replaceState({}, '', POS_ROUTES.ORDER)
+      }
+      openPosCustomerPickerModal()
       return
     }
 
@@ -484,6 +489,8 @@
   let pendingResumeOrder = false
   let posSelectedCustomerId = null
   let posCartOffers = []
+  /** Staff-selected Eyewoot Go offer for this bill (`null` = no promo discount applied). At most one. */
+  let posSelectedOfferId = null
   let posServerDiscountPreview = null
   let posServerDiscountPreviewTimer = null
   let posDiscountPreviewSeq = 0
@@ -503,6 +510,17 @@
     addonIds: [],
     powerMode: null,
     rx: { od: { sph: '', cyl: '', axis: '', plano: false }, os: { sph: '', cyl: '', axis: '', plano: false }, pd: '', doctor: '' }
+  }
+
+  var __posLkModalScrollLocks = 0
+  function posLkLockModalScroll() {
+    __posLkModalScrollLocks++
+    if (__posLkModalScrollLocks === 1) document.body.classList.add('pos-lk-modal-scroll-lock')
+  }
+  function posLkUnlockModalScroll() {
+    if (__posLkModalScrollLocks < 1) return
+    __posLkModalScrollLocks--
+    if (__posLkModalScrollLocks === 0) document.body.classList.remove('pos-lk-modal-scroll-lock')
   }
 
   /** Coerce wizard step to 0–2 so strict === checks in navigation never silently fail. */
@@ -549,6 +567,27 @@
     return toneMap[Number(tone)] || 'pos-lk-pt-tone1'
   }
 
+  /** Strip non-digits; drop leading 91 or trunk 0 — Indian mobiles as 10 digits. */
+  function normalizeIndiaMobileDigits(raw) {
+    var d = String(raw || '').replace(/\D/g, '')
+    if (d.length === 12 && d.slice(0, 2) === '91') d = d.slice(2)
+    if (d.length === 11 && d.charAt(0) === '0') d = d.slice(1)
+    return d
+  }
+
+  /** Validates POS customer-create phone; returns 10-digit mobile or error message. */
+  function parsePosCustomerMobileForSave(raw) {
+    var d = normalizeIndiaMobileDigits(raw)
+    if (d.length !== 10) {
+      return { ok: false, phone: '', message: 'Enter a valid 10-digit mobile number.' }
+    }
+    var first = d.charAt(0)
+    if (first < '6' || first > '9') {
+      return { ok: false, phone: '', message: 'Indian mobile numbers start with 6, 7, 8, or 9.' }
+    }
+    return { ok: true, phone: d, message: '' }
+  }
+
   function escapeHtml(str) {
     return String(str || '').replace(/[&<>"']/g, function (m) {
       return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]
@@ -558,6 +597,7 @@
   function setPosCustomerSelection(customerId, fullName, phone) {
     const id = customerId != null ? Number(customerId) : NaN
     if (!Number.isNaN(id) && id > 0) {
+      posSelectedOfferId = null
       posSelectedCustomerId = id
       posSelectedCustomerSnapshot = {
         customer_id: id,
@@ -567,7 +607,7 @@
       lensWizard.customerName = posSelectedCustomerSnapshot.full_name
       const session = getPosSession()
       if (session && session.token) {
-        void loadPosOffersPanel(session, 'pos-lk-offers-list', 'pos-lk-offers-hint', false)
+        void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
       }
       renderCartCustomerRef()
       return
@@ -576,9 +616,10 @@
     posSelectedCustomerSnapshot = null
     lensWizard.customerName = null
     posCartOffers = []
+    posSelectedOfferId = null
     const session = getPosSession()
     if (session && session.token) {
-      void loadPosOffersPanel(session, 'pos-lk-offers-list', 'pos-lk-offers-hint', false)
+      void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
     } else {
       obRecalcTotals()
     }
@@ -589,9 +630,10 @@
     posSelectedCustomerSnapshot = null
     lensWizard.customerName = null
     posCartOffers = []
+    posSelectedOfferId = null
     const session = getPosSession()
     if (session && session.token) {
-      void loadPosOffersPanel(session, 'pos-lk-offers-list', 'pos-lk-offers-hint', false)
+      void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
     } else {
       obRecalcTotals()
     }
@@ -673,6 +715,57 @@
     return 'Promo'
   }
 
+  function refreshPosOfferPickVisuals() {
+    ;['pos-cart-coupon-list', 'pos-lk-pay-offers-list'].forEach(function (listId) {
+      var root = document.getElementById(listId)
+      if (!root) return
+      root.querySelectorAll('button.pos-lk-offer-pick').forEach(function (btn) {
+        var raw = btn.getAttribute('data-offer-id')
+        var nid = raw === '' || raw == null ? null : Number(raw)
+        var none = posSelectedOfferId == null || !Number.isFinite(Number(posSelectedOfferId)) || Number(posSelectedOfferId) < 1
+        var sel = none ? nid == null : Number(posSelectedOfferId) === nid
+        btn.classList.toggle('is-selected', sel)
+        btn.setAttribute('aria-pressed', sel ? 'true' : 'false')
+      })
+    })
+  }
+
+  function invalidatePosOfferIfNotListed(offersArr) {
+    if (posSelectedOfferId == null) return
+    var id = Number(posSelectedOfferId)
+    var ok = (offersArr || []).some(function (o) {
+      return Number(o.offer_id) === id
+    })
+    if (ok) return
+    posSelectedOfferId = null
+    posServerDiscountPreview = null
+    if (typeof cosmosToastInfo === 'function') {
+      cosmosToastInfo('Previous offer no longer applies — choose an offer again if needed.')
+    }
+  }
+
+  function wirePosOfferPickClicks(listEl, session) {
+    if (!listEl || !session || !session.token) return
+    listEl.querySelectorAll('button.pos-lk-offer-pick').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var raw = btn.getAttribute('data-offer-id')
+        if (raw === '' || raw == null) posSelectedOfferId = null
+        else {
+          var nid = Number(raw)
+          posSelectedOfferId = Number.isFinite(nid) && nid > 0 ? nid : null
+        }
+        posDiscountPreviewSeq++
+        posServerDiscountPreview = null
+        obRecalcTotals()
+        void runServerDiscountPreview(session).finally(function () {
+          refreshPosOfferPickVisuals()
+          syncCartAppliedOfferCard()
+          if (listEl.id === 'pos-cart-coupon-list') setCartCouponOverlayOpen(false)
+        })
+      })
+    })
+  }
+
   function renderCartCustomerRef() {
     const body = document.getElementById('pos-lk-cart-customer-body')
     if (!body) return
@@ -699,78 +792,159 @@
       return
     }
     body.innerHTML =
-      '<div class="pos-lk-cart-cust-walkin-title">Walk-in</div>' +
-      '<div class="pos-lk-cart-cust-walkin-sub">No CRM customer linked. Attach a customer for profile-based offers and clearer checkout reference.</div>'
+      '<div class="pos-lk-cart-cust-walkin-title">Walk-in</div>'
+  }
+
+  function selectedOfferMeta() {
+    if (!posCartOffers || !posCartOffers.length) return null
+    const id = Number(posSelectedOfferId || 0)
+    if (!Number.isFinite(id) || id < 1) return null
+    for (let i = 0; i < posCartOffers.length; i++) {
+      if (Number(posCartOffers[i].offer_id) === id) return posCartOffers[i]
+    }
+    return null
+  }
+
+  function syncCartAppliedOfferCard() {
+    if (!cardOfferApplied || !offerAppliedTitle || !offerAppliedSub || !btnCartApplyCoupon) return
+    const selected = selectedOfferMeta()
+    const discountText = obDiscountLine ? String(obDiscountLine.textContent || '').trim() : ''
+    if (!selected) {
+      btnCartApplyCoupon.hidden = false
+      btnCartApplyCoupon.style.display = ''
+      cardOfferApplied.hidden = true
+      cardOfferApplied.style.display = 'none'
+      offerAppliedTitle.textContent = 'Offer applied'
+      offerAppliedSub.textContent = 'You are saving ₹0'
+      return
+    }
+    btnCartApplyCoupon.hidden = true
+    btnCartApplyCoupon.style.display = 'none'
+    cardOfferApplied.hidden = false
+    cardOfferApplied.style.display = 'flex'
+    const title = String(selected.title || '').trim()
+    offerAppliedTitle.textContent = (title || ('Offer #' + String(selected.offer_id))) + ' Applied'
+    offerAppliedSub.textContent = (!discountText || discountText === '−₹0')
+      ? 'Offer selected for this bill'
+      : ('You are saving ' + discountText.replace(/^−/, ''))
   }
 
   async function loadPosOffersPanel(session, listId, hintId, forPayment) {
     const listEl = document.getElementById(listId)
-    const hintEl = hintId ? document.getElementById(hintId) : null
     if (!listEl) return
     if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows(listId, 4)
-    if (hintEl) {
-      if (forPayment) {
-        hintEl.textContent = posSelectedCustomerId
-          ? 'Same filters as the cart (Plus & tier). Best eligible offer is included in billed totals when you linked a customer before checkout.'
-          : 'Walk-in: only promos that do not require Plus or a loyalty tier are listed. Link a customer to see Plus and tier-gated offers in totals.'
-      } else {
-        hintEl.textContent = posSelectedCustomerId
-          ? 'Filtered for Plus / loyalty tier. The strongest eligible discount below is applied to cart subtotal and GST.'
-          : 'Walk-in: Plus-only and tier-gated offers are hidden. Link a customer to see those offers and apply the best eligible discount.'
-      }
-    }
     try {
       const q = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
       const offers = await apiGet('/api/pos/cart-offers' + q, session.token)
       posCartOffers = Array.isArray(offers) ? offers : []
+      invalidatePosOfferIfNotListed(posCartOffers)
       loadCartSkuScopeFacts(session)
       obRecalcTotals()
       if (!Array.isArray(offers) || !offers.length) {
-        listEl.innerHTML =
-          '<div class="pos-lk-offers-empty">' +
-          '<div class="pos-lk-offers-empty-title">No active offers</div>' +
-          '<div class="pos-lk-offers-empty-sub">Add or extend offers in Command Unit → Promotion. Totals update automatically when eligible offers are linked to a customer.</div>' +
-          '</div>'
+        listEl.innerHTML = '<div class="pos-lk-offers-empty"><div class="pos-lk-offers-empty-title">No active offers</div><div class="pos-lk-offers-empty-sub">Try again after selecting a customer.</div></div>'
+        wirePosOfferPickClicks(listEl, session)
+        refreshPosOfferPickVisuals()
+        syncCartBillBenefitBox()
+        syncCartAppliedOfferCard()
         return
       }
-      let html = ''
-      for (let i = 0; i < offers.length; i++) {
-        const o = offers[i]
+      let filteredOffers = offers
+      if (!forPayment && cartCouponSearchInput && cartCouponSearchInput.value.trim()) {
+        const qf = cartCouponSearchInput.value.trim().toLowerCase()
+        filteredOffers = offers.filter(function (o) {
+          const title = String(o.title || '').toLowerCase()
+          const desc = String(o.description || '').toLowerCase()
+          return title.indexOf(qf) !== -1 || desc.indexOf(qf) !== -1
+        })
+      }
+      let html = forPayment
+        ? '<button type="button" class="pos-lk-offer-item pos-lk-offer-pick" data-offer-id="" aria-pressed="false" aria-label="Continue without an offer"><span class="pos-lk-offer-ico" aria-hidden="true">○</span><div class="pos-lk-offer-item-body"><div class="pos-lk-offer-item-title">Continue without an offer</div></div></button>'
+        : ''
+      if (!filteredOffers.length) {
+        listEl.innerHTML = '<div class="pos-lk-offers-empty"><div class="pos-lk-offers-empty-title">No matching offers</div><div class="pos-lk-offers-empty-sub">Try another keyword.</div></div>'
+        syncCartBillBenefitBox()
+        syncCartAppliedOfferCard()
+        return
+      }
+      for (let i = 0; i < filteredOffers.length; i++) {
+        const o = filteredOffers[i]
         const plus = o.is_plus_only ? '<span class="pos-lk-offer-badge">Plus</span>' : ''
         const tier = o.eligible_tier ? '<span class="pos-lk-offer-tier">' + escapeHtml(String(o.eligible_tier)) + '+</span>' : ''
         const disc = offerDiscountSummary(o)
-        html +=
-          '<div class="pos-lk-offer-item">' +
-          '<span class="pos-lk-offer-ico" aria-hidden="true">' + escapeHtml(o.icon_emoji || '🎁') + '</span>' +
-          '<div class="pos-lk-offer-item-body">' +
-          '<div class="pos-lk-offer-item-title">' + escapeHtml(o.title || '') + plus + tier + '</div>' +
-          '<div class="pos-lk-offer-item-desc">' + escapeHtml(o.description || '') + '</div>' +
-          (disc
-            ? '<div class="pos-lk-offer-item-disc">' + escapeHtml(disc) + ' · valid till ' + escapeHtml(fmtOfferDateIso(o.valid_to)) + '</div>'
-            : '<div class="pos-lk-offer-item-disc">Valid till ' + escapeHtml(fmtOfferDateIso(o.valid_to)) + '</div>') +
-          '</div></div>'
+        const oid = o.offer_id != null ? Number(o.offer_id) : 0
+        if (forPayment) {
+          html +=
+            '<button type="button" class="pos-lk-offer-item pos-lk-offer-pick" data-offer-id="' + String(oid) + '" aria-pressed="false">' +
+            '<span class="pos-lk-offer-ico" aria-hidden="true">' + escapeHtml(o.icon_emoji || '🎁') + '</span>' +
+            '<div class="pos-lk-offer-item-body">' +
+            '<div class="pos-lk-offer-item-title">' + escapeHtml(o.title || '') + plus + tier + '</div>' +
+            '<div class="pos-lk-offer-item-desc">' + escapeHtml(o.description || '') + '</div>' +
+            (disc
+              ? '<div class="pos-lk-offer-item-disc">' + escapeHtml(disc) + ' · valid till ' + escapeHtml(fmtOfferDateIso(o.valid_to)) + '</div>'
+              : '<div class="pos-lk-offer-item-disc">Valid till ' + escapeHtml(fmtOfferDateIso(o.valid_to)) + '</div>') +
+            '</div></button>'
+        } else {
+          html +=
+            '<button type="button" class="pos-lk-offer-item pos-lk-offer-pick pos-cart-coupon-item" data-offer-id="' + String(oid) + '" aria-pressed="false">' +
+            '<div class="pos-lk-offer-item-body">' +
+            '<div class="pos-lk-offer-item-title">' + escapeHtml(o.title || '') + plus + tier + '</div>' +
+            '<div class="pos-lk-offer-item-desc">' + escapeHtml(o.description || '') + '</div>' +
+            '<div class="pos-lk-offer-item-disc">' + (disc ? escapeHtml(disc) + ' · ' : '') + 'Use this offer</div>' +
+            '</div>' +
+            '<span class="pos-cart-coupon-apply">Apply Coupon</span>' +
+            '</button>'
+        }
       }
       listEl.innerHTML = html
+      wirePosOfferPickClicks(listEl, session)
+      refreshPosOfferPickVisuals()
     } catch (err) {
       posCartOffers = []
+      invalidatePosOfferIfNotListed(posCartOffers)
       obRecalcTotals()
+      syncCartBillBenefitBox()
       listEl.innerHTML =
-        '<div class="pos-lk-offers-empty">' +
-        '<div class="pos-lk-offers-empty-title">Could not load offers</div>' +
-        '<div class="pos-lk-offers-empty-sub">' + escapeHtml(err.message || 'Check server logs or run Eyewoot Go migrations.') + '</div>' +
-        '</div>'
+        '<div class="pos-lk-offers-load-fail" role="alert">' + escapeHtml(err.message || 'Could not load offers.') + '</div>'
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not load offers.')
     }
+    syncCartBillBenefitBox()
+    syncCartAppliedOfferCard()
+  }
+
+  function syncCartBillBenefitBox() {
+    const wrap = document.getElementById('pos-lk-bill-benefit')
+    const body = document.getElementById('pos-lk-bill-benefit-body')
+    if (!wrap || !body) return
+    // Offer state is now shown in the dedicated applied-offer card.
+    wrap.hidden = false
+    body.textContent = ''
+    wrap.hidden = true
   }
 
   async function loadCartOffers(session) {
-    await loadPosOffersPanel(session, 'pos-lk-offers-list', 'pos-lk-offers-hint', false)
+    await loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
   }
 
   function refreshCartSidebar(session) {
     if (!session || !session.token) return
     renderCartCustomerRef()
     void loadCartOffers(session)
+  }
+
+  /** After pick/create in customer picker, close modal and return to cart (same as Continue). */
+  function leaveCustomerScreenToCart() {
+    closePosCustomerPickerModal()
+    const session = getPosSession()
+    if (session && session.token) {
+      refreshCartSidebar(session)
+    }
+    navigate(POS_ROUTES.ORDER)
+  }
+
+  function setCartCouponOverlayOpen(expanded) {
+    if (!overlayCartCoupons) return
+    overlayCartCoupons.classList.toggle('open', !!expanded)
+    document.body.classList.toggle('pos-lk-modal-scroll-lock', !!expanded)
   }
 
   function maybeRefreshCartSidebar() {
@@ -836,11 +1010,12 @@
   const brandSelect       = document.getElementById('pos-catalogue-brand')
   const searchInput       = document.getElementById('pos-search-code')
   const btnSearch         = document.getElementById('btn-pos-search')
+  const btnCatalogueScan    = document.getElementById('btn-pos-catalogue-scan')
   const btnHeaderCart     = document.getElementById('btn-pos-header-cart')
   const headerCartCountEl = document.getElementById('pos-header-cart-count')
   const catalogueMeta     = document.getElementById('pos-catalogue-meta')
   const catalogueResults  = document.getElementById('pos-catalogue-results')
-  const btnPosCustomer    = document.getElementById('btn-pos-customer')
+    const btnPosCustomer = document.getElementById('btn-pos-customer')
   const btnPdpBack        = document.getElementById('btn-pdp-back')
   const btnPdpSelectLens  = document.getElementById('btn-pdp-select-lenses')
   const pdpProductTitle   = document.getElementById('pos-pdp-product-title')
@@ -862,9 +1037,21 @@
   const obGstLbl          = document.getElementById('pos-ob-gst-lbl')
   const obTotal           = document.getElementById('pos-ob-total')
   const obDiscountLine    = document.getElementById('pos-ob-discount-line')
-  const obDiscountVal     = document.getElementById('pos-ob-discount-val')
-  const lkCartCountEl     = document.getElementById('pos-lk-cart-count')
+  const obCartHeadingLine = document.getElementById('pos-lk-cart-heading-line')
   const btnObProceed      = document.getElementById('btn-ob-proceed')
+  const btnCartCustomerChange = document.getElementById('btn-cart-customer-change')
+  const btnCartCustomerSearch = document.getElementById('btn-cart-customer-search')
+  const btnCartApplyCoupon = document.getElementById('btn-cart-apply-coupon')
+  const overlayCartCoupons = document.getElementById('overlay-pos-cart-coupons')
+  const btnCartCouponBack = document.getElementById('btn-cart-coupon-back')
+  const backdropCartCoupon = document.getElementById('pos-cart-coupon-backdrop')
+  const cartCouponSearchInput = document.getElementById('cart-coupon-search')
+  const btnCartCouponSearch = document.getElementById('btn-cart-coupon-search')
+  const cartCouponListEl = document.getElementById('pos-cart-coupon-list')
+  const cardOfferApplied = document.getElementById('pos-lk-offer-applied-card')
+  const offerAppliedTitle = document.getElementById('pos-lk-offer-applied-title')
+  const offerAppliedSub = document.getElementById('pos-lk-offer-applied-sub')
+  const btnCartOfferRemove = document.getElementById('btn-cart-offer-remove')
   const obStaffEl         = document.getElementById('pos-ob-staff')
   const obStoreEl         = document.getElementById('pos-ob-store')
   const rxPlanoOd         = document.getElementById('rx-plano-od')
@@ -1717,16 +1904,24 @@
         ? `<span class="pos-lk-cat-variant-badge" aria-hidden="true">${product.colours.length} colours</span>`
         : ''
 
+      const brandInner = brandLine
+        ? `<span class="pos-lk-cat-brand">${escapeHtml(brandLine)}</span>`
+        : '<span class="pos-lk-cat-brand pos-lk-cat-brand--empty" aria-hidden="true">\u00a0</span>'
+
       card.innerHTML = `
         <div class="pos-lk-cat-img-wrap">
           <div class="pos-lk-cat-img" aria-hidden="true">${typeEmoji(product.product_type)}</div>
           ${variantBadge}
         </div>
-        <div class="pos-lk-cat-title">${escapeHtml(titleLine)}</div>
-        ${brandLine ? `<div class="pos-lk-cat-brand">${escapeHtml(brandLine)}</div>` : ''}
-        ${swatchRow}
-        <div class="pos-lk-cat-price-line">${inrFormat(displayColour.sale_price)}${lensCopy ? ' ' + escapeHtml(lensCopy) : ''}</div>
-        <div class="pos-lk-cat-meta${deliveryClass}">${deliveryCopy}</div>
+        <div class="pos-lk-cat-detail">
+          <div class="pos-lk-cat-title">${escapeHtml(titleLine)}</div>
+          <div class="pos-lk-cat-brand-slot">${brandInner}</div>
+          <div class="pos-lk-cat-swatches-slot">${swatchRow}</div>
+          <div class="pos-lk-cat-footer">
+            <div class="pos-lk-cat-price-line">${inrFormat(displayColour.sale_price)}${lensCopy ? ' ' + escapeHtml(lensCopy) : ''}</div>
+            <div class="pos-lk-cat-meta${deliveryClass}">${deliveryCopy}</div>
+          </div>
+        </div>
       `
 
       function openProductFor(c) {
@@ -1864,6 +2059,226 @@
     }
   }
 
+  var posCatalogueScanRafId = null
+  var posCatalogueScanLoopActive = false
+  var posCatalogueScanEscHandler = null
+  var posCatalogueScanDetector = null
+  var posJsQrLoadPromise = null
+  var posCatalogueScanCanvas = null
+  var posCatalogueScanCtx = null
+  var posCatalogueScanLastJsQrMs = 0
+  var posCatalogueScanOverlayWired = false
+
+  function ensureJsQrLoaded() {
+    if (window.jsQR) return Promise.resolve()
+    if (posJsQrLoadPromise) return posJsQrLoadPromise
+    posJsQrLoadPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script')
+      s.src = '/js/jsQR.min.js'
+      s.async = true
+      s.setAttribute('data-pos-jsqr', '1')
+      s.onload = function () { resolve() }
+      s.onerror = function () {
+        posJsQrLoadPromise = null
+        reject(new Error('jsQR load failed'))
+      }
+      document.head.appendChild(s)
+    })
+    return posJsQrLoadPromise
+  }
+
+  function stopPosCatalogueScan() {
+    posCatalogueScanLoopActive = false
+    if (posCatalogueScanRafId != null) {
+      cancelAnimationFrame(posCatalogueScanRafId)
+      posCatalogueScanRafId = null
+    }
+    if (posCatalogueScanEscHandler) {
+      document.removeEventListener('keydown', posCatalogueScanEscHandler)
+      posCatalogueScanEscHandler = null
+    }
+    document.body.classList.remove('pos-lk-modal-scroll-lock')
+    var ov = document.getElementById('overlay-pos-catalogue-scan')
+    if (ov) ov.classList.remove('open')
+    var video = document.getElementById('pos-barcode-scan-video')
+    if (video && video.srcObject) {
+      try {
+        video.srcObject.getTracks().forEach(function (t) { t.stop() })
+      } catch (_e) { /* */ }
+      video.srcObject = null
+    }
+    posCatalogueScanDetector = null
+  }
+
+  function bindPosCatalogueScanOverlay() {
+    if (posCatalogueScanOverlayWired) return
+    posCatalogueScanOverlayWired = true
+    var bd = document.getElementById('pos-catalogue-scan-backdrop')
+    var ds = document.getElementById('pos-catalogue-scan-dismiss')
+    var cx = document.getElementById('pos-catalogue-scan-cancel')
+    ;[bd, ds, cx].forEach(function (el) {
+      if (!el) return
+      el.addEventListener('click', function () { stopPosCatalogueScan() })
+    })
+  }
+
+  async function applyCatalogueScanResult(raw) {
+    var code = String(raw || '').trim()
+    if (!code) return
+    stopPosCatalogueScan()
+    if (searchInput) searchInput.value = code
+    await triggerCatalogueSearch(true)
+  }
+
+  function scheduleNextScanFrame(fn) {
+    posCatalogueScanRafId = requestAnimationFrame(fn)
+  }
+
+  function runPosCatalogueScanFrame() {
+    if (!posCatalogueScanLoopActive) return
+    var video = document.getElementById('pos-barcode-scan-video')
+    if (!video || video.readyState < 2) {
+      scheduleNextScanFrame(runPosCatalogueScanFrame)
+      return
+    }
+
+    if (posCatalogueScanDetector) {
+      posCatalogueScanDetector.detect(video).then(function (codes) {
+        if (!posCatalogueScanLoopActive) return
+        if (codes && codes.length && codes[0].rawValue) {
+          void applyCatalogueScanResult(codes[0].rawValue)
+          return
+        }
+        scheduleNextScanFrame(runPosCatalogueScanFrame)
+      }).catch(function () {
+        if (posCatalogueScanLoopActive) scheduleNextScanFrame(runPosCatalogueScanFrame)
+      })
+      return
+    }
+
+    ensureJsQrLoaded().then(function () {
+      if (!posCatalogueScanLoopActive) return
+      var now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()
+      if (now - posCatalogueScanLastJsQrMs < 200) {
+        scheduleNextScanFrame(runPosCatalogueScanFrame)
+        return
+      }
+      posCatalogueScanLastJsQrMs = now
+      var vw = video.videoWidth
+      var vh = video.videoHeight
+      if (vw < 16 || vh < 16 || !window.jsQR) {
+        scheduleNextScanFrame(runPosCatalogueScanFrame)
+        return
+      }
+      if (!posCatalogueScanCanvas) {
+        posCatalogueScanCanvas = document.createElement('canvas')
+        posCatalogueScanCtx = posCatalogueScanCanvas.getContext('2d', { willReadFrequently: true })
+      }
+      var maxW = 480
+      var tw = vw > maxW ? maxW : vw
+      var th = Math.round((vh / vw) * tw)
+      posCatalogueScanCanvas.width = tw
+      posCatalogueScanCanvas.height = th
+      posCatalogueScanCtx.drawImage(video, 0, 0, tw, th)
+      var imageData
+      try {
+        imageData = posCatalogueScanCtx.getImageData(0, 0, tw, th)
+      } catch (_e) {
+        scheduleNextScanFrame(runPosCatalogueScanFrame)
+        return
+      }
+      var res = window.jsQR(imageData.data, tw, th, { inversionAttempts: 'attemptBoth' })
+      if (res && res.data) {
+        void applyCatalogueScanResult(res.data)
+        return
+      }
+      scheduleNextScanFrame(runPosCatalogueScanFrame)
+    }).catch(function () {
+      if (typeof cosmosToastError === 'function') {
+        cosmosToastError('Could not load QR decoder. Try Chrome or Edge, or type the code manually.')
+      }
+      stopPosCatalogueScan()
+    })
+  }
+
+  async function openPosCatalogueScanner(triggerBtn) {
+    var ovOpen = document.getElementById('overlay-pos-catalogue-scan')
+    if (ovOpen && ovOpen.classList.contains('open')) return
+    if (!window.isSecureContext) {
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn('Camera needs a secure connection (HTTPS) or localhost.')
+      }
+      return
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Camera is not available on this device.')
+      return
+    }
+    if (triggerBtn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(triggerBtn)
+    var stream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+        audio: false
+      })
+    } catch (err) {
+      if (triggerBtn && typeof cosmosBtnDone === 'function') cosmosBtnDone(triggerBtn)
+      if (typeof cosmosToastError === 'function') {
+        cosmosToastError(err && err.message ? err.message : 'Camera permission denied')
+      }
+      return
+    }
+    if (triggerBtn && typeof cosmosBtnDone === 'function') cosmosBtnDone(triggerBtn)
+
+    posCatalogueScanDetector = null
+    if (typeof BarcodeDetector !== 'undefined') {
+      try {
+        posCatalogueScanDetector = new BarcodeDetector({
+          formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar', 'data_matrix']
+        })
+      } catch (_e) {
+        try {
+          posCatalogueScanDetector = new BarcodeDetector({ formats: ['qr_code'] })
+        } catch (_e2) {
+          posCatalogueScanDetector = null
+        }
+      }
+    }
+
+    var ov = document.getElementById('overlay-pos-catalogue-scan')
+    var video = document.getElementById('pos-barcode-scan-video')
+    if (!ov || !video) {
+      stream.getTracks().forEach(function (t) { t.stop() })
+      if (typeof cosmosToastError === 'function') cosmosToastError('Scanner UI is missing.')
+      return
+    }
+
+    document.body.classList.add('pos-lk-modal-scroll-lock')
+    ov.classList.add('open')
+    video.setAttribute('playsinline', '')
+    video.muted = true
+    video.srcObject = stream
+    try {
+      await video.play()
+    } catch (_e) {
+      stream.getTracks().forEach(function (t) { t.stop() })
+      document.body.classList.remove('pos-lk-modal-scroll-lock')
+      ov.classList.remove('open')
+      if (typeof cosmosToastError === 'function') cosmosToastError('Could not start camera preview.')
+      return
+    }
+
+    posCatalogueScanLoopActive = true
+    posCatalogueScanLastJsQrMs = 0
+    posCatalogueScanEscHandler = function (e) {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      stopPosCatalogueScan()
+    }
+    document.addEventListener('keydown', posCatalogueScanEscHandler)
+    scheduleNextScanFrame(runPosCatalogueScanFrame)
+  }
+
   function handleScopeChange(scope) {
     if (scope !== 'store' && scope !== 'global') return
     if (scope === activeCatalogueScope) return
@@ -1875,6 +2290,10 @@
   }
 
   function bindCatalogueEvents() {
+    bindPosCatalogueScanOverlay()
+    if (btnCatalogueScan) {
+      btnCatalogueScan.addEventListener('click', function () { void openPosCatalogueScanner(btnCatalogueScan) })
+    }
     btnScopeStore.addEventListener('click', () => handleScopeChange('store'))
     btnScopeGlobal.addEventListener('click', () => handleScopeChange('global'))
 
@@ -1893,9 +2312,15 @@
     if (btnHeaderCart) btnHeaderCart.addEventListener('click', () => navigate(POS_ROUTES.ORDER))
 
     if (btnPosCustomer) {
-      // Customer lookup is now embedded in the Add Power step; the legacy
-      // toolbar button remains in DOM only for back-compat.
-      btnPosCustomer.addEventListener('click', () => navigate(POS_ROUTES.CUSTOMER))
+      btnPosCustomer.addEventListener('click', function () {
+        var session = getPosSession()
+        if (!session || !isSessionValid(session)) {
+          navigate(POS_ROUTES.LOGIN)
+          return
+        }
+        navigate(POS_ROUTES.ORDER)
+        openPosCustomerPickerModal()
+      })
     }
     if (brandSelect) {
       brandSelect.addEventListener('change', function () {
@@ -2057,12 +2482,12 @@
     }
   }
 
-  function showCustomerScreen(session) {
-    const banner = document.getElementById('cust-selected-banner')
-    const continueBtn = document.getElementById('btn-cust-continue')
+  function syncCustomerPickerBannerAndActions() {
+    var banner = document.getElementById('cust-picker-banner')
+    var doneBtn = document.getElementById('cust-picker-btn-done')
     if (banner) {
       if (posSelectedCustomerSnapshot) {
-        const ph = posSelectedCustomerSnapshot.phone ? ' · ' + posSelectedCustomerSnapshot.phone : ''
+        var ph = posSelectedCustomerSnapshot.phone ? ' · ' + posSelectedCustomerSnapshot.phone : ''
         banner.textContent = 'Selected: ' + posSelectedCustomerSnapshot.full_name + ph
       } else if (posSelectedCustomerId) {
         banner.textContent = 'Selected customer id: ' + posSelectedCustomerId
@@ -2070,17 +2495,58 @@
         banner.textContent = 'No customer selected — optional for walk-in.'
       }
     }
-    if (continueBtn) continueBtn.textContent = posSelectedCustomerId ? 'Continue to Cart' : 'Skip & Continue to Cart'
-    showScreen('screen-pos-customer')
+    if (doneBtn) {
+      doneBtn.textContent = posSelectedCustomerId ? 'Continue to cart' : 'Skip & continue to cart'
+    }
+  }
+
+  function closePosCustomerPickerModal() {
+    var overlay = document.getElementById('overlay-pos-customer-picker')
+    if (!overlay || !overlay.classList.contains('open')) return
+    overlay.classList.remove('open')
+    posLkUnlockModalScroll()
+  }
+
+  function openPosCustomerPickerModal() {
+    closeLensRxManualModal()
+    closeLensNewCustomerModal()
+    var overlay = document.getElementById('overlay-pos-customer-picker')
+    if (!overlay) return
+    syncCustomerPickerBannerAndActions()
+    var pickSearch = document.getElementById('cust-picker-search-input')
+    var pickResults = document.getElementById('cust-picker-results')
+    if (pickSearch) pickSearch.value = ''
+    if (pickResults) pickResults.innerHTML = ''
+    var nm = document.getElementById('cust-picker-new-name')
+    var ph = document.getElementById('cust-picker-new-phone')
+    var em = document.getElementById('cust-picker-new-email')
+    if (nm) {
+      nm.value = ''
+      if (typeof cosmosFieldClear === 'function') cosmosFieldClear(nm)
+    }
+    if (ph) {
+      ph.value = ''
+      if (typeof cosmosFieldClear === 'function') cosmosFieldClear(ph)
+    }
+    if (em) {
+      em.value = ''
+      if (typeof cosmosFieldClear === 'function') cosmosFieldClear(em)
+    }
+    var wasOpen = overlay.classList.contains('open')
+    overlay.classList.add('open')
+    if (!wasOpen) posLkLockModalScroll()
+    window.requestAnimationFrame(function () {
+      if (pickSearch) pickSearch.focus()
+    })
   }
 
   async function runCustomerSearch() {
-    const input = document.getElementById('cust-search-input')
-    const wrap = document.getElementById('cust-results')
+    const input = document.getElementById('cust-picker-search-input')
+    const wrap = document.getElementById('cust-picker-results')
     const q = input ? input.value.trim() : ''
     const session = getPosSession()
     if (!session || !session.token) return
-    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('cust-results', 4)
+    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('cust-picker-results', 4)
     try {
       const rows = await apiGet('/api/pos/customer-search?q=' + encodeURIComponent(q), session.token)
       if (!wrap) return
@@ -2092,17 +2558,13 @@
       rows.forEach(function (r) {
         const btn = document.createElement('button')
         btn.type = 'button'
-        btn.className = 'pos-cust-row'
+        btn.className = 'pos-cust-row tr-link'
         btn.innerHTML = '<span>' + (r.full_name || '') + '</span><span>' + (r.phone || '') + '</span>'
         btn.addEventListener('click', function () {
           setPosCustomerSelection(r.customer_id, r.full_name, r.phone)
-          const b = document.getElementById('cust-selected-banner')
-          if (b) {
-            const ph = r.phone ? ' · ' + r.phone : ''
-            b.textContent = 'Selected: ' + (r.full_name || '') + ph
-          }
-          cosmosToastSuccess('Customer selected')
-          maybeRefreshCartSidebar()
+          if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Customer selected')
+          syncCustomerPickerBannerAndActions()
+          leaveCustomerScreenToCart()
         })
         wrap.appendChild(btn)
       })
@@ -2114,9 +2576,9 @@
   async function handleCustomerCreate() {
     const session = getPosSession()
     if (!session || !session.token) return
-    const nameEl = document.getElementById('cust-new-name')
-    const phoneEl = document.getElementById('cust-new-phone')
-    const emailEl = document.getElementById('cust-new-email')
+    const nameEl = document.getElementById('cust-picker-new-name')
+    const phoneEl = document.getElementById('cust-picker-new-phone')
+    const emailEl = document.getElementById('cust-picker-new-email')
     const name = nameEl ? nameEl.value.trim() : ''
     const phone = phoneEl ? phoneEl.value.trim() : ''
     if (!name) {
@@ -2127,20 +2589,23 @@
       if (phoneEl && typeof cosmosFieldError === 'function') cosmosFieldError(phoneEl, 'Required')
       return
     }
-    const btn = document.getElementById('btn-cust-create')
+    var phoneParsed = parsePosCustomerMobileForSave(phone)
+    if (!phoneParsed.ok) {
+      if (phoneEl && typeof cosmosFieldError === 'function') cosmosFieldError(phoneEl, phoneParsed.message)
+      return
+    }
+    const btn = document.getElementById('cust-picker-btn-create')
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
       const res = await apiPost('/api/pos/customer', {
         full_name: name,
-        phone: phone,
+        phone: phoneParsed.phone,
         email: emailEl && emailEl.value ? emailEl.value.trim() : null
       }, session.token)
-      setPosCustomerSelection(res.data.customer_id, name, phone)
+      setPosCustomerSelection(res.data.customer_id, name, phoneParsed.phone)
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
-      const b = document.getElementById('cust-selected-banner')
-      if (b) b.textContent = 'Created and selected: ' + name + (phone ? ' · ' + phone : '')
-      cosmosToastSuccess('Customer created')
-      maybeRefreshCartSidebar()
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Customer created')
+      leaveCustomerScreenToCart()
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
@@ -2148,15 +2613,6 @@
   }
 
   function bindCustomerLensPayEvents() {
-    const btnBack = document.getElementById('btn-cust-back')
-    if (btnBack) btnBack.addEventListener('click', () => navigate(POS_ROUTES.LENS))
-    const btnCustContinue = document.getElementById('btn-cust-continue')
-    if (btnCustContinue) btnCustContinue.addEventListener('click', () => navigate(POS_ROUTES.ORDER))
-    const btnS = document.getElementById('btn-cust-search')
-    if (btnS) btnS.addEventListener('click', () => { void runCustomerSearch() })
-    const btnC = document.getElementById('btn-cust-create')
-    if (btnC) btnC.addEventListener('click', () => { void handleCustomerCreate() })
-
     const btnLensPrev = document.getElementById('btn-lens-prev')
     const btnLensNext = document.getElementById('btn-lens-next')
     if (btnLensPrev) btnLensPrev.addEventListener('click', lensWizardPrev)
@@ -2255,6 +2711,7 @@
   }
 
   function lensWizardPrev() {
+    closeAllPosLensOverlays()
     syncLensWizardStepNumber()
     const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
     if (lensWizard.step === 0) {
@@ -2283,6 +2740,7 @@
   }
 
   function lensWizardNext() {
+    closeAllPosLensOverlays()
     syncLensWizardStepNumber()
     const body = document.getElementById('lens-step-body')
     if (lensWizard.step === 0 && !lensWizard.category && lensWizard.powerType !== 'frame_only' && lensWizard.powerType !== 'frame_sunglasses') {
@@ -2315,6 +2773,13 @@
     if (lensWizard.step === 0) renderLensStep0PowerType(body)
     else if (lensWizard.step === 1) renderLensStep1LensSelection(body)
     else if (lensWizard.step === 2) renderLensStep2AddPower(body)
+    body.classList.toggle('pos-lens-body--step1-split', lensWizard.step === 1)
+    const lensStep2AddonsScroll =
+      lensWizard.step === 2 &&
+      lensWizard.subPhase === 'addons' &&
+      lensWizard.pkg &&
+      (lensWizard.pkg.addons || []).length > 0
+    body.classList.toggle('pos-lens-body--step2-compact', lensWizard.step === 2 && !lensStep2AddonsScroll)
     refreshCheckout5Nav()
   }
 
@@ -2417,6 +2882,8 @@
     const catName = String(lensWizard.category.name || '').trim()
 
     const html = []
+    html.push('<div class="pos-lk-lens-step1-layout">')
+    html.push('<div class="pos-lk-lens-step1-chrome">')
     html.push('<div class="pos-lk-lens-choose-card" role="region" aria-label="Lens package filter">')
     html.push('<div class="pos-lk-lens-headrow pos-lk-lens-headrow--brands">')
     html.push('  <div class="pos-lk-lens-head-left">')
@@ -2440,7 +2907,8 @@
     }
     html.push('</div>')
     html.push('</div>')
-
+    html.push('</div>')
+    html.push('<div class="pos-lk-lens-step1-scroll">')
     html.push('<div class="pos-lk-lens-cards">')
     if (pkgs.length === 0) {
       html.push('<div class="pos-empty"><div class="pos-empty-sub">No lens packages for this filter. Try another brand.</div></div>')
@@ -2472,6 +2940,8 @@
       )
     })
     html.push('</div>')
+    html.push('</div>')
+    html.push('</div>')
     body.innerHTML = html.join('')
 
     body.querySelectorAll('[data-brand-filter]').forEach(function (chip) {
@@ -2494,6 +2964,19 @@
         }
       })
     })
+  }
+
+  function lensWizardHasManualRxValues() {
+    var rx = lensWizard.rx
+    if (!rx) return false
+    if (String(rx.pd || '').trim() || String(rx.doctor || '').trim()) return true
+    var sides = ['od', 'os']
+    for (var si = 0; si < sides.length; si++) {
+      var row = rx[sides[si]] || {}
+      if (String(row.sph || '').trim() || String(row.cyl || '').trim() || String(row.axis || '').trim()) return true
+      if (row.plano) return true
+    }
+    return false
   }
 
   // ── Lens step 2 — Pencil 04-add-power: customer card + 4 power options ───
@@ -2583,19 +3066,24 @@
           '<span>Frame / sunglasses — no prescription lens package.</span>' +
         '</div>')
       } else {
-        html.push('<div class="pos-lk-amber-banner">' +
-          '<span class="pos-lk-amber-banner-icon">ⓘ</span>' +
-          '<span>Not sure which power option to choose? Use <strong>Submit Power Later</strong> or ask staff.</span>' +
-        '</div>')
-
         html.push('<div class="pos-lk-section-lbl">I don\'t know my power</div>')
-        html.push(buildPowerCard('later',  '🕒', '#0D9F7B', 'Submit Power Later', 'Within 15 days of order delivery'))
+        html.push(buildPowerCard('later',  '🕒', '#0D9F7B', 'Submit Power Later', 'Within 15 days of delivery'))
 
         html.push('<div class="pos-lk-section-lbl">I know my power</div>')
+        html.push('<div class="pos-lk-know-power-region" role="group" aria-label="Power source options">')
         html.push(buildPowerCard('saved',   '🔖', '#2563EB', 'Saved Power',           '3 saved prescriptions for this customer'))
-        html.push(buildPowerCard('manual',  '✎',  '#7C3AED', 'Enter Power Manually',  'Type SPH/CYL/AXIS values'))
-        html.push('<div id="pos-lk-rx-inline"></div>')
-        html.push(buildPowerCard('upload',  '⬆',  '#D97706', 'Upload Prescription',   'JPG / PDF up to 5 MB'))
+        html.push(buildPowerCard('manual',  '✎',  '#7C3AED', 'Enter Power Manually',  'SPH / CYL / AXIS'))
+        if (lensWizard.powerMode === 'manual') {
+          html.push(
+            '<div class="pos-lk-rx-manual-cta" id="pos-lk-rx-manual-cta">' +
+              '<button type="button" class="pos-lk-text-link" id="pos-lk-open-rx-modal">' +
+                (lensWizardHasManualRxValues() ? 'Edit prescription values' : 'Enter prescription values') +
+              '</button>' +
+            '</div>'
+          )
+        }
+        html.push(buildPowerCard('upload',  '⬆',  '#D97706', 'Upload Prescription',   'JPG / PDF · max 5 MB'))
+        html.push('</div>')
       }
     }
 
@@ -2604,15 +3092,15 @@
     body.querySelectorAll('[data-pwm-key]').forEach(function (el) {
       el.addEventListener('click', function () {
         const key = el.getAttribute('data-pwm-key')
+        if (key !== 'manual') closeLensRxManualModal()
         lensWizard.powerMode = key
-        body.querySelectorAll('[data-pwm-key]').forEach(function (n) {
-          n.classList.toggle('selected', n.getAttribute('data-pwm-key') === key)
-        })
-        const rxSlot = document.getElementById('pos-lk-rx-inline')
-        if (rxSlot) rxSlot.innerHTML = key === 'manual' ? buildInlineRxForm() : ''
-        if (key === 'manual') bindInlineRxHandlers()
+        if (key === 'manual') openLensRxManualModal()
+        renderLensStep()
       })
     })
+
+    const openRxBtn = document.getElementById('pos-lk-open-rx-modal')
+    if (openRxBtn) openRxBtn.addEventListener('click', function () { openLensRxManualModal() })
 
     const change = document.getElementById('pos-lk-customer-change')
     const dd = document.getElementById('pos-lk-cust-dropdown')
@@ -2719,6 +3207,61 @@
     if (doc) doc.addEventListener('input', function () { lensWizard.rx.doctor = doc.value })
   }
 
+  function syncLensWizardRxFormFromModel() {
+    var rx = lensWizard.rx || {}
+    ;['od', 'os'].forEach(function (side) {
+      var row = rx[side] || {}
+      ;['sph', 'cyl', 'axis'].forEach(function (axis) {
+        var inp = document.querySelector('.pos-lk-rx-input[data-rx-side="' + side + '"][data-rx-axis="' + axis + '"]')
+        if (inp) inp.value = row[axis] != null ? String(row[axis]) : ''
+      })
+      var cb = document.querySelector('[data-rx-plano="' + side + '"]')
+      if (cb) {
+        cb.checked = !!row.plano
+        document.querySelectorAll('.pos-lk-rx-input[data-rx-side="' + side + '"]').forEach(function (inp) {
+          inp.disabled = !!row.plano
+        })
+      }
+    })
+    var pdEl = document.getElementById('pos-lk-rx-pd')
+    if (pdEl) pdEl.value = rx.pd != null ? String(rx.pd) : ''
+    var docEl = document.getElementById('pos-lk-rx-doctor')
+    if (docEl) docEl.value = rx.doctor != null ? String(rx.doctor) : ''
+  }
+
+  function openLensRxManualModal() {
+    closePosCustomerPickerModal()
+    closeLensNewCustomerModal()
+    var overlay = document.getElementById('overlay-pos-lens-rx-manual')
+    var slot = document.getElementById('pos-lens-rx-manual-body')
+    if (!overlay || !slot) return
+    var wasOpen = overlay.classList.contains('open')
+    slot.innerHTML = buildInlineRxForm()
+    bindInlineRxHandlers()
+    syncLensWizardRxFormFromModel()
+    overlay.classList.add('open')
+    if (!wasOpen) posLkLockModalScroll()
+    window.requestAnimationFrame(function () {
+      var el = slot.querySelector('.pos-lk-rx-input')
+      if (el) el.focus()
+    })
+  }
+
+  function closeLensRxManualModal() {
+    var overlay = document.getElementById('overlay-pos-lens-rx-manual')
+    if (!overlay || !overlay.classList.contains('open')) return
+    overlay.classList.remove('open')
+    var slot = document.getElementById('pos-lens-rx-manual-body')
+    if (slot) slot.innerHTML = ''
+    posLkUnlockModalScroll()
+  }
+
+  function closeAllPosLensOverlays() {
+    closePosCustomerPickerModal()
+    closeLensRxManualModal()
+    closeLensNewCustomerModal()
+  }
+
   function computeLensSearchPrefillForNewCustomer(q) {
     const t = String(q || '').trim()
     if (!t) return { name: '', phone: '' }
@@ -2729,6 +3272,8 @@
   }
 
   function openLensNewCustomerModal(queryStr) {
+    closePosCustomerPickerModal()
+    closeLensRxManualModal()
     const pre = computeLensSearchPrefillForNewCustomer(queryStr)
     const overlay = document.getElementById('overlay-pos-lens-new-customer')
     const nameIn = document.getElementById('pos-lens-new-cust-name')
@@ -2749,7 +3294,9 @@
         : 'Add a new customer to link to this order.'
     }
     if (!overlay) return
+    var wasOpen = overlay.classList.contains('open')
     overlay.classList.add('open')
+    if (!wasOpen) posLkLockModalScroll()
     window.requestAnimationFrame(function () {
       if (pre.name && !pre.phone && nameIn) nameIn.focus()
       else if (phoneIn) phoneIn.focus()
@@ -2761,6 +3308,7 @@
     const overlay = document.getElementById('overlay-pos-lens-new-customer')
     if (!overlay || !overlay.classList.contains('open')) return
     overlay.classList.remove('open')
+    posLkUnlockModalScroll()
   }
 
   async function submitLensModalNewCustomer(btn) {
@@ -2778,10 +3326,15 @@
       if (phoneEl && typeof cosmosFieldError === 'function') cosmosFieldError(phoneEl, 'Required')
       return
     }
+    var phoneParsed = parsePosCustomerMobileForSave(phone)
+    if (!phoneParsed.ok) {
+      if (phoneEl && typeof cosmosFieldError === 'function') cosmosFieldError(phoneEl, phoneParsed.message)
+      return
+    }
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
-      const res = await apiPost('/api/pos/customer', { full_name: name, phone: phone, email: null }, session.token)
-      setPosCustomerSelection(res.data.customer_id, name, phone)
+      const res = await apiPost('/api/pos/customer', { full_name: name, phone: phoneParsed.phone, email: null }, session.token)
+      setPosCustomerSelection(res.data.customer_id, name, phoneParsed.phone)
       closeLensNewCustomerModal()
       refreshLensCustomerBanner()
       const dd = document.getElementById('pos-lk-cust-dropdown')
@@ -2878,7 +3431,9 @@
           package_id: lensWizard.pkg.id,
           addon_ids: lensWizard.addonIds.slice(),
           package_price: Number(lensWizard.pkg.price) || 0,
-          addon_prices: addonPrices
+          addon_prices: addonPrices,
+          package_name: String((lensWizard.pkg && lensWizard.pkg.name) || '').trim(),
+          category_name: String((lensWizard.category && lensWizard.category.name) || '').trim()
         }
         line.power_mode = lensWizard.powerMode
         if (lensWizard.powerMode === 'manual') {
@@ -3171,7 +3726,7 @@
       const a = Math.max(0, Number(paySessionSnapshot.amount) || 0)
       amtSpanFinal.textContent = formatRupees(a)
     }
-    await loadPosOffersPanel(session, 'pos-lk-pay-offers-list', 'pos-lk-pay-offers-hint', true)
+    await loadPosOffersPanel(session, 'pos-lk-pay-offers-list', null, true)
   }
 
   async function submitPayment() {
@@ -3248,6 +3803,7 @@
       paySessionSnapshot = { stage: 'FULL', amount: 0 }
       forceBalanceSettlement = false
       obCart = []
+      posSelectedOfferId = null
       clearCartStorage()
       navigate(POS_ROUTES.CONFIRM)
     } catch (err) {
@@ -3480,13 +4036,18 @@
           addon_prices: Array.isArray(b.addon_prices) ? b.addon_prices.map(function (x) { return Number(x) || 0 }) : []
         }
       }
+      if (out.fulfillment === 'LAB') {
+        out.lab_status = line.lab_status || null
+      }
       return out
     })
   }
 
   function buildObCartFingerprint() {
+    var oid = posSelectedOfferId != null ? Number(posSelectedOfferId) : 0
     return JSON.stringify({
       c: posSelectedCustomerId || 0,
+      o: Number.isFinite(oid) && oid > 0 ? oid : 0,
       lines: buildPosOrderLinesFromObCart()
     })
   }
@@ -3515,9 +4076,20 @@
       obRecalcTotals()
       return
     }
+    var selId = posSelectedOfferId != null ? Number(posSelectedOfferId) : null
+    var hasOffer = selId != null && Number.isFinite(selId) && selId > 0
+    if (!hasOffer) {
+      posServerDiscountPreview = null
+      if (gen === posDiscountPreviewSeq) {
+        refreshPosOfferPickVisuals()
+        obRecalcTotals()
+      }
+      return
+    }
     try {
-      var q = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
-      var res = await apiPost('/api/pos/preview-order-discount' + q, { lines: lines }, session.token)
+      var qp = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
+      var payload = { lines: lines, applied_offer_id: selId }
+      var res = await apiPost('/api/pos/preview-order-discount' + qp, payload, session.token)
       if (gen !== posDiscountPreviewSeq) return
       var d = res && res.data ? res.data : {}
       posServerDiscountPreview = {
@@ -3525,34 +4097,48 @@
         offerId: d.applied_offer_id != null && Number(d.applied_offer_id) > 0 ? Number(d.applied_offer_id) : null,
         cartSig: sig
       }
-    } catch (_e) {
+    } catch (e) {
       if (gen !== posDiscountPreviewSeq) return
       posServerDiscountPreview = null
+      var msg = (e && e.message) ? String(e.message) : ''
+      if (posSelectedOfferId && /not available|no longer active/i.test(msg)) {
+        posSelectedOfferId = null
+        posDiscountPreviewSeq++
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn(msg)
+      }
     }
-    if (gen === posDiscountPreviewSeq) obRecalcTotals()
+    if (gen === posDiscountPreviewSeq) {
+      refreshPosOfferPickVisuals()
+      obRecalcTotals()
+    }
   }
 
-  function computeCartOfferDiscount(subtotal) {
+  /** PCT / FLAT only until server preview returns; structured promos rely on `/preview-order-discount`. */
+  function computeClientPreviewForSelectedOffer(subtotal) {
     if (!posCartOffers || !posCartOffers.length || subtotal <= 0) return { amount: 0, offerId: null }
-    var best = { amount: 0, offerId: null }
+    var sid = posSelectedOfferId != null ? Number(posSelectedOfferId) : null
+    if (sid == null || !Number.isFinite(sid) || sid < 1) return { amount: 0, offerId: null }
+    var o = null
     for (var i = 0; i < posCartOffers.length; i++) {
-      var o = posCartOffers[i]
-      if (!offerAppliesToCartContext(o)) continue
-      var t = String(o.discount_type || '').trim().toUpperCase()
-      var amt = 0
-      if (t === 'PCT') {
-        var p = effectiveOfferPct(o)
-        var eligibleSub = computeEligibleSubtotalForOffer(o)
-        amt = Math.round(eligibleSub * (p / 100) * 100) / 100
-      } else if (t === 'FLAT') {
-        var eligibleSubFlat = computeEligibleSubtotalForOffer(o)
-        amt = Math.min(effectiveOfferFlat(o), eligibleSubFlat)
+      if (Number(posCartOffers[i].offer_id) === sid) {
+        o = posCartOffers[i]
+        break
       }
-      // Structured types: skip client preview amount (server is authoritative)
-      if (amt > subtotal) amt = subtotal
-      if (amt > best.amount) best = { amount: amt, offerId: o.offer_id }
     }
-    return best
+    if (!o || !offerAppliesToCartContext(o)) return { amount: 0, offerId: null }
+    var t = String(o.discount_type || '').trim().toUpperCase()
+    var amt = 0
+    if (t === 'PCT') {
+      var p = effectiveOfferPct(o)
+      var eligibleSub = computeEligibleSubtotalForOffer(o)
+      amt = Math.round(eligibleSub * (p / 100) * 100) / 100
+    } else if (t === 'FLAT') {
+      var eligibleSubFlat = computeEligibleSubtotalForOffer(o)
+      amt = Math.min(effectiveOfferFlat(o), eligibleSubFlat)
+    }
+    if (amt > subtotal) amt = subtotal
+    if (amt <= 0) return { amount: 0, offerId: sid }
+    return { amount: amt, offerId: sid }
   }
 
   function obRecalcTotals() {
@@ -3561,16 +4147,21 @@
     }, 0)
     const sig = buildObCartFingerprint()
     let offerDisc = { amount: 0, offerId: null }
-    if (
-      posServerDiscountPreview &&
-      posServerDiscountPreview.cartSig === sig
-    ) {
-      offerDisc = {
-        amount: posServerDiscountPreview.amount,
-        offerId: posServerDiscountPreview.offerId
+    const hasSel =
+      posSelectedOfferId != null &&
+      Number.isFinite(Number(posSelectedOfferId)) &&
+      Number(posSelectedOfferId) > 0
+    if (hasSel) {
+      if (posServerDiscountPreview && posServerDiscountPreview.cartSig === sig) {
+        offerDisc = {
+          amount: posServerDiscountPreview.amount,
+          offerId: posServerDiscountPreview.offerId
+        }
+      } else {
+        offerDisc = computeClientPreviewForSelectedOffer(subtotal)
       }
     } else {
-      offerDisc = computeCartOfferDiscount(subtotal)
+      offerDisc = { amount: 0, offerId: null }
     }
     const discount = Math.min(offerDisc.amount, subtotal)
     const tax = computePosCartTotals(subtotal, discount)
@@ -3578,17 +4169,18 @@
     const total = tax.total
     if (obSubtotal) obSubtotal.textContent = formatRupees(subtotal)
     if (obDiscountLine) obDiscountLine.textContent = discount > 0 ? ('−' + formatRupees(discount)) : '−₹0'
-    if (obDiscountVal) obDiscountVal.textContent = discount > 0 ? ('−' + formatRupees(discount)) : '−₹0'
     if (obGst) obGst.textContent = formatRupees(gst)
     if (obGstLbl) obGstLbl.textContent = posGstLineLabel()
     if (obTotal) obTotal.textContent = formatRupees(total)
     if (btnObProceed) {
       btnObProceed.disabled = obCart.length === 0
-      btnObProceed.textContent = formatRupees(total) + ' • Proceed to Payment'
+      btnObProceed.textContent = formatRupees(total) + ' · Proceed to payment'
     }
-    if (lkCartCountEl) {
+    if (obCartHeadingLine || headerCartCountEl) {
       const n = obCart.reduce(function (acc, line) { return acc + Math.max(1, Number(line.qty) || 0) }, 0)
-      lkCartCountEl.textContent = String(n)
+      if (obCartHeadingLine) {
+        obCartHeadingLine.textContent = n === 1 ? 'Cart · 1 item' : ('Cart · ' + n + ' items')
+      }
       if (headerCartCountEl) {
         headerCartCountEl.textContent = String(n)
         headerCartCountEl.hidden = n <= 0
@@ -3598,104 +4190,176 @@
     if (sessionRecalc && sessionRecalc.token && obCart.length) {
       scheduleServerDiscountPreview(sessionRecalc)
     }
+    syncCartBillBenefitBox()
+    syncCartAppliedOfferCard()
+  }
+
+  function cartLineRetailCardHtml(line, idx) {
+    const rule = getTypeRule(line.product_type)
+    const du = computeLineDisplayUnit(line)
+    const qty = Math.max(1, Number(line.qty) || 0)
+    const lineTotal = du * qty
+    const frameUnit = Number(line.frame_unit_price) || 0
+    const mrpListed = Number(line.mrp) > 0 ? Number(line.mrp) : frameUnit
+    const lwp = rule ? String(rule.lens_wizard_policy || 'NEVER') : 'NEVER'
+    const isDual = rule && rule.fulfillment_mode === 'DUAL' && lensWizardAllowed(line.product_type) && lwp !== 'REQUIRED'
+
+    const brandName = String(line.brand_name || '').trim()
+    const colourName = String(line.colour_name || '').trim()
+    const rawTitle = String(line.product_name || '').replace(/\s+-\s+/, ' · ')
+    // Display in title-case so "BOLD · 3120" renders as "Bold · 3120"
+    const productTitle = rawTitle.replace(/\b\w+/g, function(w) {
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+    })
+
+    const frameStrike = (mrpListed > frameUnit + 0.005)
+      ? ('<span class="pos-lk-cart-strike">' + formatRupees(mrpListed) + '</span> ')
+      : ''
+    const framePriceHtml = frameStrike
+      ? (frameStrike + '<span class="pos-lk-cart-price-now">' + formatRupees(frameUnit) + '</span>')
+      : formatRupees(frameUnit)
+
+    // Colour chip inline with product name
+    const colourChip = colourName
+      ? '<span class="pos-lk-cart-colour-chip">' + escapeHtml(colourName) + '</span>'
+      : ''
+
+    // Lens row — LAB complete: "PackageName · Category | ₹price", LAB pending: muted placeholder
+    let lensRowHtml = ''
+    if (line.fulfillment === 'LAB' && line.lab_status === 'complete' && line.lens_bundle) {
+      const b = line.lens_bundle
+      const lensP = Number(b.package_price) || 0
+      let addonTotal = 0
+      const aps = b.addon_prices || []
+      for (let ai = 0; ai < aps.length; ai++) addonTotal += Number(aps[ai]) || 0
+      const lensUnitTotal = lensP + addonTotal
+      const pkgName = String(b.package_name || '').trim()
+      const catName = String(b.category_name || '').trim()
+      const addonNote = addonTotal > 0.005 ? ' + add-ons' : ''
+      const parts = [pkgName, catName].filter(function (s, i, a) { return s && a.indexOf(s) === i })
+      // Match Pencil: use middots; API often returns "EW - UV · Single Vision" style segments
+      const lensLabelRaw = (parts.join(' · ') || 'Configured lens') + addonNote
+      const lensLabel = lensLabelRaw.replace(/\s*[–—\-]\s*/g, ' · ')
+      lensRowHtml =
+        '<div class="pos-lk-cart-lens-row">' +
+        '<span class="pos-lk-cart-lens-lbl">' + escapeHtml(lensLabel) + '</span>' +
+        '<span class="pos-lk-cart-lens-price">' + formatRupees(lensUnitTotal) + '</span>' +
+        '</div>'
+    } else if (line.fulfillment === 'LAB') {
+      lensRowHtml =
+        '<div class="pos-lk-cart-lens-row pos-lk-cart-lens-row--pending">' +
+        '<span class="pos-lk-cart-lens-lbl">Lens · pending setup</span>' +
+        '<span class="pos-lk-cart-lens-price">—</span>' +
+        '</div>'
+    }
+
+    const showFreeRibbon = lineTotal < 0.02
+    const totalValHtml = showFreeRibbon
+      ? '<span class="pos-lk-cart-free-val">Free</span>'
+      : formatRupees(lineTotal)
+    const ribbon = showFreeRibbon ? '<div class="pos-lk-cart-ribbon" aria-hidden="true">FREE</div>' : ''
+
+    // Fulfillment toggle (dual-mode products only)
+    const fulfillToggle = isDual
+      ? '<div class="pos-ob-line-fulfill">' +
+        '<button type="button" class="pos-ob-mini-btn' + (line.fulfillment === 'INSTANT' ? ' active' : '') + '" data-action="set-instant" data-idx="' + idx + '">Frame only</button>' +
+        '<button type="button" class="pos-ob-mini-btn' + (line.fulfillment === 'LAB' ? ' active' : '') + '" data-action="set-lab" data-idx="' + idx + '">With lenses</button>' +
+        '</div>'
+      : ''
+
+    // Configure-lenses CTA for pending LAB
+    const configureBtn = (line.fulfillment === 'LAB' && line.lab_status !== 'complete')
+      ? '<button type="button" class="pos-ob-mini-btn action-btn pos-lk-cart-config-btn" data-action="configure-lens" data-idx="' + idx + '">Select lenses →</button>'
+      : ''
+
+    const rxFoot = (line.fulfillment === 'LAB' && (line.lab_status === 'pending_power' || line.power_mode === 'later'))
+      ? '<div class="pos-lk-cart-rx-foot"><span class="pos-lk-cart-rx-foot-ic" aria-hidden="true">✓</span> Upload prescription after payment.</div>'
+      : ''
+
+    const footerMeta = (fulfillToggle || configureBtn)
+      ? '<div class="pos-lk-cart-v2-meta">' + fulfillToggle + configureBtn + '</div>'
+      : ''
+
+    return (
+      '<div class="pos-lk-cart-item pos-lk-cart-item--v2">' +
+      ribbon +
+      '<div class="pos-lk-cart-v2-top">' +
+        // Thumbnail: cream card with product-type emoji
+        '<div class="pos-lk-cart-thumb" aria-hidden="true">' +
+          '<span class="pos-lk-cart-thumb-emoji">' + typeEmoji(line.product_type) + '</span>' +
+        '</div>' +
+        '<div class="pos-lk-cart-v2-copy">' +
+          // Row 1: brand | frame price
+          '<div class="pos-lk-cart-row-brand-price">' +
+            '<span class="pos-lk-cart-brand-lbl">' + escapeHtml(brandName || 'Product') + '</span>' +
+            '<span class="pos-lk-cart-frame-price-val">' + framePriceHtml + '</span>' +
+          '</div>' +
+          // Row 2: product name + colour chip
+          '<div class="pos-lk-cart-product-row">' +
+            '<span class="pos-lk-cart-product-name">' + escapeHtml(productTitle) + '</span>' +
+            colourChip +
+          '</div>' +
+          // Row 3: lens info (LAB) or nothing (instant)
+          lensRowHtml +
+          // Divider
+          '<div class="pos-lk-cart-rule-dash" aria-hidden="true"></div>' +
+          // Bottom: [−] [↻]  ·  Total ₹X
+          '<div class="pos-lk-cart-total-row">' +
+            '<div class="pos-lk-cart-qty-wrap">' +
+              '<button type="button" class="pos-lk-cart-qty-btn' + (line.qty <= 1 ? ' pos-lk-cart-qty-btn--remove' : '') + '" data-action="' + (line.qty <= 1 ? 'remove' : 'dec') + '" data-idx="' + idx + '" aria-label="' + (line.qty <= 1 ? 'Remove item' : 'Decrease quantity') + '">−</button>' +
+              (line.qty > 1 ? '<span class="pos-lk-cart-qty-num">' + line.qty + '</span>' : '') +
+              '<button type="button" class="pos-lk-cart-qty-btn" data-action="repeat" data-idx="' + idx + '" aria-label="Duplicate">↻</button>' +
+            '</div>' +
+            '<div class="pos-lk-cart-total-section">' +
+              '<span class="pos-lk-cart-total-lbl">Total</span>' +
+              '<span class="pos-lk-cart-total-val">' + totalValHtml + '</span>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      footerMeta +
+      rxFoot +
+      '</div>'
+    )
   }
 
   function obRenderCart() {
     if (!obCart_el) return
     updateKindChip()
     if (obCart.length === 0) {
-      obCart_el.innerHTML = `
-        <div class="pos-empty">
-          <div class="pos-empty-title">Cart is empty</div>
-          <div class="pos-empty-sub">Add a product from the catalogue to get started.</div>
-        </div>
-      `
+      obCart_el.innerHTML =
+        '<div class="pos-empty">' +
+        '<div class="empty-ic" aria-hidden="true">🛒</div>' +
+        '<div class="pos-empty-title">Cart is empty</div>' +
+        '<div class="pos-empty-sub">Add a product from the catalogue to build an order.</div>' +
+        '<button type="button" class="pos-empty-btn" data-action="empty-shop" tabindex="0">Browse catalogue</button>' +
+        '</div>'
+      if (btnObAddMore) btnObAddMore.hidden = true
       obRecalcTotals()
       syncRxSectionVisibility()
       return
     }
 
-    let instantLines = obCart.filter(function(l) { return l.fulfillment === 'INSTANT' })
-    let labLines = obCart.filter(function(l) { return l.fulfillment === 'LAB' })
+    if (btnObAddMore) btnObAddMore.hidden = false
 
-    const createLinesHTML = function(lines, title) {
+    const instantLines = obCart.filter(function (l) { return l.fulfillment === 'INSTANT' })
+    const labLines = obCart.filter(function (l) { return l.fulfillment === 'LAB' })
+
+    const createLinesHTML = function (lines, title) {
       if (lines.length === 0) return ''
-      let html = '<div class="pos-lk-cart-group"><div class="pos-lk-cart-group-title">' + title + '</div>'
-      lines.forEach(function(line) {
-        let idx = obCart.indexOf(line)
-        const rule = getTypeRule(line.product_type)
-        const du = computeLineDisplayUnit(line)
-        const lwp = rule ? String(rule.lens_wizard_policy || 'NEVER') : 'NEVER'
-        const isDual = rule && rule.fulfillment_mode === 'DUAL' && lensWizardAllowed(line.product_type) && lwp !== 'REQUIRED'
-        let fulfillHtml = ''
-        if (isDual) {
-          fulfillHtml =
-            '<div class="pos-ob-line-fulfill">' +
-            '<button type="button" class="pos-ob-mini-btn' + (line.fulfillment === 'INSTANT' ? ' active' : '') + '" data-action="set-instant" data-idx="' + idx + '">Frame only</button>' +
-            '<button type="button" class="pos-ob-mini-btn' + (line.fulfillment === 'LAB' ? ' active' : '') + '" data-action="set-lab" data-idx="' + idx + '">With Lenses</button>' +
-            '</div>'
-        }
-        let labBadge = ''
-        let labBreakdown = ''
-        if (line.fulfillment === 'LAB') {
-          labBadge = line.lab_status === 'complete'
-            ? '<div class="pos-ob-lab-badge configured">✓ Lenses configured</div>'
-            : '<div class="pos-ob-lab-badge error">⚠ Action required</div>'
-          if (line.lab_status === 'complete' && line.lens_bundle) {
-            const b = line.lens_bundle
-            const frameP = Number(line.frame_unit_price) || 0
-            const lensP = Number(b.package_price) || 0
-            let addonTotal = 0
-            const aps = b.addon_prices || []
-            for (let ai = 0; ai < aps.length; ai++) addonTotal += Number(aps[ai]) || 0
-            labBreakdown =
-              '<div class="pos-lk-cart-lab-breakdown">' +
-              '<div class="pos-lk-cart-lab-breakdown-row"><span>Frame (unit)</span><span>' + formatRupees(frameP) + '</span></div>' +
-              '<div class="pos-lk-cart-lab-breakdown-row"><span>Lens package</span><span>' + formatRupees(lensP) + '</span></div>' +
-              (addonTotal > 0.005 ? '<div class="pos-lk-cart-lab-breakdown-row"><span>Add-ons</span><span>' + formatRupees(addonTotal) + '</span></div>' : '') +
-              '<div class="pos-lk-cart-lab-breakdown-row" style="font-weight:700;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)"><span>Lab line total (×' + line.qty + ')</span><span>' + formatRupees(du * line.qty) + '</span></div>' +
-              '</div>'
-          }
-        }
-        let lensTag = ''
-        if (line.fulfillment === 'LAB' && line.lab_status === 'complete' && line.lens_bundle) {
-          lensTag = '<span class="pos-lk-cart-tag">Lens package selected</span>'
-        } else if (line.fulfillment === 'LAB') {
-          lensTag = '<span class="pos-lk-cart-tag">Eye power · configure lenses</span>'
-        }
-        const delTag = line.fulfillment === 'LAB'
-          ? '<span class="pos-lk-cart-tag">' + (line.lab_status === 'complete' ? '5 day delivery' : 'Lens setup pending') + '</span>'
-          : '<span class="pos-lk-cart-tag">Store pickup</span>'
-        html += '<div class="pos-lk-cart-item">' +
-          '<button type="button" class="pos-lk-cart-remove" data-action="remove" data-idx="' + idx + '" aria-label="Remove line" tabindex="0">×</button>' +
-          '<div class="pos-lk-cart-item-media" aria-hidden="true">' + typeEmoji(line.product_type) + '</div>' +
-          '<div class="pos-lk-cart-item-body">' +
-            '<div class="pos-lk-cart-item-title">' + line.product_name + '</div>' +
-            '<div class="pos-lk-cart-item-sub">' + line.brand_name + ' · ' + line.colour_name + '</div>' +
-            '<div class="pos-lk-cart-item-tags">' + lensTag + delTag + '</div>' +
-            fulfillHtml +
-            labBadge +
-            labBreakdown +
-            (line.fulfillment === 'LAB' && line.lab_status !== 'complete'
-              ? '<button type="button" class="pos-ob-mini-btn action-btn" data-action="configure-lens" data-idx="' + idx + '">Select Lenses →</button>'
-              : '') +
-            '<div class="pos-ob-qty-ctrl" aria-label="Quantity">' +
-              '<button type="button" class="pos-ob-qty-btn" data-action="dec" data-idx="' + idx + '" tabindex="0" ' + (line.qty <= 1 ? 'disabled' : '') + '>−</button>' +
-              '<span class="pos-ob-qty-val">' + line.qty + '</span>' +
-              '<button type="button" class="pos-ob-qty-btn" data-action="inc" data-idx="' + idx + '" tabindex="0">+</button>' +
-            '</div>' +
-          '</div>' +
-          '<div class="pos-lk-cart-item-price">' +
-            '<span class="pos-lk-cart-fl-label">Frame + Lens</span>' +
-            '<span class="pos-lk-cart-fl-price">' + formatRupees(du * line.qty) + '</span>' +
-          '</div>' +
-        '</div>'
+      const t = title != null && String(title).trim() !== '' ? String(title).trim() : ''
+      const attrs = !t ? ' pos-lk-cart-group--no-title" role="group" aria-label="Lab order"' : '"'
+      let html = '<div class="pos-lk-cart-group pos-lk-cart-group--v2' + attrs + '>'
+      if (t) html += '<div class="pos-lk-cart-group-title">' + escapeHtml(t) + '</div>'
+      lines.forEach(function (line) {
+        const idx = obCart.indexOf(line)
+        html += cartLineRetailCardHtml(line, idx)
       })
       html += '</div>'
       return html
     }
 
-    obCart_el.innerHTML = createLinesHTML(instantLines, 'Instant pickup') + createLinesHTML(labLines, 'Lab order')
+    obCart_el.innerHTML = createLinesHTML(instantLines, 'Instant pickup') + createLinesHTML(labLines)
     obRecalcTotals()
     syncRxSectionVisibility()
   }
@@ -3704,6 +4368,10 @@
     const btn = e.target.closest('[data-action]')
     if (!btn) return
     const action = btn.dataset.action
+    if (action === 'empty-shop') {
+      navigate(POS_ROUTES.CATALOGUE)
+      return
+    }
     const idx = Number(btn.dataset.idx)
     if (action === 'inc') {
       const rule = getTypeRule(obCart[idx].product_type)
@@ -3713,6 +4381,15 @@
       if (obCart[idx].qty > 1) obCart[idx].qty -= 1
     } else if (action === 'remove') {
       obCart.splice(idx, 1)
+    } else if (action === 'repeat') {
+      if (!Number.isFinite(idx) || !obCart[idx]) return
+      const rptRule = getTypeRule(obCart[idx].product_type)
+      if (rptRule && !rptRule.allow_qty_gt_1) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('This product allows only one line — use + to change quantity if enabled.')
+        return
+      }
+      const copy = JSON.parse(JSON.stringify(obCart[idx]))
+      obCart.splice(idx + 1, 0, copy)
     } else if (action === 'set-instant') {
       obCart[idx].fulfillment = 'INSTANT'
       obCart[idx].lab_status = null
@@ -3768,6 +4445,7 @@
       colour_name: colour.colour_name,
       product_type: product.product_type || '',
       frame_unit_price: colour.sale_price || 0,
+      mrp: Number(colour.mrp) > 0 ? Number(colour.mrp) : (Number(colour.sale_price) || 0),
       qty: 1,
       fulfillment: fulfillment,
       lab_status: fulfillment === 'LAB' ? 'incomplete' : null,
@@ -3786,29 +4464,15 @@
     saveCart()
   }
 
-  function syncCartDeliveryStoreName(session) {
-    const el = document.getElementById('pos-lk-delivery-store-name')
-    if (el && session && session.store_name) {
-      el.textContent = session.store_name
-    }
-  }
-
-  function syncCartDeliveryRadiosFromState() {
-    document.querySelectorAll('input[name="pos-lk-delivery"]').forEach(function (r) {
-      r.checked = (r.value === 'customer' && posDeliveryMode === 'HOME') || (r.value === 'store' && posDeliveryMode === 'STORE')
-    })
-  }
-
   function showOrderBuilderScreen(session, selection) {
     obStaffEl.textContent = session.name + ' • ' + formatRole(session.role)
     obStoreEl.textContent = session.store_name
     obCart = []
+    posSelectedOfferId = null
     clearCartStorage()
     if (selection) addToCart(selection)
     updateKindChip()
     syncRxSectionVisibility()
-    syncCartDeliveryStoreName(session)
-    syncCartDeliveryRadiosFromState()
     obRenderCart()
     refreshCartSidebar(session)
     showScreen('screen-pos-order-builder')
@@ -3820,8 +4484,6 @@
     obStoreEl.textContent = session.store_name
     updateKindChip()
     syncRxSectionVisibility()
-    syncCartDeliveryStoreName(session)
-    syncCartDeliveryRadiosFromState()
     obRenderCart()
     refreshCartSidebar(session)
     showScreen('screen-pos-order-builder')
@@ -3836,16 +4498,72 @@
 
     btnObProceed.addEventListener('click', () => { void handleProceedToPayment() })
 
-    document.querySelectorAll('input[name="pos-lk-delivery"]').forEach(function (radio) {
-      radio.addEventListener('change', function () {
-        posDeliveryMode = radio.value === 'customer' ? 'HOME' : 'STORE'
-        if (typeof setPosDeliveryMode === 'function') setPosDeliveryMode(posDeliveryMode)
-      })
-    })
-
     const btnDraft = document.getElementById('btn-ob-save-draft')
     if (btnDraft) {
       btnDraft.addEventListener('click', function () { void savePosCheckoutDraft(btnDraft) })
+    }
+
+    if (btnCartApplyCoupon) {
+      btnCartApplyCoupon.addEventListener('click', function () {
+        setCartCouponOverlayOpen(true)
+        const session = getPosSession()
+        if (session && session.token) void loadCartOffers(session)
+      })
+    }
+    if (btnCartCouponBack) {
+      btnCartCouponBack.addEventListener('click', function () { setCartCouponOverlayOpen(false) })
+    }
+    if (backdropCartCoupon) {
+      backdropCartCoupon.addEventListener('click', function () { setCartCouponOverlayOpen(false) })
+    }
+    if (btnCartCouponSearch) {
+      btnCartCouponSearch.addEventListener('click', function () {
+        const session = getPosSession()
+        if (session && session.token) void loadCartOffers(session)
+      })
+    }
+    if (cartCouponSearchInput) {
+      cartCouponSearchInput.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return
+        e.preventDefault()
+        const session = getPosSession()
+        if (session && session.token) void loadCartOffers(session)
+      })
+    }
+    if (btnCartOfferRemove) {
+      btnCartOfferRemove.addEventListener('click', function () {
+        posSelectedOfferId = null
+        posServerDiscountPreview = null
+        posDiscountPreviewSeq++
+        obRecalcTotals()
+        refreshPosOfferPickVisuals()
+        syncCartAppliedOfferCard()
+      })
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return
+      if (!overlayCartCoupons || !overlayCartCoupons.classList.contains('open')) return
+      e.preventDefault()
+      setCartCouponOverlayOpen(false)
+    })
+    setCartCouponOverlayOpen(false)
+    if (btnCartCustomerChange) {
+      btnCartCustomerChange.addEventListener('click', function () {
+        clearPosCustomerSelection()
+        renderCartCustomerRef()
+        openPosCustomerPickerModal()
+      })
+    }
+    if (btnCartCustomerSearch) {
+      btnCartCustomerSearch.addEventListener('click', function () {
+        openPosCustomerPickerModal()
+      })
+    }
+    const btnIns = document.getElementById('btn-cart-apply-insurance')
+    if (btnIns) {
+      btnIns.addEventListener('click', function () {
+        if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Eyewoot Secure benefits are not enabled for this store yet.')
+      })
     }
   }
 
@@ -3933,10 +4651,7 @@
           saveCart()
           if (d.delivery_mode === 'HOME' || d.delivery_mode === 'STORE') {
             posDeliveryMode = d.delivery_mode === 'HOME' ? 'HOME' : 'STORE'
-            document.querySelectorAll('input[name="pos-lk-delivery"]').forEach(function (r) {
-              r.checked = (r.value === 'customer' && posDeliveryMode === 'HOME') || (r.value === 'store' && posDeliveryMode === 'STORE')
-            })
-            setPosDeliveryMode(posDeliveryMode)
+            if (typeof setPosDeliveryMode === 'function') setPosDeliveryMode(posDeliveryMode)
           }
           if (d.customer_id) {
             posSelectedCustomerId = Number(d.customer_id)
@@ -4034,20 +4749,25 @@
     // Pick the first cart line that captured a per-line Rx in the Lens wizard.
     const rxLine = obCart.find(function (l) { return l.rx })
     const rxSnap = rxLine ? rxLine.rx : null
-    const subtotalForDisc = obCart.reduce(function (sum, line) {
-      return sum + computeLineDisplayUnit(line) * line.qty
-    }, 0)
     let discInfo = { amount: 0, offerId: null }
     try {
       var qp = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
-      var prevBody = await apiPost('/api/pos/preview-order-discount' + qp, { lines: lines }, session.token)
+      var prevPayload = { lines: lines }
+      var pickId = posSelectedOfferId != null ? Number(posSelectedOfferId) : null
+      if (pickId != null && Number.isFinite(pickId) && pickId > 0) prevPayload.applied_offer_id = pickId
+      var prevBody = await apiPost('/api/pos/preview-order-discount' + qp, prevPayload, session.token)
       var prevD = prevBody && prevBody.data ? prevBody.data : {}
       discInfo = {
         amount: Math.max(0, Number(prevD.discount_amount) || 0),
         offerId: prevD.applied_offer_id != null && Number(prevD.applied_offer_id) > 0 ? Number(prevD.applied_offer_id) : null
       }
-    } catch (_e) {
-      discInfo = computeCartOfferDiscount(subtotalForDisc)
+    } catch (err) {
+      if (posSelectedOfferId) {
+        if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not confirm offer discount.')
+        if (btnObProceed && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnObProceed)
+        return
+      }
+      discInfo = { amount: 0, offerId: null }
     }
     if (btnObProceed && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btnObProceed)
     try {
@@ -4241,6 +4961,17 @@
   }
 
   function bindPosLensNewCustomerModal() {
+    var custPick = document.getElementById('overlay-pos-customer-picker')
+    var custBackdrop = document.getElementById('pos-cust-picker-backdrop')
+    var custDismiss = document.getElementById('pos-cust-picker-dismiss')
+    var custCancel = document.getElementById('cust-picker-btn-cancel')
+    var custDone = document.getElementById('cust-picker-btn-done')
+    var custSearchBtn = document.getElementById('cust-picker-btn-search')
+    var custSearchInp = document.getElementById('cust-picker-search-input')
+    var custCreateBtn = document.getElementById('cust-picker-btn-create')
+    var custNameIn = document.getElementById('cust-picker-new-name')
+    var custPhoneIn = document.getElementById('cust-picker-new-phone')
+    var custEmailIn = document.getElementById('cust-picker-new-email')
     var overlay = document.getElementById('overlay-pos-lens-new-customer')
     var backdrop = document.getElementById('pos-lens-newcust-backdrop')
     var dismiss = document.getElementById('pos-lens-new-cust-dismiss')
@@ -4248,7 +4979,40 @@
     var submitBtn = document.getElementById('btn-pos-lens-new-cust-submit')
     var nameIn = document.getElementById('pos-lens-new-cust-name')
     var phoneIn = document.getElementById('pos-lens-new-cust-phone')
-    if (!overlay) return
+    var rxOverlay = document.getElementById('overlay-pos-lens-rx-manual')
+    var rxBackdrop = document.getElementById('pos-lens-rx-manual-backdrop')
+    var rxDismiss = document.getElementById('pos-lens-rx-manual-dismiss')
+    var rxCancel = document.getElementById('btn-pos-lens-rx-manual-cancel')
+    var rxDone = document.getElementById('btn-pos-lens-rx-manual-done')
+    if (!overlay && !rxOverlay && !custPick) return
+    custBackdrop && custBackdrop.addEventListener('click', closePosCustomerPickerModal)
+    custDismiss && custDismiss.addEventListener('click', closePosCustomerPickerModal)
+    custCancel && custCancel.addEventListener('click', closePosCustomerPickerModal)
+    custDone && custDone.addEventListener('click', function () {
+      closePosCustomerPickerModal()
+      var s = getPosSession()
+      if (s && s.token) refreshCartSidebar(s)
+      navigate(POS_ROUTES.ORDER)
+    })
+    custSearchBtn && custSearchBtn.addEventListener('click', function () { void runCustomerSearch() })
+    if (custSearchInp) {
+      custSearchInp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          void runCustomerSearch()
+        }
+      })
+    }
+    custCreateBtn && custCreateBtn.addEventListener('click', function () { void handleCustomerCreate() })
+    if (custNameIn && typeof cosmosFieldClear === 'function') {
+      custNameIn.addEventListener('input', function () { cosmosFieldClear(custNameIn) })
+    }
+    if (custPhoneIn && typeof cosmosFieldClear === 'function') {
+      custPhoneIn.addEventListener('input', function () { cosmosFieldClear(custPhoneIn) })
+    }
+    if (custEmailIn && typeof cosmosFieldClear === 'function') {
+      custEmailIn.addEventListener('input', function () { cosmosFieldClear(custEmailIn) })
+    }
     backdrop && backdrop.addEventListener('click', closeLensNewCustomerModal)
     dismiss && dismiss.addEventListener('click', closeLensNewCustomerModal)
     cancel && cancel.addEventListener('click', closeLensNewCustomerModal)
@@ -4259,11 +5023,26 @@
     if (phoneIn && typeof cosmosFieldClear === 'function') {
       phoneIn.addEventListener('input', function () { cosmosFieldClear(phoneIn) })
     }
+    rxBackdrop && rxBackdrop.addEventListener('click', closeLensRxManualModal)
+    rxDismiss && rxDismiss.addEventListener('click', closeLensRxManualModal)
+    rxCancel && rxCancel.addEventListener('click', closeLensRxManualModal)
+    rxDone && rxDone.addEventListener('click', closeLensRxManualModal)
     document.addEventListener('keydown', function onLensCustModalEscape(ev) {
       if (ev.key !== 'Escape') return
-      if (!overlay.classList.contains('open')) return
-      ev.preventDefault()
-      closeLensNewCustomerModal()
+      if (custPick && custPick.classList.contains('open')) {
+        ev.preventDefault()
+        closePosCustomerPickerModal()
+        return
+      }
+      if (rxOverlay && rxOverlay.classList.contains('open')) {
+        ev.preventDefault()
+        closeLensRxManualModal()
+        return
+      }
+      if (overlay && overlay.classList.contains('open')) {
+        ev.preventDefault()
+        closeLensNewCustomerModal()
+      }
     })
   }
 
