@@ -17,6 +17,25 @@ const STRUCTURED_OFFER_TYPES = Object.freeze([
   'BUY_LENS_GET_FRAME_FREE'
 ])
 
+const TRIGGER_TYPES = Object.freeze([
+  'ANY_ITEM',
+  'MIN_CART_VALUE',
+  'SPECIFIC_PRODUCT_TYPE'
+])
+
+const BENEFIT_TARGETS = Object.freeze([
+  'CART_TOTAL',
+  'ELIGIBLE_LINES',
+  'CHEAPEST_ITEM'
+])
+
+const SCOPE_MODES = Object.freeze([
+  'ALL_PRODUCTS',
+  'BY_CATEGORY',
+  'BY_BRAND_IN_CATEGORY',
+  'SELECTED_SKUS'
+])
+
 function isStructuredOfferType(discountType) {
   const k = String(discountType || '').trim().toUpperCase()
   return STRUCTURED_OFFER_TYPES.includes(k)
@@ -30,6 +49,9 @@ function structuredOfferTypeRespectsAllocation(discountType) {
 module.exports = {
   OFFER_DISCOUNT_TYPES,
   STRUCTURED_OFFER_TYPES,
+  TRIGGER_TYPES,
+  BENEFIT_TARGETS,
+  SCOPE_MODES,
   isStructuredOfferType,
   structuredOfferTypeRespectsAllocation
 }

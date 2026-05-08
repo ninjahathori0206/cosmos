@@ -7,9 +7,10 @@ const { executeStoredProcedure, getPool } = require('../config/db')
 const { authJwt }           = require('../middleware/authJwt')
 const { apiKeyAuth }        = require('../middleware/apiKeyAuth')
 const { requireTabletSession } = require('../middleware/requireTabletSession')
-const { requireModule, requirePermission } = require('../middleware/authorize')
+const { requireModule, requirePermission, hasPermission } = require('../middleware/authorize')
 const { writeAuditLog }     = require('../services/auditService')
 const { resolveProcurementMode, readSetting } = require('../services/procurementService')
+const { nowUnixSec } = require('../services/jwtPolicyService')
 const orderService = require('../services/orderService')
 const { resolveSkuFacts, computeOfferDiscountAmount } = require('../services/customerOfferDiscountService')
 
@@ -27,6 +28,13 @@ const posPreviewDiscount = [authJwt, requireModule('pos'), requirePermission('po
 const posPaymentCollect = [authJwt, requireModule('pos'), requirePermission('pos.payment.collect')]
 const posLabWorkflow = [authJwt, requireModule('pos'), requirePermission('pos.lab.workflow')]
 const posStaffPinSet = [authJwt, requireModule('pos'), requirePermission('pos.staff.pin.set')]
+
+function canBypassLabOrderSiblingGuardPos(req) {
+  return hasPermission(req, 'foundry.lab.bypass_order_sibling')
+    || hasPermission(req, 'command_unit.lab.bypass_order_sibling')
+    || hasPermission(req, 'storepilot.lab.bypass_order_sibling')
+    || hasPermission(req, 'pos.lab.bypass_order_sibling')
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -174,9 +182,17 @@ const setPinSchema = Joi.object({
   pin:         Joi.string().length(4).pattern(/^\d{4}$/).required()
 })
 
+/** Strip non-digits; drop leading 91 or trunk 0 — expect 10-digit Indian mobile (starts 6–9). */
+function normalizeIndiaMobileDigits(raw) {
+  let d = String(raw || '').replace(/\D/g, '')
+  if (d.length === 12 && d.startsWith('91')) d = d.slice(2)
+  if (d.length === 11 && d.startsWith('0')) d = d.slice(1)
+  return d
+}
+
 const customerCreateSchema = Joi.object({
   full_name:     Joi.string().min(1).max(200).required(),
-  phone:         Joi.string().min(5).max(20).required(),
+  phone:         Joi.string().min(1).max(30).required(),
   email:         Joi.string().max(200).allow(null, '').optional(),
   home_store_id: Joi.number().integer().positive().allow(null)
 })
@@ -188,13 +204,17 @@ const posOrderLineItemSchema = Joi.object({
   product_type: Joi.string().max(50).required(),
   fulfillment:  Joi.string().valid('INSTANT', 'LAB').required(),
   line_key:     Joi.string().max(300).required(),
+  /** Present for LAB lines from POS cart — required for BOGO / structured offer preview (cartPreview). */
+  lab_status:   Joi.string().max(40).allow(null, '').optional(),
   lens_bundle: Joi.object({
     package_id: Joi.number().integer().positive().required(),
     category_id: Joi.number().integer().positive().allow(null),
     addon_ids: Joi.array().items(Joi.number().integer().positive()).default([]),
     package_price: Joi.number().min(0).default(0),
     addon_prices: Joi.array().items(Joi.number().min(0)).default([])
-  }).allow(null).optional()
+  }).allow(null).optional(),
+  /** Optional: groups frame+lens pairs on one bill (server defaults by line index). */
+  pair_index: Joi.number().integer().min(1).optional()
 })
 
 const createOrderSchema = Joi.object({
@@ -203,7 +223,7 @@ const createOrderSchema = Joi.object({
   rx_snapshot:      Joi.object().allow(null),
   discount_amount:  Joi.number().min(0).default(0),
   applied_offer_id: Joi.number().integer().positive().allow(null),
-  /** When true, stock is deducted only after the order is fully paid (see orderService.commitInventoryForPaidOrder). */
+  /** When false (default), stock is deducted in createOrderInTransaction. When true, deduction runs on full payment via commitInventoryForPaidOrder. */
   inventory_deferred: Joi.boolean().default(false),
   lines: Joi.array().items(posOrderLineItemSchema).min(1).required()
 })
@@ -216,7 +236,9 @@ const checkoutDraftSchema = Joi.object({
 })
 
 const previewOrderDiscountSchema = Joi.object({
-  lines: Joi.array().items(posOrderLineItemSchema).min(1).required()
+  lines: Joi.array().items(posOrderLineItemSchema).min(1).required(),
+  /** When omitted or null — no Eyewoot Go offer discount (staff must pick one offer explicitly). */
+  applied_offer_id: Joi.number().integer().positive().allow(null)
 })
 
 const paymentSchema = Joi.object({
@@ -232,7 +254,9 @@ const paymentSchema = Joi.object({
 const orderStatusSchema = Joi.object({
   sub_order_id: Joi.number().integer().positive().required(),
   to_status:    Joi.string().max(30).required(),
-  note:         Joi.string().max(500).allow('', null)
+  note:         Joi.string().max(500).allow('', null),
+  bypass_order_sibling_guard: Joi.boolean().default(false),
+  bypass_reason: Joi.string().max(200).allow('', null)
 })
 
 function mapStartupConfig(result) {
@@ -436,7 +460,8 @@ router.post('/tablet-login', apiKeyAuth, async (req, res, next) => {
         tablet_session: true,
         tablet_id: tab.tablet_id,
         store_id: tab.store_id,
-        device_name: String(tab.device_name || '')
+        device_name: String(tab.device_name || ''),
+        token_issued_at: nowUnixSec()
       },
       process.env.JWT_SECRET,
       { expiresIn: '12h' }
@@ -566,7 +591,8 @@ router.post('/staff-login', apiKeyAuth, requireTabletSession, async (req, res, n
       can_view_reports: Boolean(matched.can_view_reports),
       can_manage_staff: Boolean(matched.can_manage_staff),
       permissions,
-      modules: { pos: true }
+      modules: { pos: true },
+      token_issued_at: nowUnixSec()
     }
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -816,7 +842,8 @@ async function fetchEligibleCartOffersForPos(pool, customerId) {
 
   const r = await pool.request().input('now', nowIST).query(`
     SELECT offer_id, title, description, icon_emoji, discount_type,
-           discount_value, valid_from, valid_to, eligible_tier,
+           discount_value, trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
+           valid_from, valid_to, eligible_tier,
            is_plus_only, sort_order
     FROM   dbo.customer_offers
     WHERE  is_active = 1
@@ -881,7 +908,7 @@ async function fetchEligibleCartOffersForPos(pool, customerId) {
   const scopesByOffer = {}
   if (ids.length) {
     const sr = await pool.request().query(`
-      SELECT offer_id, scope_kind, ref_int, ref_key
+      SELECT offer_id, scope_kind, ref_int, ref_key, is_exclusion
       FROM   dbo.customer_offer_scope
       WHERE  offer_id IN (${ids.join(',')})
     `)
@@ -891,7 +918,8 @@ async function fetchEligibleCartOffersForPos(pool, customerId) {
       scopesByOffer[oid].push({
         kind: row.scope_kind,
         ref_int: row.ref_int != null ? Number(row.ref_int) : null,
-        ref_key: row.ref_key != null ? String(row.ref_key) : null
+        ref_key: row.ref_key != null ? String(row.ref_key) : null,
+        is_exclusion: Boolean(row.is_exclusion)
       })
     }
   }
@@ -918,10 +946,13 @@ router.get('/cart-offers', ...posPromotions, async (req, res, next) => {
   }
 })
 
-// ── POST /api/pos/preview-order-discount — best Offer discount using server formulas ──
+// ── POST /api/pos/preview-order-discount — selected offer or chooser candidates ───
 router.post('/preview-order-discount', ...posPreviewDiscount, async (req, res, next) => {
   try {
-    const { error, value } = previewOrderDiscountSchema.validate(req.body || {})
+    const { error, value } = previewOrderDiscountSchema.validate(req.body || {}, {
+      allowUnknown: false,
+      stripUnknown: true
+    })
     if (error) {
       return res.status(400).json({
         success: false,
@@ -936,31 +967,73 @@ router.post('/preview-order-discount', ...posPreviewDiscount, async (req, res, n
       ? parseInt(String(rawId), 10)
       : null
 
-    const offers = await fetchEligibleCartOffersForPos(pool, customerId)
-    let bestAmt = 0
-    let bestId = null
-
-    for (const o of offers) {
-      const offerRowRes = await pool.request()
-        .input('offer_id', sql.Int, o.offer_id)
-        .query(`
-          SELECT offer_id, discount_type, discount_value
-          FROM   dbo.customer_offers
-          WHERE  offer_id = @offer_id AND is_active = 1
-        `)
-      const offerRow = offerRowRes.recordset && offerRowRes.recordset[0]
-      if (!offerRow) continue
-      const amt = await computeOfferDiscountAmount(pool, offerRow, value.lines, { cartPreview: true })
-      const numAmt = typeof amt === 'number' && Number.isFinite(amt) ? Math.max(0, amt) : 0
-      if (numAmt > bestAmt) {
-        bestAmt = numAmt
-        bestId = o.offer_id
+    const selRaw = value.applied_offer_id
+    const selectedId = selRaw != null && selRaw !== '' ? Number(selRaw) : null
+    if (!Number.isFinite(selectedId) || selectedId < 1) {
+      const candidates = []
+      for (const offer of offers) {
+        const offerRowRes = await pool.request()
+          .input('offer_id', sql.Int, offer.offer_id)
+          .query(`
+            SELECT offer_id, discount_type, discount_value, trigger_type, trigger_value, benefit_target, max_discount_amount
+            FROM   dbo.customer_offers
+            WHERE  offer_id = @offer_id AND is_active = 1
+          `)
+        const offerRow = offerRowRes.recordset && offerRowRes.recordset[0]
+        if (!offerRow) continue
+        const amt = await computeOfferDiscountAmount(pool, offerRow, value.lines, { cartPreview: true })
+        const discountAmt = typeof amt === 'number' && Number.isFinite(amt) ? Math.max(0, amt) : 0
+        if (discountAmt > 0) {
+          candidates.push({
+            offer_id: Number(offer.offer_id),
+            title: String(offer.title || ''),
+            pos_label: String(offer.pos_label || offer.title || ''),
+            discount_amount: discountAmt
+          })
+        }
       }
+      candidates.sort((a, b) => b.discount_amount - a.discount_amount || a.offer_id - b.offer_id)
+      return res.json({
+        success: true,
+        data: {
+          discount_amount: 0,
+          applied_offer_id: null,
+          requires_selection: candidates.length > 1,
+          candidates
+        }
+      })
     }
+
+    const offers = await fetchEligibleCartOffersForPos(pool, customerId)
+    const match = offers.find((o) => Number(o.offer_id) === Number(selectedId))
+    if (!match) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selected offer is not available for this customer or cart. Pick another offer or clear the selection.'
+      })
+    }
+
+    const offerRowRes = await pool.request()
+      .input('offer_id', sql.Int, selectedId)
+      .query(`
+        SELECT offer_id, discount_type, discount_value, trigger_type, trigger_value, benefit_target, max_discount_amount
+        FROM   dbo.customer_offers
+        WHERE  offer_id = @offer_id AND is_active = 1
+      `)
+    const offerRow = offerRowRes.recordset && offerRowRes.recordset[0]
+    if (!offerRow) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selected offer is no longer active. Refresh offers and try again.'
+      })
+    }
+
+    const amt = await computeOfferDiscountAmount(pool, offerRow, value.lines, { cartPreview: true })
+    const numAmt = typeof amt === 'number' && Number.isFinite(amt) ? Math.max(0, amt) : 0
 
     return res.json({
       success: true,
-      data: { discount_amount: bestAmt, applied_offer_id: bestId }
+      data: { discount_amount: numAmt, applied_offer_id: selectedId }
     })
   } catch (err) {
     return next(err)
@@ -985,12 +1058,21 @@ router.post('/customer', ...posCustomersCreate, async (req, res, next) => {
   try {
     const { error, value } = customerCreateSchema.validate(req.body)
     if (error) {
+      const parts = error.details.map((d) => d.message)
       return res.status(400).json({
         success: false,
-        message: 'Validation error',
-        errors: error.details.map((d) => d.message)
+        message: parts.join(' ') || 'Validation error',
+        errors: parts
       })
     }
+    const phoneNorm = normalizeIndiaMobileDigits(value.phone)
+    if (!/^[6-9]\d{9}$/.test(phoneNorm)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone must be a valid 10-digit Indian mobile (optional +91 or leading 0).'
+      })
+    }
+    value.phone = phoneNorm
     const homeRaw = Number(req.user && req.user.store_id)
     const homeFallback = Number.isFinite(homeRaw) && homeRaw > 0 ? homeRaw : null
     const homeStore = value.home_store_id != null ? value.home_store_id : homeFallback
@@ -1080,6 +1162,7 @@ router.get('/orders/:id', ...posOrdersView, async (req, res, next) => {
       success: true,
       data: {
         order: orderService.mapOrderRowForApi(bundle.order),
+        customer: bundle.customer || null,
         sub_orders: bundle.subList,
         payments: bundle.payments,
         payment_summary: bundle.payment_summary,
@@ -1138,6 +1221,28 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
 
     // Authoritative offer discount re-computation (prevents client-side manipulation)
     let authorisedDiscountAmount = value.discount_amount || 0
+    if (!value.applied_offer_id) {
+      const offers = await fetchEligibleCartOffersForPos(pool, value.customer_id || null)
+      let qualifying = 0
+      for (const offer of offers) {
+        const offerRow = await pool.request()
+          .input('offer_id', sql.Int, offer.offer_id)
+          .query(`
+            SELECT offer_id, discount_type, discount_value, trigger_type, trigger_value, benefit_target, max_discount_amount
+            FROM   dbo.customer_offers WHERE offer_id = @offer_id
+          `)
+        const row = offerRow.recordset && offerRow.recordset[0]
+        if (!row || !row.offer_id) continue
+        const amt = await computeOfferDiscountAmount(pool, row, value.lines, { cartPreview: false })
+        if (Number(amt) > 0) qualifying += 1
+        if (qualifying > 1) {
+          return res.status(400).json({
+            success: false,
+            message: 'Multiple offers qualify. Cashier must select one offer before checkout.'
+          })
+        }
+      }
+    }
     if (value.applied_offer_id) {
       const offerRow = await pool.request()
         .input('offer_id', sql.Int, value.applied_offer_id)
@@ -1177,6 +1282,31 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
       })
 
       await transaction.commit()
+
+      if (value.applied_offer_id && Number(authorisedDiscountAmount) > 0) {
+        try {
+          await pool.request()
+            .input('offer_id', sql.Int, Number(value.applied_offer_id))
+            .input('order_id', sql.Int, Number(out.order_id))
+            .input('order_no', sql.NVarChar(80), String(out.order_no || ''))
+            .input('store_id', sql.Int, Number(storeId))
+            .input('cashier_user_id', sql.Int, Number(employeeId))
+            .input('customer_id', sql.Int, value.customer_id || null)
+            .input('discount_amount', sql.Decimal(12, 2), Number(authorisedDiscountAmount) || 0)
+            .input('sale_amount', sql.Decimal(12, 2), Number(out.total_amount) || 0)
+            .query(`
+              IF OBJECT_ID('dbo.sp_RecordOfferUsage', 'P') IS NOT NULL
+              BEGIN
+                EXEC dbo.sp_RecordOfferUsage
+                  @offer_id=@offer_id, @order_id=@order_id, @order_no=@order_no, @store_id=@store_id,
+                  @cashier_user_id=@cashier_user_id, @customer_id=@customer_id,
+                  @discount_amount=@discount_amount, @sale_amount=@sale_amount
+              END
+            `)
+        } catch (_usageErr) {
+          // non-fatal for checkout
+        }
+      }
 
       return res.json({
         success: true,
@@ -1387,8 +1517,15 @@ router.post('/orders/:id/status', ...posLabWorkflow, async (req, res, next) => {
     const storeId = posJwtStoreIdOr400(req, res)
     if (storeId == null) return
 
-    const employeeId = req.user.employee_id
+    const bypassSibling = value.bypass_order_sibling_guard === true
+    if (bypassSibling && !canBypassLabOrderSiblingGuardPos(req)) {
+      return res.status(403).json({ success: false, message: 'Permission denied for pair-guard bypass.' })
+    }
+
+    const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
+    const employeeId = req.user.employee_id
+    const actorRole = 'store_in_charge'
     const out = await orderService.updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
       orderId,
       storeId,
@@ -1396,7 +1533,10 @@ router.post('/orders/:id/status', ...posLabWorkflow, async (req, res, next) => {
       actorRole,
       subOrderId: value.sub_order_id,
       toStatus: value.to_status,
-      note: value.note
+      note: value.note,
+      allowCrossStoreLab: false,
+      bypassOrderSiblingGuard: bypassSibling,
+      bypassReason: value.bypass_reason || null
     })
     return res.json({ success: true, message: out.message, data: { from_status: out.from_status, to_status: out.to_status } })
   } catch (err) {

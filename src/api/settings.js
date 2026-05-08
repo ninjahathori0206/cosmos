@@ -3,6 +3,7 @@ const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure, getPool } = require('../config/db');
 const { requireModule, requirePermission } = require('../middleware/authorize');
+const { writeAuditLog } = require('../services/auditService');
 const { SCOPE_DIMENSIONS, ALLOWED_SCOPE_KINDS } = require('../config/offerScopeDimensions');
 const {
   validateScopeRefs,
@@ -11,6 +12,9 @@ const {
 } = require('../services/customerOfferDiscountService');
 const {
   OFFER_DISCOUNT_TYPES,
+  TRIGGER_TYPES,
+  BENEFIT_TARGETS,
+  SCOPE_MODES,
   isStructuredOfferType,
   structuredOfferTypeRespectsAllocation
 } = require('../config/customerOfferDiscountTypes');
@@ -395,7 +399,8 @@ router.delete('/leave-types/:id', ...settingsManage, async (req, res, next) => {
 const scopeItemSchema = Joi.object({
   kind: Joi.string().valid(...ALLOWED_SCOPE_KINDS).required(),
   ref_int: Joi.number().integer().positive().allow(null),
-  ref_key: Joi.string().max(60).allow(null, '')
+  ref_key: Joi.string().max(60).allow(null, ''),
+  is_exclusion: Joi.boolean().default(false)
 }).or('ref_int', 'ref_key');
 
 const customerOfferCreateSchema = Joi.object({
@@ -404,6 +409,11 @@ const customerOfferCreateSchema = Joi.object({
   icon_emoji: Joi.string().max(10).allow('', null),
   discount_type: Joi.string().valid(...OFFER_DISCOUNT_TYPES).default('PCT'),
   discount_value: Joi.number().min(0).default(0),
+  trigger_type: Joi.string().valid(...TRIGGER_TYPES).default('ANY_ITEM'),
+  trigger_value: Joi.string().max(100).allow(null, ''),
+  benefit_target: Joi.string().valid(...BENEFIT_TARGETS).default('ELIGIBLE_LINES'),
+  max_discount_amount: Joi.number().min(0).allow(null),
+  scope_mode: Joi.string().valid(...SCOPE_MODES).default('ALL_PRODUCTS'),
   valid_from: Joi.any().optional(),
   valid_to: Joi.any().required(),
   eligible_tier: Joi.string().max(50).allow(null, ''),
@@ -418,6 +428,11 @@ const customerOfferUpdateSchema = Joi.object({
   icon_emoji: Joi.string().max(10).allow('', null),
   discount_type: Joi.string().valid(...OFFER_DISCOUNT_TYPES),
   discount_value: Joi.number().min(0),
+  trigger_type: Joi.string().valid(...TRIGGER_TYPES),
+  trigger_value: Joi.string().max(100).allow(null, ''),
+  benefit_target: Joi.string().valid(...BENEFIT_TARGETS),
+  max_discount_amount: Joi.number().min(0).allow(null),
+  scope_mode: Joi.string().valid(...SCOPE_MODES),
   valid_from: Joi.any().optional(),
   valid_to: Joi.any(),
   eligible_tier: Joi.string().max(50).allow(null, ''),
@@ -432,7 +447,8 @@ router.get('/customer-offers', ...promotionsView, async (req, res, next) => {
     const pool = await getPool();
     const r = await pool.request().query(`
       SELECT offer_id, title, description, icon_emoji, discount_type,
-             discount_value, valid_from, valid_to, eligible_tier,
+             discount_value, trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
+             valid_from, valid_to, eligible_tier,
              is_plus_only, is_active, sort_order, created_at
       FROM   dbo.customer_offers
       ORDER BY is_active DESC, sort_order ASC, created_at DESC
@@ -441,7 +457,7 @@ router.get('/customer-offers', ...promotionsView, async (req, res, next) => {
 
     const scopeRows = offers.length
       ? await pool.request().query(`
-          SELECT offer_id, scope_kind, ref_int, ref_key
+          SELECT offer_id, scope_kind, ref_int, ref_key, is_exclusion
           FROM   dbo.customer_offer_scope
           WHERE  offer_id IN (${offers.map((o) => o.offer_id).join(',')})
         `)
@@ -454,7 +470,8 @@ router.get('/customer-offers', ...promotionsView, async (req, res, next) => {
       scopesByOffer[oid].push({
         kind: sr.scope_kind,
         ref_int: sr.ref_int != null ? Number(sr.ref_int) : null,
-        ref_key: sr.ref_key != null ? String(sr.ref_key) : null
+        ref_key: sr.ref_key != null ? String(sr.ref_key) : null,
+        is_exclusion: Boolean(sr.is_exclusion)
       })
     }
 
@@ -476,6 +493,12 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
       });
     }
     const pool = await getPool();
+    if ((value.discount_type || 'PCT') !== 'PCT' && value.max_discount_amount != null) {
+      return res.status(400).json({ success: false, message: 'max_discount_amount is allowed only for PCT offers.' });
+    }
+    if ((value.trigger_type || 'ANY_ITEM') !== 'ANY_ITEM' && !String(value.trigger_value || '').trim()) {
+      return res.status(400).json({ success: false, message: 'trigger_value is required when trigger_type is not ANY_ITEM.' });
+    }
     const rawScopes = Array.isArray(value.scopes) ? value.scopes : [];
     const discountType = value.discount_type || 'PCT';
     const scopes =
@@ -492,6 +515,11 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
       .input('icon_emoji', value.icon_emoji || '🎁')
       .input('discount_type', value.discount_type || 'PCT')
       .input('discount_value', parseFloat(value.discount_value) || 0)
+      .input('trigger_type', value.trigger_type || 'ANY_ITEM')
+      .input('trigger_value', value.trigger_value ? String(value.trigger_value).trim() : null)
+      .input('benefit_target', value.benefit_target || 'ELIGIBLE_LINES')
+      .input('max_discount_amount', value.max_discount_amount != null ? Number(value.max_discount_amount) : null)
+      .input('scope_mode', value.scope_mode || 'ALL_PRODUCTS')
       .input('valid_from', vf)
       .input('valid_to', vt)
       .input('eligible_tier', value.eligible_tier ? String(value.eligible_tier).trim() : null)
@@ -501,16 +529,27 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
       .query(`
         INSERT INTO dbo.customer_offers
           (title, description, icon_emoji, discount_type, discount_value,
+           trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
            valid_from, valid_to, eligible_tier, is_plus_only, sort_order,
            created_by_user_id)
         OUTPUT INSERTED.offer_id
         VALUES
           (@title, @description, @icon_emoji, @discount_type, @discount_value,
+           @trigger_type, @trigger_value, @benefit_target, @max_discount_amount, @scope_mode,
            @valid_from, @valid_to, @eligible_tier, @is_plus_only, @sort_order,
            @uid)
       `);
     const offerId = r.recordset[0].offer_id;
     if (scopes.length) await replaceOfferScopes(pool, offerId, scopes);
+    await writeAuditLog({
+      userId: req.user && req.user.user_id ? Number(req.user.user_id) : null,
+      action: 'PROMOTION_OFFER_CREATED',
+      module: 'command_unit',
+      entityType: 'customer_offer',
+      entityId: offerId,
+      newValue: JSON.stringify({ offer_id: offerId, body: value }),
+      ipAddress: req.ip || null
+    });
     return res.status(201).json({ success: true, offer_id: offerId });
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
@@ -535,9 +574,16 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
     const pool = await getPool();
     const {
       title, description, icon_emoji, discount_type, discount_value,
+      trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
       valid_from, valid_to, eligible_tier, is_plus_only, is_active, sort_order,
       scopes
     } = value;
+    if ((discount_type && discount_type !== 'PCT') && max_discount_amount != null) {
+      return res.status(400).json({ success: false, message: 'max_discount_amount is allowed only for PCT offers.' });
+    }
+    if ((trigger_type && trigger_type !== 'ANY_ITEM') && !String(trigger_value || '').trim()) {
+      return res.status(400).json({ success: false, message: 'trigger_value is required when trigger_type is not ANY_ITEM.' });
+    }
 
     let scopesList = Array.isArray(scopes) ? scopes : null;
     let typeForScopes = discount_type != null ? discount_type : null;
@@ -563,6 +609,11 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
       .input('icon_emoji', icon_emoji !== undefined ? icon_emoji : null)
       .input('discount_type', discount_type != null ? discount_type : null)
       .input('discount_value', discount_value != null ? parseFloat(discount_value) : null)
+      .input('trigger_type', trigger_type != null ? trigger_type : null)
+      .input('trigger_value', trigger_value !== undefined ? (trigger_value ? String(trigger_value).trim() : null) : null)
+      .input('benefit_target', benefit_target != null ? benefit_target : null)
+      .input('max_discount_amount', max_discount_amount != null ? Number(max_discount_amount) : null)
+      .input('scope_mode', scope_mode != null ? scope_mode : null)
       .input('valid_from', valid_from !== undefined ? (valid_from ? String(valid_from).trim() : null) : null)
       .input('valid_to', valid_to !== undefined ? String(valid_to).trim() : null)
       .input('eligible_tier', eligible_tier !== undefined ? (eligible_tier ? String(eligible_tier).trim() : null) : null)
@@ -576,6 +627,11 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
           icon_emoji     = ISNULL(@icon_emoji,     icon_emoji),
           discount_type  = ISNULL(@discount_type,  discount_type),
           discount_value = ISNULL(@discount_value, discount_value),
+          trigger_type   = ISNULL(@trigger_type,   trigger_type),
+          trigger_value  = ISNULL(@trigger_value,  trigger_value),
+          benefit_target = ISNULL(@benefit_target, benefit_target),
+          max_discount_amount = ISNULL(@max_discount_amount, max_discount_amount),
+          scope_mode     = ISNULL(@scope_mode,     scope_mode),
           valid_from     = ISNULL(@valid_from,     valid_from),
           valid_to       = ISNULL(@valid_to,       valid_to),
           eligible_tier  = ISNULL(@eligible_tier,  eligible_tier),
@@ -595,6 +651,15 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
     } else if (scopesList != null) {
       await replaceOfferScopes(pool, offerId, scopesList)
     }
+    await writeAuditLog({
+      userId: req.user && req.user.user_id ? Number(req.user.user_id) : null,
+      action: 'PROMOTION_OFFER_UPDATED',
+      module: 'command_unit',
+      entityType: 'customer_offer',
+      entityId: offerId,
+      newValue: JSON.stringify({ offer_id: offerId, body: value }),
+      ipAddress: req.ip || null
+    });
     return res.json({ success: true });
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
@@ -612,7 +677,40 @@ router.delete('/customer-offers/:id', ...promotionsManage, async (req, res, next
       SET is_active = 0, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
       WHERE offer_id = @id
     `);
+    await writeAuditLog({
+      userId: req.user && req.user.user_id ? Number(req.user.user_id) : null,
+      action: 'PROMOTION_OFFER_DEACTIVATED',
+      module: 'command_unit',
+      entityType: 'customer_offer',
+      entityId: offerId,
+      ipAddress: req.ip || null
+    });
     return res.json({ success: true });
+  } catch (err) { return next(err); }
+});
+
+router.get('/customer-offers/report/usage', ...promotionsView, async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const from = req.query.from ? String(req.query.from).trim() : null;
+    const to = req.query.to ? String(req.query.to).trim() : null;
+    const q = await pool.request()
+      .input('from_dt', from)
+      .input('to_dt', to)
+      .query(`
+        SELECT ou.offer_id,
+               COALESCE(co.title, CONCAT('Offer #', ou.offer_id)) AS offer_title,
+               COUNT_BIG(1) AS usage_count,
+               SUM(ISNULL(ou.discount_amount, 0)) AS total_discount,
+               SUM(ISNULL(ou.sale_amount, 0)) AS total_sales
+        FROM dbo.offer_usage ou
+        LEFT JOIN dbo.customer_offers co ON co.offer_id = ou.offer_id
+        WHERE (@from_dt IS NULL OR ou.used_at >= @from_dt)
+          AND (@to_dt IS NULL OR ou.used_at <= @to_dt)
+        GROUP BY ou.offer_id, co.title
+        ORDER BY total_discount DESC
+      `);
+    return res.json({ success: true, data: q.recordset || [] });
   } catch (err) { return next(err); }
 });
 

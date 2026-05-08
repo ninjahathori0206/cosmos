@@ -5,8 +5,294 @@ const ORDERS_ENGINE_MODE_KEY = 'orders_engine_mode'
 const MONEY_EPS = 0.02
 const ORDER_SEQ_KEY = 'pos_order_seq'
 
+/** Other LAB sibling must be ≥ lab QC Pass before dispatching any job under the same bill to store. */
+const LAB_PEER_READY_FOR_DISPATCH = new Set([
+  'QC_PASS', 'DISPATCHED_TO_STORE', 'RECEIVED_AT_STORE', 'STORE_QC_PASS', 'STORE_QC_PARTIAL',
+  'QC_FAIL_STORE', 'READY_FOR_DELIVERY', 'DELIVERED', 'BALANCE_COLLECTED', 'INVOICED'
+])
+
+/** Transitions guarded by LAB-only sibling coherence (same parent order_id). */
+const LAB_SIBLING_DISPATCH_GUARD_TARGETS = new Set(['DISPATCHED_TO_STORE'])
+
+/** @returns {number} */
+function sanitizePairIndex(v, fallback) {
+  const n = parseInt(String(v), 10)
+  if (!Number.isFinite(n) || n < 1) return fallback
+  return n
+}
+
+function pairIndexLetter(idx) {
+  const p = Number(idx)
+  const n = Number.isFinite(p) && p >= 1 ? Math.floor(p) : 1
+  if (n <= 26) return String.fromCharCode(64 + n)
+  return `${n}`
+}
+
+/** @returns {string} */
+function subOrderDisplayLabel(orderNo, pairIndex) {
+  const base = String(orderNo || '').trim()
+  const suf = pairIndexLetter(pairIndex)
+  return base ? base + suf : `SUB-${suf}`
+}
+
+/**
+ * Assign pair_index — default each cart line slot is its own pair (caller may override per line).
+ * @param {{ pair_index?: number }[]} lines
+ */
+function normalizeIncomingPosLinesWithPairs(lines) {
+  return lines.map((l, idx) => {
+    const fb = idx + 1
+    const pairIndex = l.pair_index != null ? sanitizePairIndex(l.pair_index, fb) : fb
+    return { ...l, pair_index: pairIndex }
+  })
+}
+
+/**
+ * LAB sub-rows for list views (one bill may have multiple lab jobs per pair).
+ * @returns {Map<number, { sub_order_id: number, lab_workflow_status: string|null, pair_index: number }[]>}
+ */
+async function fetchLabSubOrderSnapshotsForOrders(pool, t, orderIds) {
+  const uniq = [...new Set((orderIds || [])
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n) && n > 0))]
+  const map = new Map()
+  if (!uniq.length) return map
+  const ph = uniq.map((_, i) => `@oid_${i}`).join(', ')
+  const req = pool.request()
+  for (let i = 0; i < uniq.length; i += 1) req.input(`oid_${i}`, sql.Int, uniq[i])
+  const rs = await req.query(`
+    SELECT order_id, sub_order_id, lab_workflow_status, pair_index,
+           lab_received_confirmed, lab_backorder_confirmed
+    FROM ${t.sub_orders}
+    WHERE fulfillment = N'LAB' AND order_id IN (${ph})
+    ORDER BY order_id, pair_index, sub_order_id
+  `)
+  for (const row of rs.recordset || []) {
+    const oid = Number(row.order_id)
+    if (!map.has(oid)) map.set(oid, [])
+    map.get(oid).push({
+      sub_order_id: row.sub_order_id,
+      lab_workflow_status: row.lab_workflow_status != null ? String(row.lab_workflow_status) : null,
+      pair_index: row.pair_index != null ? Number(row.pair_index) : 1,
+      lab_received_confirmed: labIntakeBitOn(row.lab_received_confirmed),
+      lab_backorder_confirmed: labIntakeBitOn(row.lab_backorder_confirmed)
+    })
+  }
+  return map
+}
+
+function mergeSiblingGuardBypassNote(userNote, bypassActive, bypassReason, blockingPeers) {
+  const base = userNote && String(userNote).trim() ? String(userNote).trim() : ''
+  if (!bypassActive) return base || null
+  const br = String(bypassReason || 'Authorised').trim().slice(0, 80)
+  const peerBit = Array.isArray(blockingPeers) && blockingPeers.length
+    ? blockingPeers.map((b) => `#${b.sub_order_id}:${String(b.lab_workflow_status || '').slice(0, 24)}`).join(';').slice(0, 220)
+    : ''
+  const tag = peerBit
+    ? `[sibling_guard_bypass reason=${br} peers=${peerBit}]`
+    : `[sibling_guard_bypass reason=${br}]`
+  let out = base ? `${tag} ${base}` : tag
+  if (out.length > 500) out = out.slice(0, 500)
+  return out
+}
+
+function formatLabSiblingGuardError(blocking) {
+  const parts = (blocking || []).map((b) =>
+    `job #${b.sub_order_id} is ${b.lab_workflow_status || 'unknown'} (pair-mate must reach QC pass or later)`)
+  return `Bill pair guard: ${parts.join('; ')}`
+}
+
+async function fetchLabSiblingPeersSamePair(pool, t, orderId, pairIndex, excludeSubOrderId) {
+  const pidx = sanitizePairIndex(pairIndex, 1)
+  const sid = Number(excludeSubOrderId)
+  if (!Number.isFinite(sid) || sid < 1) return []
+  const rs = await pool.request()
+    .input('oid', sql.Int, orderId)
+    .input('pidx', sql.Int, pidx)
+    .input('sid', sql.Int, sid)
+    .query(`
+      SELECT sub_order_id, lab_workflow_status
+      FROM ${t.sub_orders}
+      WHERE order_id = @oid AND fulfillment = N'LAB'
+        AND pair_index = @pidx AND sub_order_id <> @sid
+    `)
+  return rs.recordset || []
+}
+
+function blockingLabPeersNotDispatchReady(peers) {
+  const blocking = []
+  for (const p of peers || []) {
+    const st = String(p.lab_workflow_status || '').trim().toUpperCase()
+    if (!LAB_PEER_READY_FOR_DISPATCH.has(st)) {
+      blocking.push({ sub_order_id: p.sub_order_id, lab_workflow_status: p.lab_workflow_status })
+    }
+  }
+  return blocking
+}
+
 function roundMoney(n) {
   return Math.round(Number(n) * 100) / 100
+}
+
+/** Staff-edited invoice-facing fields at handover; persisted on pos_invoices only (reference). */
+function normalizeInvoicePreferencesForStorage(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const pick = (v, max) => {
+    if (v == null) return null
+    const s = String(v).trim()
+    if (!s) return null
+    return s.length > max ? s.slice(0, max) : s
+  }
+  const out = {
+    bill_name: pick(raw.bill_name, 200),
+    gstin: pick(raw.gstin, 20),
+    billing_address: pick(raw.billing_address, 500),
+    shipping_address: pick(raw.shipping_address, 500),
+    phone: pick(raw.phone, 30),
+    email: pick(raw.email, 200),
+    notes: pick(raw.notes, 500)
+  }
+  const hasAny = Object.values(out).some((x) => x != null && String(x).length > 0)
+  return hasAny ? out : null
+}
+
+/** MSSQL JSON / NVARCHAR(MAX) columns may arrive as strings — normalize for API consumers. */
+function parseJsonMaybe(val) {
+  if (val == null || val === '') return null
+  if (typeof val === 'object') return val
+  try {
+    return JSON.parse(String(val))
+  } catch (_e) {
+    return null
+  }
+}
+
+async function fetchPosCustomerBrief(pool, customerId) {
+  const cid = Number(customerId)
+  if (!Number.isFinite(cid) || cid < 1) return null
+  const r = await pool.request()
+    .input('cid', sql.Int, cid)
+    .query(`
+      SELECT customer_id, full_name, phone, ISNULL(email, '') AS email
+      FROM dbo.pos_customers
+      WHERE customer_id = @cid
+    `)
+  if (!r.recordset.length) return null
+  const c = r.recordset[0]
+  return {
+    customer_id: c.customer_id,
+    full_name: c.full_name || '',
+    phone: c.phone || '',
+    email: c.email || ''
+  }
+}
+
+/**
+ * Same linkage as POS order lists: JOIN order → pos_customers, with sane defaults for walk-ins.
+ * Avoids blank handover forms when customer_id is NULL or FK row is missing.
+ * @returns {{ customer_id: number|null, full_name: string, phone: string, email: string }}
+ */
+async function fetchOrderCustomerSnapshotForBundle(pool, mode, order) {
+  const oid = Number(order.order_id)
+  const t = tableNames(mode)
+  if (!Number.isFinite(oid) || oid < 1) {
+    return { customer_id: null, full_name: 'Walk-in Customer', phone: '', email: '' }
+  }
+  const rs = await pool.request()
+    .input('oid', sql.Int, oid)
+    .query(`
+      SELECT TOP 1
+        o.customer_id AS order_customer_id,
+        c.customer_id AS joined_customer_id,
+        c.full_name,
+        c.phone,
+        ISNULL(c.email, N'') AS email
+      FROM ${t.orders} o
+      LEFT JOIN dbo.pos_customers c ON o.customer_id = c.customer_id
+      WHERE o.order_id = @oid
+    `)
+  const row = (rs.recordset || [])[0] || {}
+  const nameRaw = row.full_name != null ? String(row.full_name).trim() : ''
+  const phone = row.phone != null ? String(row.phone).trim() : ''
+  const email = row.email != null ? String(row.email).trim() : ''
+
+  const joinedId = row.joined_customer_id != null ? Number(row.joined_customer_id) : null
+  const orderCid = row.order_customer_id != null ? Number(row.order_customer_id) : null
+  const hasRegisteredLink = Number.isFinite(joinedId) && joinedId >= 1
+  const hasOrderCustomerId = Number.isFinite(orderCid) && orderCid >= 1
+  const linkedId = hasRegisteredLink ? joinedId
+    : (hasOrderCustomerId ? orderCid : null)
+
+  let full_name = nameRaw
+  if (!full_name) {
+    full_name = hasOrderCustomerId ? 'Customer' : 'Walk-in Customer'
+  }
+
+  return {
+    customer_id: linkedId,
+    full_name,
+    phone,
+    email
+  }
+}
+
+/**
+ * Attach sku_code / product_label / colour for order line items (catalogue joins).
+ * @param {import('mssql').ConnectionPool} pool
+ * @param {{ items: Array<{ sku_id?: number }> }[]} subList
+ */
+async function enrichOrderItemsWithSkuMeta(pool, subList) {
+  const ids = new Set()
+  for (const sub of subList || []) {
+    for (const it of sub.items || []) {
+      const sid = Number(it.sku_id)
+      if (Number.isFinite(sid) && sid > 0) ids.add(sid)
+    }
+  }
+  if (!ids.size) return
+  const idList = Array.from(ids)
+  const ph = idList.map((_, i) => `@sid_${i}`).join(', ')
+  const req = pool.request()
+  for (let i = 0; i < idList.length; i += 1) {
+    req.input(`sid_${i}`, sql.Int, idList[i])
+  }
+  const q = `
+    SELECT sk.sku_id,
+           sk.sku_code,
+           ISNULL(pm.ew_collection, '') + N' · ' + ISNULL(pm.style_model, '') AS product_label,
+           ISNULL(hb.brand_name, ISNULL(mm.maker_name, '')) AS brand_name,
+           ISNULL(pic.colour_name, '') AS colour_name,
+           ISNULL(pm.product_type, '') AS product_type_pm
+    FROM dbo.skus sk
+    INNER JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
+    LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
+    LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
+    LEFT JOIN dbo.purchase_item_colours pic ON pic.colour_id = sk.item_colour_id
+    WHERE sk.sku_id IN (${ph})
+  `
+  const result = await req.query(q)
+  const meta = new Map()
+  for (const row of result.recordset || []) {
+    meta.set(Number(row.sku_id), {
+      sku_code: row.sku_code || '',
+      product_label: String(row.product_label || '').trim(),
+      brand_name: row.brand_name || '',
+      colour_name: row.colour_name || '',
+      product_type_pm: row.product_type_pm || ''
+    })
+  }
+  for (const sub of subList || []) {
+    for (const it of sub.items || []) {
+      const m = meta.get(Number(it.sku_id))
+      if (m) {
+        it.sku_code = m.sku_code
+        it.product_label = m.product_label
+        it.brand_name = m.brand_name
+        it.colour_name = m.colour_name
+        if (!it.product_type && m.product_type_pm) it.product_type = m.product_type_pm
+      }
+    }
+  }
 }
 
 /**
@@ -172,6 +458,30 @@ function buildPaymentSummary(orderRow, labSubtotal, instantSubtotal, payments) {
 }
 
 /**
+ * True when lab advance target is met: explicit ADVANCE payments, or total paid
+ * (optionally + this request) after covering the instant slice on MIXED orders.
+ * Handles FULL/BALANCE rows that prepaid the bill without a separate ADVANCE line.
+ * @param {{ order_kind: string, advance_target: number, paid_advance: number, paid_total: number, instant_portion_due_incl_gst?: number }} summary
+ * @param {number} [stagedAmount] amount in the current payment row (BALANCE/FULL)
+ */
+function labAdvanceEffectivelyPaid(summary, stagedAmount = 0) {
+  const at = roundMoney(summary.advance_target)
+  if (at <= MONEY_EPS) return true
+  if (roundMoney(summary.paid_advance) + MONEY_EPS >= at) return true
+  const add = roundMoney(Number(stagedAmount) || 0)
+  const pooled = roundMoney(summary.paid_total + add)
+  const kind = String(summary.order_kind || '').toUpperCase()
+  let labAttributed = pooled
+  if (kind === 'MIXED') {
+    const ins = roundMoney(Number(summary.instant_portion_due_incl_gst) || 0)
+    if (ins > MONEY_EPS) {
+      labAttributed = Math.max(0, roundMoney(pooled - ins))
+    }
+  }
+  return labAttributed + MONEY_EPS >= at
+}
+
+/**
  * @returns {{ ok: boolean, message?: string }}
  */
 function validatePaymentAgainstSummary(orderRow, summary, body) {
@@ -209,7 +519,7 @@ function validatePaymentAgainstSummary(orderRow, summary, body) {
       return { ok: true }
     }
     if (stage === 'BALANCE' || stage === 'FULL') {
-      if (summary.paid_advance + MONEY_EPS < summary.advance_target && summary.advance_target > 0) {
+      if (!labAdvanceEffectivelyPaid(summary, amount)) {
         return { ok: false, message: 'Collect lab advance before balance or final payment.' }
       }
       return { ok: true }
@@ -230,12 +540,11 @@ function validatePaymentAgainstSummary(orderRow, summary, body) {
       return { ok: true }
     }
     if (stage === 'BALANCE' || stage === 'FULL') {
-      const needInstant = summary.instant_portion_due_incl_gst > 0
-      const instantOk = summary.paid_total >= summary.instant_portion_due_incl_gst - MONEY_EPS
-      if (needInstant && !instantOk) {
+      const needInstant = summary.instant_portion_due_incl_gst > MONEY_EPS
+      if (needInstant && paidAfter + MONEY_EPS < summary.instant_portion_due_incl_gst) {
         return { ok: false, message: 'Collect instant-line portion (incl. GST share) and lab advance before final settlement.' }
       }
-      if (summary.paid_advance + MONEY_EPS < summary.advance_target && summary.advance_target > 0) {
+      if (!labAdvanceEffectivelyPaid(summary, amount)) {
         return { ok: false, message: 'Collect lab advance before balance or final payment.' }
       }
       return { ok: true }
@@ -261,10 +570,11 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
   const subs = await pool.request()
     .input('oid', sql.Int, orderId)
     .query(`
-      SELECT sub_order_id, order_id, fulfillment, lab_workflow_status, sort_order
+      SELECT sub_order_id, order_id, fulfillment, lab_workflow_status, sort_order,
+             pair_index, handover_status
       FROM ${t.sub_orders}
       WHERE order_id = @oid
-      ORDER BY sort_order, sub_order_id
+      ORDER BY pair_index, fulfillment DESC, sub_order_id
     `)
 
   const items = await pool.request()
@@ -302,7 +612,10 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
     order_id: s.order_id,
     fulfillment: s.fulfillment,
     lab_workflow_status: s.lab_workflow_status,
-    sort_order: s.sort_order,
+    sort_order: s.sort_order != null ? Number(s.sort_order) : 0,
+    pair_index: s.pair_index != null ? Number(s.pair_index) : 1,
+    handover_status: s.handover_status != null ? String(s.handover_status) : null,
+    sub_order_label: subOrderDisplayLabel(order.order_no, s.pair_index != null ? Number(s.pair_index) : 1),
     items: []
   }))
   const subById = new Map(subList.map((s) => [s.sub_order_id, s]))
@@ -318,10 +631,12 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
         product_type: it.product_type,
         fulfillment: it.fulfillment,
         line_key: it.line_key,
-        lens_bundle: it.lens_bundle
+        lens_bundle: parseJsonMaybe(it.lens_bundle)
       })
     }
   }
+
+  await enrichOrderItemsWithSkuMeta(pool, subList)
 
   const payments = (pays.recordset || []).map((p) => ({
     payment_id: p.payment_id,
@@ -336,7 +651,9 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
 
   const payment_summary = buildPaymentSummary(order, labSubtotal, instantSubtotal, payments)
 
-  return { order, subList, payments, payment_summary }
+  const customer = await fetchOrderCustomerSnapshotForBundle(pool, mode, order)
+
+  return { order, subList, payments, payment_summary, customer }
 }
 
 function mapOrderRowForApi(order) {
@@ -355,7 +672,8 @@ function mapOrderRowForApi(order) {
     discount_amount: order.discount_amount != null ? Number(order.discount_amount) : 0,
     gst_amount: Number(order.gst_amount),
     total_amount: Number(order.total_amount),
-    created_at: order.created_at
+    created_at: order.created_at,
+    rx_snapshot: parseJsonMaybe(order.rx_snapshot)
   }
 }
 
@@ -378,17 +696,19 @@ async function createOrderInTransaction(transaction, {
   appliedOfferId = null,
   inventoryDeferred = false
 }) {
-  const vr = validateOrderLinesAgainstConfig(cfg, value)
+  const t = tableNames(mode)
+  const linesNormalized = normalizeIncomingPosLinesWithPairs(value.lines)
+  const valueNorm = { ...value, lines: linesNormalized }
+
+  const vr = validateOrderLinesAgainstConfig(cfg, valueNorm)
   if (!vr.ok) {
     const err = new Error(vr.message)
     err.statusCode = 400
     throw err
   }
 
-  const t = tableNames(mode)
-
   let subtotal = 0
-  for (const line of value.lines) {
+  for (const line of linesNormalized) {
     let lineUnit = Number(line.unit_price) || 0
     if (line.fulfillment === 'LAB' && line.lens_bundle) {
       const b = line.lens_bundle
@@ -424,8 +744,8 @@ async function createOrderInTransaction(transaction, {
   )
   const orderNo = `EW-ORD-${nextSeq}`
 
-  const instantLines = value.lines.filter((l) => l.fulfillment === 'INSTANT')
-  const labLines = value.lines.filter((l) => l.fulfillment === 'LAB')
+  const instantLines = linesNormalized.filter((l) => l.fulfillment === 'INSTANT')
+  const labLines = linesNormalized.filter((l) => l.fulfillment === 'LAB')
   let orderKind = 'INSTANT'
   if (instantLines.length && labLines.length) orderKind = 'MIXED'
   else if (labLines.length) orderKind = 'LAB'
@@ -464,35 +784,50 @@ async function createOrderInTransaction(transaction, {
   `)
   const orderId = insOrder.recordset[0].order_id
 
-  const subIdByFulfillment = {}
-  let sort = 0
-  if (instantLines.length) {
-    const rSub = new sql.Request(transaction)
-    rSub.input('order_id', sql.Int, orderId)
-    rSub.input('fulfillment', sql.NVarChar(10), 'INSTANT')
-    rSub.input('sort_order', sql.Int, sort++)
-    const subIns = await rSub.query(`
-      INSERT INTO ${t.sub_orders} (order_id, fulfillment, lab_workflow_status, sort_order)
-      VALUES (@order_id, @fulfillment, NULL, @sort_order);
-      SELECT CAST(SCOPE_IDENTITY() AS INT) AS sub_order_id;
-    `)
-    subIdByFulfillment.INSTANT = subIns.recordset[0].sub_order_id
+  const tupleMap = new Map()
+  for (const ln of linesNormalized) {
+    const pix = sanitizePairIndex(ln.pair_index, 1)
+    const key = `${pix}_${ln.fulfillment}`
+    if (!tupleMap.has(key)) {
+      tupleMap.set(key, {
+        pair_index: pix,
+        fulfillment: ln.fulfillment,
+        lab_workflow_seed: ln.fulfillment === 'LAB' ? 'ORDER_PLACED' : null
+      })
+    }
   }
-  if (labLines.length) {
+  const tuples = Array.from(tupleMap.values()).sort((a, b) => {
+    if (a.pair_index !== b.pair_index) return a.pair_index - b.pair_index
+    return a.fulfillment === 'LAB' ? 1 : -1
+  })
+
+  const tupleKeyToSubOrderId = {}
+  let tupleSort = 0
+  for (const tup of tuples) {
     const rSub = new sql.Request(transaction)
     rSub.input('order_id', sql.Int, orderId)
-    rSub.input('fulfillment', sql.NVarChar(10), 'LAB')
-    rSub.input('sort_order', sql.Int, sort++)
+    rSub.input('fulfillment', sql.NVarChar(10), tup.fulfillment)
+    rSub.input('sort_order', sql.Int, ++tupleSort)
+    rSub.input('pair_index', sql.Int, tup.pair_index)
+    rSub.input('lab_st', sql.NVarChar(30), tup.lab_workflow_seed || null)
     const subIns = await rSub.query(`
-      INSERT INTO ${t.sub_orders} (order_id, fulfillment, lab_workflow_status, sort_order)
-      VALUES (@order_id, @fulfillment, N'ORDER_PLACED', @sort_order);
+      INSERT INTO ${t.sub_orders} (order_id, fulfillment, lab_workflow_status, sort_order, pair_index, handover_status)
+      VALUES (@order_id, @fulfillment, @lab_st, @sort_order, @pair_index, NULL);
       SELECT CAST(SCOPE_IDENTITY() AS INT) AS sub_order_id;
     `)
-    subIdByFulfillment.LAB = subIns.recordset[0].sub_order_id
+    const newId = subIns.recordset[0].sub_order_id
+    tupleKeyToSubOrderId[`${tup.pair_index}_${tup.fulfillment}`] = newId
   }
 
-  for (const line of value.lines) {
-    const subOrderId = subIdByFulfillment[line.fulfillment]
+  for (const line of linesNormalized) {
+    const pix = sanitizePairIndex(line.pair_index, 1)
+    const tupleKey = `${pix}_${line.fulfillment}`
+    const subOrderId = tupleKeyToSubOrderId[tupleKey]
+    if (!subOrderId) {
+      const err = new Error(`Internal: missing sub-order for pair ${tupleKey}`)
+      err.statusCode = 500
+      throw err
+    }
     let lineUnit = Number(line.unit_price) || 0
     let lensJson = null
     if (line.fulfillment === 'LAB' && line.lens_bundle) {
@@ -555,18 +890,12 @@ async function createOrderInTransaction(transaction, {
   `)
 
   const subOrdersOut = []
-  if (subIdByFulfillment.INSTANT) {
+  for (const tup of tuples) {
     subOrdersOut.push({
-      sub_order_id: subIdByFulfillment.INSTANT,
-      fulfillment: 'INSTANT',
-      lab_workflow_status: null
-    })
-  }
-  if (subIdByFulfillment.LAB) {
-    subOrdersOut.push({
-      sub_order_id: subIdByFulfillment.LAB,
-      fulfillment: 'LAB',
-      lab_workflow_status: 'ORDER_PLACED'
+      sub_order_id: tupleKeyToSubOrderId[`${tup.pair_index}_${tup.fulfillment}`],
+      fulfillment: tup.fulfillment,
+      lab_workflow_status: tup.lab_workflow_seed,
+      pair_index: tup.pair_index
     })
   }
 
@@ -589,7 +918,8 @@ function orderRowNeedsInventoryCommit(orderRow) {
 }
 
 /**
- * Deduct stock for all order lines once the order is fully paid (POS deferred inventory).
+ * Deduct stock for orders that used inventory_deferred=true (stock not taken at insert).
+ * New POS orders use commit-at-order-time; then inventory_committed is already 1 and this no-ops.
  * @param {import('mssql').ConnectionPool} pool
  */
 async function commitInventoryForPaidOrder(pool, mode, storeId, orderId) {
@@ -700,15 +1030,15 @@ async function recordPayment(pool, mode, storeId, employeeId, body) {
 
   const refreshed = await fetchOrderBundle(pool, body.order_id, storeId, mode)
   let invoiceNo = null
-  const isLabLike = refreshed && refreshed.order &&
-    (String(refreshed.order.order_kind || '') === 'LAB' || String(refreshed.order.order_kind || '') === 'MIXED')
   const fullyPaid = refreshed && Number(refreshed.payment_summary.amount_remaining || 0) <= MONEY_EPS
   if (fullyPaid && refreshed && refreshed.order && orderRowNeedsInventoryCommit(refreshed.order)) {
     await commitInventoryForPaidOrder(pool, mode, storeId, body.order_id)
   }
-  // Auto-complete on BALANCE/FULL, OR when an ADVANCE covers the full order total (customer paid upfront).
-  if (isLabLike && fullyPaid && (body.stage === 'BALANCE' || body.stage === 'FULL' || body.stage === 'ADVANCE')) {
-    invoiceNo = await autoCompleteLabSettlement(pool, mode, refreshed, employeeId)
+  const payStageUpper = String(body.stage || '').trim().toUpperCase()
+  if (fullyPaid && refreshed) {
+    invoiceNo = await finalizePaidOrderLedger(pool, mode, refreshed, payStageUpper, employeeId, {
+      invoice_preferences: body.invoice_preferences
+    })
   }
   return {
     message: 'Payment recorded.',
@@ -738,17 +1068,99 @@ async function insertStatusLog(pool, t, {
     `)
 }
 
-async function autoCompleteLabSettlement(pool, mode, bundle, employeeId) {
-  const t = tableNames(mode)
-  const order = bundle.order
-  const labSubOrders = (bundle.subList || []).filter((sub) => String(sub.fulfillment || '') === 'LAB')
-  if (!labSubOrders.length) return null
+/** @returns {Promise<string|null>} */
+async function fetchInvoiceNoForOrderId(pool, orderId) {
+  const oid = Number(orderId)
+  if (!Number.isFinite(oid) || oid < 1) return null
+  const hasPosInvoiceTable = await pool.request().query(`
+    SELECT CASE WHEN OBJECT_ID('dbo.pos_invoices', 'U') IS NULL THEN 0 ELSE 1 END AS ok
+  `)
+  if (Number((hasPosInvoiceTable.recordset || [])[0] && hasPosInvoiceTable.recordset[0].ok) !== 1) {
+    return null
+  }
+  const r = await pool.request().input('oid', sql.Int, oid).query(`
+    SELECT TOP 1 invoice_no FROM dbo.pos_invoices WHERE order_id = @oid ORDER BY invoice_no
+  `)
+  const row = (r.recordset || [])[0]
+  return row && row.invoice_no ? String(row.invoice_no).trim() : null
+}
 
-  for (const sub of labSubOrders) {
-    const fromA = String(sub.lab_workflow_status || '')
+/**
+ * Insert dbo.pos_invoices row when the table exists (IF NOT EXISTS by order_id).
+ * @returns {Promise<string>}
+ */
+async function insertPosInvoiceIfAbsent(pool, order, options = {}) {
+  const prefixRaw = await readSetting(pool, 'pos_invoice_prefix')
+  const prefix = String(prefixRaw || 'EW-INV-')
+  const invoiceNo = prefix + String(order.order_no || order.order_id)
+
+  const prefsObj = normalizeInvoicePreferencesForStorage(options && options.invoice_preferences)
+  const prefsJson = prefsObj ? JSON.stringify(prefsObj) : null
+
+  const hasPosInvoiceTable = await pool.request().query(`
+    SELECT CASE WHEN OBJECT_ID('dbo.pos_invoices', 'U') IS NULL THEN 0 ELSE 1 END AS ok
+  `)
+  if (Number((hasPosInvoiceTable.recordset || [])[0] && hasPosInvoiceTable.recordset[0].ok) !== 1) {
+    return invoiceNo
+  }
+
+  const colRow = await pool.request().query(`
+    SELECT CASE WHEN COL_LENGTH('dbo.pos_invoices', 'invoice_display_json') IS NULL THEN 0 ELSE 1 END AS has_json
+  `)
+  const hasJsonCol = Number((colRow.recordset || [])[0] && colRow.recordset[0].has_json) === 1
+  const req = pool.request()
+    .input('oid', sql.Int, order.order_id)
+    .input('invoice_no', sql.NVarChar(50), invoiceNo)
+    .input(
+      'taxable_amount',
+      sql.Decimal(12, 2),
+      roundMoney(Number(order.total_amount) - Number(order.gst_amount || 0))
+    )
+    .input('gst_amount', sql.Decimal(12, 2), Number(order.gst_amount) || 0)
+    .input('total_amount', sql.Decimal(12, 2), Number(order.total_amount) || 0)
+
+  if (hasJsonCol) {
+    req.input('invoice_display_json', sql.NVarChar(sql.MAX), prefsJson)
+    await req.query(`
+      IF NOT EXISTS (SELECT 1 FROM dbo.pos_invoices WHERE order_id = @oid)
+      BEGIN
+        INSERT INTO dbo.pos_invoices (order_id, invoice_no, taxable_amount, gst_amount, total_amount, invoice_display_json)
+        VALUES (@oid, @invoice_no, @taxable_amount, @gst_amount, @total_amount, @invoice_display_json)
+      END
+    `)
+  } else {
+    await req.query(`
+      IF NOT EXISTS (SELECT 1 FROM dbo.pos_invoices WHERE order_id = @oid)
+      BEGIN
+        INSERT INTO dbo.pos_invoices (order_id, invoice_no, taxable_amount, gst_amount, total_amount)
+        VALUES (@oid, @invoice_no, @taxable_amount, @gst_amount, @total_amount)
+      END
+    `)
+  }
+
+  return invoiceNo
+}
+
+/**
+ * Consolidated finalize: full payment + INSTANT HANDED_OVER (when required) + LAB auto-invoice chain + invoice row.
+ */
+function shouldTreatPaymentStageForFinalizeLedger(orderKind, paymentStage, forceFinalize) {
+  if (forceFinalize) return true
+  const k = String(orderKind || '').trim().toUpperCase()
+  const st = String(paymentStage || '').trim().toUpperCase()
+  if (k === 'INSTANT') return st === 'FULL'
+  return st === 'BALANCE' || st === 'FULL' || st === 'ADVANCE'
+}
+
+async function advanceLabSubOrdersThroughInvoiced(pool, mode, labRows, order, employeeId) {
+  const t = tableNames(mode)
+  for (const raw of labRows) {
+    const sub = typeof raw.lab_workflow_status === 'undefined'
+      ? raw
+      : { sub_order_id: raw.sub_order_id, lab_workflow_status: raw.lab_workflow_status }
+    let fromA = String(sub.lab_workflow_status || '')
     if (fromA !== 'DELIVERED') {
-      await pool.request()
-        .input('sid', sql.Int, sub.sub_order_id)
+      await pool.request().input('sid', sql.Int, sub.sub_order_id)
         .query(`UPDATE ${t.sub_orders} SET lab_workflow_status = N'DELIVERED' WHERE sub_order_id = @sid`)
       await insertStatusLog(pool, t, {
         orderId: order.order_id,
@@ -759,9 +1171,7 @@ async function autoCompleteLabSettlement(pool, mode, bundle, employeeId) {
         note: 'Auto transition on final settlement.'
       })
     }
-
-    await pool.request()
-      .input('sid', sql.Int, sub.sub_order_id)
+    await pool.request().input('sid', sql.Int, sub.sub_order_id)
       .query(`UPDATE ${t.sub_orders} SET lab_workflow_status = N'BALANCE_COLLECTED' WHERE sub_order_id = @sid`)
     await insertStatusLog(pool, t, {
       orderId: order.order_id,
@@ -772,8 +1182,7 @@ async function autoCompleteLabSettlement(pool, mode, bundle, employeeId) {
       note: 'Auto transition after balance collection.'
     })
 
-    await pool.request()
-      .input('sid', sql.Int, sub.sub_order_id)
+    await pool.request().input('sid', sql.Int, sub.sub_order_id)
       .query(`UPDATE ${t.sub_orders} SET lab_workflow_status = N'INVOICED' WHERE sub_order_id = @sid`)
     await insertStatusLog(pool, t, {
       orderId: order.order_id,
@@ -788,35 +1197,146 @@ async function autoCompleteLabSettlement(pool, mode, bundle, employeeId) {
   await pool.request()
     .input('oid', sql.Int, order.order_id)
     .query(`UPDATE ${t.orders} SET status = N'COMPLETED' WHERE order_id = @oid`)
+}
 
-  const prefixRaw = await readSetting(pool, 'pos_invoice_prefix')
-  const prefix = String(prefixRaw || 'EW-INV-')
-  const invoiceNo = prefix + String(order.order_no || order.order_id)
+/**
+ * Single entry for closing the bill after money is cleared (respects MIXED INSTANT HANDED_OVER).
+ * @param {string|null} paymentStage POS payment stage OR null when forced (handover retries).
+ */
+async function finalizePaidOrderLedger(pool, mode, bundle, paymentStage, employeeId, options = {}) {
+  const forceFinalize = !!options.forceFinalize
+  const orderKind = String(bundle.order.order_kind || '').trim().toUpperCase()
+  if (!shouldTreatPaymentStageForFinalizeLedger(orderKind, paymentStage, forceFinalize)) {
+    return null
+  }
+  if (!bundle || Number(bundle.payment_summary.amount_remaining) > MONEY_EPS) return null
 
-  const hasPosInvoiceTable = await pool.request().query(`
-    SELECT CASE WHEN OBJECT_ID('dbo.pos_invoices', 'U') IS NULL THEN 0 ELSE 1 END AS ok
+  const t = tableNames(mode)
+  const oid = Number(bundle.order.order_id)
+  const existingInvoice = await fetchInvoiceNoForOrderId(pool, oid)
+
+  const headRs = await pool.request().input('oid', sql.Int, oid).query(`
+    SELECT status FROM ${t.orders} WHERE order_id = @oid
   `)
-  if (Number((hasPosInvoiceTable.recordset || [])[0] && hasPosInvoiceTable.recordset[0].ok) === 1) {
-    await pool.request()
-      .input('oid', sql.Int, order.order_id)
-      .input('invoice_no', sql.NVarChar(50), invoiceNo)
-      .input(
-        'taxable_amount',
-        sql.Decimal(12, 2),
-        roundMoney(Number(order.total_amount) - Number(order.gst_amount || 0))
-      )
-      .input('gst_amount', sql.Decimal(12, 2), Number(order.gst_amount) || 0)
-      .input('total_amount', sql.Decimal(12, 2), Number(order.total_amount) || 0)
-      .query(`
-        IF NOT EXISTS (SELECT 1 FROM dbo.pos_invoices WHERE order_id = @oid)
-        BEGIN
-          INSERT INTO dbo.pos_invoices (order_id, invoice_no, taxable_amount, gst_amount, total_amount)
-          VALUES (@oid, @invoice_no, @taxable_amount, @gst_amount, @total_amount)
-        END
+  const dbStatus = String((headRs.recordset[0] && headRs.recordset[0].status) || '').trim().toUpperCase()
+
+  const subFresh = await pool.request().input('oid', sql.Int, oid).query(`
+    SELECT sub_order_id, fulfillment, lab_workflow_status, pair_index, handover_status
+    FROM ${t.sub_orders} WHERE order_id = @oid
+  `)
+  const subsRows = subFresh.recordset || []
+
+  if (orderKind === 'INSTANT') {
+    for (const s of subsRows) {
+      if (String(s.fulfillment) !== 'INSTANT') continue
+      const curHo = String(s.handover_status || '').trim().toUpperCase()
+      if (curHo === 'HANDED_OVER') continue
+      await pool.request().input('sid', sql.Int, s.sub_order_id).query(`
+        UPDATE ${t.sub_orders} SET handover_status = N'HANDED_OVER' WHERE sub_order_id = @sid
       `)
+      await insertStatusLog(pool, t, {
+        orderId: oid,
+        subOrderId: s.sub_order_id,
+        fromStatus: curHo || null,
+        toStatus: 'HANDED_OVER',
+        actorUserId: employeeId || null,
+        note: 'Auto handover recorded on full payment.'
+      })
+    }
   }
 
-  return invoiceNo
+  const instantBlocking = subsRows.filter((s) => String(s.fulfillment) === 'INSTANT'
+    && String(s.handover_status || '').trim().toUpperCase() !== 'HANDED_OVER')
+  if ((orderKind === 'LAB' || orderKind === 'MIXED') && instantBlocking.length) {
+    return null
+  }
+
+  const labs = subsRows.filter((s) => String(s.fulfillment) === 'LAB')
+  if ((orderKind === 'LAB' || orderKind === 'MIXED') && labs.length === 0) {
+    return null
+  }
+
+  if (labs.length === 0) {
+    await pool.request().input('oid', sql.Int, oid).query(`
+      UPDATE ${t.orders} SET status = N'COMPLETED' WHERE order_id = @oid
+    `)
+    const inv = await insertPosInvoiceIfAbsent(pool, bundle.order, options)
+    return existingInvoice || inv
+  }
+
+  if (existingInvoice && dbStatus === 'COMPLETED') {
+    return existingInvoice
+  }
+
+  await advanceLabSubOrdersThroughInvoiced(pool, mode, labs, bundle.order, employeeId)
+  return insertPosInvoiceIfAbsent(pool, bundle.order, options)
+}
+
+async function completeInstantSettlement(pool, mode, bundle, _employeeId, options = {}) {
+  const kind = String(bundle.order.order_kind || '').trim().toUpperCase()
+  if (kind !== 'INSTANT') {
+    const err = new Error('Instant order settlement applies only when order_kind is INSTANT.')
+    err.statusCode = 400
+    throw err
+  }
+  const inv = await finalizePaidOrderLedger(pool, mode, bundle, null, _employeeId, { ...options, forceFinalize: true })
+  if (!inv) {
+    const err = new Error('Order is not eligible for invoicing (balance due or prerequisites not met).')
+    err.statusCode = 400
+    throw err
+  }
+  return inv
+}
+
+async function autoCompleteLabSettlement(pool, mode, bundle, employeeId, options = {}) {
+  const labs = (bundle.subList || []).filter((sub) => String(sub.fulfillment || '') === 'LAB')
+  if (!labs.length) return null
+  return finalizePaidOrderLedger(pool, mode, bundle, null, employeeId, { ...options, forceFinalize: true })
+}
+
+async function markInstantSubOrderHandedOver(pool, mode, orderId, storeId, subOrderId, employeeId, options = {}) {
+  const bundle = await fetchOrderBundle(pool, orderId, storeId, mode)
+  if (!bundle) {
+    const err = new Error('Order not found for this store.')
+    err.statusCode = 404
+    throw err
+  }
+  const t = tableNames(mode)
+  const sel = await pool.request()
+    .input('sid', sql.Int, subOrderId)
+    .input('oid', sql.Int, orderId)
+    .query(`
+      SELECT sub_order_id, order_id, fulfillment, handover_status
+      FROM ${t.sub_orders}
+      WHERE sub_order_id = @sid AND order_id = @oid
+    `)
+  const subRow = sel.recordset[0]
+  if (!subRow || String(subRow.fulfillment) !== 'INSTANT') {
+    const err = new Error('Instant sub-order required.')
+    err.statusCode = 400
+    throw err
+  }
+  const prev = String(subRow.handover_status || '').trim().toUpperCase()
+  await pool.request().input('sid', sql.Int, subOrderId).query(`
+    UPDATE ${t.sub_orders} SET handover_status = N'HANDED_OVER' WHERE sub_order_id = @sid
+  `)
+  await insertStatusLog(pool, t, {
+    orderId,
+    subOrderId,
+    fromStatus: prev || null,
+    toStatus: 'HANDED_OVER',
+    actorUserId: employeeId || null,
+    note: options.note || null
+  })
+  const again = await fetchOrderBundle(pool, orderId, storeId, mode)
+  const invoiceNo = await finalizePaidOrderLedger(pool, mode, again, null, employeeId, {
+    invoice_preferences: options.invoice_preferences,
+    forceFinalize: true
+  })
+  return {
+    invoice_no: invoiceNo,
+    payment_summary: again.payment_summary
+  }
 }
 
 function labIntakeBitOn(v) {
@@ -939,7 +1459,9 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
   subOrderId,
   toStatus,
   note,
-  allowCrossStoreLab = false
+  allowCrossStoreLab = false,
+  bypassOrderSiblingGuard = false,
+  bypassReason = null
 }) {
   const t = tableNames(mode)
   const ord = await pool.request()
@@ -965,7 +1487,7 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
     .input('sid', sql.Int, subOrderId)
     .input('oid', sql.Int, orderId)
     .query(`
-      SELECT sub_order_id, order_id, fulfillment, lab_workflow_status,
+      SELECT sub_order_id, order_id, fulfillment, lab_workflow_status, pair_index,
              lab_received_confirmed, lab_backorder_confirmed
       FROM ${t.sub_orders}
       WHERE sub_order_id = @sid AND order_id = @oid
@@ -979,6 +1501,21 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
 
   const fromStatus = String(subRow.lab_workflow_status || '')
   const toUp = String(toStatus || '').trim().toUpperCase()
+
+  let blockingPeersForBypass = []
+  if (LAB_SIBLING_DISPATCH_GUARD_TARGETS.has(toUp)) {
+    const pairIxNum = subRow.pair_index != null ? Number(subRow.pair_index) : 1
+    const peersSamePair = await fetchLabSiblingPeersSamePair(pool, t, orderId, pairIxNum, subOrderId)
+    blockingPeersForBypass = blockingLabPeersNotDispatchReady(peersSamePair)
+    if (blockingPeersForBypass.length && !bypassOrderSiblingGuard) {
+      const ge = new Error(formatLabSiblingGuardError(blockingPeersForBypass))
+      ge.statusCode = 400
+      throw ge
+    }
+  }
+
+  const rawNoteTrim = note && String(note).trim() ? String(note).trim() : ''
+
   if (fromStatus === 'SENT_TO_LAB' && toUp === 'LAB_FITTING') {
     const lr = labIntakeBitOn(subRow.lab_received_confirmed)
     const lb = labIntakeBitOn(subRow.lab_backorder_confirmed)
@@ -1002,11 +1539,19 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
     err.statusCode = 400
     throw err
   }
-  if (needsNote && !(note && String(note).trim())) {
+  if (needsNote && !rawNoteTrim) {
     const err = new Error('Note is required for this transition.')
     err.statusCode = 400
     throw err
   }
+
+  const usedSiblingBypass = !!(bypassOrderSiblingGuard && blockingPeersForBypass.length)
+  const effectiveNote = mergeSiblingGuardBypassNote(
+    rawNoteTrim,
+    usedSiblingBypass,
+    bypassReason,
+    blockingPeersForBypass
+  )
 
   await pool.request()
     .input('sid', sql.Int, subOrderId)
@@ -1019,7 +1564,7 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
     .input('from_status', sql.NVarChar(30), fromStatus || null)
     .input('to_status', sql.NVarChar(30), toStatus)
     .input('actor_user_id', sql.Int, employeeId || null)
-    .input('note', sql.NVarChar(500), note || null)
+    .input('note', sql.NVarChar(500), effectiveNote || null)
     .query(`
       INSERT INTO ${t.order_status_log} (order_id, sub_order_id, from_status, to_status, actor_user_id, note)
       VALUES (@order_id, @sub_order_id, @from_status, @to_status, @actor_user_id, @note)
@@ -1151,25 +1696,39 @@ async function fetchAllOrders(pool, mode, {
   }
   
   const result = await req.query(query)
-  
-  return (result.recordset || []).map(row => ({
-    order_id: row.order_id,
-    store_id: row.store_id,
-    store_name: row.store_name || 'Unknown Store',
-    order_no: row.order_no,
-    status: row.status,
-    order_kind: row.order_kind,
-    lab_workflow_status: row.lab_workflow_status || null,
-    sub_order_id: row.sub_order_id || null,
-    lab_received_confirmed: row.lab_rcv_all != null && Number(row.lab_rcv_all) === 1,
-    lab_backorder_confirmed: row.lab_bo_all != null && Number(row.lab_bo_all) === 1,
-    total_amount: Number(row.total_amount),
-    subtotal_amount: Number(row.subtotal_amount),
-    gst_amount: Number(row.gst_amount),
-    created_at: row.created_at,
-    customer_name: row.customer_name || 'Walk-in Customer',
-    customer_phone: row.customer_phone || ''
-  }))
+  const listRows = result.recordset || []
+  const labMap = await fetchLabSubOrderSnapshotsForOrders(pool, t, listRows.map((r) => r.order_id))
+
+  return listRows.map((row) => {
+    const snaps = labMap.get(Number(row.order_id)) || []
+    const lab_sub_orders = snaps.map((s) => ({
+      sub_order_id: s.sub_order_id,
+      lab_workflow_status: s.lab_workflow_status,
+      pair_index: s.pair_index,
+      lab_received_confirmed: s.lab_received_confirmed === true,
+      lab_backorder_confirmed: s.lab_backorder_confirmed === true,
+      sub_order_label: subOrderDisplayLabel(row.order_no, s.pair_index)
+    }))
+    return {
+      order_id: row.order_id,
+      store_id: row.store_id,
+      store_name: row.store_name || 'Unknown Store',
+      order_no: row.order_no,
+      status: row.status,
+      order_kind: row.order_kind,
+      lab_workflow_status: row.lab_workflow_status || null,
+      sub_order_id: row.sub_order_id || null,
+      lab_sub_orders,
+      lab_received_confirmed: row.lab_rcv_all != null && Number(row.lab_rcv_all) === 1,
+      lab_backorder_confirmed: row.lab_bo_all != null && Number(row.lab_bo_all) === 1,
+      total_amount: Number(row.total_amount),
+      subtotal_amount: Number(row.subtotal_amount),
+      gst_amount: Number(row.gst_amount),
+      created_at: row.created_at,
+      customer_name: row.customer_name || 'Walk-in Customer',
+      customer_phone: row.customer_phone || ''
+    }
+  })
 }
 
 /**
@@ -1277,23 +1836,37 @@ async function fetchStoreOrders(pool, storeId, mode, {
   }
   
   const result = await req.query(query)
-  
-  return (result.recordset || []).map(row => ({
-    order_id: row.order_id,
-    order_no: row.order_no,
-    status: row.status,
-    order_kind: row.order_kind,
-    lab_workflow_status: row.lab_workflow_status || null,
-    sub_order_id: row.sub_order_id || null,
-    lab_received_confirmed: row.lab_rcv_all != null && Number(row.lab_rcv_all) === 1,
-    lab_backorder_confirmed: row.lab_bo_all != null && Number(row.lab_bo_all) === 1,
-    total_amount: Number(row.total_amount),
-    subtotal_amount: Number(row.subtotal_amount),
-    gst_amount: Number(row.gst_amount),
-    created_at: row.created_at,
-    customer_name: row.customer_name || 'Walk-in Customer',
-    customer_phone: row.customer_phone || ''
-  }))
+  const listRows = result.recordset || []
+  const labMapSp = await fetchLabSubOrderSnapshotsForOrders(pool, t, listRows.map((r) => r.order_id))
+
+  return listRows.map((row) => {
+    const snaps = labMapSp.get(Number(row.order_id)) || []
+    const lab_sub_orders = snaps.map((s) => ({
+      sub_order_id: s.sub_order_id,
+      lab_workflow_status: s.lab_workflow_status,
+      pair_index: s.pair_index,
+      lab_received_confirmed: s.lab_received_confirmed === true,
+      lab_backorder_confirmed: s.lab_backorder_confirmed === true,
+      sub_order_label: subOrderDisplayLabel(row.order_no, s.pair_index)
+    }))
+    return {
+      order_id: row.order_id,
+      order_no: row.order_no,
+      status: row.status,
+      order_kind: row.order_kind,
+      lab_workflow_status: row.lab_workflow_status || null,
+      sub_order_id: row.sub_order_id || null,
+      lab_sub_orders,
+      lab_received_confirmed: row.lab_rcv_all != null && Number(row.lab_rcv_all) === 1,
+      lab_backorder_confirmed: row.lab_bo_all != null && Number(row.lab_bo_all) === 1,
+      total_amount: Number(row.total_amount),
+      subtotal_amount: Number(row.subtotal_amount),
+      gst_amount: Number(row.gst_amount),
+      created_at: row.created_at,
+      customer_name: row.customer_name || 'Walk-in Customer',
+      customer_phone: row.customer_phone || ''
+    }
+  })
 }
 
 /**
@@ -1408,11 +1981,13 @@ module.exports = {
   commitInventoryForPaidOrder,
   recordPayment,
   autoCompleteLabSettlement,
+  completeInstantSettlement,
   updateLabSubOrderStatus,
   patchLabSubOrderIntake,
   fetchStoreOrders,
   fetchAllOrders,
   fetchCxSummary,
   fetchCxRevenueByStore,
-  fetchCxCustomerRollup
+  fetchCxCustomerRollup,
+  markInstantSubOrderHandedOver
 }

@@ -305,6 +305,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
       if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('POS settings saved');
+      if (typeof cosmosToastInfo === 'function') {
+        cosmosToastInfo('Open or refresh Store OS (cart or catalogue) so tablets use updated GST and composition.');
+      }
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
@@ -1637,6 +1640,14 @@ document.addEventListener('DOMContentLoaded', () => {
           ? '(restrict brands, SKUs, products, or categories — empty = all eligible)'
           : '(percentage / flat only — other structured promos skip this)';
     }
+    const trigType = (document.getElementById('cu-offer-trigger-type') || {}).value || 'ANY_ITEM';
+    const trigWrap = document.getElementById('cu-offer-trigger-value-wrap');
+    if (trigWrap) trigWrap.style.display = trigType === 'ANY_ITEM' ? 'none' : '';
+    const maxCapWrap = document.getElementById('cu-offer-max-discount');
+    if (maxCapWrap) {
+      maxCapWrap.disabled = typ !== 'PCT';
+      if (typ !== 'PCT') maxCapWrap.value = '';
+    }
     if (structured && !bogoAlloc) {
       cuOfferCurrentScopes = [];
       void renderAllocationSections([]);
@@ -1669,6 +1680,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const icon = ((document.getElementById('cu-offer-emoji') || {}).value || '🎁').trim() || '🎁';
     const typ = (document.getElementById('cu-offer-type') || {}).value || 'PCT';
     const rawVal = (document.getElementById('cu-offer-value') || {}).value;
+    const triggerType = (document.getElementById('cu-offer-trigger-type') || {}).value || 'ANY_ITEM';
+    const triggerValue = ((document.getElementById('cu-offer-trigger-value') || {}).value || '').trim();
+    const target = (document.getElementById('cu-offer-benefit-target') || {}).value || 'ELIGIBLE_LINES';
     const val = parseFloat(rawVal);
     const numOk = Number.isFinite(val);
     let pill = '—';
@@ -1682,7 +1696,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const pi = document.getElementById('cu-offer-preview-icon');
     const pp = document.getElementById('cu-offer-preview-pill');
     if (pt) pt.textContent = title;
-    if (pd) pd.textContent = desc || 'Description shown to the customer';
+    const triggerText = triggerType === 'ANY_ITEM'
+      ? 'any cart'
+      : triggerType === 'MIN_CART_VALUE'
+        ? `cart >= ₹${triggerValue || '0'}`
+        : `category ${triggerValue || 'set'}`;
+    const targetText = target === 'CART_TOTAL' ? 'on full cart' : (target === 'CHEAPEST_ITEM' ? 'on cheapest item' : 'on eligible items');
+    if (pd) pd.textContent = (desc || 'Description shown to the customer') + ` • ${triggerText} • ${targetText}`;
     if (pi) pi.textContent = icon;
     if (pp) pp.textContent = pill;
   }
@@ -1691,7 +1711,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function bindCuOfferPreviewListeners() {
     if (cuOfferPreviewListenersBound) return;
     cuOfferPreviewListenersBound = true;
-    ['cu-offer-title', 'cu-offer-desc', 'cu-offer-emoji', 'cu-offer-type', 'cu-offer-value'].forEach((id) => {
+    ['cu-offer-title', 'cu-offer-desc', 'cu-offer-emoji', 'cu-offer-type', 'cu-offer-value', 'cu-offer-trigger-type', 'cu-offer-trigger-value', 'cu-offer-benefit-target', 'cu-offer-max-discount', 'cu-offer-scope-mode'].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('input', syncCuOfferPreview);
@@ -1831,7 +1851,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </select>
       <button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap" onclick="cuAddScopeFromPicker('${dim.kind}', 'key')">+ Add</button>`;
     } else if (dim.kind === 'SKU' || dim.kind === 'PRODUCT') {
-      pickerHtml = `<input type="number" min="1" class="cu-scope-input" id="cu-scope-pick-${dim.kind}" placeholder="Enter ${dim.kind === 'SKU' ? 'SKU' : 'Product'} ID" style="flex:1;min-width:120px">
+      pickerHtml = `<input type="text" class="cu-scope-input" id="cu-scope-pick-${dim.kind}" placeholder="Search ${dim.kind === 'SKU' ? 'SKU' : 'Product'} id/name" style="flex:1;min-width:120px">
       <button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap" onclick="cuAddScopeFromPicker('${dim.kind}', 'int')">+ Add</button>`;
     }
 
@@ -1851,7 +1871,16 @@ document.addEventListener('DOMContentLoaded', () => {
       container.innerHTML = '<div style="font-size:12px;color:var(--text3)">Allocation not available (metadata failed to load).</div>';
       return;
     }
-    container.innerHTML = cuOfferScopeMeta.map((dim) => renderScopeSection(dim)).join('');
+    const scopeMode = (document.getElementById('cu-offer-scope-mode') || {}).value || 'ALL_PRODUCTS';
+    let visibleKinds = ['BRAND', 'SKU', 'PRODUCT', 'PRODUCT_TYPE'];
+    if (scopeMode === 'ALL_PRODUCTS') visibleKinds = ['PRODUCT_TYPE'];
+    if (scopeMode === 'BY_CATEGORY') visibleKinds = ['PRODUCT_TYPE'];
+    if (scopeMode === 'BY_BRAND_IN_CATEGORY') visibleKinds = ['PRODUCT_TYPE', 'BRAND'];
+    if (scopeMode === 'SELECTED_SKUS') visibleKinds = ['SKU'];
+    container.innerHTML = cuOfferScopeMeta
+      .filter((dim) => visibleKinds.indexOf(dim.kind) !== -1)
+      .map((dim) => renderScopeSection(dim))
+      .join('');
   }
 
   function refreshScopeChipsForKind(kind) {
@@ -1870,7 +1899,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!el || !el.value) return;
     const val = el.value;
     if (refType === 'int') {
-      const id = parseInt(val, 10);
+      const id = parseInt(String(val).replace(/[^\d]/g, ''), 10);
       if (!id) return;
       const already = cuOfferCurrentScopes.some((s) => s.kind === kind && s.ref_int === id);
       if (!already) cuOfferCurrentScopes.push({ kind, ref_int: id, ref_key: null });
@@ -1909,6 +1938,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cu-offer-emoji').value = '🎁';
     document.getElementById('cu-offer-type').value = 'PCT';
     document.getElementById('cu-offer-value').value = '';
+    document.getElementById('cu-offer-trigger-type').value = 'ANY_ITEM';
+    document.getElementById('cu-offer-trigger-value').value = '';
+    document.getElementById('cu-offer-benefit-target').value = 'ELIGIBLE_LINES';
+    document.getElementById('cu-offer-max-discount').value = '';
+    document.getElementById('cu-offer-scope-mode').value = 'ALL_PRODUCTS';
     document.getElementById('cu-offer-tier').value = '';
     const fromVal = cuOfferDefaultFromDate();
     document.getElementById('cu-offer-from').value = fromVal;
@@ -1936,6 +1970,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cu-offer-emoji').value = o.icon_emoji || '🎁';
     document.getElementById('cu-offer-type').value = o.discount_type || 'PCT';
     document.getElementById('cu-offer-value').value = o.discount_value != null ? String(o.discount_value) : '';
+    document.getElementById('cu-offer-trigger-type').value = o.trigger_type || 'ANY_ITEM';
+    document.getElementById('cu-offer-trigger-value').value = o.trigger_value || '';
+    document.getElementById('cu-offer-benefit-target').value = o.benefit_target || 'ELIGIBLE_LINES';
+    document.getElementById('cu-offer-max-discount').value = o.max_discount_amount != null ? String(o.max_discount_amount) : '';
+    document.getElementById('cu-offer-scope-mode').value = o.scope_mode || 'ALL_PRODUCTS';
     document.getElementById('cu-offer-tier').value = o.eligible_tier || '';
     document.getElementById('cu-offer-from').value = o.valid_from ? String(o.valid_from).split('T')[0] : cuOfferDefaultFromDate();
     document.getElementById('cu-offer-to').value = o.valid_to ? String(o.valid_to).split('T')[0] : cuOfferDefaultUntilDateFrom(document.getElementById('cu-offer-from').value);
@@ -1980,17 +2019,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const scopesPayload =
       cuIsStructuredDiscountType(dscType) && !cuOfferTypeSupportsAllocation(dscType)
         ? []
-        : cuOfferCurrentScopes.map((s) => ({
-            kind: s.kind,
-            ref_int: s.ref_int != null ? Number(s.ref_int) : null,
-            ref_key: s.ref_key != null ? String(s.ref_key) : null
-          }));
+        : cuOfferCurrentScopes.map((s) => {
+            const scope = {
+              kind: s.kind,
+              ref_int: s.ref_int != null ? Number(s.ref_int) : null,
+              ref_key: s.ref_key != null ? String(s.ref_key) : null
+            };
+            if (s.is_exclusion === true) scope.is_exclusion = true;
+            return scope;
+          });
     const body = {
       title,
       description: document.getElementById('cu-offer-desc').value.trim(),
       icon_emoji: document.getElementById('cu-offer-emoji').value.trim() || '🎁',
       discount_type: dscType,
       discount_value: parseFloat(document.getElementById('cu-offer-value').value) || 0,
+      trigger_type: document.getElementById('cu-offer-trigger-type').value || 'ANY_ITEM',
+      trigger_value: (document.getElementById('cu-offer-trigger-value').value || '').trim() || null,
+      benefit_target: document.getElementById('cu-offer-benefit-target').value || 'ELIGIBLE_LINES',
+      max_discount_amount: document.getElementById('cu-offer-max-discount').value
+        ? (parseFloat(document.getElementById('cu-offer-max-discount').value) || null)
+        : null,
+      scope_mode: document.getElementById('cu-offer-scope-mode').value || 'ALL_PRODUCTS',
       eligible_tier: document.getElementById('cu-offer-tier').value || null,
       valid_from: document.getElementById('cu-offer-from').value,
       valid_to: validTo,
@@ -1998,16 +2048,51 @@ document.addEventListener('DOMContentLoaded', () => {
       sort_order: parseInt(document.getElementById('cu-offer-sort').value, 10) || 0,
       scopes: scopesPayload
     };
+    const legacyBody = {
+      title: body.title,
+      description: body.description,
+      icon_emoji: body.icon_emoji,
+      discount_type: body.discount_type,
+      discount_value: body.discount_value,
+      eligible_tier: body.eligible_tier,
+      valid_from: body.valid_from,
+      valid_to: body.valid_to,
+      is_plus_only: body.is_plus_only,
+      sort_order: body.sort_order,
+      scopes: scopesPayload.map((s) => ({
+        kind: s.kind,
+        ref_int: s.ref_int,
+        ref_key: s.ref_key
+      }))
+    };
     if (editId) {
       body.is_active = document.getElementById('cu-offer-active').value === '1';
+      legacyBody.is_active = body.is_active;
     }
 
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
     try {
-      if (editId) {
-        await apiPut(`/api/settings/customer-offers/${editId}`, body);
-      } else {
-        await apiPost('/api/settings/customer-offers', body);
+      try {
+        if (editId) {
+          await apiPut(`/api/settings/customer-offers/${editId}`, body);
+        } else {
+          await apiPost('/api/settings/customer-offers', body);
+        }
+      } catch (err) {
+        const msg = String(err && err.message ? err.message : err || '').toLowerCase();
+        const schemaMismatch =
+          msg.includes('"trigger_type" is not allowed') ||
+          msg.includes('"trigger_value" is not allowed') ||
+          msg.includes('"benefit_target" is not allowed') ||
+          msg.includes('"max_discount_amount" is not allowed') ||
+          msg.includes('"scope_mode" is not allowed') ||
+          msg.includes('"scopes[0].is_exclusion" is not allowed');
+        if (!schemaMismatch) throw err;
+        if (editId) {
+          await apiPut(`/api/settings/customer-offers/${editId}`, legacyBody);
+        } else {
+          await apiPost('/api/settings/customer-offers', legacyBody);
+        }
       }
       window.closeModal && window.closeModal('modal-cu-customer-offer');
       if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Offer configuration saved.');

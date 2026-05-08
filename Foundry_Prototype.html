@@ -1314,11 +1314,11 @@
       </div>
     </div>
     <div class="tabs" style="margin:10px 0 12px">
-      <button class="tab active" id="fy-lab-tab-all"        onclick="setFyLabFilter('', this)">All</button>
-      <button class="tab"                                    onclick="setFyLabFilter('SENT_TO_LAB', this)">Pending Lab</button>
-      <button class="tab"                                    onclick="setFyLabFilter('LAB_FITTING', this)">At Lab</button>
-      <button class="tab"                                    onclick="setFyLabFilter('QC_PASS', this)">QC Pass</button>
-      <button class="tab"                                    onclick="setFyLabFilter('DISPATCHED_TO_STORE', this)">Dispatched</button>
+      <button class="tab active" id="fy-lab-tab-all" onclick="setFyLabFilter('', this)">All</button>
+      <button type="button" class="tab" id="fy-lab-tab-pending" onclick="setFyLabFilter('SENT_TO_LAB', this)">Pending Lab</button>
+      <button type="button" class="tab" id="fy-lab-tab-at-lab" onclick="setFyLabFilter('LAB_FITTING', this)">At Lab</button>
+      <button type="button" class="tab" id="fy-lab-tab-qc" onclick="setFyLabFilter('QC_PASS', this)">QC Pass</button>
+      <button type="button" class="tab" id="fy-lab-tab-dispatched" onclick="setFyLabFilter('DISPATCHED_TO_STORE', this)">Dispatched</button>
     </div>
     <div class="card">
       <div style="overflow:auto">

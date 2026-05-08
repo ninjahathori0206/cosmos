@@ -6,9 +6,9 @@
 <title>Store OS — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css">
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
-<link rel="stylesheet" href="/css/lenskart-pos.css?v=cart-coupon-flow-202603">
+<link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260608b">
 <script src="/js/cosmos-ui-polish.js" defer></script>
-<script src="/js/pos.js?v=cart-coupon-flow-202603" defer></script>
+<script src="/js/pos.js?v=storeos-20260608b" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -854,15 +854,17 @@
           <button id="btn-pos-orders-search" class="pos-search-btn" tabindex="0">Search</button>
         </div>
       </div>
-      <div class="pos-filter-wrap" style="margin-left: 15px;">
-        <label class="pos-search-label" for="pos-orders-status">Filter by Status</label>
-        <select id="pos-orders-status" class="pos-search-input" style="min-width: 150px;">
-          <option value="">Active (completed hidden)</option>
-          <option value="OPEN">Open</option>
-          <option value="PAID">Paid</option>
-          <option value="DELIVERED">Delivered</option>
-          <option value="CANCELLED">Cancelled</option>
-        </select>
+      <div class="pos-orders-status-tabs-wrap">
+        <span class="pos-search-label">Status</span>
+        <div id="pos-orders-status-tabs" class="pos-orders-status-tabs" role="tablist" aria-label="Filter orders by status">
+          <button type="button" role="tab" class="pos-order-tab active" data-pos-order-status="" aria-selected="true">Active</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="OPEN" aria-selected="false">Open</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="PAID" aria-selected="false">Paid</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="DELIVERED" aria-selected="false">Delivered</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="CANCELLED" aria-selected="false">Cancelled</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="PROCESSING" aria-selected="false">Processing (Lab)</button>
+        </div>
+        <p class="pos-orders-hint">Press and hold a row for full details · Double-click on desktop</p>
       </div>
       <div style="width:100%;margin-top:10px;font-size:12px;color:var(--text2);line-height:1.45;">
         Completed sales are searchable in Cosmos CX Dashboard (completed filter). From StorePilot, open CX from the sidebar.
@@ -1065,6 +1067,62 @@
     </div>
     <div class="pos-lens-newcust-actions pos-catalogue-scan-actions">
       <button type="button" id="pos-catalogue-scan-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Order History — full detail (long-press / double-click row) -->
+<div id="overlay-pos-order-detail" class="pos-lens-newcust-overlay pos-order-detail-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pos-order-detail-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-order-detail-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-order-detail-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-order-detail-title" class="pos-lens-newcust-title">Order details</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-order-detail-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <div id="pos-order-detail-body" class="pos-order-detail-scroll"></div>
+  </div>
+</div>
+
+<!-- Lab balance — handover modal (Store Pilot parity + invoice snapshot) -->
+<div id="overlay-pos-handover" class="pos-lens-newcust-overlay pos-handover-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pos-handover-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-handover-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-handover-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-handover-title" class="pos-lens-newcust-title">Handover order</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-handover-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <div id="pos-handover-modal-body" class="pos-handover-modal-body"></div>
+  </div>
+</div>
+
+<div id="overlay-pos-handover-success" class="pos-lens-newcust-overlay pos-handover-success-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pos-handover-success-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-handover-success-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-handover-success-sheet">
+    <div class="pos-handover-success-icon" aria-hidden="true">✓</div>
+    <h2 id="pos-handover-success-title" class="pos-handover-success-title">Handover complete</h2>
+    <p id="pos-handover-success-sub" class="pos-handover-success-sub">Your order is handed over and invoiced.</p>
+    <p id="pos-handover-success-invoice" class="pos-handover-success-invoice"></p>
+    <div class="pos-handover-success-actions">
+      <button type="button" id="btn-pos-handover-success-whatsapp" class="pos-handover-success-btn pos-handover-success-btn-wa">WhatsApp</button>
+      <button type="button" id="btn-pos-handover-success-print" class="pos-handover-success-btn pos-handover-success-btn-print">Print</button>
+      <button type="button" id="btn-pos-handover-success-done" class="pos-handover-success-btn pos-handover-success-btn-done">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lab handover — invoice preview (in-page iframe; avoids pop-up blockers) -->
+<div id="overlay-pos-invoice-preview" class="pos-lens-newcust-overlay pos-invoice-preview-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pos-invoice-preview-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-invoice-preview-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-invoice-preview-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-invoice-preview-title" class="pos-lens-newcust-title">Invoice preview</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-invoice-preview-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <p id="pos-invoice-preview-meta" class="pos-invoice-preview-meta"></p>
+    <iframe id="pos-invoice-preview-frame" class="pos-invoice-preview-frame" title="Printed tax invoice preview"></iframe>
+    <div class="pos-invoice-preview-actions">
+      <button type="button" id="btn-pos-invoice-preview-print" class="pos-handover-btn pos-handover-btn-primary">Print</button>
+      <button type="button" id="btn-pos-invoice-preview-close" class="pos-handover-btn">Close</button>
     </div>
   </div>
 </div>

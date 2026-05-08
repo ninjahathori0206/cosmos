@@ -352,11 +352,13 @@
 
     if (path === POS_ROUTES.CUSTOMER) {
       if (!valid) { navigate(POS_ROUTES.LOGIN); return }
-      showOrderBuilderScreenResume(session)
-      if (window.history && window.history.replaceState) {
-        history.replaceState({}, '', POS_ROUTES.ORDER)
-      }
-      openPosCustomerPickerModal()
+      void (async function posCustomerRoute() {
+        await showOrderBuilderScreenResume(session)
+        if (window.history && window.history.replaceState) {
+          history.replaceState({}, '', POS_ROUTES.ORDER)
+        }
+        openPosCustomerPickerModal()
+      })()
       return
     }
 
@@ -382,15 +384,20 @@
       if (!valid) { navigate(POS_ROUTES.LOGIN); return }
       if (pendingResumeOrder) {
         pendingResumeOrder = false
-        showOrderBuilderScreenResume(session)
+        void (async function posOrderResumeFlag() { await showOrderBuilderScreenResume(session) })()
         return
       }
       if (obCart.length > 0) {
-        showOrderBuilderScreenResume(session)
+        void (async function posOrderCart() { await showOrderBuilderScreenResume(session) })()
         return
       }
-      if (!pendingOrderSelection) { showOrderBuilderScreenResume(session); return }
-      showOrderBuilderScreen(session, pendingOrderSelection)
+      if (!pendingOrderSelection) {
+        void (async function posOrderEmpty() { await showOrderBuilderScreenResume(session) })()
+        return
+      }
+      void (async function posOrderWithSelection() {
+        await showOrderBuilderScreen(session, pendingOrderSelection)
+      })()
       return
     }
 
@@ -549,6 +556,12 @@
   let payMinimumAdvanceAmount = 0
   let payMinimumAdvancePct = 0
   let forceBalanceSettlement = false
+  /** StoreOS lab handover modal (balance + invoice snapshot). */
+  let _posHandoverCtx = null
+  let _posHandoverSuccessCtx = null
+  let _posHandoverSubmitting = false
+  /** Lab handover: cached payload for reopening invoice preview inside the POS shell. */
+  let _posHandoverInvoicePreviewLast = null
   let posDeliveryMode = 'STORE'
 
   // ── Order Builder state ──────────────────────────────────────────────────
@@ -1061,10 +1074,11 @@
   // ── POS config (from API) ────────────────────────────────────────────────
   async function loadPosBootstrap(session) {
     if (!session || !session.token) return
-    if (window.posConfig && window.posConfig.__loaded && window.__posSettingsLoaded) return
     try {
-      const cfg = await apiGet('/api/pos/startup-config', session.token)
-      window.posConfig = Object.assign({}, cfg, { __loaded: true })
+      if (!window.posConfig || !window.posConfig.__loaded) {
+        const cfg = await apiGet('/api/pos/startup-config', session.token)
+        window.posConfig = Object.assign({}, cfg, { __loaded: true })
+      }
       const st = await apiGet('/api/pos/settings', session.token)
       const defaults = {
         gst_rate: 0.05,
@@ -1075,6 +1089,7 @@
       posSettings = Object.assign(defaults, st || {})
       window.posSettings = posSettings
       window.__posSettingsLoaded = true
+      if (obCart && obCart.length > 0) obRecalcTotals()
     } catch (err) {
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
     }
@@ -3657,19 +3672,22 @@
         amtInput.value = collectAmt
         amtInput.min = payMinimumAdvanceAmount > 0 ? payMinimumAdvanceAmount : 1
         amtInput.max = fullRemaining
-        amtInput.addEventListener('input', function () {
+        // Replace handler so repeat visits to payment do not stack listeners.
+        // Lab rule (server): BALANCE/FULL only after advance_target is covered by ADVANCE rows.
+        // Full upfront must still post as stage ADVANCE — never FULL while advance_remaining > 0.
+        amtInput.oninput = function () {
           const v = Math.max(0, Number(this.value) || 0)
           paySessionSnapshot.amount = v
           if (amtSpan) amtSpan.textContent = formatRupees(v)
-          // update stage based on amount
-          if (labLike && advanceRemaining > 0.009 && v < fullRemaining - 0.009) {
+          if (labLike && advanceRemaining > 0.009) {
             paySessionSnapshot.stage = 'ADVANCE'
-            if (amtBadge) amtBadge.style.display = ''
+            if (amtBadge) amtBadge.style.display = v < fullRemaining - 0.009 ? '' : 'none'
           } else {
             paySessionSnapshot.stage = 'FULL'
             if (amtBadge) amtBadge.style.display = 'none'
           }
-        })
+          if (amtLabel) amtLabel.textContent = paySessionSnapshot.stage === 'ADVANCE' ? 'Advance to collect' : 'Amount to collect'
+        }
       }
       if (amtSpan) amtSpan.textContent = formatRupees(collectAmt)
       if (amtBadge) amtBadge.style.display = labLike && advanceRemaining > 0.009 && collectAmt < fullRemaining - 0.009 ? '' : 'none'
@@ -3730,6 +3748,9 @@
   }
 
   async function submitPayment() {
+    if (submitPayment._inFlight) return
+    submitPayment._inFlight = true
+    try {
     const session = getPosSession()
     if (!session || !session.token || !lastCreatedOrder) return
     const methodEl = document.getElementById('pay-method')
@@ -3761,6 +3782,9 @@
     }
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
+      if (lastCreatedOrder.order_kind === 'LAB' && paySessionSnapshot.stage === 'FULL' && payMinimumAdvanceAmount > 0.009) {
+        paySessionSnapshot.stage = 'ADVANCE'
+      }
       const payBody = {
         order_id: lastCreatedOrder.order_id,
         stage: paySessionSnapshot.stage,
@@ -3809,6 +3833,9 @@
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+    } finally {
+      submitPayment._inFlight = false
     }
   }
 
@@ -3914,6 +3941,10 @@
 
   function formatRupees(amount) {
     return '₹' + Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  }
+
+  function formatRupeesDecimals(amount) {
+    return '₹' + Number(amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
   function posGstLineLabel() {
@@ -4038,6 +4069,9 @@
       }
       if (out.fulfillment === 'LAB') {
         out.lab_status = line.lab_status || null
+      }
+      if (line.pair_index != null && Number(line.pair_index) >= 1) {
+        out.pair_index = Math.floor(Number(line.pair_index))
       }
       return out
     })
@@ -4464,7 +4498,8 @@
     saveCart()
   }
 
-  function showOrderBuilderScreen(session, selection) {
+  async function showOrderBuilderScreen(session, selection) {
+    if (session && session.token) await loadPosBootstrap(session)
     obStaffEl.textContent = session.name + ' • ' + formatRole(session.role)
     obStoreEl.textContent = session.store_name
     obCart = []
@@ -4479,7 +4514,8 @@
     void tryOfferCheckoutDraftBanner(session)
   }
 
-  function showOrderBuilderScreenResume(session) {
+  async function showOrderBuilderScreenResume(session) {
+    if (session && session.token) await loadPosBootstrap(session)
     obStaffEl.textContent = session.name + ' • ' + formatRole(session.role)
     obStoreEl.textContent = session.store_name
     updateKindChip()
@@ -4777,7 +4813,8 @@
         rx_snapshot: rxSnap,
         discount_amount: discInfo.amount || 0,
         applied_offer_id: discInfo.offerId || null,
-        inventory_deferred: true,
+        // Commit store stock in the same DB transaction as order insert (not on final payment).
+        inventory_deferred: false,
         lines: lines
       }, session.token)
       lastCreatedOrder = res.data
@@ -4810,6 +4847,271 @@
     return POS_LAB_WF_LABEL[k] || k.replace(/_/g, ' ')
   }
 
+  function posOrdersSelectedStatus() {
+    const active = document.querySelector('#pos-orders-status-tabs [role="tab"].active')
+    if (!active) return ''
+    return active.getAttribute('data-pos-order-status') || ''
+  }
+
+  function posFormatIstDateTime(iso) {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    })
+  }
+
+  function posFormatRxBlockHtml(rx) {
+    if (!rx || typeof rx !== 'object') {
+      return '<p class="pos-order-detail-muted">No prescription snapshot on this order.</p>'
+    }
+    const od = rx.od || {}
+    const os = rx.os || {}
+    function eyeLine(label, e) {
+      if (e && e.plano) return escapeHtml(label + ': Plano')
+      const p = []
+      if (e.sph) p.push('SPH ' + String(e.sph))
+      if (e.cyl) p.push('CYL ' + String(e.cyl))
+      if (e.axis) p.push('Axis ' + String(e.axis))
+      if (!p.length) return escapeHtml(label + ': —')
+      return escapeHtml(label + ': ' + p.join(' · '))
+    }
+    const lines = [eyeLine('OD (right)', od), eyeLine('OS (left)', os)]
+    if (rx.pd) lines.push(escapeHtml('PD: ' + String(rx.pd) + ' mm'))
+    if (rx.doctor) lines.push(escapeHtml('Doctor: ' + String(rx.doctor)))
+    return '<ul class="pos-order-detail-rx-list">' + lines.map(function (line) { return '<li>' + line + '</li>' }).join('') + '</ul>'
+  }
+
+  function posFormatLensBundleHtml(b) {
+    if (!b || typeof b !== 'object') return ''
+    const parts = []
+    if (b.package_id != null) parts.push('Lens package #' + b.package_id)
+    if (b.category_id != null) parts.push('Category #' + b.category_id)
+    if (Array.isArray(b.addon_ids) && b.addon_ids.length) parts.push('Add-ons: ' + b.addon_ids.join(', '))
+    if (!parts.length) return ''
+    return '<div class="pos-order-detail-lens">' + parts.map(function (p) { return '<span>' + escapeHtml(p) + '</span>' }).join('<span class="pos-order-detail-dot"> · </span>') + '</div>'
+  }
+
+  function renderPosOrderDetailView(d) {
+    const order = d.order || {}
+    const cust = d.customer || null
+    const subOrders = Array.isArray(d.sub_orders) ? d.sub_orders : []
+    const pays = Array.isArray(d.payments) ? d.payments : []
+    const summary = d.payment_summary || {}
+    const rxHtml = posFormatRxBlockHtml(order.rx_snapshot)
+    const custName = cust && cust.full_name ? cust.full_name : 'Walk-in Customer'
+    const custPhone = cust && cust.phone ? cust.phone : ''
+    const custEmail = cust && cust.email ? cust.email : ''
+
+    let blocks = ''
+    for (let si = 0; si < subOrders.length; si++) {
+      const so = subOrders[si]
+      const fulf = String(so.fulfillment || '')
+      const lab = so.lab_workflow_status ? posLabWfDisplay(so.lab_workflow_status) : ''
+      const items = Array.isArray(so.items) ? so.items : []
+      let rows = ''
+      for (let ii = 0; ii < items.length; ii++) {
+        const it = items[ii]
+        const title = (it.product_label && String(it.product_label).trim()) || (it.sku_code ? String(it.sku_code) : ('SKU #' + it.sku_id))
+        const colour = it.colour_name ? String(it.colour_name) : ''
+        const meta = [
+          it.product_type ? String(it.product_type) : '',
+          it.sku_code ? String(it.sku_code) : '',
+          colour
+        ].filter(Boolean).join(' · ')
+        const lensHtml = posFormatLensBundleHtml(it.lens_bundle)
+        rows +=
+          '<div class="pos-order-detail-line">' +
+          '<div class="pos-order-detail-line-main">' +
+          '<div class="pos-order-detail-line-title">' + escapeHtml(title) + '</div>' +
+          (meta ? '<div class="pos-order-detail-line-meta">' + escapeHtml(meta) + '</div>' : '') +
+          (lensHtml ? '<div class="pos-order-detail-line-lens">' + lensHtml + '</div>' : '') +
+          '<div class="pos-order-detail-line-flags">' +
+          '<span class="pos-order-detail-chip">' + escapeHtml(String(it.fulfillment || '')) + '</span>' +
+          '</div>' +
+          '</div>' +
+          '<div class="pos-order-detail-line-price">' +
+          '<div>×' + escapeHtml(String(it.qty != null ? it.qty : 1)) + '</div>' +
+          '<div class="pos-order-detail-line-total">₹' + Number(it.line_total || 0).toLocaleString('en-IN') + '</div>' +
+          '</div>' +
+          '</div>'
+      }
+      blocks +=
+        '<section class="pos-order-detail-sub">' +
+        '<div class="pos-order-detail-sub-h">' +
+        '<span>' + escapeHtml(fulf === 'LAB' ? 'Lab fulfilment' : 'Instant / pickup') + '</span>' +
+        (lab ? '<span class="pos-order-detail-badge">' + escapeHtml(lab) + '</span>' : '') +
+        '</div>' +
+        (rows || '<div class="pos-order-detail-muted">No line items.</div>') +
+        '</section>'
+    }
+
+    let payRows = ''
+    for (let pi = 0; pi < pays.length; pi++) {
+      const p = pays[pi]
+      const amt = Number(p.amount)
+      payRows +=
+        '<div class="pos-order-detail-pay-row">' +
+        '<span>' + escapeHtml(String(p.stage || '') + ' · ' + String(p.method || '')) + '</span>' +
+        '<span>₹' + amt.toLocaleString('en-IN') + '</span>' +
+        '<span class="pos-order-detail-muted">' + escapeHtml(posFormatIstDateTime(p.created_at)) + '</span>' +
+        '</div>'
+    }
+
+    const sumParts = [
+      summary.order_kind ? ('Kind: ' + summary.order_kind) : '',
+      summary.paid_total != null ? ('Paid: ₹' + Number(summary.paid_total).toLocaleString('en-IN')) : '',
+      summary.amount_remaining != null ? ('Due: ₹' + Number(summary.amount_remaining).toLocaleString('en-IN')) : ''
+    ].filter(Boolean)
+
+    return (
+      '<div class="pos-order-detail-grid">' +
+      '<section class="pos-order-detail-card">' +
+      '<div class="pos-order-detail-k">Order</div>' +
+      '<div class="pos-order-detail-order-no">' + escapeHtml(String(order.order_no || '')) + '</div>' +
+      '<div class="pos-order-detail-meta">' +
+      '<span class="pos-order-detail-chip">' + escapeHtml(String(order.status || '')) + '</span>' +
+      '<span class="pos-order-detail-chip">' + escapeHtml(String(order.order_kind || '')) + '</span>' +
+      '<span class="pos-order-detail-muted">' + escapeHtml(posFormatIstDateTime(order.created_at)) + '</span>' +
+      '</div>' +
+      '<div class="pos-order-detail-total">₹' + Number(order.total_amount || 0).toLocaleString('en-IN') + ' <span class="pos-order-detail-muted">incl. totals</span></div>' +
+      '</section>' +
+      '<section class="pos-order-detail-card">' +
+      '<div class="pos-order-detail-k">Customer</div>' +
+      '<div class="pos-order-detail-cust-name">' + escapeHtml(custName) + '</div>' +
+      (custPhone ? '<div class="pos-order-detail-cust-row">' + escapeHtml(custPhone) + '</div>' : '') +
+      (custEmail ? '<div class="pos-order-detail-cust-row">' + escapeHtml(custEmail) + '</div>' : '') +
+      '</section>' +
+      '<section class="pos-order-detail-card pos-order-detail-card--rx">' +
+      '<div class="pos-order-detail-k">Power / prescription</div>' +
+      rxHtml +
+      '</section>' +
+      '</div>' +
+      '<h3 class="pos-order-detail-h3">Products</h3>' +
+      (blocks || '<div class="pos-order-detail-muted">No products listed.</div>') +
+      '<h3 class="pos-order-detail-h3">Payments</h3>' +
+      (sumParts.length ? '<div class="pos-order-detail-sum">' + escapeHtml(sumParts.join(' · ')) + '</div>' : '') +
+      (payRows || '<div class="pos-order-detail-muted">No payments recorded.</div>')
+    )
+  }
+
+  function closePosOrderDetailModal() {
+    const ov = document.getElementById('overlay-pos-order-detail')
+    if (!ov) return
+    ov.classList.remove('open')
+    ov.setAttribute('aria-hidden', 'true')
+  }
+
+  async function openPosOrderDetailModal(orderId) {
+    const session = getPosSession()
+    const body = document.getElementById('pos-order-detail-body')
+    const titleEl = document.getElementById('pos-order-detail-title')
+    const ov = document.getElementById('overlay-pos-order-detail')
+    if (!session || !session.token || !orderId || !body || !ov) return
+    ov.classList.add('open')
+    ov.setAttribute('aria-hidden', 'false')
+    if (titleEl) titleEl.textContent = 'Order details'
+    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pos-order-detail-body', 5)
+    else body.innerHTML = ''
+    try {
+      const d = await apiGet('/api/pos/orders/' + orderId, session.token)
+      body.innerHTML = renderPosOrderDetailView(d)
+      if (titleEl && d.order && d.order.order_no) titleEl.textContent = String(d.order.order_no)
+    } catch (err) {
+      body.innerHTML = '<div class="pos-order-detail-muted">Could not load this order.</div>'
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+  }
+
+  function bindPosOrderDetailOverlay() {
+    const ov = document.getElementById('overlay-pos-order-detail')
+    if (!ov || ov.dataset.bound === '1') return
+    ov.dataset.bound = '1'
+    const bd = document.getElementById('pos-order-detail-backdrop')
+    const dismiss = document.getElementById('pos-order-detail-dismiss')
+    const close = function () { closePosOrderDetailModal() }
+    if (bd) bd.addEventListener('click', close)
+    if (dismiss) dismiss.addEventListener('click', close)
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return
+      if (ov.classList.contains('open')) close()
+    })
+  }
+
+  function bindPosOrderHistoryGestures() {
+    const listEl = document.getElementById('pos-orders-list')
+    if (!listEl || listEl.dataset.posLpBound === '1') return
+    listEl.dataset.posLpBound = '1'
+
+    let timer = null
+    let startPt = null
+    let pendingOid = null
+
+    function endListeners() {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+
+    function clearTimer() {
+      if (timer) clearTimeout(timer)
+      timer = null
+    }
+
+    function onMove(e) {
+      if (!startPt) return
+      if (Math.abs(e.clientX - startPt.x) + Math.abs(e.clientY - startPt.y) > 16) {
+        clearTimer()
+        startPt = null
+        pendingOid = null
+        endListeners()
+      }
+    }
+
+    function onUp() {
+      clearTimer()
+      startPt = null
+      pendingOid = null
+      endListeners()
+    }
+
+    listEl.addEventListener('pointerdown', function (e) {
+      const card = e.target.closest('.pos-order-card')
+      if (!card || !listEl.contains(card)) return
+      if (e.target.closest('button')) return
+      const oid = card.getAttribute('data-order-id')
+      if (!oid) return
+      clearTimer()
+      startPt = { x: e.clientX, y: e.clientY }
+      pendingOid = oid
+      window.addEventListener('pointermove', onMove, { passive: true })
+      window.addEventListener('pointerup', onUp, { passive: true })
+      window.addEventListener('pointercancel', onUp, { passive: true })
+      timer = setTimeout(function () {
+        clearTimer()
+        startPt = null
+        const holdId = pendingOid
+        pendingOid = null
+        endListeners()
+        if (typeof navigator.vibrate === 'function') navigator.vibrate(12)
+        openPosOrderDetailModal(Number(holdId))
+      }, 480)
+    })
+
+    listEl.addEventListener('dblclick', function (e) {
+      const card = e.target.closest('.pos-order-card')
+      if (!card || !listEl.contains(card)) return
+      if (e.target.closest('button')) return
+      const oid = card.getAttribute('data-order-id')
+      if (oid) openPosOrderDetailModal(Number(oid))
+    })
+  }
+
   async function showOrderHistoryScreen(session) {
     document.getElementById('pos-orders-staff').textContent = session.name + ' • ' + formatRole(session.role)
     document.getElementById('pos-orders-store').textContent = session.store_name || ''
@@ -4819,23 +5121,41 @@
     }
 
     const searchInput = document.getElementById('pos-orders-search')
-    const statusSelect = document.getElementById('pos-orders-status')
     const searchBtn = document.getElementById('btn-pos-orders-search')
-    if (statusSelect && !statusSelect.querySelector('option[value="PROCESSING"]')) {
-      const opt = document.createElement('option')
-      opt.value = 'PROCESSING'
-      opt.textContent = 'Processing (Lab)'
-      statusSelect.appendChild(opt)
+    const tabsRoot = document.getElementById('pos-orders-status-tabs')
+
+    searchBtn.onclick = () => loadOrderHistory(session, searchInput.value, posOrdersSelectedStatus())
+    searchInput.onkeydown = (e) => {
+      if (e.key === 'Enter') loadOrderHistory(session, searchInput.value, posOrdersSelectedStatus())
     }
 
-    searchBtn.onclick = () => loadOrderHistory(session, searchInput.value, statusSelect.value)
-    searchInput.onkeydown = (e) => {
-      if (e.key === 'Enter') loadOrderHistory(session, searchInput.value, statusSelect.value)
+    if (tabsRoot && tabsRoot.dataset.bound !== '1') {
+      tabsRoot.dataset.bound = '1'
+      tabsRoot.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-pos-order-status]')
+        if (!btn) return
+        const st = btn.getAttribute('data-pos-order-status') || ''
+        tabsRoot.querySelectorAll('[role="tab"]').forEach((t) => {
+          const sel = (t.getAttribute('data-pos-order-status') || '') === st
+          t.classList.toggle('active', sel)
+          t.setAttribute('aria-selected', sel ? 'true' : 'false')
+        })
+        loadOrderHistory(session, searchInput.value, st)
+      })
     }
-    statusSelect.onchange = () => loadOrderHistory(session, searchInput.value, statusSelect.value)
+
+    const refreshBtn = document.getElementById('btn-pos-orders-refresh')
+    if (refreshBtn && refreshBtn.dataset.bound !== '1') {
+      refreshBtn.dataset.bound = '1'
+      refreshBtn.onclick = () => loadOrderHistory(session, searchInput.value, posOrdersSelectedStatus())
+    }
+
+    bindPosOrderDetailOverlay()
+    bindPosHandoverOverlays()
+    bindPosOrderHistoryGestures()
 
     showScreen('screen-pos-orders')
-    await loadOrderHistory(session, '', '')
+    await loadOrderHistory(session, '', posOrdersSelectedStatus())
   }
 
   async function loadOrderHistory(session, search, status) {
@@ -4861,9 +5181,13 @@
             <div class="empty-ic">📄</div>
             <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No orders found</div>
             <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Try another filter or search term.</div>
-            <button style="padding:8px 10px;border:1px solid var(--border);background:var(--card);border-radius:8px;cursor:pointer" onclick="location.reload()">Refresh</button>
+            <button type="button" id="btn-pos-orders-refresh" class="btn primary" style="margin-top:4px">Refresh list</button>
           </div>
         `
+        const refBtn = document.getElementById('btn-pos-orders-refresh')
+        if (refBtn) {
+          refBtn.onclick = () => loadOrderHistory(session, search, posOrdersSelectedStatus())
+        }
         return
       }
 
@@ -4897,7 +5221,7 @@
           ? `<div class="pos-order-status" style="margin-top:6px">${posLabWfDisplay(labStatus)}</div>`
           : ''
         return `
-          <div class="pos-order-card">
+          <div class="pos-order-card pos-order-card--pressable" data-order-id="${o.order_id}" role="listitem">
             <div class="pos-order-info">
               <div class="pos-order-no">${o.order_no}</div>
               <div class="pos-order-customer">${o.customer_name} ${o.customer_phone ? '(' + o.customer_phone + ')' : ''}</div>
@@ -4929,6 +5253,630 @@
     if (sub) sub.textContent = mode === 'HOME' ? 'Delivery address from customer profile' : 'Customer picks up at store'
   }
 
+  function posHandoverEscAttr(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+  }
+
+  function readPosHandoverInvoicePreferencesFromDom() {
+    function gv(id) {
+      const el = document.getElementById(id)
+      return el && el.value != null ? String(el.value).trim() : ''
+    }
+    return {
+      bill_name: gv('pos-handover-bill-name'),
+      gstin: gv('pos-handover-gstin'),
+      billing_address: gv('pos-handover-billing-address'),
+      shipping_address: gv('pos-handover-shipping-address'),
+      phone: gv('pos-handover-phone'),
+      email: gv('pos-handover-email'),
+      notes: gv('pos-handover-notes')
+    }
+  }
+
+  function closePosHandoverModal() {
+    const overlay = document.getElementById('overlay-pos-handover')
+    if (overlay) {
+      overlay.classList.remove('open')
+      overlay.setAttribute('aria-hidden', 'true')
+    }
+    _posHandoverCtx = null
+  }
+
+  function closePosHandoverSuccessModal() {
+    const overlay = document.getElementById('overlay-pos-handover-success')
+    if (overlay) {
+      overlay.classList.remove('open')
+      overlay.setAttribute('aria-hidden', 'true')
+    }
+    _posHandoverSuccessCtx = null
+  }
+
+  function closePosInvoicePreviewModal() {
+    const overlay = document.getElementById('overlay-pos-invoice-preview')
+    const frame = document.getElementById('pos-invoice-preview-frame')
+    if (frame) {
+      try {
+        frame.srcdoc = ''
+      } catch (_e) {}
+    }
+    if (overlay) {
+      overlay.classList.remove('open')
+      overlay.setAttribute('aria-hidden', 'true')
+    }
+  }
+
+  /** @returns {boolean} true if print was invoked */
+  function printPosInvoicePreviewFrame() {
+    const overlay = document.getElementById('overlay-pos-invoice-preview')
+    if (!overlay || !overlay.classList.contains('open')) return false
+    const frame = document.getElementById('pos-invoice-preview-frame')
+    if (!frame || !frame.contentWindow) return false
+    try {
+      frame.contentWindow.focus()
+      frame.contentWindow.print()
+      return true
+    } catch (_e) {
+      return false
+    }
+  }
+
+  function showPosHandoverSuccessAfterHandover(ctx) {
+    _posHandoverSuccessCtx = ctx || null
+    const overlay = document.getElementById('overlay-pos-handover-success')
+    const subEl = document.getElementById('pos-handover-success-sub')
+    const invEl = document.getElementById('pos-handover-success-invoice')
+    const waBtn = document.getElementById('btn-pos-handover-success-whatsapp')
+    const printBtn = document.getElementById('btn-pos-handover-success-print')
+    if (!overlay) return
+    if (subEl) {
+      subEl.textContent = 'Order ' + (ctx && ctx.order_no ? ctx.order_no : '') + ' is handed over and invoiced.'
+    }
+    if (invEl) {
+      invEl.textContent = ctx && ctx.invoice_no ? ('Invoice: ' + ctx.invoice_no) : 'Invoice generated.'
+    }
+    if (waBtn) {
+      const phone = String((ctx && ctx.customer_phone) || '').replace(/\D/g, '')
+      if (phone.length >= 10) {
+        const amtLine = ctx && ctx.amount_collected > 0.009
+          ? ('Balance paid: ' + formatRupeesDecimals(ctx.amount_collected) + ' via ' + String(ctx.method || '') + '.')
+          : 'Your lab order is ready — thank you!'
+        const msg = encodeURIComponent(
+          'Hi! Your Cosmos order ' + String(ctx && ctx.order_no || '') + ' — handed over and invoiced.\n' +
+          (ctx && ctx.invoice_no ? ('Invoice: ' + ctx.invoice_no + '\n') : '') +
+          amtLine +
+          '\nThank you!'
+        )
+        const wa = phone.length === 10 ? '91' + phone : phone
+        waBtn.onclick = function () { window.open('https://wa.me/' + wa + '?text=' + msg, '_blank') }
+        waBtn.disabled = false
+        waBtn.style.opacity = '1'
+      } else {
+        waBtn.disabled = true
+        waBtn.style.opacity = '0.4'
+        waBtn.onclick = null
+        waBtn.title = 'No customer phone on file'
+      }
+    }
+    if (printBtn) {
+      printBtn.onclick = function () {
+        if (typeof printPosInvoicePreviewFrame === 'function' && printPosInvoicePreviewFrame()) {
+          return
+        }
+        const sessionSnap = getPosSession()
+        const sn = sessionSnap && sessionSnap.store_name ? sessionSnap.store_name : 'Store'
+        const succ = _posHandoverSuccessCtx
+        const prefs = succ && succ.invoice_prefs ? succ.invoice_prefs : null
+        const detailSnap = succ && succ.detail_snapshot ? succ.detail_snapshot : null
+        const inv = succ && succ.invoice_no ? succ.invoice_no : null
+        const last = _posHandoverInvoicePreviewLast
+        let opened = null
+        if (last && last.detailSnap && last.prefs) {
+          opened = openPosHandoverInvoicePreview(last.storeName || sn, last.detailSnap, last.prefs, last.invoiceNo || inv)
+        } else if (detailSnap && prefs) {
+          opened = openPosHandoverInvoicePreview(sn, detailSnap, prefs, inv || '—')
+        }
+        if (opened) {
+          window.setTimeout(function () {
+            printPosInvoicePreviewFrame()
+          }, 350)
+        } else if (typeof cosmosToastWarn === 'function') {
+          cosmosToastWarn('Invoice preview could not be opened — reload the page and try Print again.')
+        }
+      }
+    }
+    overlay.classList.add('open')
+    overlay.setAttribute('aria-hidden', 'false')
+  }
+
+  window.setPosHandoverPayMethod = function (method) {
+    ;['UPI', 'CARD', 'CASH'].forEach(function (m) {
+      const btn = document.getElementById('pos-handover-pay-m-' + m)
+      if (btn) btn.classList.toggle('active', m === method)
+    })
+    const cashWrap = document.getElementById('pos-handover-cash-wrap')
+    const cardWrap = document.getElementById('pos-handover-card-wrap')
+    if (cashWrap) cashWrap.style.display = method === 'CASH' ? '' : 'none'
+    if (cardWrap) cardWrap.style.display = method === 'CARD' ? '' : 'none'
+    if (_posHandoverCtx) _posHandoverCtx.method = method
+  }
+
+  window.togglePosHandoverInvoicePanel = function () {
+    const wrap = document.getElementById('pos-handover-invoice-fields')
+    const btn = document.getElementById('pos-handover-invoice-toggle')
+    if (!wrap) return
+    const open = wrap.classList.toggle('pos-handover-invoice-fields--open')
+    if (btn) {
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false')
+      btn.classList.toggle('pos-handover-invoice-toggle--open', open)
+    }
+    wrap.setAttribute('aria-hidden', open ? 'false' : 'true')
+  }
+
+  window.submitPosHandoverConfirm = async function (hasBalance) {
+    if (!_posHandoverCtx) return
+    if (_posHandoverSubmitting) return
+    const session = getPosSession()
+    if (!session || !session.token) return
+    const errEl = document.getElementById('pos-handover-err')
+    if (errEl) {
+      errEl.style.display = 'none'
+      errEl.textContent = ''
+    }
+    const orderId = _posHandoverCtx.orderId
+    const balanceDue = _posHandoverCtx.balanceDue
+    const invoice_preferences = readPosHandoverInvoicePreferencesFromDom()
+    const btn = document.getElementById('btn-pos-handover-confirm')
+    const detailSnapForPreview = _posHandoverCtx.detailSnapshot || null
+    let body = { order_id: orderId, invoice_preferences: invoice_preferences }
+
+    if (hasBalance) {
+      const method = _posHandoverCtx.method || 'UPI'
+      const tEl = document.getElementById('pos-handover-tendered')
+      const refEl = document.getElementById('pos-handover-card-ref')
+      const tendered = tEl && tEl.value ? Number(tEl.value) : null
+      if (method === 'CASH' && (tendered == null || tendered < balanceDue - 0.001)) {
+        if (errEl) {
+          errEl.textContent = 'Tendered amount must be at least balance due (' + formatRupeesDecimals(balanceDue) + ').'
+          errEl.style.display = 'block'
+        }
+        return
+      }
+      body.amount = balanceDue
+      body.method = method
+      if (method === 'CASH' && tendered != null) body.tendered = tendered
+      if (method === 'CARD' && refEl && refEl.value.trim()) body.external_ref = refEl.value.trim()
+    }
+
+    _posHandoverSubmitting = true
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      const res = await apiPost('/api/orders/' + orderId + '/handover', body, session.token)
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+      const inv = res.data && res.data.invoice_no ? res.data.invoice_no : null
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Order handed over successfully.')
+      const prefsPhone = String((invoice_preferences && invoice_preferences.phone) || '').trim()
+      const customerPhoneWa = prefsPhone.replace(/\D/g, '').length >= 10 ? prefsPhone : (_posHandoverCtx.customerPhone || '')
+      const successSnap = {
+        order_no: _posHandoverCtx.orderNo,
+        invoice_no: inv,
+        invoice_prefs: invoice_preferences,
+        detail_snapshot: detailSnapForPreview,
+        customer_phone: customerPhoneWa,
+        amount_collected: hasBalance ? balanceDue : 0,
+        method: hasBalance ? (_posHandoverCtx.method || 'UPI') : ''
+      }
+      closePosHandoverModal()
+      showPosHandoverSuccessAfterHandover(successSnap)
+      const sessionPv = getPosSession()
+      const snPv = sessionPv && sessionPv.store_name ? sessionPv.store_name : 'Store'
+      if (detailSnapForPreview && typeof window.setTimeout === 'function') {
+        window.setTimeout(function () {
+          openPosHandoverInvoicePreview(snPv, detailSnapForPreview, invoice_preferences, inv || 'Provisional')
+        }, 200)
+      }
+      const listEl = document.getElementById('pos-orders-list')
+      if (listEl) {
+        const s = getPosSession()
+        if (s && s.token) void loadOrderHistory(s, '', posOrdersSelectedStatus())
+      }
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (errEl) {
+        errEl.textContent = err.message || 'Handover failed.'
+        errEl.style.display = 'block'
+      }
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    } finally {
+      _posHandoverSubmitting = false
+    }
+  }
+
+  function bindPosHandoverOverlays() {
+    const ov = document.getElementById('overlay-pos-handover')
+    if (ov && ov.dataset.bound !== '1') {
+      ov.dataset.bound = '1'
+      const bd = document.getElementById('pos-handover-backdrop')
+      const dismiss = document.getElementById('pos-handover-dismiss')
+      const close = function () { closePosHandoverModal() }
+      if (bd) bd.addEventListener('click', close)
+      if (dismiss) dismiss.addEventListener('click', close)
+    }
+    const sv = document.getElementById('overlay-pos-handover-success')
+    if (sv && sv.dataset.bound !== '1') {
+      sv.dataset.bound = '1'
+      const bd2 = document.getElementById('pos-handover-success-backdrop')
+      const done = document.getElementById('btn-pos-handover-success-done')
+      const closeS = function () { closePosHandoverSuccessModal() }
+      if (bd2) bd2.addEventListener('click', closeS)
+      if (done) done.addEventListener('click', closeS)
+    }
+    const ipv = document.getElementById('overlay-pos-invoice-preview')
+    if (ipv && ipv.dataset.bound !== '1') {
+      ipv.dataset.bound = '1'
+      const bd3 = document.getElementById('pos-invoice-preview-backdrop')
+      const dismiss3 = document.getElementById('pos-invoice-preview-dismiss')
+      const close3 = document.getElementById('btn-pos-invoice-preview-close')
+      const printIv = document.getElementById('btn-pos-invoice-preview-print')
+      const shut = function () { closePosInvoicePreviewModal() }
+      if (bd3) bd3.addEventListener('click', shut)
+      if (dismiss3) dismiss3.addEventListener('click', shut)
+      if (close3) close3.addEventListener('click', shut)
+      if (printIv) {
+        printIv.addEventListener('click', function () {
+          printPosInvoicePreviewFrame()
+        })
+      }
+    }
+    if (document.documentElement.dataset.posHandoverEscBound !== '1') {
+      document.documentElement.dataset.posHandoverEscBound = '1'
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return
+        const ipv0 = document.getElementById('overlay-pos-invoice-preview')
+        if (ipv0 && ipv0.classList.contains('open')) {
+          closePosInvoicePreviewModal()
+          return
+        }
+        const s1 = document.getElementById('overlay-pos-handover-success')
+        if (s1 && s1.classList.contains('open')) {
+          closePosHandoverSuccessModal()
+          return
+        }
+        const h = document.getElementById('overlay-pos-handover')
+        if (h && h.classList.contains('open')) closePosHandoverModal()
+      })
+    }
+  }
+
+  async function openPosHandoverModal(orderId) {
+    const session = getPosSession()
+    if (!session || !session.token || !orderId) return
+    bindPosHandoverOverlays()
+    const overlay = document.getElementById('overlay-pos-handover')
+    const body = document.getElementById('pos-handover-modal-body')
+    if (!overlay || !body) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Handover screen is not available.')
+      return
+    }
+    overlay.classList.add('open')
+    overlay.setAttribute('aria-hidden', 'false')
+    body.innerHTML = '<div class="pos-handover-loading" style="padding:20px;text-align:center;color:var(--text2)">Loading order…</div>'
+    try {
+      const detail = await apiGet('/api/pos/orders/' + orderId, session.token)
+      const order = detail.order
+      if (!order) {
+        body.innerHTML = '<div style="padding:16px;color:var(--red)">Order not found.</div>'
+        return
+      }
+      const summary = detail.payment_summary || {}
+      const balanceDue = Math.max(0, Number(summary.amount_remaining) || 0)
+      const total = Number(order.total_amount || 0)
+      const orderNo = order.order_no || ('#' + orderId)
+      const cust = detail.customer || {}
+      const billName = String(cust.full_name || '').trim()
+      const phone0 = String(cust.phone || '').trim()
+      const email0 = String(cust.email || '').trim()
+      _posHandoverCtx = {
+        orderId: orderId,
+        orderNo: orderNo,
+        balanceDue: balanceDue,
+        customerPhone: phone0,
+        detailSnapshot: {
+          order: order,
+          sub_orders: detail.sub_orders || [],
+          payment_summary: summary
+        },
+        method: 'UPI'
+      }
+
+      if (balanceDue < 0.01) {
+        body.innerHTML =
+          '<div class="pos-handover-stack">' +
+          '<div class="pos-handover-badge-ok">Fully paid at POS</div>' +
+          '<p class="pos-handover-lead">Order <strong>' + escapeHtml(orderNo) + '</strong> — Total ' + formatRupeesDecimals(total) + '</p>' +
+          '<p class="pos-handover-muted">No balance due. Confirm to mark delivered and generate invoice.</p>' +
+          posHandoverInvoiceSectionHtml(billName, phone0, email0) +
+          '<div class="pos-handover-actions">' +
+          '<button type="button" class="pos-handover-btn" onclick="closePosHandoverModal()">Cancel</button>' +
+          '<button type="button" class="pos-handover-btn pos-handover-btn-primary" id="btn-pos-handover-confirm" onclick="submitPosHandoverConfirm(false)">Confirm handover</button>' +
+          '</div></div>'
+      } else {
+        body.innerHTML =
+          '<div class="pos-handover-stack">' +
+          '<p class="pos-handover-lead">Order <strong>' + escapeHtml(orderNo) + '</strong> — Total ' + formatRupeesDecimals(total) + '</p>' +
+          '<div class="pos-handover-balance-strip">' +
+          '<span class="pos-handover-balance-label">Balance due</span>' +
+          '<span class="pos-handover-balance-amt">' + formatRupeesDecimals(balanceDue) + '</span></div>' +
+          '<div class="pos-handover-field-label">Payment method</div>' +
+          '<div class="pos-handover-pay-row">' +
+          '<button type="button" class="pos-handover-pay-m active" id="pos-handover-pay-m-UPI" onclick="setPosHandoverPayMethod(\'UPI\')">UPI</button>' +
+          '<button type="button" class="pos-handover-pay-m" id="pos-handover-pay-m-CARD" onclick="setPosHandoverPayMethod(\'CARD\')">Card</button>' +
+          '<button type="button" class="pos-handover-pay-m" id="pos-handover-pay-m-CASH" onclick="setPosHandoverPayMethod(\'CASH\')">Cash</button></div>' +
+          '<div id="pos-handover-cash-wrap" style="display:none">' +
+          '<label class="pos-handover-label" for="pos-handover-tendered">Tendered (cash)</label>' +
+          '<input id="pos-handover-tendered" class="pos-handover-input" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Amount received">' +
+          '<div id="pos-handover-change" class="pos-handover-change" style="display:none"></div></div>' +
+          '<div id="pos-handover-card-wrap" style="display:none">' +
+          '<label class="pos-handover-label" for="pos-handover-card-ref">Approval code / last 4 <span class="pos-handover-opt">(optional)</span></label>' +
+          '<input id="pos-handover-card-ref" class="pos-handover-input" type="text" placeholder="e.g. 123456"></div>' +
+          posHandoverInvoiceSectionHtml(billName, phone0, email0) +
+          '<div id="pos-handover-err" class="pos-handover-err" style="display:none"></div>' +
+          '<div class="pos-handover-actions">' +
+          '<button type="button" class="pos-handover-btn" onclick="closePosHandoverModal()">Cancel</button>' +
+          '<button type="button" class="pos-handover-btn pos-handover-btn-primary" id="btn-pos-handover-confirm" onclick="submitPosHandoverConfirm(true)">Collect ' + formatRupeesDecimals(balanceDue) + ' &amp; hand over</button>' +
+          '</div></div>'
+        const tEl = document.getElementById('pos-handover-tendered')
+        if (tEl) {
+          tEl.addEventListener('input', function () {
+            const t = Number(this.value) || 0
+            const chEl = document.getElementById('pos-handover-change')
+            if (chEl) {
+              if (t >= balanceDue) {
+                chEl.textContent = 'Change: ' + formatRupeesDecimals(t - balanceDue)
+                chEl.style.display = ''
+              } else {
+                chEl.style.display = 'none'
+              }
+            }
+          })
+        }
+        window.setPosHandoverPayMethod('UPI')
+      }
+    } catch (err) {
+      body.innerHTML = '<div style="padding:16px;color:var(--red)">' + escapeHtml(err.message || 'Failed to load order.') + '</div>'
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+  }
+
+  function posHandoverInvoiceSectionHtml(billName, phone0, email0) {
+    return (
+      '<div class="pos-handover-invoice-block">' +
+      '<button type="button" class="pos-handover-invoice-toggle" id="pos-handover-invoice-toggle" onclick="togglePosHandoverInvoicePanel()" aria-expanded="false">' +
+      'Invoice / bill details <span class="pos-handover-chevron">▾</span></button>' +
+      '<div id="pos-handover-invoice-fields" class="pos-handover-invoice-fields" aria-hidden="true">' +
+      '<p class="pos-handover-muted" style="margin:0 0 10px">Prefilled from customer profile. Edit before handover if the bill should read differently.</p>' +
+      '<label class="pos-handover-label" for="pos-handover-bill-name">Bill name</label>' +
+      '<input id="pos-handover-bill-name" class="pos-handover-input" type="text" value="' + posHandoverEscAttr(billName) + '">' +
+      '<label class="pos-handover-label" for="pos-handover-gstin">GSTIN</label>' +
+      '<input id="pos-handover-gstin" class="pos-handover-input" type="text" maxlength="20" placeholder="Optional">' +
+      '<label class="pos-handover-label" for="pos-handover-billing-address">Billing address</label>' +
+      '<textarea id="pos-handover-billing-address" class="pos-handover-textarea" rows="2" placeholder="Optional"></textarea>' +
+      '<label class="pos-handover-label" for="pos-handover-shipping-address">Shipping / delivery address</label>' +
+      '<textarea id="pos-handover-shipping-address" class="pos-handover-textarea" rows="2" placeholder="Optional"></textarea>' +
+      '<label class="pos-handover-label" for="pos-handover-phone">Phone</label>' +
+      '<input id="pos-handover-phone" class="pos-handover-input" type="tel" value="' + posHandoverEscAttr(phone0) + '">' +
+      '<label class="pos-handover-label" for="pos-handover-email">Email</label>' +
+      '<input id="pos-handover-email" class="pos-handover-input" type="email" value="' + posHandoverEscAttr(email0) + '">' +
+      '<label class="pos-handover-label" for="pos-handover-notes">Notes on invoice</label>' +
+      '<textarea id="pos-handover-notes" class="pos-handover-textarea" rows="2" placeholder="Optional"></textarea>' +
+      '</div></div>'
+    )
+  }
+
+  function flattenPosOrderItemsForPreview(detail) {
+    const subs = detail && Array.isArray(detail.sub_orders) ? detail.sub_orders : []
+    const rows = []
+    for (let i = 0; i < subs.length; i++) {
+      const sub = subs[i]
+      const items = Array.isArray(sub.items) ? sub.items : []
+      for (let j = 0; j < items.length; j++) {
+        const it = items[j]
+        rows.push({
+          sku_code: it.sku_code ? String(it.sku_code) : '',
+          product_label: (it.product_label && String(it.product_label).trim())
+            || (it.product_type ? String(it.product_type) : ''),
+          qty: Number(it.qty) || 1,
+          line_total: Number(it.line_total) || 0,
+          fulfillment: String(it.fulfillment || sub.fulfillment || '').toUpperCase()
+        })
+      }
+    }
+    return rows
+  }
+
+  function buildPosHandoverInvoicePreviewHtml(storeName, detail, prefs, invoiceNo) {
+    const order = detail && detail.order ? detail.order : {}
+    const p = prefs && typeof prefs === 'object' ? prefs : {}
+    const displayStore = String(storeName || 'Store outlet').trim() || 'Store outlet'
+    const dt = new Date().toLocaleString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    })
+    const rows = flattenPosOrderItemsForPreview(detail)
+    let bodyRows = ''
+    for (let r = 0; r < rows.length; r++) {
+      const it = rows[r]
+      const labTag = it.fulfillment === 'LAB' ? '<span class="inv-lab-tag">Lab</span>' : ''
+      const skuPart = it.sku_code ? ' <span class="inv-muted">(' + escapeHtml(String(it.sku_code)) + ')</span>' : ''
+      bodyRows +=
+        '<tr><td>' + escapeHtml(String(it.product_label || 'Item')) + skuPart + labTag +
+        '</td><td>' + escapeHtml(String(it.qty)) + '</td><td>' +
+        escapeHtml(formatRupeesDecimals(it.line_total)) + '</td></tr>'
+    }
+    if (!bodyRows) {
+      bodyRows = '<tr><td colspan="3" class="inv-muted">Line items unavailable in this preview — reopen from order detail if needed.</td></tr>'
+    }
+
+    const sub = Number(order.subtotal_amount) || 0
+    const disc = Number(order.discount_amount) || 0
+    const gst = Number(order.gst_amount) || 0
+    const total = Number(order.total_amount) || 0
+    const taxableAfterDisc = Math.max(0, Math.round((sub - disc) * 100) / 100)
+    const gstLabel = posGstLineLabel()
+
+    function line(v) {
+      const t = String(v || '').trim()
+      return t ? escapeHtml(t) : ''
+    }
+
+    const billLines = []
+    billLines.push(line(String(p.bill_name || '').trim() || '—'))
+    if (String(p.phone || '').trim()) billLines.push(line(String(p.phone).trim()))
+    if (String(p.email || '').trim()) billLines.push(line(String(p.email).trim()))
+    if (String(p.gstin || '').trim()) billLines.push('<strong>GSTIN</strong> ' + line(String(p.gstin).trim()))
+    if (String(p.billing_address || '').trim()) billLines.push(line(String(p.billing_address).trim()))
+    if (String(p.notes || '').trim()) billLines.push('<strong>Notes</strong> ' + line(String(p.notes).trim()))
+
+    let shipInner = ''
+    if (String(p.shipping_address || '').trim()) {
+      shipInner = line(String(p.shipping_address).trim())
+    } else {
+      shipInner = '<span class="inv-muted">Same as billing or handover arrangement at counter.</span>'
+    }
+
+    const css =
+      ':root{--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--head:#0f2942;--accent:#1d4ed8;--tint:#eff6ff;--soft:#f8fafc}' +
+      '*{box-sizing:border-box}body{margin:0;padding:32px 28px 48px;color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.48;background:#fff}' +
+      '.sheet{max-width:760px;margin:0 auto}' +
+      '.banner{display:flex;justify-content:space-between;gap:24px;padding-bottom:22px;border-bottom:3px solid var(--head);margin-bottom:22px}' +
+      '.brand-k{font-size:10px;font-weight:800;letter-spacing:.16em;color:var(--accent);text-transform:uppercase}' +
+      '.store-n{font-size:21px;font-weight:800;color:var(--head);margin:8px 0 0;line-height:1.2}' +
+      '.store-sub{font-size:12px;color:var(--muted);margin-top:6px}' +
+      '.inv{text-align:right;min-width:220px}' +
+      '.inv h1{margin:0 0 14px;font-size:26px;font-weight:900;color:var(--head);letter-spacing:-.03em;line-height:1}' +
+      '.inv-row{font-size:13px;color:var(--muted);margin:4px 0}' +
+      '.inv-row strong{color:var(--ink)}' +
+      '.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}' +
+      '@media(max-width:640px){.banner{flex-direction:column}.inv{text-align:left}.grid2{grid-template-columns:1fr}}' +
+      '.card{border:1px solid var(--line);border-radius:12px;padding:16px;background:linear-gradient(180deg,var(--tint) 0,#fff 36%)}' +
+      '.card h2{margin:0 0 10px;font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--accent);text-transform:uppercase}' +
+      '.addr{font-size:13px;line-height:1.55}' +
+      'table{border-collapse:collapse;width:100%;margin:14px 0}' +
+      'th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;background:var(--head);color:#fff;padding:11px 10px;text-align:left;font-weight:700}' +
+      'th:nth-child(2){text-align:center}th:last-child{text-align:right}' +
+      'td{border-bottom:1px solid var(--line);padding:11px 10px;font-size:13px}' +
+      'td:nth-child(2){text-align:center;width:48px;color:var(--muted);font-weight:600}' +
+      'td:last-child{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}' +
+      'tbody tr:nth-child(even) td{background:var(--soft)}' +
+      '.inv-muted{color:var(--muted)}' +
+      '.inv-lab-tag{display:inline-block;margin-left:8px;font-size:9px;font-weight:800;padding:2px 8px;border-radius:999px;background:#dbeafe;color:#1e40af;vertical-align:middle;text-transform:none;letter-spacing:0}' +
+      '.tot{display:flex;justify-content:flex-end;margin-top:12px}' +
+      '.totbox{min-width:300px;border:1px solid var(--line);border-radius:12px;padding:18px 20px;background:#fff}' +
+      '.totrow{display:flex;justify-content:space-between;gap:24px;margin:8px 0;font-size:13px;color:var(--muted)}' +
+      '.totrow b{color:var(--ink)}' +
+      '.grand{margin-top:14px;padding-top:14px;border-top:2px solid var(--head);font-size:18px;font-weight:900;color:var(--head);justify-content:space-between}' +
+      '.foot{margin-top:36px;text-align:center;font-size:11px;color:var(--muted);line-height:1.55;padding-top:16px;border-top:1px dashed var(--line)}' +
+      '.sig{margin-top:36px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted);gap:20px}' +
+      '.sig div:last-child{text-align:right}'
+
+    const totDiscountRow = disc > 0.005
+      ? '<div class="totrow"><span>Discount</span><span><b>− ' + escapeHtml(formatRupeesDecimals(disc)) + '</b></span></div>'
+      : ''
+
+    const billHtml = billLines.filter(Boolean).join('<br>')
+    const orderNoDisp = escapeHtml(String(order.order_no || '—'))
+
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>Invoice ' + escapeHtml(String(invoiceNo || 'Preview')) + '</title>' +
+      '<style>@media print{body{padding:18px}}</style>' +
+      '<style>' + css + '</style></head><body>' +
+      '<div class="sheet">' +
+      '<header class="banner">' +
+      '<div><div class="brand-k">Store OS · Cosmos</div>' +
+      '<div class="store-n">' + escapeHtml(displayStore) + '</div>' +
+      '<div class="store-sub">Printed tax invoice (handover preview)</div></div>' +
+      '<div class="inv"><h1>TAX INVOICE</h1>' +
+      '<div class="inv-row"><strong>No.</strong> ' + escapeHtml(String(invoiceNo || '—')) + '</div>' +
+      '<div class="inv-row"><strong>Order ref.</strong> ' + orderNoDisp + '</div>' +
+      '<div class="inv-row"><strong>Dated</strong> ' + escapeHtml(dt) + ' IST</div>' +
+      '</div></header>' +
+      '<div class="grid2">' +
+      '<section class="card"><h2>Bill to</h2><div class="addr">' + billHtml + '</div></section>' +
+      '<section class="card"><h2>Deliver / fulfil</h2><div class="addr">' + shipInner + '</div></section>' +
+      '</div>' +
+      '<table><thead><tr><th scope="col">Description</th><th scope="col">Qty</th>' +
+      '<th scope="col">Amount (₹)</th></tr></thead><tbody>' + bodyRows + '</tbody></table>' +
+      '<div class="tot"><div class="totbox">' +
+      '<div class="totrow"><span>Catalogue subtotal</span><span><b>' + escapeHtml(formatRupeesDecimals(sub)) + '</b></span></div>' +
+      totDiscountRow +
+      '<div class="totrow"><span>Value after discount (reference)</span><span><b>' + escapeHtml(formatRupeesDecimals(taxableAfterDisc)) + '</b></span></div>' +
+      '<div class="totrow"><span>' + escapeHtml(gstLabel) + '</span><span><b>' + escapeHtml(formatRupeesDecimals(gst)) + '</b></span></div>' +
+      '<div class="totrow grand"><span>Grand total</span><span>' + escapeHtml(formatRupeesDecimals(total)) + '</span></div>' +
+      '</div></div>' +
+      '<div class="sig"><div><span style="border-top:1px solid var(--line);display:inline-block;min-width:180px;margin-top:32px;padding-top:6px">Customer sign.</span></div>' +
+      '<div>For <strong>' + escapeHtml(displayStore) + '</strong><div style="margin-top:36px">' +
+      '<span style="border-top:1px solid var(--line);display:inline-block;min-width:200px;padding-top:6px">Authorised signatory</span>' +
+      '</div></div></div>' +
+      '<p class="foot">Computer-generated document · Review GST treatment with your Chartered Accountant · ' +
+      'Eyewoot / Cosmos ERP handover artifact</p>' +
+      '</div></body></html>'
+  }
+
+  function openPosHandoverInvoicePreview(storeName, detailSnap, prefs, invoiceNo) {
+    let html
+    try {
+      html = buildPosHandoverInvoicePreviewHtml(storeName, detailSnap, prefs, invoiceNo)
+    } catch (_e) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Could not build invoice preview.')
+      return null
+    }
+    const overlay = document.getElementById('overlay-pos-invoice-preview')
+    const frame = document.getElementById('pos-invoice-preview-frame')
+    const metaEl = document.getElementById('pos-invoice-preview-meta')
+    if (!overlay || !frame) {
+      _posHandoverInvoicePreviewLast = {
+        storeName: storeName || 'Store',
+        detailSnap: detailSnap,
+        prefs: prefs || {},
+        invoiceNo: invoiceNo || null
+      }
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn('Invoice preview is missing from this page — save POS_Prototype.html and hard-refresh.')
+      }
+      return null
+    }
+    try {
+      frame.srcdoc = html
+    } catch (_e2) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Could not render invoice in the preview panel.')
+      return null
+    }
+    if (metaEl) {
+      metaEl.textContent = 'Invoice ' + String(invoiceNo || '') +
+        ' — review the layout below. Use Print for a physical copy.'
+    }
+    bindPosHandoverOverlays()
+    overlay.classList.add('open')
+    overlay.setAttribute('aria-hidden', 'false')
+    _posHandoverInvoicePreviewLast = {
+      storeName: storeName || 'Store',
+      detailSnap: detailSnap,
+      prefs: prefs || {},
+      invoiceNo: invoiceNo || null
+    }
+    return overlay
+  }
+
+  window.closePosHandoverModal = closePosHandoverModal
+
   window.posAdvanceLabStage = async function(orderId, subOrderId, toStatus, btn) {
     if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
@@ -4944,20 +5892,7 @@
   }
 
   window.openBalanceCollection = async function(orderId) {
-    const session = getPosSession()
-    if (!session || !session.token || !orderId) return
-    try {
-      const detail = await apiGet('/api/pos/orders/' + orderId, session.token)
-      lastCreatedOrder = detail.order || null
-      forceBalanceSettlement = true
-      if (!lastCreatedOrder) {
-        if (typeof cosmosToastError === 'function') cosmosToastError('Order not found for balance collection.')
-        return
-      }
-      navigate(POS_ROUTES.PAYMENT)
-    } catch (err) {
-      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
-    }
+    await openPosHandoverModal(orderId)
   }
 
   function bindPosLensNewCustomerModal() {
@@ -5187,6 +6122,12 @@
     bindCheckout5NavOnce()
     loadSavedCart()
     bindPosLensNewCustomerModal()
+    document.addEventListener('visibilitychange', function onPosVisibilityRefresh() {
+      if (document.visibilityState !== 'visible') return
+      var visSession = getPosSession()
+      if (!visSession || !visSession.token || !isSessionValid(visSession)) return
+      void loadPosBootstrap(visSession)
+    })
     resolve()
   })()
   })

@@ -7152,6 +7152,14 @@ ${initScript}
     INVOICED:                     'Invoiced'
   };
 
+  /** Matches the five Lab Orders tabs (friendly label; DB value may differ, e.g. Sent To Lab). */
+  const FY_LAB_QUEUE_TAB_LABEL = {
+    SENT_TO_LAB: 'Pending Lab',
+    LAB_FITTING: 'At Lab',
+    QC_PASS: 'QC Pass',
+    DISPATCHED_TO_STORE: 'Dispatched'
+  };
+
   // Store-side early chain (POS): ORDER_PLACED → Accepted (DB key ADVANCE_PAID) → SENT_TO_LAB.
   const FY_LAB_NEXT_STATUSES = {
     FRAME_PENDING_LENS_BACKORDER: ['FRAME_RECEIVED_LENS_BACKORDER'],
@@ -7162,40 +7170,111 @@ ${initScript}
     QC_PASS:                      ['DISPATCHED_TO_STORE']
   };
 
-  function fyLabelLabStatus(status) {
-    if (!status) return '—';
-    return FY_LAB_STATUS_LABELS[status] || String(status).replace(/_/g, ' ');
+  function fyCanBypassSiblingGuard() {
+    if (user && String(user.role || '') === 'super_admin') return true;
+    const pl = userPermissions.map((x) => String(x).toLowerCase());
+    return (
+      pl.indexOf('foundry.lab.bypass_order_sibling') >= 0
+      || pl.indexOf('command_unit.lab.bypass_order_sibling') >= 0
+      || pl.indexOf('storepilot.lab.bypass_order_sibling') >= 0
+      || pl.indexOf('pos.lab.bypass_order_sibling') >= 0
+    );
   }
 
-  function buildFyLabStatusAction(order) {
-    const curr = String(order.lab_workflow_status || '');
-    const subId = Number(order.sub_order_id) || 0;
+  function fyJobsFromOrderRow(order) {
+    var ls = Array.isArray(order.lab_sub_orders) ? order.lab_sub_orders : [];
+    if (ls.length) return ls.map(function(s) {
+      return {
+        sub_order_id: s.sub_order_id,
+        lab_workflow_status: s.lab_workflow_status,
+        lab_received_confirmed: s.lab_received_confirmed === true,
+        lab_backorder_confirmed: s.lab_backorder_confirmed === true,
+        sub_order_label: s.sub_order_label || order.order_no || ''
+      };
+    });
+    var sid = Number(order.sub_order_id) || 0;
+    if (!sid) return [];
+    return [{
+      sub_order_id: sid,
+      lab_workflow_status: order.lab_workflow_status,
+      lab_received_confirmed: order.lab_received_confirmed === true,
+      lab_backorder_confirmed: order.lab_backorder_confirmed === true,
+      sub_order_label: order.order_no || ('#' + sid)
+    }];
+  }
+
+  function fyEscapeAttr(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/'/g, '&#39;');
+  }
+
+  function fyEscapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function fyLabelLabStatus(raw) {
+    const k = String(raw || '').toUpperCase().trim()
+    return FY_LAB_STATUS_LABELS[k] || (k ? k.replace(/_/g, ' ') : '')
+  }
+
+  function fyLabFilterTitle(statusKey) {
+    const k = String(statusKey || '').toUpperCase()
+    if (!k) return 'All lab orders'
+    return FY_LAB_QUEUE_TAB_LABEL[k] || fyLabelLabStatus(k)
+  }
+
+  function fyLabEmptyHintForFilter(statusKey) {
+    const k = String(statusKey || '').toUpperCase()
+    const hints = {
+      SENT_TO_LAB:
+        'This tab lists jobs in “Pending Lab” (system status Sent To Lab). Rows appear after the store marks the bill Sent To Lab in Store OS.',
+      LAB_FITTING: 'Jobs land here once both lab intake checkpoints are done and edging has started.',
+      QC_PASS:
+        'Nothing is currently at QC Pass. Open At Lab if work is still in fitting and edging, or All to see every active lab bill.',
+      DISPATCHED_TO_STORE: 'Shown after HQ dispatches the job toward the store from QC Pass.'
+    }
+    return hints[k] || 'Widen this filter by choosing All or clear the search.'
+  }
+
+  /** Clear search + All tab — used from Lab Orders empty-state actions */
+  window.fyLabClearSearchAndShowAll = function () {
+    const s = document.getElementById('lab-orders-search')
+    const t = document.getElementById('fy-lab-tab-all')
+    if (s) s.value = ''
+    setFyLabFilter('', t)
+  }
+
+  function buildFyLabActionForSingleJob(order, job) {
+    var oid = order.order_id;
+    var subId = Number(job.sub_order_id) || 0;
+    var curr = String(job.lab_workflow_status || '');
+    var plainLabel = String(job.sub_order_label || '').slice(0, 80);
+    var idSuf = oid + '_' + subId;
 
     if (curr === 'SENT_TO_LAB') {
-      if (!subId) {
-        return '<span style="font-size:11px;color:var(--gold)">No LAB line id — reopen order.</span>';
-      }
-      const rc = order.lab_received_confirmed === true;
-      const bc = order.lab_backorder_confirmed === true;
-      let row = `
-      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
-        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">`;
+      if (!subId) return '';
+      var rc = job.lab_received_confirmed === true;
+      var bc = job.lab_backorder_confirmed === true;
+      var row = '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">' +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
       if (rc) {
         row += '<span style="font-size:11px;font-weight:600;color:var(--green);background:var(--greenL);padding:3px 8px;border-radius:6px">Received at Lab — done</span>';
       } else {
-        row += `<button type="button" class="btn sm" id="btn-fy-intake-rcv-${order.order_id}" onclick="markFyLabIntake(${order.order_id},${subId},'received_at_lab')">Mark Received at Lab</button>`;
+        row += '<button type="button" class="btn sm" id="btn-fy-intake-rcv-' + idSuf +
+          '" onclick="markFyLabIntake(' + oid + ',' + subId + ',\'received_at_lab\')">Mark Received at Lab</button>';
       }
       if (bc) {
         row += '<span style="font-size:11px;font-weight:600;color:var(--green);background:var(--greenL);padding:3px 8px;border-radius:6px">Backorder Created — done</span>';
       } else {
-        row += `<button type="button" class="btn sm" id="btn-fy-intake-bo-${order.order_id}" onclick="markFyLabIntake(${order.order_id},${subId},'backorder_created')">Mark Backorder Created</button>`;
+        row += '<button type="button" class="btn sm" id="btn-fy-intake-bo-' + idSuf +
+          '" onclick="markFyLabIntake(' + oid + ',' + subId + ',\'backorder_created\')">Mark Backorder Created</button>';
       }
       row += '</div>';
       if (rc && bc) {
-        row += `
-        <div style="margin-top:2px">
-          <button type="button" class="btn primary" id="btn-fy-fitting-edging-${order.order_id}" onclick="advanceFyLabFittingEdging(${order.order_id}, ${subId})">Fitting/Edging</button>
-        </div>`;
+        row += '<div style="margin-top:2px"><button type="button" class="btn primary" id="btn-fy-fitting-edging-' +
+          idSuf + '" onclick="advanceFyLabFittingEdging(' + oid + ', ' + subId + ')">Fitting/Edging</button></div>';
       } else {
         row += '<span style="font-size:11px;color:var(--text3)">Complete both checkpoints to advance.</span>';
       }
@@ -7203,21 +7282,56 @@ ${initScript}
       return row;
     }
 
-    const options = FY_LAB_NEXT_STATUSES[curr] || [];
+    var options = FY_LAB_NEXT_STATUSES[curr] || [];
     if (!options.length) return '<span style="font-size:12px;color:var(--text3)">No action</span>';
-    const opts = options.map((s) => `<option value="${s}">${fyLabelLabStatus(s)}</option>`).join('');
-    let qcHint = '';
+    var opts = options.map(function(s) {
+      return '<option value="' + fyEscapeAttr(s) + '">' + fyLabelLabStatus(s) + '</option>';
+    }).join('');
+    var qcHint = '';
     if (curr === 'LAB_FITTING') {
       qcHint =
-        '<div style="font-size:11px;color:var(--text3);margin-top:4px;max-width:320px"><strong>QC Pass</strong> → dispatches to store. <strong>QC Fail</strong> → logged in timeline, order stays here for rework.</div>';
+        '<div style="font-size:11px;color:var(--text3);margin-top:4px;max-width:320px"><strong>QC Pass</strong> moves toward dispatch once pair rules allow. <strong>QC Fail</strong> stays in this queue for rework.</div>';
     }
-    return `
-      <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">
-      <div style="display:flex;gap:6px;align-items:center">
-        <select id="fy-lab-next-${order.order_id}" aria-label="Next lab stage" style="font-size:12px;min-width:175px">${opts}</select>
-        <button type="button" class="btn sm" id="btn-fy-lab-next-${order.order_id}" onclick="updateFyLabOrderStatus(${order.order_id}, ${order.sub_order_id || 0})">Update</button>
-      </div>${qcHint}</div>
-    `;
+    var bypassRow = '';
+    if (curr === 'QC_PASS' && fyCanBypassSiblingGuard()) {
+      bypassRow =
+        '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">' +
+        '<button type="button" class="btn sm" style="border-color:var(--gold);color:var(--text1)" ' +
+        'id="btn-fy-lab-bypass-' + idSuf + '" onclick="updateFyLabOrderDispatchWithBypass(' + oid +
+        ', ' + subId + ')">Dispatch anyway (pair guard bypass)</button>' +
+        '<span style="font-size:11px;color:var(--text3)">Requires audit permission; timeline will record the bypass.</span></div>';
+    }
+    return (
+      '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">' +
+      '<div style="display:flex;gap:6px;align-items:center">' +
+      '<select id="fy-lab-next-' + idSuf + '" aria-label="Next lab stage for ' + fyEscapeAttr(plainLabel) +
+      '" style="font-size:12px;min-width:175px">' +
+      opts + '</select>' +
+      '<button type="button" class="btn sm" id="btn-fy-lab-next-' + idSuf + '" onclick="updateFyLabOrderStatus(' + oid +
+      ', ' + subId + ')">Update</button></div>' +
+      qcHint +
+      bypassRow +
+      '</div>'
+    );
+  }
+
+  function buildFyLabStatusAction(order) {
+    var jobs = fyJobsFromOrderRow(order);
+    if (!jobs.length) {
+      return '<span style="font-size:11px;color:var(--gold)">No LAB line — reopen order.</span>';
+    }
+    var parts = [];
+    var i;
+    for (i = 0; i < jobs.length; i += 1) {
+      parts.push(
+        '<div style="margin-bottom:12px;padding-bottom:12px;' + (i < jobs.length - 1 ? 'border-bottom:1px solid var(--border);' : '') + '">' +
+        '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px">' +
+        fyEscapeAttr(jobs[i].sub_order_label) + '</div>' +
+        buildFyLabActionForSingleJob(order, jobs[i]) +
+        '</div>'
+      );
+    }
+    return '<div style="display:flex;flex-direction:column;gap:4px">' + parts.join('') + '</div>';
   }
 
   window.setFyLabFilter = function(status, tabEl) {
@@ -7248,16 +7362,48 @@ ${initScript}
       if (_fyLabStatusFilter) qs.set('lab_status', _fyLabStatusFilter);
       const rows = await apiGet(`/api/orders?${qs.toString()}`);
       if (!rows || !rows.length) {
-        tbody.innerHTML = `<tr><td colspan="6">
-          <div class="empty" style="padding:32px 24px;text-align:center">
-            <div class="empty-ic">🔬</div>
-            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No lab orders found</div>
-            <div style="font-size:13px;color:var(--text2)">Try another tab or search by order number or customer name.</div>
+        const filterTitle = fyLabFilterTitle(_fyLabStatusFilter)
+        const hint = fyLabEmptyHintForFilter(_fyLabStatusFilter)
+        const hasSearch = Boolean(q)
+        const atLabBtn =
+          `<button type="button" class="btn sm primary" onclick="document.getElementById('fy-lab-tab-at-lab')&&setFyLabFilter('LAB_FITTING',document.getElementById('fy-lab-tab-at-lab'))">Show At Lab</button>`
+        const dispatchBtn =
+          `<button type="button" class="btn sm" onclick="document.getElementById('fy-lab-tab-dispatched')&&setFyLabFilter('DISPATCHED_TO_STORE',document.getElementById('fy-lab-tab-dispatched'))">Show Dispatched</button>`
+        const extraQueues =
+          String(_fyLabStatusFilter || '').toUpperCase() === 'QC_PASS'
+            ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">${atLabBtn}${dispatchBtn}</div>`
+            : ''
+        const searchLine = hasSearch
+          ? `<div style="margin-top:8px;font-size:12px;color:var(--gold)">Active search filters the list (${fyEscapeHtml(q)}).</div>`
+          : ''
+        const primaryEmptyBtn =
+          `<button type="button" class="btn sm primary" onclick="fyLabClearSearchAndShowAll()">` +
+          (hasSearch ? 'Clear search &amp; show all' : 'Show all orders') +
+          '</button>'
+
+        tbody.innerHTML = `
+        <tr><td colspan="6">
+          <div class="empty" style="padding:32px 24px;text-align:center;max-width:520px;margin:0 auto">
+            <div class="empty-ic" style="font-weight:700;font-size:26px;line-height:1;color:var(--acc2)" aria-hidden="true">◇</div>
+            <div style="font-size:15px;font-weight:600;color:var(--text1);margin:12px 0 8px">${fyEscapeHtml(hasSearch ? 'No matches for this query' : 'No lab orders in this view')}</div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.5">${fyEscapeHtml(hint)}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:8px">${fyEscapeHtml('Tab: ' + filterTitle + (hasSearch ? ' · search on' : ''))}</div>
+            ${searchLine}
+            <div style="margin-top:18px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">
+              ${primaryEmptyBtn}
+              <button type="button" class="btn sm" onclick="window.loadLabOrders && window.loadLabOrders()">Refresh</button>
+            </div>
+            ${extraQueues}
           </div>
-        </td></tr>`;
-        return;
+        </td></tr>`
+        return
       }
-      tbody.innerHTML = rows.map((r) => `
+      tbody.innerHTML = rows.map((r) => {
+        const statusShown = fyJobsFromOrderRow(r).map(function (j) {
+          return fyLabelLabStatus(j.lab_workflow_status)
+        }).filter(Boolean).join(' · ')
+        const statusFinal = statusShown || fyLabelLabStatus(r.lab_workflow_status)
+        return `
         <tr>
           <td class="mono xs">
             <div>${r.order_no || ''}</div>
@@ -7265,11 +7411,12 @@ ${initScript}
           </td>
           <td>${r.customer_name || 'Walk-in'}${r.customer_phone ? `<div style="font-size:11px;color:var(--text3)">${r.customer_phone}</div>` : ''}</td>
           <td>${r.store_name || ''}</td>
-          <td><span class="b b-blue" style="font-size:11px">${fyLabelLabStatus(r.lab_workflow_status)}</span></td>
+          <td><span class="b b-blue" style="font-size:11px">${statusFinal}</span></td>
           <td style="font-size:12px;color:var(--text3)">${typeof fmtDateTime === 'function' ? fmtDateTime(r.created_at) : (r.created_at || '')}</td>
           <td>${buildFyLabStatusAction(r)}</td>
         </tr>
-      `).join('');
+      `
+      }).join('');
     } catch (e) {
       const msg = e && e.message ? e.message : 'Could not load orders.';
       if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg);
@@ -7279,10 +7426,11 @@ ${initScript}
 
   window.markFyLabIntake = async function(orderId, subOrderId, field) {
     if (!orderId || !subOrderId || !field) return;
+    var idSuf = orderId + '_' + subOrderId;
     const btnId =
       field === 'received_at_lab'
-        ? 'btn-fy-intake-rcv-' + orderId
-        : 'btn-fy-intake-bo-' + orderId;
+        ? `btn-fy-intake-rcv-${idSuf}`
+        : `btn-fy-intake-bo-${idSuf}`;
     const btn = document.getElementById(btnId);
     if (!btn) return;
     if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn);
@@ -7303,7 +7451,8 @@ ${initScript}
 
   window.advanceFyLabFittingEdging = async function(orderId, subOrderId) {
     if (!orderId || !subOrderId) return;
-    const btn = document.getElementById('btn-fy-fitting-edging-' + orderId);
+    var idSuf = orderId + '_' + subOrderId;
+    const btn = document.getElementById(`btn-fy-fitting-edging-${idSuf}`);
     if (!btn) return;
     if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn);
     try {
@@ -7321,8 +7470,9 @@ ${initScript}
   };
 
   window.updateFyLabOrderStatus = async function(orderId, subOrderId) {
-    const sel = document.getElementById(`fy-lab-next-${orderId}`);
-    const btn = document.getElementById(`btn-fy-lab-next-${orderId}`);
+    var idSuf = orderId + '_' + subOrderId;
+    const sel = document.getElementById(`fy-lab-next-${idSuf}`);
+    const btn = document.getElementById(`btn-fy-lab-next-${idSuf}`);
     if (!sel || !sel.value || !subOrderId) return;
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
     try {
@@ -7332,6 +7482,27 @@ ${initScript}
       });
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
       if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Lab status updated');
+      window.loadLabOrders();
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    }
+  };
+
+  window.updateFyLabOrderDispatchWithBypass = async function(orderId, subOrderId) {
+    var idSuf = orderId + '_' + subOrderId;
+    var btn = document.getElementById('btn-fy-lab-bypass-' + idSuf);
+    if (!orderId || !subOrderId) return;
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      await apiPost(`/api/orders/${orderId}/lab-status`, {
+        sub_order_id: Number(subOrderId),
+        to_status: 'DISPATCHED_TO_STORE',
+        bypass_order_sibling_guard: true,
+        bypass_reason: 'Foundry HQ authorised pair-guard bypass'
+      });
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Dispatched with documented bypass.');
       window.loadLabOrders();
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);

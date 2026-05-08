@@ -20,6 +20,7 @@ const RAW_PERMISSION_GROUPS = [
     ['command_unit.settings.edit', 'Settings — Edit'],
     ['command_unit.promotions.view', 'Promotion — View customer offers'],
     ['command_unit.promotions.manage', 'Promotion — Manage customer offers'],
+    ['command_unit.lab.bypass_order_sibling', 'Lab — Bypass per-pair sibling dispatch guard (timeline audit)'],
     ['command_unit.audit.view', 'Audit Logs — View'],
     ['command_unit.tablets.view', 'Store OS tablets — View by store'],
     ['command_unit.tablets.create', 'Store OS tablets — Create'],
@@ -42,7 +43,8 @@ const RAW_PERMISSION_GROUPS = [
     ['foundry.warehouse.create', 'Warehouse — Approve ready']
   ]],
   ['Foundry — Lab', [
-    ['foundry.lab.view', 'Lab orders — Foundry / HQ (all stores)']
+    ['foundry.lab.view', 'Lab orders — Foundry / HQ (all stores)'],
+    ['foundry.lab.bypass_order_sibling', 'Lab — Bypass per-pair sibling dispatch guard (audited)']
   ]],
   ['Foundry — Catalogue & Inventory', [
     ['foundry.catalogue.view', 'SKU catalogue — View'],
@@ -86,6 +88,7 @@ const RAW_PERMISSION_GROUPS = [
     ['storepilot.reports.view', 'Reports — View'],
     ['storepilot.lab.view', 'Lab orders — View store queue'],
     ['storepilot.lab.manage', 'Lab orders — Workflow & handover (store)'],
+    ['storepilot.lab.bypass_order_sibling', 'Lab — Bypass pair dispatch guard when HQ allows (audited)'],
     ['storepilot.transfers.view', 'Transfers — View'],
     ['storepilot.transfers.create', 'Transfers — Create'],
     ['storepilot.transfers.edit', 'Transfers — Accept / Stock']
@@ -99,6 +102,7 @@ const RAW_PERMISSION_GROUPS = [
     ['pos.orders.create', 'POS — Create order'],
     ['pos.payment.collect', 'POS — Record payment'],
     ['pos.lab.workflow', 'POS — Lab sub-order status updates'],
+    ['pos.lab.bypass_order_sibling', 'POS — Bypass lab pair dispatch guard when authorised (audited)'],
     ['pos.staff.pin.set', 'POS — Set staff PIN']
   ]],
   ['CX (Customer Experience)', [

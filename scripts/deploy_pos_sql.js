@@ -36,7 +36,9 @@ const POS_MIGRATION_FILES = [
   path.join('sql', 'migrations', 'add_discount_to_orders.sql'),
   path.join('sql', 'migrations', 'pos_gst_composition_inclusive.sql'),
   path.join('sql', 'migrations', 'customer_offer_scope.sql'),
-  path.join('sql', 'migrations', 'pos_checkout_inventory_drafts.sql')
+  path.join('sql', 'migrations', 'pos_checkout_inventory_drafts.sql'),
+  path.join('sql', 'migrations', '40_pos_invoices_display_json.sql'),
+  path.join('sql', 'migrations', '41_sub_order_pair_handover.sql')
 ]
 
 async function runBatches(pool, relativeSqlPath, label) {

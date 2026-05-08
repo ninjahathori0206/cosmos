@@ -114,13 +114,13 @@ async function resolveSkuFacts(pool, skuIds) {
  * Load scope rows for an offer, grouped by scope_kind.
  * @param {import('mssql').ConnectionPool} pool
  * @param {number} offerId
- * @returns {Promise<Record<string, Array<{refInt:number|null, refKey:string|null}>>>}
+ * @returns {Promise<Record<string, Array<{refInt:number|null, refKey:string|null, isExclusion:boolean}>>>}
  */
 async function loadScopesGrouped(pool, offerId) {
   const r = await pool.request()
     .input('offer_id', sql.Int, offerId)
     .query(`
-      SELECT scope_kind, ref_int, ref_key
+      SELECT scope_kind, ref_int, ref_key, is_exclusion
       FROM   dbo.customer_offer_scope
       WHERE  offer_id = @offer_id
     `)
@@ -128,7 +128,11 @@ async function loadScopesGrouped(pool, offerId) {
   for (const row of (r.recordset || [])) {
     const kind = String(row.scope_kind || '')
     if (!grouped[kind]) grouped[kind] = []
-    grouped[kind].push({ refInt: row.ref_int != null ? Number(row.ref_int) : null, refKey: row.ref_key != null ? String(row.ref_key) : null })
+    grouped[kind].push({
+      refInt: row.ref_int != null ? Number(row.ref_int) : null,
+      refKey: row.ref_key != null ? String(row.ref_key) : null,
+      isExclusion: Boolean(row.is_exclusion)
+    })
   }
   return grouped
 }
@@ -158,7 +162,7 @@ function evaluateLineAgainstScopes(lineFacts, scopesGrouped) {
   if (!kinds.length) return true
 
   for (const kind of kinds) {
-    const rows = scopesGrouped[kind] || []
+    const rows = (scopesGrouped[kind] || []).filter((r) => !r.isExclusion)
     if (!rows.length) continue
     const dim = SCOPE_BY_KIND[kind]
     if (!dim) continue
@@ -175,6 +179,28 @@ function evaluateLineAgainstScopes(lineFacts, scopesGrouped) {
     if (!matchesAny) return false
   }
   return true
+}
+
+function evaluateLineAgainstExclusions(lineFacts, scopesGrouped) {
+  const kinds = Object.keys(scopesGrouped || {})
+  if (!kinds.length) return false
+  for (const kind of kinds) {
+    const rows = (scopesGrouped[kind] || []).filter((r) => r.isExclusion)
+    if (!rows.length) continue
+    const dim = SCOPE_BY_KIND[kind]
+    if (!dim) continue
+    const lineValue = lineFacts[dim.factKey]
+    if (lineValue == null || lineValue === '') continue
+    const field = dim.refField
+    const excluded = rows.some((row) => {
+      const ref = field === 'ref_int' ? row.refInt : row.refKey
+      if (ref == null) return false
+      if (field === 'ref_int') return Number(ref) === Number(lineValue)
+      return String(ref).toLowerCase() === String(lineValue).toLowerCase()
+    })
+    if (excluded) return true
+  }
+  return false
 }
 
 function getSkuFactForLine(line, skuFactMap) {
@@ -196,6 +222,7 @@ function filterLinesByOfferScopes(lines, scopesGrouped, skuFactMap) {
     if (!line) continue
     const skuFact = getSkuFactForLine(line, map)
     const facts = buildLineFacts(line, skuFact)
+    if (evaluateLineAgainstExclusions(facts, scopesGrouped || {})) continue
     if (!evaluateLineAgainstScopes(facts, scopesGrouped || {})) continue
     out.push(line)
   }
@@ -227,6 +254,7 @@ function computeEligibleSubtotal(lines, scopesGrouped, skuFactMap, { cartPreview
     if (!line) continue
     const skuFact = skuFactMap.get(Number(line.sku_id)) || null
     const facts = buildLineFacts(line, skuFact)
+    if (evaluateLineAgainstExclusions(facts, scopesGrouped)) continue
     if (!evaluateLineAgainstScopes(facts, scopesGrouped)) continue
 
     const f = String(line.fulfillment || '').trim().toUpperCase()
@@ -245,8 +273,11 @@ function computeEligibleSubtotal(lines, scopesGrouped, skuFactMap, { cartPreview
  * Applies discount_value as a cap when > 0 (max discount allowed for this rule).
  * Uses scopesGrouped + skuFactMap when passed (BOGO and LAB combo promos respect allocation).
  *
- * BOGO_LOWEST_FREE: Rule V for lab(non-sun)+INSTANT pairs — discount equals the instant line
- * (secondary) frame total so the customer pays the lab order total; lab-only remainder pairs use min-pair.
+ * BOGO_LOWEST_FREE:
+ *   - Pairs each non-sunglasses qualifying LAB (full frame+lens+addons line total) with an INSTANT frame line;
+ *     discount += that frame total (secondary).
+ *   - Remaining qualifying LAB lines (incl. sunglasses lab) are pooled, sorted by total desc; every two lines
+ *     “pair” and the lower total of the pair is discounted (cheaper lab free — e.g. ₹2399 + ₹1399 ⇒ −₹1399).
  *
  * @returns {number|null} null if offer type uses legacy POS discount (PCT/FLAT/FREEBIE)
  */
@@ -319,6 +350,67 @@ function computeStructuredOfferDiscount(offerRow, lines, opts = {}) {
   return roundMoney(out)
 }
 
+function firstEligibleProductType(lines, skuFactMap, scopesGrouped) {
+  for (const line of lines || []) {
+    const skuFact = getSkuFactForLine(line, skuFactMap)
+    const facts = buildLineFacts(line, skuFact)
+    if (evaluateLineAgainstExclusions(facts, scopesGrouped || {})) continue
+    if (!evaluateLineAgainstScopes(facts, scopesGrouped || {})) continue
+    const pt = String(facts.productTypeKey || '').trim()
+    if (pt) return pt
+  }
+  return ''
+}
+
+function checkTrigger(offerRow, lines, skuFactMap, scopesGrouped, cartSubtotal) {
+  const triggerType = String(offerRow.trigger_type || 'ANY_ITEM').trim().toUpperCase()
+  const triggerValueRaw = String(offerRow.trigger_value || '').trim()
+  if (!Array.isArray(lines) || !lines.length) return false
+  if (triggerType === 'ANY_ITEM') return true
+  if (triggerType === 'MIN_CART_VALUE') {
+    const minAmt = Number(triggerValueRaw)
+    if (!Number.isFinite(minAmt) || minAmt <= 0) return true
+    return Number(cartSubtotal) >= minAmt
+  }
+  if (triggerType === 'SPECIFIC_PRODUCT_TYPE') {
+    if (!triggerValueRaw) return true
+    const firstPt = firstEligibleProductType(lines, skuFactMap, scopesGrouped)
+    return !!firstPt && firstPt.toLowerCase() === triggerValueRaw.toLowerCase()
+  }
+  return true
+}
+
+function computeFlatOrPctDiscount(offerRow, eligibleLines, cartSubtotal, { cartPreview = false } = {}) {
+  const typ = String(offerRow.discount_type || '').trim().toUpperCase()
+  const target = String(offerRow.benefit_target || 'ELIGIBLE_LINES').trim().toUpperCase()
+  const qualifies = cartPreview ? isQualifyingLabComboCartLine : isQualifyingLabComboLine
+  let basis = 0
+  if (target === 'CART_TOTAL') {
+    basis = Number(cartSubtotal) || 0
+  } else if (target === 'CHEAPEST_ITEM') {
+    const vals = []
+    for (const line of eligibleLines || []) {
+      const f = String(line.fulfillment || '').trim().toUpperCase()
+      if (f === 'LAB' && qualifies(line)) vals.push(lineFullLabComboTotal(line))
+      else vals.push(lineFrameTotal(line))
+    }
+    basis = vals.length ? Math.min(...vals) : 0
+  } else {
+    basis = orderLinesMerchandiseSubtotal(eligibleLines, { cartPreview })
+  }
+  basis = roundMoney(Math.max(0, basis))
+  if (basis <= 0) return 0
+  const val = Number(offerRow.discount_value) || 0
+  if (typ === 'PCT') {
+    let out = roundMoney(basis * Math.min(Math.max(val, 0), 100) / 100)
+    const cap = Number(offerRow.max_discount_amount)
+    if (Number.isFinite(cap) && cap > 0) out = Math.min(out, roundMoney(cap))
+    return roundMoney(Math.max(0, Math.min(out, basis)))
+  }
+  if (typ === 'FLAT') return roundMoney(Math.max(0, Math.min(val, basis)))
+  return 0
+}
+
 // ─── FULL OFFER DISCOUNT EVALUATOR ───────────────────────────────────────────
 
 /**
@@ -348,15 +440,14 @@ async function computeOfferDiscountAmount(pool, offerRow, orderLines, runOpts = 
   })
   if (structured !== null) return structured
 
-  const eligibleSubtotal = computeEligibleSubtotal(orderLines, scopesGrouped, skuFactMap, { cartPreview })
-
-  const val = Number(offerRow.discount_value) || 0
+  const cartSubtotal = orderLinesMerchandiseSubtotal(orderLines, { cartPreview })
+  if (!checkTrigger(offerRow, orderLines, skuFactMap, scopesGrouped, cartSubtotal)) return 0
 
   if (typ === 'PCT') {
-    return roundMoney(eligibleSubtotal * Math.min(val, 100) / 100)
+    return computeFlatOrPctDiscount(offerRow, filterLinesByOfferScopes(orderLines, scopesGrouped, skuFactMap), cartSubtotal, { cartPreview })
   }
   if (typ === 'FLAT') {
-    return roundMoney(Math.min(val, eligibleSubtotal))
+    return computeFlatOrPctDiscount(offerRow, filterLinesByOfferScopes(orderLines, scopesGrouped, skuFactMap), cartSubtotal, { cartPreview })
   }
 
   return 0 // FREEBIE — no numeric discount
@@ -430,9 +521,10 @@ async function replaceOfferScopes(pool, offerId, scopes) {
       .input('scope_kind', sql.NVarChar(40), String(scope.kind))
       .input('ref_int', sql.Int, scope.ref_int != null ? Number(scope.ref_int) : null)
       .input('ref_key', sql.NVarChar(60), scope.ref_key != null ? String(scope.ref_key) : null)
+      .input('is_exclusion', sql.Bit, scope.is_exclusion ? 1 : 0)
       .query(`
-        INSERT INTO dbo.customer_offer_scope (offer_id, scope_kind, ref_int, ref_key)
-        VALUES (@offer_id, @scope_kind, @ref_int, @ref_key)
+        INSERT INTO dbo.customer_offer_scope (offer_id, scope_kind, ref_int, ref_key, is_exclusion)
+        VALUES (@offer_id, @scope_kind, @ref_int, @ref_key, @is_exclusion)
       `)
   }
 }

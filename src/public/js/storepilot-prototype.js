@@ -218,6 +218,67 @@ function spLabStatusLabel(status) {
   return SP_LAB_STATUS_LABELS[status] || String(status || '').replace(/_/g, ' ')
 }
 
+function spJobsFromOrderRow(r) {
+  const ls = Array.isArray(r.lab_sub_orders) ? r.lab_sub_orders : []
+  if (ls.length) {
+    return ls.map(function (s) {
+      return {
+        sub_order_id: s.sub_order_id,
+        lab_workflow_status: s.lab_workflow_status,
+        sub_order_label: s.sub_order_label || r.order_no || ''
+      }
+    })
+  }
+  const sid = Number(r.sub_order_id) || 0
+  if (!sid) return []
+  return [{
+    sub_order_id: sid,
+    lab_workflow_status: r.lab_workflow_status,
+    sub_order_label: r.order_no || ('#' + sid)
+  }]
+}
+
+function spEscapeHtml(raw) {
+  return String(raw || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+}
+
+/** Actions for one lab sub-job (distinct element ids per sub_order_id). */
+function renderSpLabJobActions(orderRow, job, canMutate) {
+  const jid = Number(job.sub_order_id) || 0
+  const curr = job.lab_workflow_status
+  const uid = `${orderRow.order_id}-${jid}`
+  const next = SP_LAB_STATUS_NEXT[curr] || []
+
+  if (!jid) return '<span class="muted">No LAB line id</span>'
+
+  if (curr === 'READY_FOR_DELIVERY') {
+    return '<span class="muted" style="font-size:12px">Handover applies to the bill (button above).</span>'
+  }
+  let actionHtml = '<span class="muted">No action</span>'
+
+  if (next.length === 1) {
+    const s = next[0]
+    const needsNote = SP_LAB_STATUS_NOTE_REQUIRED.has(s)
+    const handler = needsNote
+      ? `openSpQcNoteModal(${orderRow.order_id}, ${jid}, '${s}')`
+      : `updateSpLabStatus(${orderRow.order_id}, ${jid}, '${s}')`
+    actionHtml = canMutate
+      ? `<button class="btn sm" id="sp-lab-btn-${uid}" onclick="${handler}">${spLabStatusLabel(s)}</button>`
+      : '<span class="muted">View only</span>'
+  } else if (next.length > 1) {
+    const opts = next.map((s) => `<option value="${s}">${spLabStatusLabel(s)}</option>`).join('')
+    actionHtml = canMutate
+      ? `
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="sp-lab-next-${uid}" style="min-width:185px">${opts}</select>
+            <button class="btn sm" id="sp-lab-btn-${uid}" onclick="updateSpLabStatusFromSelect(${orderRow.order_id}, ${jid})">Update</button>
+          </div>
+        `
+      : '<span class="muted">View only</span>'
+  }
+  return actionHtml
+}
+
 window.setSpLabFilter = function (status, tabEl) {
   _spLabStatusFilter = status === undefined || status === null || status === '' ? '' : String(status)
   document.querySelectorAll('#page-lab-orders .tab').forEach((el) => el.classList.remove('active'))
@@ -257,35 +318,26 @@ window.loadSpLabOrders = async function () {
       return
     }
     tbody.innerHTML = rows.map((r) => {
-      const curr = r.lab_workflow_status
-      const next = SP_LAB_STATUS_NEXT[curr] || []
-      let actionHtml = '<span class="muted">No action</span>'
-
-      // ── Special: READY_FOR_DELIVERY → Handover modal ────────────────────
-      if (curr === 'READY_FOR_DELIVERY') {
-        actionHtml = canMutate
-          ? `<button class="btn sm primary" id="sp-lab-btn-${r.order_id}" onclick="openSpHandoverModal(${r.order_id})">🤝 Handover</button>`
-          : '<span class="muted">View only</span>'
-      } else if (next.length === 1) {
-        const s = next[0]
-        const needsNote = SP_LAB_STATUS_NOTE_REQUIRED.has(s)
-        const handler = needsNote
-          ? `openSpQcNoteModal(${r.order_id}, ${r.sub_order_id || 0}, '${s}')`
-          : `updateSpLabStatus(${r.order_id}, ${r.sub_order_id || 0}, '${s}')`
-        actionHtml = canMutate
-          ? `<button class="btn sm" id="sp-lab-btn-${r.order_id}" onclick="${handler}">${spLabStatusLabel(s)}</button>`
-          : '<span class="muted">View only</span>'
-      } else if (next.length > 1) {
-        const opts = next.map((s) => `<option value="${s}">${spLabStatusLabel(s)}</option>`).join('')
-        actionHtml = canMutate
-          ? `
-          <div style="display:flex;gap:6px;align-items:center">
-            <select id="sp-lab-next-${r.order_id}" style="min-width:185px">${opts}</select>
-            <button class="btn sm" id="sp-lab-btn-${r.order_id}" onclick="updateSpLabStatusFromSelect(${r.order_id}, ${r.sub_order_id || 0})">Update</button>
-          </div>
-        `
-          : '<span class="muted">View only</span>'
+      const jobs = spJobsFromOrderRow(r)
+      const statusShown = jobs.map((j) => spLabStatusLabel(j.lab_workflow_status)).filter(Boolean).join(' · ')
+      const hasReady = jobs.some((j) => j.lab_workflow_status === 'READY_FOR_DELIVERY')
+      let blocks = []
+      if (hasReady && canMutate) {
+        blocks.push(`
+          <div style="margin-bottom:8px">
+            <button type="button" class="btn sm primary" id="sp-lab-btn-${r.order_id}-handover" onclick="openSpHandoverModal(${r.order_id})">🤝 Handover</button>
+          </div>`)
       }
+      blocks = blocks.concat(jobs.map((job) => {
+        const jid = Number(job.sub_order_id) || 0
+        return `
+        <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+          <div class="muted" style="font-size:11px;margin-bottom:4px">${spEscapeHtml(job.sub_order_label)} · #${jid}</div>
+          ${renderSpLabJobActions(r, job, canMutate)}
+        </div>`
+      }))
+      const actionHtml = blocks.join('')
+      const statusBadge = statusShown || spLabStatusLabel(r.lab_workflow_status)
       return `
         <tr>
           <td class="mono">
@@ -293,7 +345,7 @@ window.loadSpLabOrders = async function () {
             <button type="button" onclick="window.cosmosTimelineOpen(${r.order_id},'${r.order_no || ''}')" style="background:none;border:none;color:var(--acc2);font-size:11px;cursor:pointer;padding:0;margin-top:2px;text-decoration:underline">📋 Timeline</button>
           </td>
           <td>${r.customer_name || 'Walk-in'}${r.customer_phone ? `<div class="muted" style="font-size:12px">${r.customer_phone}</div>` : ''}</td>
-          <td><span class="badge blue">${spLabStatusLabel(curr)}</span></td>
+          <td><span class="badge blue">${statusBadge}</span></td>
           <td>₹${Number(r.total_amount || 0).toFixed(2)}</td>
           <td class="muted" style="font-size:12px">${new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</td>
           <td>${actionHtml}</td>
@@ -307,7 +359,8 @@ window.loadSpLabOrders = async function () {
 }
 
 window.updateSpLabStatusFromSelect = function (orderId, subOrderId) {
-  const sel = document.getElementById(`sp-lab-next-${orderId}`)
+  const uid = `${orderId}-${subOrderId}`
+  const sel = document.getElementById(`sp-lab-next-${uid}`)
   if (!sel || !sel.value) return
   if (SP_LAB_STATUS_NOTE_REQUIRED.has(sel.value)) {
     window.openSpQcNoteModal(orderId, subOrderId, sel.value)
@@ -324,7 +377,8 @@ window.updateSpLabStatus = async function (orderId, subOrderId, nextStatus, note
     }
     return
   }
-  const btn = document.getElementById(`sp-lab-btn-${orderId}`)
+  const uid = `${orderId}-${subOrderId}`
+  const btn = document.getElementById(`sp-lab-btn-${uid}`)
   if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
   try {
     const body = { sub_order_id: Number(subOrderId), to_status: nextStatus }

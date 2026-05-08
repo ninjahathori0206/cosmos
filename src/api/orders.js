@@ -29,7 +29,9 @@ const listSchema = Joi.object({
 const labStatusSchema = Joi.object({
   sub_order_id: Joi.number().integer().positive().required(),
   to_status: Joi.string().max(30).required(),
-  note: Joi.string().max(500).allow('', null)
+  note: Joi.string().max(500).allow('', null),
+  bypass_order_sibling_guard: Joi.boolean().default(false),
+  bypass_reason: Joi.string().max(200).allow('', null)
 })
 
 /** Exactly one checklist flag must be sent per click. */
@@ -69,6 +71,14 @@ function jwtPermissionsLower(req) {
 /** Role has any storepilot.lab.* permission — switches StorePilot lab enforcement on (legacy = none). */
 function storepilotHasGranularLabPerms(req) {
   return jwtPermissionsLower(req).some((x) => x.startsWith('storepilot.lab.'))
+}
+
+/** RBAC: documented bypass of per-pair lab dispatch coherence (timeline audit). */
+function canBypassLabOrderSiblingGuard(req) {
+  return hasPermission(req, 'foundry.lab.bypass_order_sibling')
+    || hasPermission(req, 'command_unit.lab.bypass_order_sibling')
+    || hasPermission(req, 'storepilot.lab.bypass_order_sibling')
+    || hasPermission(req, 'pos.lab.bypass_order_sibling')
 }
 
 /**
@@ -119,9 +129,11 @@ function resolveActorRole(req, toStatus) {
     if (target === 'READY_FOR_DELIVERY' || target === 'DELIVERED' || target === 'BALANCE_COLLECTED') return 'store_staff'
     return 'store_in_charge'
   }
-  // POS/Store OS handles ORDER_PLACED → Accepted (ADVANCE_PAID) → SENT_TO_LAB and final settlement.
-  // and final settlement stages (DELIVERED→BALANCE_COLLECTED→INVOICED).
-  if (isPos) return 'store_in_charge'
+  // POS/Store OS — align delivery-stage actor with StorePilot so sp_POS_ValidateLabTransition allows the same paths.
+  if (isPos) {
+    if (target === 'READY_FOR_DELIVERY' || target === 'DELIVERED' || target === 'BALANCE_COLLECTED') return 'store_staff'
+    return 'store_in_charge'
+  }
   return String(req.user && req.user.role ? req.user.role : '')
 }
 
@@ -226,6 +238,11 @@ router.post('/:id/lab-status', requireAnyModule(['foundry', 'command_unit', 'sto
       })
     }
 
+    const bypassSibling = value.bypass_order_sibling_guard === true
+    if (bypassSibling && !canBypassLabOrderSiblingGuard(req)) {
+      return res.status(403).json({ success: false, message: 'Permission denied for pair-guard bypass.' })
+    }
+
     const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
     const actorRole = resolveActorRole(req, value.to_status)
@@ -244,7 +261,9 @@ router.post('/:id/lab-status', requireAnyModule(['foundry', 'command_unit', 'sto
       subOrderId: value.sub_order_id,
       toStatus: value.to_status,
       note: value.note,
-      allowCrossStoreLab: crossStoreLab
+      allowCrossStoreLab: crossStoreLab,
+      bypassOrderSiblingGuard: bypassSibling,
+      bypassReason: value.bypass_reason || null
     })
 
     return res.json({
@@ -326,22 +345,76 @@ router.get('/:id', requireAnyModule(['storepilot', 'foundry', 'command_unit', 'p
   }
 })
 
+
+
+const invoicePreferencesSchema = Joi.object({
+  bill_name: Joi.string().max(200).allow('', null),
+  gstin: Joi.string().max(20).allow('', null),
+  billing_address: Joi.string().max(500).allow('', null),
+  shipping_address: Joi.string().max(500).allow('', null),
+  phone: Joi.string().max(30).allow('', null),
+  email: Joi.string().max(200).allow('', null),
+  notes: Joi.string().max(500).allow('', null)
+}).allow(null)
+
+/** Handover checklist for MIXED carts: mark one instant sub-order handed over after delivery. */
+const instantSubHandoverSchema = Joi.object({
+  sub_order_id: Joi.number().integer().positive().required(),
+  note: Joi.string().max(500).allow('', null),
+  invoice_preferences: invoicePreferencesSchema.optional().allow(null)
+})
+
+router.post('/:id/instant-sub-handover', requireAnyModule(['storepilot', 'pos']), gateStorepilotLabMutations, async (req, res, next) => {
+  try {
+    const orderId = parseInt(req.params.id, 10)
+    if (!Number.isFinite(orderId) || orderId < 1) {
+      return res.status(400).json({ success: false, message: 'Invalid order id.' })
+    }
+    const { error, value } = instantSubHandoverSchema.validate(req.body)
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      })
+    }
+    const pool = await getPool()
+    const mode = await orderService.getOrdersEngineMode(pool)
+    const employeeId =
+      req.user.user_id != null
+        ? Number(req.user.user_id)
+        : req.user.employee_id != null
+          ? Number(req.user.employee_id)
+          : null
+    const data = await orderService.markInstantSubOrderHandedOver(pool, mode, orderId, req.user.store_id, value.sub_order_id, employeeId, {
+      note: value.note || null,
+      invoice_preferences: value.invoice_preferences || null
+    })
+    return res.json({
+      success: true,
+      message: 'Instant lane handover recorded.',
+      data: { invoice_no: data.invoice_no || null, payment_summary: data.payment_summary }
+    })
+  } catch (err) {
+    if (err.statusCode === 400 || err.statusCode === 404) {
+      return res.status(err.statusCode).json({ success: false, message: err.message })
+    }
+    return next(err)
+  }
+})
+
 // ── Handover — balance collection + final settlement ─────────────────────────
+// `.and()` must list peer keys — an empty `.and()` is invalid in Joi and can yield confusing validation.
+// When either amount or method is present, both are required together.
 const handoverSchema = Joi.object({
   order_id:      Joi.number().integer().positive().required(),
   // Omit amount / method for zero-balance orders (fully paid at POS)
   amount:        Joi.number().positive().allow(null),
   method:        Joi.string().valid('UPI', 'CARD', 'CASH').allow(null),
   tendered:      Joi.number().min(0).allow(null),
-  external_ref:  Joi.string().max(200).allow('', null)
-}).and(
-  // If amount present, method must also be present
-).custom((val, helpers) => {
-  if ((val.amount != null) !== (val.method != null)) {
-    return helpers.error('any.invalid', { message: 'Provide both amount and method, or neither.' })
-  }
-  return val
-})
+  external_ref:  Joi.string().max(200).allow('', null),
+  invoice_preferences: invoicePreferencesSchema.optional().allow(null)
+}).and('amount', 'method')
 
 router.post('/:id/handover', requireAnyModule(['storepilot', 'pos']), gateStorepilotLabMutations, async (req, res, next) => {
   try {
@@ -364,18 +437,21 @@ router.post('/:id/handover', requireAnyModule(['storepilot', 'pos']), gateStorep
 
     const summary = bundle.payment_summary
     const balanceDue = Number(summary.amount_remaining || 0)
+    const orderKind = String(bundle.order.order_kind || '').trim().toUpperCase()
 
     let invoiceNo = null
 
     if (value.amount != null) {
-      // Balance payment path — recordPayment handles validation + auto-settlement
+      // INSTANT settlement accepts FULL only in recordPayment validation; LAB/MIXED handover collects BALANCE here.
+      const paymentStage = orderKind === 'INSTANT' ? 'FULL' : 'BALANCE'
       const payResult = await orderService.recordPayment(pool, mode, req.user.store_id, employeeId, {
         order_id: orderId,
-        stage: 'BALANCE',
+        stage: paymentStage,
         method: value.method,
         amount: value.amount,
         tendered: value.tendered || null,
-        external_ref: value.external_ref || null
+        external_ref: value.external_ref || null,
+        invoice_preferences: value.invoice_preferences || null
       })
       invoiceNo = payResult.invoice_no
       const updatedSummary = payResult.payment_summary
@@ -390,7 +466,15 @@ router.post('/:id/handover', requireAnyModule(['storepilot', 'pos']), gateStorep
     if (balanceDue > 0.009) {
       return res.status(400).json({ success: false, message: 'Balance of ₹' + balanceDue.toFixed(2) + ' is still due. Use balance payment path.' })
     }
-    invoiceNo = await orderService.autoCompleteLabSettlement(pool, mode, bundle, employeeId)
+    if (orderKind === 'INSTANT') {
+      invoiceNo = await orderService.completeInstantSettlement(pool, mode, bundle, employeeId, {
+        invoice_preferences: value.invoice_preferences || null
+      })
+    } else {
+      invoiceNo = await orderService.autoCompleteLabSettlement(pool, mode, bundle, employeeId, {
+        invoice_preferences: value.invoice_preferences || null
+      })
+    }
     return res.json({ success: true, message: 'Order marked as delivered.', data: { invoice_no: invoiceNo } })
   } catch (err) {
     if (err.statusCode === 400 || err.statusCode === 404) {
