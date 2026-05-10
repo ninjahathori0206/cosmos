@@ -1,3 +1,4 @@
+process.env.TZ = 'Asia/Kolkata'; // IST — must be first line, before any require()
 require('dotenv').config();
 
 const fs = require('fs');
@@ -41,8 +42,17 @@ const transferRequestsRouter   = require('./src/api/transferRequests');
 const stockTransferDocsRouter  = require('./src/api/stockTransferDocs');
 const posRouter                = require('./src/api/pos');
 const cxRouter                 = require('./src/api/cx');
+const lensConfigRouter         = require('./src/api/lensConfig');
+const ordersRouter             = require('./src/api/orders');
+const metaRouter               = require('./src/api/meta');
+const tabletsRouter            = require('./src/api/tablets');
+const customerAuthRouter       = require('./src/api/customerAuth');
+const customerAppRouter        = require('./src/api/customerApp');
 const { executeStoredProcedure, healthCheck } = require('./src/config/db');
-const { requireGoodsTransferDestinationStores } = require('./src/middleware/authorize');
+const {
+  requireGoodsTransferDestinationStores,
+  isRbacStrictEmptyPermissions
+} = require('./src/middleware/authorize');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 
 async function handleDestinationStores(req, res, next) {
@@ -70,11 +80,15 @@ function assertAuthEnv() {
     console.error('[startup] FATAL: JWT config invalid (check JWT_SECRET and JWT_EXPIRES_IN):', e.message);
     process.exit(1);
   }
+
+  const custSecret = process.env.CUSTOMER_JWT_SECRET;
+  if (!custSecret || String(custSecret).trim() === '') {
+    console.warn('[startup] WARNING: CUSTOMER_JWT_SECRET is not set. Eyewoot Go customer login will fail. Add it to .env.');
+  }
 }
 
 const PORT = process.env.PORT || 4000;
 const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
-const PROTOTYPE_HTML_MAX_AGE_MS = Number(process.env.PROTOTYPE_HTML_MAX_AGE_MS || 10 * 60 * 1000);
 const API_RATE_LIMIT_WINDOW_MS = Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const API_RATE_LIMIT_MAX = Number(process.env.API_RATE_LIMIT_MAX || 1000);
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:4000')
@@ -124,20 +138,13 @@ if (process.env.RATE_LIMIT_REDIS_URL || process.env.REDIS_URL) {
 app.set('etag', 'strong');
 
 function sendPrototypeHtml(res, absolutePath) {
-  // In development, do not cache prototype shells (Foundry/POS/etc.): strong ETag + maxAge
-  // caused stale HTML while JS/CSS already revalidated — users saw "old" multi-page flows.
-  if (!isProductionEnv) {
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    return res.sendFile(absolutePath, {
-      maxAge: 0,
-      lastModified: true,
-      cacheControl: false
-    });
-  }
+  // Always bypass browser/CDN cache for *.html prototypes (POS, Foundry, etc.).
+  // Previously: prod cached shells + 7d static JS/CSS ⇒ users saw mismatched old UI/layouts.
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   return res.sendFile(absolutePath, {
-    maxAge: PROTOTYPE_HTML_MAX_AGE_MS,
+    maxAge: 0,
     lastModified: true,
-    cacheControl: true
+    cacheControl: false
   });
 }
 
@@ -234,7 +241,7 @@ app.use(
       if (corsAllowPrivateLan && isPrivateLanOrigin(origin)) return callback(null, true);
       return callback(new Error('CORS not allowed'));
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
     maxAge: 86400
   })
@@ -247,10 +254,13 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Public bootstrap — NOT under /api so it never hits protectedApiRouter (which requires X-API-Key).
 app.get('/config/bootstrap.json', (req, res) => {
+  const strictEmpty = isRbacStrictEmptyPermissions();
   res.json({
     success: true,
     data: {
-      apiKey: process.env.API_KEY || ''
+      apiKey: process.env.API_KEY || '',
+      rbacStrictEmptyPermissions: strictEmpty,
+      rbacLegacyEmptyPermissionBypass: !strictEmpty
     }
   });
 });
@@ -294,9 +304,23 @@ app.use(
   })
 );
 
+// Store OS HTML shell MUST run before the broad `express.static` below.
+// Mount dedicated routers so every path under /storeos and /pos is served (SPA fallback before static).
+// A plain req.path prefix check can miss some Express/path combinations; mounting is reliable.
+function sendPosShellForSpa(req, res, next) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  return sendModuleShell(res, 'pos');
+}
+
+const posSpaRouter = express.Router();
+posSpaRouter.use(sendPosShellForSpa);
+
+app.use('/storeos', posSpaRouter);
+app.use('/pos', posSpaRouter);
+
 // Static assets
-// - Cache CSS/JS/media for faster repeat visits
-// - Keep HTML non-cached so deployments/pages refresh immediately
+// - Long-cache defaults for images/other; JS/CSS always revalidate (ERP UI changes often).
+// - HTML under src/public is non-cached; module shells remain root *_Prototype.html routes.
 app.use(
   express.static(path.join(__dirname, 'src', 'public'), {
     maxAge: '7d',
@@ -305,8 +329,8 @@ app.use(
         res.setHeader('Cache-Control', 'no-cache');
         return;
       }
-      // In development, always revalidate JS/CSS so UI edits appear immediately.
-      if (!isProductionEnv && /\.(js|css)$/i.test(filePath)) {
+      // Dev + prod: avoid stale bundled behaviour when HTML updated (classic /storeos "old UI" bug).
+      if (/\.(js|css)$/i.test(filePath)) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       }
     }
@@ -318,7 +342,6 @@ app.get(['/foundry', '/foundry/*'], (req, res) => sendModuleShell(res, 'foundry'
 app.get(['/storepilot', '/storepilot/*'], (req, res) => sendModuleShell(res, 'storepilot'));
 app.get(['/finance', '/finance/*'], (req, res) => sendModuleShell(res, 'finance'));
 app.get(['/command-unit', '/command-unit/*'], (req, res) => sendModuleShell(res, 'command-unit'));
-app.get(['/pos', '/pos/*', '/storeos', '/storeos/*'], (req, res) => sendModuleShell(res, 'pos'));
 app.get(['/cx', '/cx/*'], (req, res) => sendModuleShell(res, 'cx'));
 // Health check
 app.get('/health', (req, res) => {
@@ -349,6 +372,20 @@ app.get('/health/db', async (req, res, next) => {
   }
 });
 
+// Customer-facing Eyewoot Go routes — no apiKeyAuth, no staff JWT (uses CUSTOMER_JWT_SECRET)
+app.use('/api/customer/auth', customerAuthRouter);
+app.use('/api/customer',      customerAppRouter);
+
+// Eyewoot Go PWA shell + service worker
+app.get('/go', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'src', 'public', 'go.html'));
+});
+app.get('/go-sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.sendFile(path.join(__dirname, 'src', 'public', 'go-sw.js'));
+});
+
 // Auth/public routes that do not use grouped protected router.
 app.use('/api/auth', apiKeyAuth, authRouter);
 // POS router: no apiKeyAuth — tablet boots before any session exists.
@@ -370,6 +407,7 @@ protectedApiRouter.use('/store-modules', moduleAccessRouter);
 protectedApiRouter.use('/user-modules', userModuleAccessRouter);
 protectedApiRouter.use('/role-modules', roleModuleAccessRouter);
 protectedApiRouter.use('/foundry-lookups', foundryLookupsRouter);
+protectedApiRouter.use('/foundry/lens-config', lensConfigRouter);
 protectedApiRouter.use('/maker-master', makerMasterRouter);
 protectedApiRouter.use('/branding-agents', brandingAgentsRouter);
 protectedApiRouter.use('/skus', skusRouter);
@@ -379,6 +417,9 @@ protectedApiRouter.use('/stock-transfers', stockTransfersRouter);
 protectedApiRouter.use('/transfer-requests', transferRequestsRouter);
 protectedApiRouter.use('/stock-transfer-docs', stockTransferDocsRouter);
 protectedApiRouter.use('/cx', cxRouter);
+protectedApiRouter.use('/orders', ordersRouter);
+protectedApiRouter.use('/meta', metaRouter);
+protectedApiRouter.use('/tablets', tabletsRouter);
 app.use('/api', protectedApiRouter);
 
 // 404 + error handling

@@ -245,7 +245,8 @@ BEGIN
     product_type_key AS product_type_key,
     fulfillment_mode,
     rx_required,
-    allow_qty_gt_1
+    allow_qty_gt_1,
+    ISNULL(lens_wizard_policy, N'NEVER') AS lens_wizard_policy
   FROM dbo.pos_product_type_config
   WHERE is_active = 1
   ORDER BY product_type_key;
@@ -276,28 +277,59 @@ END;
 GO
 
 -- ─── sp_POS_GetLensCatalog ───────────────────────────────────────────────────
--- Four result sets: categories, packages, addons, package–addon links.
+-- Six result sets:
+--   0: categories (inc wizard presentation fields)
+--   1: packages
+--   2: addons
+--   3: package–addon links
+--   4: lens_wizard_policy for the supplied product_type_key (1 row or empty)
+--   5: wizard-category allow-list for the product_type_key (0+ rows)
 CREATE OR ALTER PROCEDURE dbo.sp_POS_GetLensCatalog
+  @product_type_key NVARCHAR(100) = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
-  SELECT id, name, sort_order
+
+  -- RS0: categories with wizard fields
+  SELECT
+    id, name, pos_brand, pos_name, internal_brand, internal_name, sort_order,
+    CAST(show_in_pos_wizard AS BIT) AS show_in_pos_wizard,
+    ISNULL(wizard_subtitle, N'')    AS wizard_subtitle,
+    ISNULL(wizard_icon, N'')        AS wizard_icon,
+    ISNULL(wizard_tone, 1)          AS wizard_tone
   FROM dbo.pos_lens_categories
   WHERE is_active = 1
   ORDER BY sort_order, id;
 
-  SELECT id, category_id, name, price, sort_order
+  -- RS1: packages
+  SELECT id, category_id, name, pos_brand, pos_name, internal_brand, internal_name, price, sort_order
   FROM dbo.pos_lens_packages
   WHERE is_active = 1
   ORDER BY category_id, sort_order, id;
 
-  SELECT id, name, price, sort_order
+  -- RS2: addons
+  SELECT id, name, pos_brand, pos_name, internal_brand, internal_name, price, sort_order
   FROM dbo.pos_lens_addons
   WHERE is_active = 1
   ORDER BY sort_order, id;
 
+  -- RS3: package–addon links
   SELECT package_id, addon_id
   FROM dbo.pos_lens_pkg_addons;
+
+  -- RS4: lens_wizard_policy for this product type (single row)
+  SELECT
+    product_type_key,
+    ISNULL(lens_wizard_policy, N'NEVER') AS lens_wizard_policy
+  FROM dbo.pos_product_type_config
+  WHERE product_type_key = @product_type_key
+    AND is_active = 1;
+
+  -- RS5: allow-list of lens categories for this product type (empty = show all)
+  SELECT lens_category_id, sort_order
+  FROM dbo.pos_product_type_lens_wizard_categories
+  WHERE product_type_key = @product_type_key
+  ORDER BY sort_order, lens_category_id;
 END;
 GO
 
@@ -362,5 +394,243 @@ BEGIN
   WHERE from_status = @from_status
     AND to_status   = @to_status
     AND actor_role  = @actor_role;
+END;
+GO
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Store OS — tablet session, staff PIN v2, sessions, system_config
+-- Requires sql/alter/30_store_os_access.sql applied first.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_GetStaffForStore_v2
+  @store_id INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SELECT
+    u.user_id             AS employee_id,
+    u.full_name           AS [name],
+    u.role_key            AS [role],
+    u.store_id,
+    u.pos_pin_hash,
+    CAST(ISNULL(r.can_initiate_refund, 0) AS BIT) AS can_initiate_refund,
+    CAST(ISNULL(r.can_view_reports, 0) AS BIT)    AS can_view_reports,
+    CAST(ISNULL(r.can_manage_staff, 0) AS BIT)    AS can_manage_staff
+  FROM dbo.users u
+  LEFT JOIN dbo.roles r ON r.role_key = u.role_key
+  WHERE u.store_id  = @store_id
+    AND u.is_active = 1
+    AND u.pos_pin_hash IS NOT NULL;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_ValidateTabletPin
+  @tablet_id INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SELECT tablet_id, store_id, device_name, pin_hash, is_active
+  FROM dbo.tablets
+  WHERE tablet_id = @tablet_id
+    AND is_active = 1;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_UpdateTabletLastLogin
+  @tablet_id INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  UPDATE dbo.tablets
+  SET last_login_at = DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+      updated_at    = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+  WHERE tablet_id = @tablet_id;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_LogPinAttempt
+  @user_id   INT = NULL,
+  @tablet_id INT = NULL,
+  @store_id  INT,
+  @success   BIT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  INSERT INTO dbo.pos_pin_attempts (user_id, tablet_id, store_id, success)
+  VALUES (@user_id, @tablet_id, @store_id, @success);
+
+  IF @success = 0
+    SELECT COUNT(*) AS consecutive_failures
+    FROM dbo.pos_pin_attempts
+    WHERE store_id = @store_id
+      AND success = 0
+      AND attempted_at >= DATEADD(MINUTE, -10, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+      AND (
+        (@user_id IS NOT NULL AND user_id = @user_id)
+        OR (@user_id IS NULL AND tablet_id = @tablet_id)
+      );
+  ELSE
+    SELECT 0 AS consecutive_failures;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_StartOrderSession
+  @tablet_id           INT,
+  @user_id             INT,
+  @store_id            INT,
+  @role_key_snapshot   VARCHAR(50),
+  @can_refund_snapshot BIT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  INSERT INTO dbo.pos_order_sessions
+    (tablet_id, user_id, store_id, role_key_snapshot, can_refund_snapshot, status)
+  VALUES
+    (@tablet_id, @user_id, @store_id, @role_key_snapshot, @can_refund_snapshot, 'ACTIVE');
+
+  SELECT CAST(SCOPE_IDENTITY() AS INT) AS session_id;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_CompleteOrderSession
+  @session_id INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  UPDATE dbo.pos_order_sessions
+  SET status = 'COMPLETED',
+      completed_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+  WHERE session_id = @session_id
+    AND status = 'ACTIVE';
+
+  SELECT @@ROWCOUNT AS rows_updated;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_CancelOrderSession
+  @session_id    INT,
+  @cancel_reason VARCHAR(200) = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  UPDATE dbo.pos_order_sessions
+  SET status = 'CANCELLED',
+      cancelled_at = DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+      cancel_reason = @cancel_reason
+  WHERE session_id = @session_id
+    AND status = 'ACTIVE';
+
+  SELECT @@ROWCOUNT AS rows_updated;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_SetUserPin
+  @user_id  INT,
+  @pin_hash VARCHAR(200)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  UPDATE dbo.users
+  SET pos_pin_hash = @pin_hash,
+      updated_at   = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+  WHERE user_id = @user_id
+    AND is_active = 1;
+
+  SELECT @@ROWCOUNT AS rows_updated;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_GetTabletsByStore
+  @store_id INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SELECT tablet_id, store_id, device_name, is_active, last_login_at, created_at
+  FROM dbo.tablets
+  WHERE store_id = @store_id
+    AND is_active = 1
+  ORDER BY device_name;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_CreateTablet
+  @store_id    INT,
+  @device_name VARCHAR(100),
+  @pin_hash    VARCHAR(200)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRY
+    INSERT INTO dbo.tablets (store_id, device_name, pin_hash)
+    VALUES (@store_id, @device_name, @pin_hash);
+
+    DECLARE @tid INT = CAST(SCOPE_IDENTITY() AS INT);
+    SELECT tablet_id, store_id, device_name, is_active, created_at
+    FROM dbo.tablets
+    WHERE tablet_id = @tid;
+  END TRY
+  BEGIN CATCH
+    DECLARE @ErrMsg NVARCHAR(4000) = ERROR_MESSAGE();
+    RAISERROR(@ErrMsg, 16, 1);
+  END CATCH;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_ResetTabletPin
+  @tablet_id INT,
+  @pin_hash  VARCHAR(200)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  UPDATE dbo.tablets
+  SET pin_hash = @pin_hash,
+      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+  WHERE tablet_id = @tablet_id
+    AND is_active = 1;
+
+  SELECT @@ROWCOUNT AS rows_updated;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_DeactivateTablet
+  @tablet_id INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  UPDATE dbo.tablets
+  SET is_active = 0,
+      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+  WHERE tablet_id = @tablet_id;
+
+  SELECT @@ROWCOUNT AS rows_updated;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_UpdateTabletDeviceForStore
+  @tablet_id   INT,
+  @store_id    INT,
+  @device_name VARCHAR(100)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  UPDATE dbo.tablets
+  SET device_name = LEFT(LTRIM(RTRIM(@device_name)), 100),
+      updated_at  = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+  WHERE tablet_id = @tablet_id
+    AND store_id  = @store_id
+    AND is_active = 1;
+
+  SELECT CAST(@@ROWCOUNT AS INT) AS rows_updated;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_GetSystemConfig
+  @config_key VARCHAR(100)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SELECT config_key, config_value
+  FROM dbo.system_config
+  WHERE config_key = @config_key;
 END;
 GO

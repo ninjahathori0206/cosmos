@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Cosmos Design System | Eyewear</title>
+  <link rel="stylesheet" href="css/cosmos-design-system.css">
+  <script src="js/cosmos-components.js" defer></script>
+  <style>
+    body { background: #e0e0e0; display: flex; flex-direction: column; height: 100vh; margin: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+    
+    .preview-header {
+      background: #111; color: white; padding: 12px 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0; z-index: 100;
+    }
+    
+    .preview-controls { display: flex; gap: 8px; }
+    .viewport-btn {
+      background: transparent; color: #999; border: 1px solid #444; padding: 6px 12px;
+      border-radius: 4px; font-size: 11px; text-transform: uppercase; font-weight: bold; cursor: pointer; transition: all 0.2s;
+    }
+    .viewport-btn:hover { color: white; border-color: #777; }
+    .viewport-btn.active { background: white; color: black; border-color: white; }
+
+    #device-container {
+      flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; overflow: hidden;
+    }
+
+    #preview-frame {
+      width: 100%; height: 100%; max-width: 100%; max-height: 100%;
+      background: white; transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+      border-radius: 4px; overflow: hidden; position: relative;
+    }
+    
+    #preview-frame.mobile-mode {
+      width: 375px; height: 812px; border-radius: 36px;
+      border: 8px solid #222;
+    }
+    #preview-frame.tablet-mode {
+      width: 820px; height: 1180px; border-radius: 24px;
+      border: 8px solid #222;
+    }
+
+    /* Inner Docs Styles */
+    .docs-section { margin-bottom: var(--space-12); padding: var(--space-6); background: transparent; }
+    .docs-title { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 600; margin-bottom: var(--space-4); color: var(--text-1); }
+    .docs-desc { font-family: var(--font-sans); color: var(--text-2); font-size: var(--text-base); margin-bottom: var(--space-6); max-width: 600px; }
+    .docs-component-demo { padding: var(--space-6); background: var(--surface); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); border: 1px solid var(--border); margin-bottom: var(--space-4); }
+  </style>
+</head>
+<body>
+
+  <!-- Dev Preview Header -->
+  <header class="preview-header">
+    <div style="font-weight: bold; letter-spacing: 1px;">COSMOS PREVIEWER</div>
+    <div class="preview-controls">
+      <button class="viewport-btn active" onclick="setDevice('desktop', this)">Desktop</button>
+      <button class="viewport-btn" onclick="setDevice('tablet', this)">Tablet</button>
+      <button class="viewport-btn" onclick="setDevice('mobile', this)">Mobile APP</button>
+    </div>
+  </header>
+
+  <div id="device-container">
+    <div id="preview-frame" class="desktop-mode">
+      
+      <!-- ACTUAl DESIGN SYSTEM PAGE STARTS HERE -->
+      <div class="cosmos-page-wrapper module-command">
+        <div class="cosmos-page">
+          <aside class="cosmos-sidebar">
+            <div class="cosmos-sidebar-logo">
+              <div style="width:32px;height:32px;background:var(--text-1);border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; font-size: 18px; font-family: var(--font-display);">C</div>
+              COSMOS
+            </div>
+            
+            <div class="cosmos-nav-scroll-wrapper">
+              <div class="cosmos-nav-section">Design System</div>
+              <a href="#typography" class="cosmos-nav-item active">Typography</a>
+              <a href="#buttons" class="cosmos-nav-item">Buttons</a>
+              <a href="#ecommerce" class="cosmos-nav-item">E-Commerce</a>
+              <a href="#tables" class="cosmos-nav-item">Tables</a>
+              <a href="#modals" class="cosmos-nav-item">Modals</a>
+            </div>
+          </aside>
+
+          <main class="cosmos-content" style="overflow-y: auto;">
+            <header class="cosmos-topbar">
+              <h1 style="font-family: var(--font-display); font-size: var(--text-xl); font-weight: 600; margin:0;">Brand Reference</h1>
+              <select style="border:1px solid #ccc; padding:4px 8px; border-radius:4px;" onchange="document.querySelector('.cosmos-page-wrapper').className = 'cosmos-page-wrapper ' + this.value">
+                <option value="module-command">Command Unit</option>
+                <option value="module-pos">Store OS</option>
+                <option value="module-go" selected>Eyewoot Go</option>
+              </select>
+            </header>
+
+            <div style="padding: var(--space-4); max-width: 1200px; margin: 0 auto;">
+              
+              <section id="buttons" class="docs-section">
+                <h2 class="docs-title">Buttons</h2>
+                <div class="docs-component-demo" style="display:flex; flex-wrap:wrap; gap:16px;">
+                  <button class="btn btn-primary">Add to Bag</button>
+                  <button class="btn btn-secondary">Secondary</button>
+                  <button class="btn btn-primary btn-sm">Quick Add</button>
+                </div>
+              </section>
+
+              <section id="ecommerce" class="docs-section">
+                <h2 class="docs-title">Eyewear Catalogue</h2>
+                
+                <div class="docs-component-demo" style="padding: 16px 0; border: none; box-shadow: none; background: transparent;">
+                  <div class="category-scroll">
+                    <div class="category-pill active">All Frames</div>
+                    <div class="category-pill">Sun</div>
+                    <div class="category-pill">Computer Lenses</div>
+                  </div>
+                </div>
+
+                <div class="docs-component-demo" style="background: transparent; border: none; padding: 0; box-shadow: none;">
+                  <div class="product-grid">
+                    <div class="product-card">
+                      <div class="product-image-container">
+                        <img src="https://images.unsplash.com/photo-1511499767150-a48a237f0083?auto=format&fit=crop&w=400&q=80" alt="Sunglasses">
+                      </div>
+                      <div class="product-details">
+                        <div class="product-brand">Oliver Peoples</div>
+                        <div class="product-title">Gregory Peck Sun</div>
+                        <div class="product-price-row">
+                          <span class="product-price">₹12,500</span>
+                        </div>
+                        <button class="btn btn-primary btn-sm">Add to Bag</button>
+                      </div>
+                    </div>
+
+                    <div class="product-card">
+                      <div class="product-image-container">
+                        <img src="https://images.unsplash.com/photo-1574258495973-f010dfbb5371?auto=format&fit=crop&w=400&q=80" alt="Eyeglasses">
+                      </div>
+                      <div class="product-details">
+                        <div class="product-brand">Vincent Chase</div>
+                        <div class="product-title">Matte Black Wayfarer</div>
+                        <div class="product-price-row">
+                          <span class="product-price">₹2,999</span>
+                          <span class="product-price-old">₹4,500</span>
+                        </div>
+                        <button class="btn btn-primary btn-sm">Add to Bag</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section id="tables" class="docs-section">
+                <h2 class="docs-title">Orders List (Tables)</h2>
+                <div class="table-wrap">
+                  <table class="cosmos-table">
+                    <thead>
+                      <tr>
+                        <th>Order ID</th>
+                        <th>Customer</th>
+                        <th>Status</th>
+                        <th>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-label="Order ID" class="td-primary">#ORD-9021</td>
+                        <td data-label="Customer">Jane Cooper</td>
+                        <td data-label="Status"><span class="badge badge-green">Completed</span></td>
+                        <td data-label="Amount" class="td-primary">₹12,500</td>
+                      </tr>
+                      <tr>
+                        <td data-label="Order ID" class="td-primary">#ORD-9022</td>
+                        <td data-label="Customer">Wade Warren</td>
+                        <td data-label="Status"><span class="badge badge-amber">Processing</span></td>
+                        <td data-label="Amount" class="td-primary">₹2,999</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section id="modals" class="docs-section">
+                <h2 class="docs-title">Modals</h2>
+                <div class="docs-component-demo">
+                  <button class="btn btn-primary" onclick="cosmosModal.open('demo-modal')">Open Bottom Sheet</button>
+                </div>
+
+                <div id="demo-modal" class="modal-overlay">
+                  <div class="modal">
+                    <div class="modal-header">
+                      <h3 class="modal-title">Client Details</h3>
+                      <button class="modal-close" onclick="cosmosModal.close('demo-modal')">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                      <div class="form-group" style="margin-bottom: 16px;">
+                        <label>Mobile Number</label>
+                        <input type="tel" placeholder="+91">
+                      </div>
+                      <div class="form-group">
+                        <label>Full Name</label>
+                        <input type="text">
+                      </div>
+                    </div>
+                    <div class="modal-footer">
+                      <button class="btn btn-secondary" onclick="cosmosModal.close('demo-modal')">Cancel</button>
+                      <button class="btn btn-primary" onclick="cosmosModal.close('demo-modal')">Save</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+            </div>
+          </main>
+        </div>
+      </div>
+      <!-- END DESIGN SYSTEM -->
+      
+    </div>
+  </div>
+  
+  <script>
+    function setDevice(mode, btn) {
+      document.querySelectorAll('.viewport-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      
+      const frame = document.getElementById('preview-frame');
+      frame.className = mode + '-mode';
+    }
+  </script>
+</body>
+</html>

@@ -288,6 +288,86 @@
   textarea { resize: vertical; min-height: 80px; }
   .form-hint { font-size: 11.5px; color: var(--text3); }
 
+  /* Promotion — customer offer modal preview */
+  .cu-offer-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text2);
+    margin: 18px 0 10px;
+    grid-column: span 2;
+  }
+  .cu-offer-section-label:first-of-type { margin-top: 0; }
+  .cu-offer-preview-card {
+    grid-column: span 2;
+    display: flex;
+    align-items: stretch;
+    gap: 14px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--purpleL);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  }
+  .cu-offer-preview-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    flex-shrink: 0;
+  }
+  .cu-offer-preview-body { flex: 1; min-width: 0; }
+  .cu-offer-preview-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text1);
+    line-height: 1.3;
+  }
+  .cu-offer-preview-desc {
+    font-size: 12.5px;
+    color: var(--text2);
+    margin-top: 4px;
+    line-height: 1.35;
+  }
+  .cu-offer-preview-pill {
+    align-self: center;
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 800;
+    background: var(--purple2);
+    color: var(--card);
+  }
+  .cu-offer-plus-block {
+    grid-column: span 2;
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--accentL);
+  }
+  .cu-offer-plus-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 0;
+    cursor: pointer;
+  }
+  .cu-offer-plus-check {
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    cursor: pointer;
+    accent-color: var(--purple2);
+  }
+  .cu-offer-plus-title { font-size: 13.5px; font-weight: 600; color: var(--text1); }
+
   /* ── TOGGLE ── */
   .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
   .toggle-row:last-child { border-bottom: none; }
@@ -440,3 +520,91 @@
   .fw-600 { font-weight: 600; }
   .w-full { width: 100%; }
   .ml-auto { margin-left: auto; }
+
+  /* Store OS tablets — action buttons in one row */
+  .cu-tablet-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  .cu-tablet-actions .cu-tablet-act {
+    min-height: 36px;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 8px;
+  }
+  .cu-tablet-actions .cu-tablet-act--secondary {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text1);
+  }
+  .cu-tablet-actions .cu-tablet-act--secondary:hover {
+    border-color: var(--purple2);
+    color: var(--purple);
+  }
+
+  .cu-tablets-table th.cu-tablets-th-actions,
+  .cu-tablets-table td:last-child {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+/* ── Offer Allocation / Scope UI ─────────────────────────────────────────── */
+.cu-scope-section {
+  background: var(--bg, #F4F6FA);
+  border: 1px solid var(--border, #E2E8F0);
+  border-radius: 8px;
+  padding: 10px 14px 12px;
+}
+
+.cu-scope-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 26px;
+  align-items: center;
+}
+
+.cu-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--blueL, #DBEAFE);
+  color: var(--blue, #2563EB);
+  border: 1px solid #93c5fd;
+  border-radius: 100px;
+  padding: 2px 8px 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cu-scope-chip-x {
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+.cu-scope-chip-x:hover { opacity: 1; }
+
+.cu-scope-select,
+.cu-scope-input {
+  padding: 5px 8px;
+  border: 1px solid var(--border, #E2E8F0);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--card, #fff);
+  color: var(--text1, #0F1E35);
+}
+.cu-scope-select:focus,
+.cu-scope-input:focus {
+  outline: none;
+  border-color: var(--blue, #2563EB);
+}
+
+ 
+ 

@@ -169,7 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mods.command_unit !== false) window.location.href = '/command-unit/dashboard';
     else if (mods.finance !== false) window.location.href = '/finance/dashboard';
     else if (mods.storepilot !== false) window.location.href = '/storepilot/dashboard';
-    else if (mods.pos !== false) window.location.href = '/pos/dashboard';
+    else if (mods.pos !== false) window.location.href = '/storeos/login';
     else if (mods.cx !== false) window.location.href = '/cx/dashboard';
     else window.location.href = '/';
     return;
@@ -2690,10 +2690,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         colours.forEach((col, colIdx) => {
           const existingSku = skus.find((sk) => sk.item_colour_id === col.colour_id);
-          const isExistingProductItem = Boolean(item.is_existing_product) || Boolean(item.home_brand_id);
+          // Locked restock UI only when a colour is tied to an existing LIVE SKU — must match API
+          // purchases.js:isRestock = Boolean(getRestockContext()?.linked_sku_id). Items with home_brand
+          // alone can still need a NEW colour variant → editable MRP until a link exists.
           const isRestockLinked = Boolean(col.linked_sku_id);
           const isRestockDone = Boolean(existingSku && (existingSku.is_restock || existingSku.stock_action === 'RESTOCK_EXISTING'));
-          const isRestock = isRestockLinked || isRestockDone || isExistingProductItem;
+          const isRestock = isRestockLinked || isRestockDone;
           const isDone = !!existingSku;
           const tabId  = `digi-panel-${item.item_id}-${col.colour_id}`;
           const imgId  = `clr-img-${item.item_id}-${col.colour_id}`;
@@ -4399,6 +4401,724 @@ document.addEventListener('DOMContentLoaded', () => {
     if (qEl) qEl.focus();
   };
 
+  // ── Lens config (POS catalogue) — /api/foundry/lens-config ────────────────────
+  const lcCanEdit = user.role === 'super_admin' || userPermissions.includes('foundry.catalogue.edit');
+  let _lcData = null;
+  let _lcSelCatId = null;
+  let _lcSelPkgId = null;
+  const _lcMatrixTimers = Object.create(null);
+
+  function lcEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function lcPosLabel(pb, pn, legacy) {
+    const b = String(pb || '').trim();
+    const n = String(pn || '').trim();
+    const l = String(legacy || '').trim();
+    if (b && n) return `${b} · ${n}`;
+    if (n) return n;
+    if (b) return b;
+    return l || '—';
+  }
+
+  function lcBool(v) {
+    if (v === true || v === 1) return true;
+    if (v === false || v === 0) return false;
+    if (typeof v === 'string' && (v === '1' || v === 'true')) return true;
+    return Boolean(v);
+  }
+
+  function lcApplyEditVisibility() {
+    ['lc-btn-add-cat', 'lc-btn-add-pkg', 'lc-pkg-th-edit', 'lc-pkg-save-row', 'lc-addon-new-btn', 'lc-addon-th-actions'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = lcCanEdit ? '' : 'none';
+    });
+    const wr = document.getElementById('lc-pkg-addons-wrap');
+    if (wr) wr.style.display = lcCanEdit && _lcSelPkgId ? '' : 'none';
+  }
+
+  async function lcFetchConfig() {
+    return apiGet('/api/foundry/lens-config');
+  }
+
+  function lcPackageAddonSet(pkgId) {
+    if (!_lcData || !pkgId) return [];
+    const set = new Set(
+      (_lcData.packageAddons || []).filter((l) => Number(l.package_id) === Number(pkgId)).map((l) => Number(l.addon_id))
+    );
+    return Array.from(set);
+  }
+
+  function lcScheduleMatrixSave(packageId) {
+    const pid = Number(packageId);
+    if (!lcCanEdit || !Number.isFinite(pid)) return;
+    const key = String(pid);
+    if (_lcMatrixTimers[key]) clearTimeout(_lcMatrixTimers[key]);
+    _lcMatrixTimers[key] = setTimeout(async () => {
+      delete _lcMatrixTimers[key];
+      const row = document.querySelector(`tr[data-lc-pkg-row="${pid}"]`);
+      if (!row) return;
+      const cbs = row.querySelectorAll('input[data-lc-aid]');
+      const ids = [];
+      cbs.forEach((cb) => {
+        if (cb.checked) ids.push(Number(cb.getAttribute('data-lc-aid')));
+      });
+      try {
+        await apiPut(`/api/foundry/lens-config/packages/${pid}/addons`, { addon_ids: ids });
+        if (_lcData && Array.isArray(_lcData.packageAddons)) {
+          _lcData.packageAddons = _lcData.packageAddons.filter((x) => Number(x.package_id) !== pid);
+          ids.forEach((aid) => _lcData.packageAddons.push({ package_id: pid, addon_id: aid }));
+        }
+      } catch (err) {
+        if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed');
+        if (typeof window.loadLensMatrixPage === 'function') window.loadLensMatrixPage();
+      }
+    }, 450);
+  }
+
+  function lcSchedulePkgEditorAddonPersist() {
+    const pid = Number(document.getElementById('lc-pkg-id') && document.getElementById('lc-pkg-id').value);
+    if (!lcCanEdit || !Number.isFinite(pid) || pid < 1) return;
+    const wrap = document.getElementById('lc-pkg-addons-chk');
+    if (!wrap) return;
+    const ids = [];
+    wrap.querySelectorAll('input[type="checkbox"][data-lc-pkg-addon]').forEach((cb) => {
+      if (cb.checked) ids.push(Number(cb.getAttribute('data-lc-pkg-addon')));
+    });
+    const key = 'editor-' + pid;
+    if (_lcMatrixTimers[key]) clearTimeout(_lcMatrixTimers[key]);
+    _lcMatrixTimers[key] = setTimeout(async () => {
+      delete _lcMatrixTimers[key];
+      try {
+        await apiPut(`/api/foundry/lens-config/packages/${pid}/addons`, { addon_ids: ids });
+        if (_lcData && Array.isArray(_lcData.packageAddons)) {
+          _lcData.packageAddons = _lcData.packageAddons.filter((x) => Number(x.package_id) !== pid);
+          ids.forEach((aid) => _lcData.packageAddons.push({ package_id: pid, addon_id: aid }));
+        }
+      } catch (err) {
+        if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Add-on links failed');
+      }
+    }, 400);
+  }
+
+  function lcRenderCategoryRows() {
+    const tb = document.getElementById('lc-cat-tbody');
+    if (!tb || !_lcData) return;
+    const cats = _lcData.categories || [];
+    if (!cats.length) {
+      tb.innerHTML = '<tr><td colspan="1" class="td2 p12" style="color:var(--text3)">No categories</td></tr>';
+      return;
+    }
+    tb.innerHTML = cats
+      .map((c) => {
+        const active = lcBool(c.is_active);
+        const sel = Number(_lcSelCatId) === Number(c.id);
+        const dot = active ? '<span class="b b-green xs">On</span>' : '<span class="b b-gray xs">Off</span>';
+        const btn = lcCanEdit
+          ? `<button type="button" class="btn xs" onclick="event.stopPropagation();window.lcEditCategory && window.lcEditCategory(${Number(c.id)})">Edit</button>`
+          : '';
+        return `<tr class="tr-link${sel ? ' lc-cat-sel' : ''}" data-lc-cat="${Number(c.id)}" style="${sel ? 'background:var(--accL);' : ''}"><td class="td2"><div class="fw6">${lcEsc(lcPosLabel(c.pos_brand, c.pos_name, c.name))}</div><div class="xs td2">${dot} ${btn}</div></td></tr>`;
+      })
+      .join('');
+    tb.querySelectorAll('tr[data-lc-cat]').forEach((tr) => {
+      tr.addEventListener('click', () => {
+        _lcSelCatId = Number(tr.getAttribute('data-lc-cat'));
+        lcRenderCategoryRows();
+        lcRenderPackageRows();
+        lcRefreshPkgEditor();
+      });
+    });
+  }
+
+  function lcRenderPackageRows() {
+    const tb = document.getElementById('lc-pkg-tbody');
+    const lbl = document.getElementById('lc-pkg-cat-label');
+    if (!tb || !_lcData) return;
+    const cats = _lcData.categories || [];
+    const cat = cats.find((c) => Number(c.id) === Number(_lcSelCatId));
+    if (lbl) lbl.textContent = cat ? `· ${lcPosLabel(cat.pos_brand, cat.pos_name, cat.name)}` : '';
+    const pkgs = (_lcData.packages || []).filter((p) => Number(p.category_id) === Number(_lcSelCatId));
+    if (!pkgs.length) {
+      tb.innerHTML = `<tr><td colspan="${lcCanEdit ? 5 : 4}" class="td2 p12" style="color:var(--text3)">No packages in this category</td></tr>`;
+      return;
+    }
+    const colspan = lcCanEdit ? 5 : 4;
+    tb.innerHTML = pkgs
+      .map((p) => {
+        const active = lcBool(p.is_active);
+        const dot = active ? '<span class="b b-green xs">Yes</span>' : '<span class="b b-gray xs">No</span>';
+        const edit = lcCanEdit
+          ? `<td class="tc"><button type="button" class="btn xs primary" onclick="event.stopPropagation();window.lcSelectPackage && window.lcSelectPackage(${Number(p.id)})">Edit</button></td>`
+          : '';
+        return `<tr class="tr-link${Number(_lcSelPkgId) === Number(p.id) ? ' lc-pkg-sel' : ''}" data-lc-pkg="${Number(p.id)}" style="${Number(_lcSelPkgId) === Number(p.id) ? 'background:var(--accL);' : ''}"><td>${lcEsc(String(p.pos_brand || '').trim() || '—')}</td><td>${lcEsc(String(p.pos_name || p.name || '').trim() || '—')}</td><td class="tc mono">${inr(p.price)}</td><td class="tc">${dot}</td>${edit}</tr>`;
+      })
+      .join('');
+    tb.querySelectorAll('tr[data-lc-pkg]').forEach((tr) => {
+      tr.addEventListener('click', () => {
+        window.lcSelectPackage(Number(tr.getAttribute('data-lc-pkg')));
+      });
+    });
+  }
+
+  function lcRefreshPkgEditor() {
+    const empty = document.getElementById('lc-pkg-editor-empty');
+    const form = document.getElementById('lc-pkg-editor-form');
+    const hint = document.getElementById('lc-pkg-editor-hint');
+    const aw = document.getElementById('lc-pkg-addons-wrap');
+    if (!_lcSelPkgId || !_lcData) {
+      if (empty) empty.style.display = '';
+      if (form) form.style.display = 'none';
+      if (hint) hint.textContent = 'Select a package row or create one.';
+      if (aw) aw.style.display = 'none';
+      lcApplyEditVisibility();
+      return;
+    }
+    const p = (_lcData.packages || []).find((x) => Number(x.id) === Number(_lcSelPkgId));
+    if (!p) {
+      if (empty) empty.style.display = '';
+      if (form) form.style.display = 'none';
+      lcApplyEditVisibility();
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    if (form) form.style.display = '';
+    if (hint) hint.textContent = `Editing package #${p.id}`;
+    document.getElementById('lc-pkg-id').value = String(p.id);
+    document.getElementById('lc-pkg-pos-brand').value = p.pos_brand || '';
+    document.getElementById('lc-pkg-pos-name').value = p.pos_name || p.name || '';
+    document.getElementById('lc-pkg-int-brand').value = p.internal_brand || '';
+    document.getElementById('lc-pkg-int-name').value = p.internal_name || p.name || '';
+    document.getElementById('lc-pkg-price').value = p.price != null ? String(p.price) : '';
+    document.getElementById('lc-pkg-sort').value = String(p.sort_order != null ? p.sort_order : 0);
+    document.getElementById('lc-pkg-active').checked = lcBool(p.is_active);
+    const chk = document.getElementById('lc-pkg-addons-chk');
+    if (chk && lcCanEdit) {
+      const allowed = new Set(lcPackageAddonSet(p.id));
+      const addons = (_lcData.addons || []).filter((a) => lcBool(a.is_active));
+      chk.innerHTML = addons
+        .map((a) => {
+          const id = Number(a.id);
+          const on = allowed.has(id);
+          return `<label class="flex ic g2" style="font-size:13px;cursor:pointer"><input type="checkbox" data-lc-pkg-addon="${id}" ${on ? 'checked' : ''}> ${lcEsc(lcPosLabel(a.pos_brand, a.pos_name, a.name))} <span class="xs td2 mono">(${inr(a.price)})</span></label>`;
+        })
+        .join('');
+      chk.querySelectorAll('input[data-lc-pkg-addon]').forEach((cb) => {
+        cb.addEventListener('change', () => lcSchedulePkgEditorAddonPersist());
+      });
+    }
+    if (aw) aw.style.display = lcCanEdit ? '' : 'none';
+    lcApplyEditVisibility();
+  }
+
+  window.lcSelectPackage = function (id) {
+    _lcSelPkgId = Number(id);
+    lcRenderPackageRows();
+    lcRefreshPkgEditor();
+  };
+
+  window.lcOpenNewPackage = function () {
+    if (!lcCanEdit) return;
+    if (!_lcSelCatId) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a category first.');
+      return;
+    }
+    _lcSelPkgId = null;
+    lcRenderPackageRows();
+    const empty = document.getElementById('lc-pkg-editor-empty');
+    const form = document.getElementById('lc-pkg-editor-form');
+    const hint = document.getElementById('lc-pkg-editor-hint');
+    if (empty) empty.style.display = 'none';
+    if (form) form.style.display = '';
+    if (hint) hint.textContent = 'New package (unsaved)';
+    document.getElementById('lc-pkg-id').value = '';
+    document.getElementById('lc-pkg-pos-brand').value = '';
+    document.getElementById('lc-pkg-pos-name').value = '';
+    document.getElementById('lc-pkg-int-brand').value = '';
+    document.getElementById('lc-pkg-int-name').value = '';
+    document.getElementById('lc-pkg-price').value = '0';
+    document.getElementById('lc-pkg-sort').value = '0';
+    document.getElementById('lc-pkg-active').checked = true;
+    const chk = document.getElementById('lc-pkg-addons-chk');
+    if (chk) chk.innerHTML = '';
+    document.getElementById('lc-pkg-addons-wrap').style.display = 'none';
+    lcApplyEditVisibility();
+  };
+
+  window.lcSavePackage = async function () {
+    if (!lcCanEdit) return;
+    const posNameEl = document.getElementById('lc-pkg-pos-name');
+    const priceEl = document.getElementById('lc-pkg-price');
+    if (!posNameEl || !String(posNameEl.value || '').trim()) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(posNameEl, 'Required');
+      return;
+    }
+    if (typeof cosmosFieldClear === 'function') cosmosFieldClear(posNameEl);
+    const price = parseFloat(priceEl && priceEl.value);
+    if (!Number.isFinite(price) || price < 0) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(priceEl, 'Valid price required');
+      return;
+    }
+    if (typeof cosmosFieldClear === 'function') cosmosFieldClear(priceEl);
+    const btn = document.getElementById('lc-pkg-save-btn');
+    if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    const body = {
+      category_id: Number(_lcSelCatId),
+      pos_brand: (document.getElementById('lc-pkg-pos-brand').value || '').trim(),
+      pos_name: String(posNameEl.value || '').trim(),
+      internal_brand: (document.getElementById('lc-pkg-int-brand').value || '').trim(),
+      internal_name: (document.getElementById('lc-pkg-int-name').value || '').trim() || String(posNameEl.value || '').trim(),
+      price,
+      sort_order: parseInt(document.getElementById('lc-pkg-sort').value, 10) || 0,
+      is_active: document.getElementById('lc-pkg-active').checked
+    };
+    const idStr = document.getElementById('lc-pkg-id').value;
+    try {
+      let newId;
+      if (idStr) {
+        await apiPut(`/api/foundry/lens-config/packages/${encodeURIComponent(idStr)}`, body);
+        newId = Number(idStr);
+      } else {
+        const r = await apiPost('/api/foundry/lens-config/packages', body);
+        newId = r && r.id ? Number(r.id) : null;
+      }
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Package saved');
+      if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      else if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      _lcData = await lcFetchConfig();
+      if (newId) _lcSelPkgId = newId;
+      document.getElementById('lc-pkg-id').value = _lcSelPkgId ? String(_lcSelPkgId) : '';
+      lcRenderCategoryRows();
+      lcRenderPackageRows();
+      lcRefreshPkgEditor();
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed');
+    }
+  };
+
+  window.loadLensPackagesPage = async function () {
+    const ctb = document.getElementById('lc-cat-tbody');
+    const ptb = document.getElementById('lc-pkg-tbody');
+    if (!ctb || !ptb) return;
+    if (typeof cosmosSkeletonTable === 'function') {
+      cosmosSkeletonTable('lc-cat-tbody', 1, 4);
+      cosmosSkeletonTable('lc-pkg-tbody', lcCanEdit ? 5 : 4, 6);
+    }
+    lcApplyEditVisibility();
+    try {
+      _lcData = await lcFetchConfig();
+      const cats = _lcData.categories || [];
+      if (!_lcSelCatId && cats.length) _lcSelCatId = Number(cats[0].id);
+      if (_lcSelCatId && !cats.some((c) => Number(c.id) === Number(_lcSelCatId))) {
+        _lcSelCatId = cats.length ? Number(cats[0].id) : null;
+      }
+      lcRenderCategoryRows();
+      lcRenderPackageRows();
+      if (_lcSelPkgId && !(_lcData.packages || []).some((p) => Number(p.id) === Number(_lcSelPkgId))) {
+        _lcSelPkgId = null;
+      }
+      lcRefreshPkgEditor();
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not load lens config');
+      ctb.innerHTML = '<tr><td class="td2 p12" style="color:var(--red)">Failed to load</td></tr>';
+      ptb.innerHTML = '';
+    }
+  };
+
+  window.lcEditCategory = function (id) {
+    if (!lcCanEdit || !_lcData) return;
+    const c = (_lcData.categories || []).find((x) => Number(x.id) === Number(id));
+    if (!c) return;
+    document.getElementById('lc-cat-id').value = String(c.id);
+    document.getElementById('lc-cat-pos-brand').value = c.pos_brand || '';
+    document.getElementById('lc-cat-pos-name').value = c.pos_name || c.name || '';
+    document.getElementById('lc-cat-int-brand').value = c.internal_brand || '';
+    document.getElementById('lc-cat-int-name').value = c.internal_name || c.name || '';
+    document.getElementById('lc-cat-sort').value = String(c.sort_order != null ? c.sort_order : 0);
+    document.getElementById('lc-cat-active').checked = lcBool(c.is_active);
+    document.getElementById('lc-cat-notes').value = c.notes || '';
+    // Wizard fields
+    document.getElementById('lc-cat-show-wizard').checked = c.show_in_pos_wizard !== false && c.show_in_pos_wizard !== 0;
+    document.getElementById('lc-cat-wizard-subtitle').value = c.wizard_subtitle || '';
+    document.getElementById('lc-cat-wizard-icon').value = c.wizard_icon || '';
+    document.getElementById('lc-cat-wizard-tone').value = String(c.wizard_tone || 1);
+    openM('lc-modal-cat');
+  };
+
+  window.lcSaveCategory = async function () {
+    if (!lcCanEdit) return;
+    const posName = document.getElementById('lc-cat-pos-name');
+    if (!String(posName.value || '').trim()) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(posName, 'Required');
+      return;
+    }
+    if (typeof cosmosFieldClear === 'function') cosmosFieldClear(posName);
+    const btn = document.getElementById('lc-cat-save-btn');
+    if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    const body = {
+      pos_brand: (document.getElementById('lc-cat-pos-brand').value || '').trim(),
+      pos_name: String(posName.value || '').trim(),
+      internal_brand: (document.getElementById('lc-cat-int-brand').value || '').trim(),
+      internal_name: (document.getElementById('lc-cat-int-name').value || '').trim() || String(posName.value || '').trim(),
+      sort_order: parseInt(document.getElementById('lc-cat-sort').value, 10) || 0,
+      is_active: document.getElementById('lc-cat-active').checked,
+      notes: (document.getElementById('lc-cat-notes').value || '').trim() || null,
+      show_in_pos_wizard: document.getElementById('lc-cat-show-wizard').checked,
+      wizard_subtitle: (document.getElementById('lc-cat-wizard-subtitle').value || '').trim() || null,
+      wizard_icon: (document.getElementById('lc-cat-wizard-icon').value || '').trim() || null,
+      wizard_tone: parseInt(document.getElementById('lc-cat-wizard-tone').value, 10) || 1
+    };
+    const idStr = document.getElementById('lc-cat-id').value;
+    try {
+      if (idStr) {
+        await apiPut(`/api/foundry/lens-config/categories/${encodeURIComponent(idStr)}`, body);
+      } else {
+        await apiPost('/api/foundry/lens-config/categories', body);
+      }
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Category saved');
+      if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      else if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      closeM('lc-modal-cat');
+      _lcData = await lcFetchConfig();
+      const cats = _lcData.categories || [];
+      if (!_lcSelCatId && cats.length) _lcSelCatId = Number(cats[0].id);
+      lcRenderCategoryRows();
+      lcRenderPackageRows();
+      lcRefreshPkgEditor();
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed');
+    }
+  };
+
+  window.lcOpenNewCategory = function () {
+    if (!lcCanEdit) return;
+    document.getElementById('lc-cat-id').value = '';
+    document.getElementById('lc-cat-pos-brand').value = '';
+    document.getElementById('lc-cat-pos-name').value = '';
+    document.getElementById('lc-cat-int-brand').value = '';
+    document.getElementById('lc-cat-int-name').value = '';
+    document.getElementById('lc-cat-sort').value = '0';
+    document.getElementById('lc-cat-active').checked = true;
+    document.getElementById('lc-cat-notes').value = '';
+    document.getElementById('lc-cat-show-wizard').checked = true;
+    document.getElementById('lc-cat-wizard-subtitle').value = '';
+    document.getElementById('lc-cat-wizard-icon').value = '';
+    document.getElementById('lc-cat-wizard-tone').value = '1';
+    openM('lc-modal-cat');
+  };
+
+  window.lcOpenNewAddon = function () {
+    if (!lcCanEdit) return;
+    document.getElementById('lc-ad-id').value = '';
+    document.getElementById('lc-ad-pos-brand').value = '';
+    document.getElementById('lc-ad-pos-name').value = '';
+    document.getElementById('lc-ad-int-brand').value = '';
+    document.getElementById('lc-ad-int-name').value = '';
+    document.getElementById('lc-ad-price').value = '0';
+    document.getElementById('lc-ad-sort').value = '0';
+    document.getElementById('lc-ad-active').checked = true;
+    openM('lc-modal-addon');
+  };
+
+  window.lcEditAddon = function (id) {
+    if (!lcCanEdit || !_lcData) return;
+    const a = (_lcData.addons || []).find((x) => Number(x.id) === Number(id));
+    if (!a) return;
+    document.getElementById('lc-ad-id').value = String(a.id);
+    document.getElementById('lc-ad-pos-brand').value = a.pos_brand || '';
+    document.getElementById('lc-ad-pos-name').value = a.pos_name || a.name || '';
+    document.getElementById('lc-ad-int-brand').value = a.internal_brand || '';
+    document.getElementById('lc-ad-int-name').value = a.internal_name || a.name || '';
+    document.getElementById('lc-ad-price').value = a.price != null ? String(a.price) : '0';
+    document.getElementById('lc-ad-sort').value = String(a.sort_order != null ? a.sort_order : 0);
+    document.getElementById('lc-ad-active').checked = lcBool(a.is_active);
+    openM('lc-modal-addon');
+  };
+
+  window.lcSaveAddon = async function () {
+    if (!lcCanEdit) return;
+    const nm = document.getElementById('lc-ad-pos-name');
+    const pr = document.getElementById('lc-ad-price');
+    if (!String(nm.value || '').trim()) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(nm, 'Required');
+      return;
+    }
+    const price = parseFloat(pr.value);
+    if (!Number.isFinite(price) || price < 0) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(pr, 'Valid price');
+      return;
+    }
+    if (typeof cosmosFieldClear === 'function') {
+      cosmosFieldClear(nm);
+      cosmosFieldClear(pr);
+    }
+    const btn = document.getElementById('lc-ad-save-btn');
+    if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    const body = {
+      pos_brand: (document.getElementById('lc-ad-pos-brand').value || '').trim(),
+      pos_name: String(nm.value || '').trim(),
+      internal_brand: (document.getElementById('lc-ad-int-brand').value || '').trim(),
+      internal_name: (document.getElementById('lc-ad-int-name').value || '').trim() || String(nm.value || '').trim(),
+      price,
+      sort_order: parseInt(document.getElementById('lc-ad-sort').value, 10) || 0,
+      is_active: document.getElementById('lc-ad-active').checked
+    };
+    const idStr = document.getElementById('lc-ad-id').value;
+    try {
+      if (idStr) {
+        await apiPut(`/api/foundry/lens-config/addons/${encodeURIComponent(idStr)}`, body);
+      } else {
+        await apiPost('/api/foundry/lens-config/addons', body);
+      }
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Add-on saved');
+      if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      else if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      closeM('lc-modal-addon');
+      _lcData = await lcFetchConfig();
+      if (document.getElementById('lc-addon-tbody')) window.loadLensAddonsPage();
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed');
+    }
+  };
+
+  window.loadLensAddonsPage = async function () {
+    const tb = document.getElementById('lc-addon-tbody');
+    if (!tb) return;
+    const ncol = lcCanEdit ? 7 : 6;
+    if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('lc-addon-tbody', ncol, 8);
+    lcApplyEditVisibility();
+    try {
+      if (!_lcData) _lcData = await lcFetchConfig();
+      const rows = _lcData.addons || [];
+      if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="${ncol}" class="td2 p12">No add-ons yet</td></tr>`;
+        return;
+      }
+      tb.innerHTML = rows
+        .map((a) => {
+          const on = lcBool(a.is_active);
+          const dot = on ? '<span class="b b-green xs">Yes</span>' : '<span class="b b-gray xs">No</span>';
+          const ed = lcCanEdit
+            ? `<td class="tc"><button type="button" class="btn xs" onclick="window.lcEditAddon(${Number(a.id)})">Edit</button></td>`
+            : '';
+          return `<tr><td>${lcEsc(String(a.pos_brand || '').trim() || '—')}</td><td>${lcEsc(String(a.pos_name || a.name || '').trim() || '—')}</td><td class="xs" style="color:var(--text3)">${lcEsc(String(a.internal_brand || '').trim() || '—')}</td><td class="xs" style="color:var(--gold)">${lcEsc(String(a.internal_name || a.name || '').trim() || '—')}</td><td class="tc mono">${inr(a.price)}</td><td class="tc">${dot}</td>${ed}</tr>`;
+        })
+        .join('');
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Load failed');
+    }
+  };
+
+  window.loadLensMatrixPage = async function () {
+    const thead = document.getElementById('lc-matrix-thead');
+    const tb = document.getElementById('lc-matrix-tbody');
+    if (!thead || !tb) return;
+    thead.innerHTML = '<tr><th>Package</th></tr>';
+    tb.innerHTML = '';
+    if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('lc-matrix-tbody', 4, 3);
+    try {
+      if (!_lcData) _lcData = await lcFetchConfig();
+      const addons = (_lcData.addons || []).slice().sort((a, b) => (Number(a.sort_order)||0) - (Number(b.sort_order)||0) || Number(a.id) - Number(b.id));
+      const pkgs = (_lcData.packages || []).slice().sort((a, b) => Number(a.category_id) - Number(b.category_id) || (Number(a.sort_order)||0) - (Number(b.sort_order)||0));
+      const thr = ['<th>Package</th>'].concat(
+        addons.map((a) => `<th class="tc xs">${lcEsc(lcPosLabel(a.pos_brand, a.pos_name, a.name))}</th>`)
+      );
+      thead.innerHTML = `<tr>${thr.join('')}</tr>`;
+      if (!pkgs.length) {
+        const span = 1 + addons.length;
+        tb.innerHTML = `<tr><td colspan="${span}" class="td2 p12">No packages</td></tr>`;
+        return;
+      }
+      tb.innerHTML = pkgs
+        .map((p) => {
+          const plab = lcEsc(lcPosLabel(p.pos_brand, p.pos_name, p.name));
+          const allowed = new Set(lcPackageAddonSet(p.id));
+          const cells = addons
+            .map((a) => {
+              const aid = Number(a.id);
+              const on = allowed.has(aid);
+              if (!lcCanEdit) {
+                return `<td class="tc">${on ? '●' : '—'}</td>`;
+              }
+              return `<td class="tc"><input type="checkbox" data-lc-aid="${aid}" ${on ? 'checked' : ''} aria-label="link"></td>`;
+            })
+            .join('');
+          return `<tr data-lc-pkg-row="${Number(p.id)}"><td class="td2 fw6">${plab}</td>${cells}</tr>`;
+        })
+        .join('');
+      if (lcCanEdit) {
+        tb.querySelectorAll('tr[data-lc-pkg-row]').forEach((tr) => {
+          const pid = Number(tr.getAttribute('data-lc-pkg-row'));
+          tr.querySelectorAll('input[data-lc-aid]').forEach((cb) => {
+            cb.addEventListener('change', () => lcScheduleMatrixSave(pid));
+          });
+        });
+      }
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Load failed');
+    }
+  };
+
+  // ── Lens Wizard Rules page ─────────────────────────────────────────────────
+  let _lwrProductTypes = [];
+  let _lwrBridgeRows = [];
+  let _lwrCategories = [];
+  let _lwrSelectedPtKey = null;
+
+  const LWR_POLICY_LABELS = {
+    NEVER: 'Never (no lens wizard)',
+    OPTIONAL: 'Optional (frame-only or with lenses)',
+    REQUIRED: 'Required (always configure)'
+  };
+
+  function lwrRenderPolicyTable() {
+    const tb = document.getElementById('lwr-policy-tbody');
+    if (!tb) return;
+    if (!_lwrProductTypes.length) {
+      tb.innerHTML = '' +
+        '<tr><td colspan="3" class="p12">' +
+        '<div class="empty" style="text-align:left;padding:8px 0">' +
+        '<div class="empty-ic" aria-hidden="true">📋</div>' +
+        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No product types in POS config</div>' +
+        '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;max-width:52ch">' +
+        'The table <span class="mono">pos_product_type_config</span> has no rows. From the repo root run ' +
+        '<span class="mono">npm run deploy:pos-sql</span> (or re-run <span class="mono">sql/migrations/lens_wizard_dynamic.sql</span> in SSMS) so default product types are seeded.' +
+        '</div>' +
+        '<button type="button" class="btn primary sm" onclick="window.loadLensWizardRulesPage && window.loadLensWizardRulesPage()">↻ Refresh after deploy</button>' +
+        '</div></td></tr>';
+      return;
+    }
+    tb.innerHTML = _lwrProductTypes.map(function (pt) {
+      const opts = ['NEVER', 'OPTIONAL', 'REQUIRED'].map(function (v) {
+        return `<option value="${v}" ${pt.lens_wizard_policy === v ? 'selected' : ''}>${lcEsc(LWR_POLICY_LABELS[v] || v)}</option>`;
+      }).join('');
+      const activeRows = _lwrBridgeRows.filter(function (r) { return r.product_type_key === pt.product_type_key; });
+      const allowSummary = activeRows.length
+        ? `${activeRows.length} categor${activeRows.length > 1 ? 'ies' : 'y'} restricted`
+        : 'All eligible categories';
+      const ptKeyEsc = lcEsc(pt.product_type_key);
+      return `<tr class="tr-link" onclick="window.lwrSelectProductType && window.lwrSelectProductType('${ptKeyEsc}')">
+        <td class="fw6">${ptKeyEsc}</td>
+        <td>
+          ${lcCanEdit
+            ? `<select class="inp-sel xs" data-lwr-pt="${ptKeyEsc}" onclick="event.stopPropagation()" onchange="window.lwrPolicyChange && window.lwrPolicyChange(this)">${opts}</select>`
+            : `<span>${lcEsc(LWR_POLICY_LABELS[pt.lens_wizard_policy] || pt.lens_wizard_policy)}</span>`
+          }
+        </td>
+        <td class="xs td2">${pt.lens_wizard_policy === 'NEVER' ? '—' : lcEsc(allowSummary)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  window.lwrPolicyChange = async function (sel) {
+    const key = sel.getAttribute('data-lwr-pt');
+    const policy = sel.value;
+    try {
+      await apiPut(`/api/foundry/lens-config/product-type-rules/${encodeURIComponent(key)}`, { lens_wizard_policy: policy });
+      const pt = _lwrProductTypes.find(function (x) { return x.product_type_key === key; });
+      if (pt) pt.lens_wizard_policy = policy;
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Policy updated');
+      lwrRenderPolicyTable();
+      if (_lwrSelectedPtKey === key) window.lwrSelectProductType(key);
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to save');
+    }
+  };
+
+  window.lwrSelectProductType = function (key) {
+    _lwrSelectedPtKey = key;
+    const pt = _lwrProductTypes.find(function (x) { return x.product_type_key === key; });
+    const card = document.getElementById('lwr-allowlist-card');
+    const title = document.getElementById('lwr-allowlist-title');
+    const bodyEl = document.getElementById('lwr-allowlist-body');
+    if (!card || !bodyEl) return;
+    if (!pt || pt.lens_wizard_policy === 'NEVER') { card.style.display = 'none'; return; }
+    card.style.display = '';
+    if (title) title.textContent = `Lens categories for ${key}`;
+    const existingIds = new Set(_lwrBridgeRows
+      .filter(function (r) { return r.product_type_key === key; })
+      .map(function (r) { return r.lens_category_id; })
+    );
+    const cats = (_lwrCategories || []).filter(function (c) { return c.is_active !== false && c.is_active !== 0; });
+    if (!cats.length) {
+      bodyEl.innerHTML = '<span class="td2 xs">No categories found. Add them in Lens packages first.</span>';
+      return;
+    }
+    bodyEl.innerHTML = cats.map(function (c) {
+      const label = lcPosLabel(c.pos_brand, c.pos_name, c.name);
+      const checked = existingIds.has(Number(c.id));
+      return `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;min-width:180px;padding:4px 0">
+        <input type="checkbox" data-lwr-cat-id="${Number(c.id)}" ${checked ? 'checked' : ''} ${lcCanEdit ? '' : 'disabled'}>
+        ${lcEsc(label)}
+      </label>`;
+    }).join('');
+  };
+
+  window.lwrSaveAllowList = async function () {
+    if (!_lwrSelectedPtKey) return;
+    const bodyEl = document.getElementById('lwr-allowlist-body');
+    if (!bodyEl) return;
+    const checkboxes = bodyEl.querySelectorAll('input[data-lwr-cat-id]');
+    const anyChecked = Array.from(checkboxes).some(function (cb) { return cb.checked; });
+    const category_ids = anyChecked
+      ? Array.from(checkboxes).filter(function (cb) { return cb.checked; }).map(function (cb, i) {
+          return { id: Number(cb.getAttribute('data-lwr-cat-id')), sort_order: i };
+        })
+      : [];
+    const btn = document.getElementById('lwr-allowlist-save-btn');
+    if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      await apiPut(`/api/foundry/lens-config/product-type-rules/${encodeURIComponent(_lwrSelectedPtKey)}`, { category_ids });
+      if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      else if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      _lwrBridgeRows = _lwrBridgeRows.filter(function (r) { return r.product_type_key !== _lwrSelectedPtKey; });
+      category_ids.forEach(function (x, i) {
+        _lwrBridgeRows.push({ product_type_key: _lwrSelectedPtKey, lens_category_id: x.id, sort_order: i });
+      });
+      lwrRenderPolicyTable();
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Allow-list saved');
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to save');
+    }
+  };
+
+  window.loadLensWizardRulesPage = async function () {
+    const tb = document.getElementById('lwr-policy-tbody');
+    if (!tb) return;
+    if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('lwr-policy-tbody', 3, 3);
+    const card = document.getElementById('lwr-allowlist-card');
+    if (card) card.style.display = 'none';
+    try {
+      // Prefer full lens-config GET (includes productTypes + bridgeRows) so one round-trip
+      // works even if an older proxy/process lacks GET …/product-type-rules.
+      let data = await apiGetFirst([
+        '/api/foundry/lens-config',
+        '/api/foundry/lens-config/product-type-rules'
+      ]);
+      if (data && Array.isArray(data.categories)) {
+        _lcData = data;
+        _lwrProductTypes = data.productTypes || [];
+        _lwrBridgeRows = data.bridgeRows || [];
+        _lwrCategories = data.categories || [];
+      } else {
+        _lwrProductTypes = (data && data.productTypes) || [];
+        _lwrBridgeRows = (data && data.bridgeRows) || [];
+        if (!_lcData) _lcData = await lcFetchConfig();
+        _lwrCategories = (_lcData && _lcData.categories) || [];
+      }
+      lwrRenderPolicyTable();
+      if (_lwrSelectedPtKey) window.lwrSelectProductType(_lwrSelectedPtKey);
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not load rules');
+      if (tb) tb.innerHTML = '<tr><td colspan="3" style="color:var(--red);padding:12px">Failed to load</td></tr>';
+    }
+  };
+
   const FOUNDRY_PAGE_PATHS = {
     dashboard: '/foundry/dashboard',
     purchases: '/foundry/purchases',
@@ -4408,7 +5128,10 @@ document.addEventListener('DOMContentLoaded', () => {
     digitisation: '/foundry/digitisation',
     'sku-catalogue': '/foundry/sku-catalogue',
     'stock-view': '/foundry/stock-view',
-    'lens-portfolio': '/foundry/lens-portfolio',
+    'lens-packages': '/foundry/lens-packages',
+    'lens-addons': '/foundry/lens-addons',
+    'lens-package-addons': '/foundry/lens-package-addons',
+    'lens-wizard-rules': '/foundry/lens-wizard-rules',
     'master-catalogue': '/foundry/master-catalogue',
     'rate-intelligence': '/foundry/rate-intelligence',
     'stock-transfer': '/foundry/stock-transfer',
@@ -4419,6 +5142,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getFoundryPageFromPath(pathname) {
     const normalized = String(pathname || '').replace(/\/+$/, '') || '/foundry';
+    if (normalized === '/foundry/lens-portfolio') return 'lens-packages';
     const exact = Object.entries(FOUNDRY_PAGE_PATHS).find(([, route]) => route === normalized);
     if (exact) return exact[0];
     if (normalized === '/foundry') return 'dashboard';
@@ -4454,7 +5178,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id === 'stock-transfer')   stInit();
     if (id === 'transfer-requests') loadTransferRequests();
     if (id === 'movement-list')     loadMovementList();
-    if (id === 'lab-orders')        loadLabOrders();
+    if (id === 'lens-packages' && typeof window.loadLensPackagesPage === 'function') window.loadLensPackagesPage();
+    if (id === 'lens-addons' && typeof window.loadLensAddonsPage === 'function') window.loadLensAddonsPage();
+    if (id === 'lens-package-addons' && typeof window.loadLensMatrixPage === 'function') window.loadLensMatrixPage();
+    if (id === 'lens-wizard-rules' && typeof window.loadLensWizardRulesPage === 'function') window.loadLensWizardRulesPage();
+    // loadLabOrders is assigned later in this file; guard avoids ReferenceError + aborted init on /foundry/lab-orders refresh.
+    if (id === 'lab-orders' && typeof window.loadLabOrders === 'function') window.loadLabOrders();
     // Only load the list when navigating from sidebar (not when opening a detail directly)
     if (!skipList) {
       if (id === 'bill-verify')  loadBillVerifyList();
@@ -5717,6 +6446,17 @@ ${initScript}
       }
     };
 
+    window.stPrintStockTransferDoc = async function stPrintStockTransferDoc(docId) {
+      const id = Number(docId);
+      if (!Number.isFinite(id) || id < 1) return;
+      try {
+        const doc = await apiGet('/api/stock-transfer-docs/' + id);
+        stPrintDispatchSlip(doc);
+      } catch (err) {
+        stToast('Could not load slip: ' + err.message, '#e53e3e');
+      }
+    };
+
     // ── Submit transfer ────────────────────────────────────────────────────────
     window.stSubmitTransfer = async function stSubmitTransfer() {
       const storeId = document.getElementById('st-store-sel').value;
@@ -5756,29 +6496,49 @@ ${initScript}
       }
     };
 
-    // ── History ────────────────────────────────────────────────────────────────
+    // ── Dispatch documents (challans) ───────────────────────────────────────────
+    // Old flow used /api/stock-transfers/history (stock_movements after STOCKED only).
+    // Direct dispatch creates stock_transfer_docs in DISPATCHED state first — list those here.
+    function stDocStatusBadgeClass(status) {
+      const s = String(status || '').toUpperCase();
+      if (s === 'DISPATCHED') return 'b-orange';
+      if (s === 'ACCEPTED') return 'b-blue';
+      if (s === 'STOCKED') return 'b-green';
+      return 'b-gray';
+    }
+
     window.stLoadHistory = async function stLoadHistory() {
       const tbody = document.getElementById('st-history-tbody');
       if (!tbody) return;
-      tbody.innerHTML = `<tr><td colspan="8" class="tc td2 p12">Loading…</td></tr>`;
+      if (typeof window.cosmosSkeletonTable === 'function') {
+        window.cosmosSkeletonTable('st-history-tbody', 7, 6);
+      } else {
+        tbody.innerHTML = '<tr><td colspan="7" class="tc td2 p12">…</td></tr>';
+      }
       try {
-        const rows = await apiGet('/api/stock-transfers/history?top_n=50');
+        const rows = await apiGet('/api/stock-transfer-docs?top_n=50');
         if (!rows || !rows.length) {
-          tbody.innerHTML = `<tr><td colspan="8" class="tc td2 p12">No transfers yet</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12">No dispatch documents yet — dispatch a cart above to create a challan.</td></tr>`;
           return;
         }
-        tbody.innerHTML = rows.map((r) => `<tr>
-          <td class="xs td2" style="white-space:nowrap">${stFmtDate(r.created_at)}</td>
-          <td class="mono xs fw6">${stEsc(r.sku_code)}</td>
-          <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stEsc(r.product_name)}</td>
-          <td>${stEsc(r.brand_name || '—')}</td>
-          <td>${stEsc(r.colour_name || '—')}</td>
-          <td class="tc fw6" style="color:var(--acc2)">${r.qty}</td>
-          <td style="white-space:nowrap">${stEsc(r.to_store_name || '—')}</td>
-          <td class="xs td2">${stEsc(r.transferred_by || '—')}</td>
-        </tr>`).join('');
+        tbody.innerHTML = rows.map((d) => {
+          const dest = [d.store_name, d.store_code].filter(Boolean).join(' · ') || '—';
+          const lines = Number(d.line_count);
+          return `<tr>
+          <td class="mono fw6" style="color:var(--acc2)">${stEsc(String(d.doc_id))}</td>
+          <td class="xs td2" style="white-space:nowrap">${stFmtDate(d.dispatched_at || d.created_at)}</td>
+          <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${stEsc(dest)}">${stEsc(dest)}</td>
+          <td><span class="b ${stDocStatusBadgeClass(d.status)}">${stEsc(d.status || '—')}</span></td>
+          <td class="tc fw6">${Number.isFinite(lines) ? lines : '—'}</td>
+          <td class="xs td2">${stEsc(d.dispatched_by_name || '—')}</td>
+          <td class="tc"><button type="button" class="btn xs primary" onclick="stPrintStockTransferDoc(${Number(d.doc_id)})">Print</button></td>
+        </tr>`;
+        }).join('');
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="8" class="tc td2 p12" style="color:var(--red)">${stEsc(err.message)}</td></tr>`;
+        if (typeof window.cosmosToastError === 'function') {
+          window.cosmosToastError(err.message || 'Could not load dispatch documents');
+        }
+        tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">${stEsc(err.message)}</td></tr>`;
       }
     };
   }
@@ -6454,70 +7214,384 @@ ${initScript}
 
   // ── LAB ORDERS ────────────────────────────────────────────────────────────
   let _labOrdersTimer = null;
-  window.debounceLabOrders = function() {
-    clearTimeout(_labOrdersTimer);
-    _labOrdersTimer = setTimeout(() => {
-      if (window.loadLabOrders) window.loadLabOrders();
-    }, 300);
+  let _fyLabStatusFilter = '';
+
+  const FY_LAB_STATUS_LABELS = {
+    ORDER_PLACED:                 'Order Placed',
+    ADVANCE_PAID:                 'Accepted',
+    SENT_TO_LAB:                  'Sent To Lab',
+    FRAME_PENDING_LENS_BACKORDER: 'Frame Pending + Lens Backorder',
+    FRAME_RECEIVED_LENS_BACKORDER:'Frame Received + Lens Backordered',
+    FRAME_AND_LENS_RECEIVED:      'Frame + Lens Received',
+    LAB_FITTING:                  'Fitting & Edging',
+    QC_FAIL_LAB:                  'QC Fail',
+    QC_PASS:                      'QC Pass',
+    DISPATCHED_TO_STORE:          'Dispatched To Store',
+    RECEIVED_AT_STORE:            'Received At Store',
+    STORE_QC_PASS:                'Store QC Pass',
+    STORE_QC_PARTIAL:             'QC Partial (Minor Defect)',
+    QC_FAIL_STORE:                'Store QC Failed',
+    READY_FOR_DELIVERY:           'Ready For Delivery',
+    DELIVERED:                    'Delivered',
+    BALANCE_COLLECTED:            'Balance Collected',
+    INVOICED:                     'Invoiced'
   };
 
-  window.labOrdersClearFilters = function() {
-    const s = document.getElementById('lab-orders-search');
-    const f = document.getElementById('lab-orders-status-filter');
-    if (s) s.value = '';
-    if (f) f.value = '';
-    if (window.loadLabOrders) window.loadLabOrders();
+  /** Matches the five Lab Orders tabs (friendly label; DB value may differ, e.g. Sent To Lab). */
+  const FY_LAB_QUEUE_TAB_LABEL = {
+    SENT_TO_LAB: 'Pending Lab',
+    LAB_FITTING: 'At Lab',
+    QC_PASS: 'QC Pass',
+    DISPATCHED_TO_STORE: 'Dispatched'
+  };
+
+  // Store-side early chain (POS): ORDER_PLACED → Accepted (DB key ADVANCE_PAID) → SENT_TO_LAB.
+  const FY_LAB_NEXT_STATUSES = {
+    FRAME_PENDING_LENS_BACKORDER: ['FRAME_RECEIVED_LENS_BACKORDER'],
+    FRAME_RECEIVED_LENS_BACKORDER:['FRAME_AND_LENS_RECEIVED'],
+    FRAME_AND_LENS_RECEIVED:      ['LAB_FITTING'],
+    // QC Fail is selectable but auto-reverts server-side — order never leaves At Lab
+    LAB_FITTING:                  ['QC_PASS', 'QC_FAIL_LAB'],
+    QC_PASS:                      ['DISPATCHED_TO_STORE']
+  };
+
+  function fyCanBypassSiblingGuard() {
+    if (user && String(user.role || '') === 'super_admin') return true;
+    const pl = userPermissions.map((x) => String(x).toLowerCase());
+    return (
+      pl.indexOf('foundry.lab.bypass_order_sibling') >= 0
+      || pl.indexOf('command_unit.lab.bypass_order_sibling') >= 0
+      || pl.indexOf('storepilot.lab.bypass_order_sibling') >= 0
+      || pl.indexOf('pos.lab.bypass_order_sibling') >= 0
+    );
+  }
+
+  function fyJobsFromOrderRow(order) {
+    var ls = Array.isArray(order.lab_sub_orders) ? order.lab_sub_orders : [];
+    if (ls.length) return ls.map(function(s) {
+      return {
+        sub_order_id: s.sub_order_id,
+        lab_workflow_status: s.lab_workflow_status,
+        lab_received_confirmed: s.lab_received_confirmed === true,
+        lab_backorder_confirmed: s.lab_backorder_confirmed === true,
+        sub_order_label: s.sub_order_label || order.order_no || ''
+      };
+    });
+    var sid = Number(order.sub_order_id) || 0;
+    if (!sid) return [];
+    return [{
+      sub_order_id: sid,
+      lab_workflow_status: order.lab_workflow_status,
+      lab_received_confirmed: order.lab_received_confirmed === true,
+      lab_backorder_confirmed: order.lab_backorder_confirmed === true,
+      sub_order_label: order.order_no || ('#' + sid)
+    }];
+  }
+
+  function fyEscapeAttr(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/'/g, '&#39;');
+  }
+
+  function fyEscapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function fyLabelLabStatus(raw) {
+    const k = String(raw || '').toUpperCase().trim()
+    return FY_LAB_STATUS_LABELS[k] || (k ? k.replace(/_/g, ' ') : '')
+  }
+
+  function fyLabFilterTitle(statusKey) {
+    const k = String(statusKey || '').toUpperCase()
+    if (!k) return 'All lab orders'
+    return FY_LAB_QUEUE_TAB_LABEL[k] || fyLabelLabStatus(k)
+  }
+
+  function fyLabEmptyHintForFilter(statusKey) {
+    const k = String(statusKey || '').toUpperCase()
+    const hints = {
+      SENT_TO_LAB:
+        'This tab lists jobs in “Pending Lab” (system status Sent To Lab). Rows appear after the store marks the bill Sent To Lab in Store OS.',
+      LAB_FITTING: 'Jobs land here once both lab intake checkpoints are done and edging has started.',
+      QC_PASS:
+        'Nothing is currently at QC Pass. Open At Lab if work is still in fitting and edging, or All to see every active lab bill.',
+      DISPATCHED_TO_STORE: 'Shown after HQ dispatches the job toward the store from QC Pass.'
+    }
+    return hints[k] || 'Widen this filter by choosing All or clear the search.'
+  }
+
+  /** Clear search + All tab — used from Lab Orders empty-state actions */
+  window.fyLabClearSearchAndShowAll = function () {
+    const s = document.getElementById('lab-orders-search')
+    const t = document.getElementById('fy-lab-tab-all')
+    if (s) s.value = ''
+    setFyLabFilter('', t)
+  }
+
+  function buildFyLabActionForSingleJob(order, job) {
+    var oid = order.order_id;
+    var subId = Number(job.sub_order_id) || 0;
+    var curr = String(job.lab_workflow_status || '');
+    var plainLabel = String(job.sub_order_label || '').slice(0, 80);
+    var idSuf = oid + '_' + subId;
+
+    if (curr === 'SENT_TO_LAB') {
+      if (!subId) return '';
+      var rc = job.lab_received_confirmed === true;
+      var bc = job.lab_backorder_confirmed === true;
+      var row = '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">' +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+      if (rc) {
+        row += '<span style="font-size:11px;font-weight:600;color:var(--green);background:var(--greenL);padding:3px 8px;border-radius:6px">Received at Lab — done</span>';
+      } else {
+        row += '<button type="button" class="btn sm" id="btn-fy-intake-rcv-' + idSuf +
+          '" onclick="markFyLabIntake(' + oid + ',' + subId + ',\'received_at_lab\')">Mark Received at Lab</button>';
+      }
+      if (bc) {
+        row += '<span style="font-size:11px;font-weight:600;color:var(--green);background:var(--greenL);padding:3px 8px;border-radius:6px">Backorder Created — done</span>';
+      } else {
+        row += '<button type="button" class="btn sm" id="btn-fy-intake-bo-' + idSuf +
+          '" onclick="markFyLabIntake(' + oid + ',' + subId + ',\'backorder_created\')">Mark Backorder Created</button>';
+      }
+      row += '</div>';
+      if (rc && bc) {
+        row += '<div style="margin-top:2px"><button type="button" class="btn primary" id="btn-fy-fitting-edging-' +
+          idSuf + '" onclick="advanceFyLabFittingEdging(' + oid + ', ' + subId + ')">Fitting/Edging</button></div>';
+      } else {
+        row += '<span style="font-size:11px;color:var(--text3)">Complete both checkpoints to advance.</span>';
+      }
+      row += '</div>';
+      return row;
+    }
+
+    var options = FY_LAB_NEXT_STATUSES[curr] || [];
+    if (!options.length) return '<span style="font-size:12px;color:var(--text3)">No action</span>';
+    var opts = options.map(function(s) {
+      return '<option value="' + fyEscapeAttr(s) + '">' + fyLabelLabStatus(s) + '</option>';
+    }).join('');
+    var qcHint = '';
+    if (curr === 'LAB_FITTING') {
+      qcHint =
+        '<div style="font-size:11px;color:var(--text3);margin-top:4px;max-width:320px"><strong>QC Pass</strong> moves toward dispatch once pair rules allow. <strong>QC Fail</strong> stays in this queue for rework.</div>';
+    }
+    var bypassRow = '';
+    if (curr === 'QC_PASS' && fyCanBypassSiblingGuard()) {
+      bypassRow =
+        '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">' +
+        '<button type="button" class="btn sm" style="border-color:var(--gold);color:var(--text1)" ' +
+        'id="btn-fy-lab-bypass-' + idSuf + '" onclick="updateFyLabOrderDispatchWithBypass(' + oid +
+        ', ' + subId + ')">Dispatch anyway (pair guard bypass)</button>' +
+        '<span style="font-size:11px;color:var(--text3)">Requires audit permission; timeline will record the bypass.</span></div>';
+    }
+    return (
+      '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">' +
+      '<div style="display:flex;gap:6px;align-items:center">' +
+      '<select id="fy-lab-next-' + idSuf + '" aria-label="Next lab stage for ' + fyEscapeAttr(plainLabel) +
+      '" style="font-size:12px;min-width:175px">' +
+      opts + '</select>' +
+      '<button type="button" class="btn sm" id="btn-fy-lab-next-' + idSuf + '" onclick="updateFyLabOrderStatus(' + oid +
+      ', ' + subId + ')">Update</button></div>' +
+      qcHint +
+      bypassRow +
+      '</div>'
+    );
+  }
+
+  function buildFyLabStatusAction(order) {
+    var jobs = fyJobsFromOrderRow(order);
+    if (!jobs.length) {
+      return '<span style="font-size:11px;color:var(--gold)">No LAB line — reopen order.</span>';
+    }
+    var parts = [];
+    var i;
+    for (i = 0; i < jobs.length; i += 1) {
+      parts.push(
+        '<div style="margin-bottom:12px;padding-bottom:12px;' + (i < jobs.length - 1 ? 'border-bottom:1px solid var(--border);' : '') + '">' +
+        '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px">' +
+        fyEscapeAttr(jobs[i].sub_order_label) + '</div>' +
+        buildFyLabActionForSingleJob(order, jobs[i]) +
+        '</div>'
+      );
+    }
+    return '<div style="display:flex;flex-direction:column;gap:4px">' + parts.join('') + '</div>';
+  }
+
+  window.setFyLabFilter = function(status, tabEl) {
+    _fyLabStatusFilter = status || '';
+    document.querySelectorAll('#page-lab-orders .tab').forEach((el) => el.classList.remove('active'));
+    if (tabEl) tabEl.classList.add('active');
+    window.loadLabOrders();
+  };
+
+  window.debounceLabOrders = function() {
+    clearTimeout(_labOrdersTimer);
+    _labOrdersTimer = setTimeout(() => { window.loadLabOrders && window.loadLabOrders(); }, 300);
   };
 
   window.loadLabOrders = async function() {
     const tbody = document.getElementById('lab-orders-tbody');
     if (!tbody) return;
+    if (typeof window.cosmosSkeletonTable === 'function') window.cosmosSkeletonTable('lab-orders-tbody', 6);
 
-    if (typeof window.cosmosSkeletonTable === 'function') {
-      window.cosmosSkeletonTable('lab-orders-tbody', 7, 6);
-    } else {
-      tbody.innerHTML = '';
-    }
-
-    const search = (document.getElementById('lab-orders-search')?.value || '').trim();
-    const status = (document.getElementById('lab-orders-status-filter')?.value || '').trim();
-
+    const searchEl = document.getElementById('lab-orders-search');
+    const q = (searchEl && searchEl.value ? searchEl.value.trim() : '');
     try {
       const qs = new URLSearchParams();
-      if (search) qs.set('q', search);
-      if (status) qs.set('status', status);
+      qs.set('kind', 'LAB');
+      qs.set('scope', 'all');
+      qs.set('limit', '120');
+      if (q) qs.set('search', q);
+      if (_fyLabStatusFilter) qs.set('lab_status', _fyLabStatusFilter);
+      const rows = await apiGet(`/api/orders?${qs.toString()}`);
+      if (!rows || !rows.length) {
+        const filterTitle = fyLabFilterTitle(_fyLabStatusFilter)
+        const hint = fyLabEmptyHintForFilter(_fyLabStatusFilter)
+        const hasSearch = Boolean(q)
+        const atLabBtn =
+          `<button type="button" class="btn sm primary" onclick="document.getElementById('fy-lab-tab-at-lab')&&setFyLabFilter('LAB_FITTING',document.getElementById('fy-lab-tab-at-lab'))">Show At Lab</button>`
+        const dispatchBtn =
+          `<button type="button" class="btn sm" onclick="document.getElementById('fy-lab-tab-dispatched')&&setFyLabFilter('DISPATCHED_TO_STORE',document.getElementById('fy-lab-tab-dispatched'))">Show Dispatched</button>`
+        const extraQueues =
+          String(_fyLabStatusFilter || '').toUpperCase() === 'QC_PASS'
+            ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">${atLabBtn}${dispatchBtn}</div>`
+            : ''
+        const searchLine = hasSearch
+          ? `<div style="margin-top:8px;font-size:12px;color:var(--gold)">Active search filters the list (${fyEscapeHtml(q)}).</div>`
+          : ''
+        const primaryEmptyBtn =
+          `<button type="button" class="btn sm primary" onclick="fyLabClearSearchAndShowAll()">` +
+          (hasSearch ? 'Clear search &amp; show all' : 'Show all orders') +
+          '</button>'
 
-      const orders = await apiGet(`/api/pos/all-orders?${qs.toString()}`);
-      if (!orders || !orders.length) {
-        tbody.innerHTML = `<tr><td colspan="7" class="p0">
-          <div class="empty" style="padding:32px 24px;text-align:center">
-            <div class="empty-ic">🔬</div>
-            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No orders match</div>
-            <div style="font-size:13px;color:var(--text2);margin-bottom:16px;max-width:420px;margin-left:auto;margin-right:auto">Adjust search or status, or clear filters to reload the full list.</div>
-            <button type="button" class="btn primary" onclick="window.labOrdersClearFilters && window.labOrdersClearFilters()">Clear filters</button>
+        tbody.innerHTML = `
+        <tr><td colspan="6">
+          <div class="empty" style="padding:32px 24px;text-align:center;max-width:520px;margin:0 auto">
+            <div class="empty-ic" style="font-weight:700;font-size:26px;line-height:1;color:var(--acc2)" aria-hidden="true">◇</div>
+            <div style="font-size:15px;font-weight:600;color:var(--text1);margin:12px 0 8px">${fyEscapeHtml(hasSearch ? 'No matches for this query' : 'No lab orders in this view')}</div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.5">${fyEscapeHtml(hint)}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:8px">${fyEscapeHtml('Tab: ' + filterTitle + (hasSearch ? ' · search on' : ''))}</div>
+            ${searchLine}
+            <div style="margin-top:18px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">
+              ${primaryEmptyBtn}
+              <button type="button" class="btn sm" onclick="window.loadLabOrders && window.loadLabOrders()">Refresh</button>
+            </div>
+            ${extraQueues}
           </div>
-        </td></tr>`;
-        return;
+        </td></tr>`
+        return
       }
-
-      tbody.innerHTML = orders.map(o => {
+      tbody.innerHTML = rows.map((r) => {
+        const statusShown = fyJobsFromOrderRow(r).map(function (j) {
+          return fyLabelLabStatus(j.lab_workflow_status)
+        }).filter(Boolean).join(' · ')
+        const statusFinal = statusShown || fyLabelLabStatus(r.lab_workflow_status)
         return `
-          <tr>
-            <td><span class="lab-order-no">${o.order_no}</span></td>
-            <td>${o.store_name || o.store_id}</td>
-            <td>${o.customer_name || 'Walk-in'} ${o.customer_phone ? '<br><span style="font-size:11px;color:var(--text3)">'+o.customer_phone+'</span>' : ''}</td>
-            <td><span class="b b-gray" style="font-size:10px">${o.order_kind || 'STORE'}</span></td>
-            <td class="mono fw6">${inr(o.total_amount)}</td>
-            <td>${stageBadge(o.status)}</td>
-            <td style="font-size:12px;color:var(--text3)">${fmtDateTime(o.created_at)}</td>
-          </tr>
-        `;
+        <tr>
+          <td class="mono xs">
+            <div>${r.order_no || ''}</div>
+            <button type="button" onclick="window.cosmosTimelineOpen(${r.order_id},'${r.order_no || ''}')" style="background:none;border:none;color:var(--acc2);font-size:11px;cursor:pointer;padding:0;margin-top:2px;text-decoration:underline">📋 Timeline</button>
+          </td>
+          <td>${r.customer_name || 'Walk-in'}${r.customer_phone ? `<div style="font-size:11px;color:var(--text3)">${r.customer_phone}</div>` : ''}</td>
+          <td>${r.store_name || ''}</td>
+          <td><span class="b b-blue" style="font-size:11px">${statusFinal}</span></td>
+          <td style="font-size:12px;color:var(--text3)">${typeof fmtDateTime === 'function' ? fmtDateTime(r.created_at) : (r.created_at || '')}</td>
+          <td>${buildFyLabStatusAction(r)}</td>
+        </tr>
+      `
       }).join('');
-
     } catch (e) {
       const msg = e && e.message ? e.message : 'Could not load orders.';
       if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg);
-      tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">Could not load orders.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);padding:16px">Could not load orders.</td></tr>`;
+    }
+  };
+
+  window.markFyLabIntake = async function(orderId, subOrderId, field) {
+    if (!orderId || !subOrderId || !field) return;
+    var idSuf = orderId + '_' + subOrderId;
+    const btnId =
+      field === 'received_at_lab'
+        ? `btn-fy-intake-rcv-${idSuf}`
+        : `btn-fy-intake-bo-${idSuf}`;
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn);
+    const payload =
+      field === 'received_at_lab'
+        ? { sub_order_id: Number(subOrderId), received_at_lab: true }
+        : { sub_order_id: Number(subOrderId), backorder_created: true };
+    try {
+      await apiPost(`/api/orders/${orderId}/lab-intake`, payload);
+      if (typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn);
+      if (typeof window.cosmosToastSuccess === 'function') window.cosmosToastSuccess('Checkpoint saved.');
+      window.loadLabOrders();
+    } catch (e) {
+      if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(e.message);
+    }
+  };
+
+  window.advanceFyLabFittingEdging = async function(orderId, subOrderId) {
+    if (!orderId || !subOrderId) return;
+    var idSuf = orderId + '_' + subOrderId;
+    const btn = document.getElementById(`btn-fy-fitting-edging-${idSuf}`);
+    if (!btn) return;
+    if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn);
+    try {
+      await apiPost(`/api/orders/${orderId}/lab-status`, {
+        sub_order_id: Number(subOrderId),
+        to_status: 'LAB_FITTING'
+      });
+      if (typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn);
+      if (typeof window.cosmosToastSuccess === 'function') window.cosmosToastSuccess('Moved to Fitting/Edging');
+      window.loadLabOrders();
+    } catch (err) {
+      if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message);
+    }
+  };
+
+  window.updateFyLabOrderStatus = async function(orderId, subOrderId) {
+    var idSuf = orderId + '_' + subOrderId;
+    const sel = document.getElementById(`fy-lab-next-${idSuf}`);
+    const btn = document.getElementById(`btn-fy-lab-next-${idSuf}`);
+    if (!sel || !sel.value || !subOrderId) return;
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      await apiPost(`/api/orders/${orderId}/lab-status`, {
+        sub_order_id: Number(subOrderId),
+        to_status: sel.value
+      });
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Lab status updated');
+      window.loadLabOrders();
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    }
+  };
+
+  window.updateFyLabOrderDispatchWithBypass = async function(orderId, subOrderId) {
+    var idSuf = orderId + '_' + subOrderId;
+    var btn = document.getElementById('btn-fy-lab-bypass-' + idSuf);
+    if (!orderId || !subOrderId) return;
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      await apiPost(`/api/orders/${orderId}/lab-status`, {
+        sub_order_id: Number(subOrderId),
+        to_status: 'DISPATCHED_TO_STORE',
+        bypass_order_sibling_guard: true,
+        bypass_reason: 'Foundry HQ authorised pair-guard bypass'
+      });
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Dispatched with documented bypass.');
+      window.loadLabOrders();
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
     }
   };
 
@@ -6528,4 +7602,8 @@ ${initScript}
   loadFormData();
   loadDashboard();
   loadPurchases();
+  // Deep link / hard refresh on /foundry/lab-orders: lab loader runs only after assignment above in this file.
+  if (getFoundryPageFromPath(window.location.pathname) === 'lab-orders' && typeof window.loadLabOrders === 'function') {
+    window.loadLabOrders();
+  }
 });

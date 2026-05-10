@@ -145,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ['foundry', '/foundry/dashboard'],
         ['finance', '/finance/dashboard'],
         ['storepilot', '/storepilot/dashboard'],
-        ['pos', '/pos/login']
+        ['pos', '/storeos/login']
       ];
 
       function pickLanding() {

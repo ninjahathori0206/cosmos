@@ -1,6 +1,10 @@
 const jwt = require('jsonwebtoken');
+const {
+  getJwtMinimumIssueEpochUnix,
+  isTokenIssuedAtValid
+} = require('../services/jwtPolicyService');
 
-function authJwt(req, res, next) {
+async function authJwt(req, res, next) {
   const authHeader = req.header('Authorization') || '';
   const [, token] = authHeader.split(' ');
 
@@ -13,6 +17,13 @@ function authJwt(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const minIss = await getJwtMinimumIssueEpochUnix();
+    if (!isTokenIssuedAtValid(decoded, minIss)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Session ended. Sign in again to continue.'
+      });
+    }
     req.user = decoded;
     return next();
   } catch (err) {
@@ -26,4 +37,3 @@ function authJwt(req, res, next) {
 module.exports = {
   authJwt
 };
-

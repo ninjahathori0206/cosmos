@@ -5,7 +5,7 @@ function requestLogger(req, res, next) {
   res.on('finish', () => {
     const duration = Date.now() - start
     const line = [
-      new Date().toISOString(),
+      new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T'),
       req.ip,
       req.method,
       req.originalUrl,

@@ -1,0 +1,39 @@
+---
+description: New models/pages must extend RBAC — catalogue keys, API gates, UI parity with Command Unit
+alwaysApply: true
+---
+
+# RBAC — New models & pages (Role / Permission parity)
+
+Whenever you **add a new domain model**, **new API surface**, **new screen/page**, or **new sensitive capability**, treat RBAC as part of the same change — not a follow-up.
+
+## Single source of truth
+
+1. **`src/config/permissionsCatalogue.js`** — Append every assignable permission key here (`RAW_PERMISSION_GROUPS`: `[groupName, [[key, label], …]]`).
+   - Use lowercase dotted keys: `module.area.action` (match JWT/module prefixes: `command_unit`, `foundry`, `storepilot`, `pos`, `cx`, `finance`, `army`, …).
+   - Put keys in the **correct group** (same UX grouping Command Unit shows).
+   - **`PUT /api/roles/:key/permissions` rejects keys not in this catalogue** — missing catalogue rows mean admins cannot assign them.
+
+2. **Do not** reintroduce a duplicate permission matrix in `command-unit-prototype.js` or elsewhere — CU loads from **`GET /api/meta/permissions-catalogue`**.
+
+## Backend (routes)
+
+3. Wire **`requireModule`**, **`requirePermission`** / **`requireCxPermission`** / **`requireAnyModule`** / **`requireAllPermissions`** (see `src/middleware/authorize.js`) so behaviour matches the new catalogue rows.
+   - Prefer explicit permission keys over **module-only** gates for anything that mutates data, money, inventory, customers, roles, lab/stock/transfers, or cross-store scope.
+   - Custom gates (`gateStorepilotLab*`, etc.) must still resolve to documented catalogue keys where possible.
+
+## Frontend (vanilla shells)
+
+4. Gate **nav items**, **primary actions**, and **routes** using JWT **`permissions`** (and **`modules`** where coarse access applies). Align checks with the same keys enforced on APIs — **no `alert()`**, follow **`ui-polish-rules.mdc`**.
+   - Respect **`No-Hardcode-Rules.mdc`**: branch on permission keys / helpers, not hardcoded role or store labels.
+
+## Checklist before merging
+
+- [ ] New capability represented in **`permissionsCatalogue.js`** with label (+ optional description tuple).
+- [ ] Sensitive **`src/api/*.js`** routes use middleware aligned with those keys.
+- [ ] UI (prototype + shipped **`src/public`** JS where relevant) hides or disables actions when JWT lacks keys (strict RBAC semantics stay consistent with bootstrap / `cosmosRbacStrict*` helpers).
+- [ ] Super-admin bypass stays server-side only (`authorize.js`) — do not assume admin role names in client branches.
+
+## Optional SQL note
+
+If new capabilities replace old permission strings, add or extend **`sql/migrations/`** seeds/scripts so roles can be migrated; document **re-login** for JWT refresh.

@@ -1,0 +1,25 @@
+{
+  "name": "Eyewoot Go",
+  "short_name": "Eyewoot",
+  "description": "Your Eyewoot membership, orders, and prescription — always with you.",
+  "start_url": "/go",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#5B4FE8",
+  "theme_color": "#5B4FE8",
+  "icons": [
+    {
+      "src": "/img/go-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/img/go-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "categories": ["health", "lifestyle"]
+}

@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
 const { authJwt } = require('../middleware/authJwt');
+const { nowUnixSec } = require('../services/jwtPolicyService');
 
 const router = express.Router();
 
@@ -68,7 +69,8 @@ router.post('/login', async (req, res, next) => {
       role: user.role_key,
       store_id: user.store_id || null,
       modules,
-      permissions
+      permissions,
+      token_issued_at: nowUnixSec()
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, {

@@ -53,13 +53,24 @@ html {
   flex-direction: column;
 }
 
-/* ── Login screen layout ──────────────────────────────────────────────────── */
-#screen-login {
+/* ── Login screen layout (tablet unlock + staff PIN — separate screens) ─── */
+#screen-login-tablet,
+#screen-login-staff {
   align-items: center;
   justify-content: center;
   background: linear-gradient(165deg, var(--bg) 0%, #eef2f7 45%, #e8ecf4 100%);
   min-height: 100vh;
   padding: 24px 16px;
+}
+
+#screen-login-tablet .pos-login-card-tablet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+#screen-login-staff .pos-login-card-staff {
+  max-width: 480px;
 }
 
 /* ── Login card ───────────────────────────────────────────────────────────── */
@@ -117,6 +128,21 @@ html {
   font-weight: 600;
   color: var(--acc2);
   letter-spacing: 1.5px;
+}
+.pos-login-step-badge {
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.pos-login-tagline {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text2);
+  text-align: center;
+  line-height: 1.35;
+  max-width: 22rem;
 }
 
 /* ── Dividers ─────────────────────────────────────────────────────────────── */
@@ -424,130 +450,6 @@ html {
   font-size: 11px;
   color: var(--text3);
   text-align: center;
-}
-
-/* ── Success state ────────────────────────────────────────────────────────── */
-#screen-login-success {
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(165deg, var(--bg) 0%, #eef2f7 45%, #e8ecf4 100%);
-}
-
-.pos-success-card {
-  width: 100%;
-  max-width: 440px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 24px;
-  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04);
-  padding: 48px 40px 40px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-}
-
-.pos-check-circle {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 36px;
-  font-weight: 700;
-  color: #fff;
-  box-shadow: 0 8px 24px rgba(34,197,94,0.20);
-  animation: pos-check-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes pos-check-pop {
-  from { transform: scale(0); opacity: 0; }
-  to   { transform: scale(1); opacity: 1; }
-}
-
-.pos-welcome-txt {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text1);
-}
-
-.pos-staff-name {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--acc2);
-}
-
-.pos-role-badge {
-  display: inline-flex;
-  padding: 6px 14px;
-  border-radius: 20px;
-  background: rgba(34, 197, 94, 0.12);
-  border: 1px solid rgba(34, 197, 94, 0.28);
-  font-size: 11px;
-  font-weight: 600;
-  color: #15803d;
-  letter-spacing: 1.5px;
-}
-
-.pos-store-info-box {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 16px 20px;
-  border-radius: 14px;
-  background: var(--pos-bg);
-  border: 1px solid var(--border);
-}
-
-.pos-store-info-icon { font-size: 20px; }
-.pos-store-info-name { font-size: 15px; font-weight: 600; color: var(--text1); }
-
-.pos-success-divider {
-  height: 1px;
-  width: 100%;
-  background: var(--border);
-}
-
-.pos-session-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-
-.pos-session-lbl { font-size: 12px; color: var(--text3); }
-.pos-session-time { font-size: 12px; font-weight: 600; color: var(--text2); }
-
-.pos-enter-btn {
-  width: 100%;
-  height: 56px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
-  border: none;
-  color: #ffffff;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 8px 20px rgba(99,102,241,0.25);
-  transition: opacity 0.15s, transform 0.1s;
-  min-height: 48px;
-  touch-action: manipulation;
-}
-
-.pos-enter-btn:active { transform: scale(0.98); }
-
-.pos-success-actions {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 
 .pos-success-logout-btn {
@@ -975,6 +877,15 @@ html {
   border-color: var(--acc2);
   box-shadow: 0 0 0 3px var(--accL);
   transform: scale(1.12);
+}
+
+.pos-sku-swatch--oos {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.pos-sku-swatch--oos:hover {
+  transform: none;
 }
 
 .pos-sku-swatch-count {
@@ -1544,7 +1455,6 @@ html {
   .pos-pin-section    { padding: 18px 24px 8px; }
   .pos-numpad         { padding: 8px 24px 8px; }
   .pos-card-footer    { padding: 16px 24px 24px; }
-  .pos-success-card   { padding: 36px 24px 32px; }
   .pos-numpad-btn     { height: 64px; }
   .pos-catalogue-shell { padding: 10px; }
   .pos-catalogue-header { flex-direction: column; }
@@ -1564,7 +1474,8 @@ html {
   .pos-catalogue-results {
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   }
-  #screen-login {
+  #screen-login-tablet,
+  #screen-login-staff {
     padding: 14px 24px;
   }
 
@@ -1915,7 +1826,6 @@ html {
 .pos-pdp-delivery { color: #0D9F7B; font-weight: 700; margin-top: 8px; }
 
 .pos-pdp-total-wrap { display: flex; flex-direction: column; }
-.pos-pdp-total-lbl { color: var(--pos-text-3); font-size: 12px; }
 .pos-pdp-total-val { color: var(--pos-text-1); font-size: 28px; font-weight: 800; line-height: 1; }
 
 .pos-confirm-check {
@@ -1940,8 +1850,8 @@ html {
    Primary POS device: tablet landscape (body.pos-target-tablet-landscape)
    ═══════════════════════════════════════════════════════════════════════════ */
 
-body.pos-target-tablet-landscape #screen-login,
-body.pos-target-tablet-landscape #screen-login-success {
+body.pos-target-tablet-landscape #screen-login-tablet,
+body.pos-target-tablet-landscape #screen-login-staff {
   padding: 14px clamp(16px, 3vw, 28px);
 }
 
@@ -1949,51 +1859,15 @@ body.pos-target-tablet-landscape .pos-login-card {
   max-width: min(1040px, 98vw);
 }
 
-body.pos-target-tablet-landscape .pos-success-card {
-  max-width: min(960px, 96vw);
-}
-
 @media (orientation: landscape) and (min-height: 480px) {
-  body.pos-target-tablet-landscape #screen-login .pos-login-card {
-    display: grid;
-    grid-template-columns: minmax(260px, 360px) minmax(300px, 1fr);
-    grid-template-rows: auto auto auto;
-    align-items: start;
+  body.pos-target-tablet-landscape #screen-login-tablet .pos-login-card-tablet {
+    display: flex;
+    flex-direction: column;
+    max-width: min(920px, 98vw);
   }
 
-  body.pos-target-tablet-landscape #screen-login .pos-login-card > .pos-divider {
-    display: none;
-  }
-
-  body.pos-target-tablet-landscape #screen-login .pos-branding {
-    grid-column: 1;
-    grid-row: 1;
-    border-right: 1px solid var(--border);
-  }
-
-  body.pos-target-tablet-landscape #screen-login .pos-store-section {
-    grid-column: 1;
-    grid-row: 2 / -1;
-    align-self: stretch;
-    border-right: 1px solid var(--border);
-  }
-
-  body.pos-target-tablet-landscape #screen-login .pos-pin-section {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  body.pos-target-tablet-landscape #screen-login .pos-numpad {
-    grid-column: 2;
-    grid-row: 2;
-    max-width: 400px;
-    justify-self: center;
-    width: 100%;
-  }
-
-  body.pos-target-tablet-landscape #screen-login .pos-card-footer {
-    grid-column: 2;
-    grid-row: 3;
+  body.pos-target-tablet-landscape #screen-login-staff .pos-login-card-staff {
+    max-width: min(520px, 96vw);
   }
 }
 
@@ -2274,5 +2148,331 @@ body.pos-has-sidebar #screen-pos-orders {
 }
 
 .pos-sb-logout:hover .pos-sb-icon {
-  color: #dc2626;
+  color: var(--red, #dc2626);
+}
+
+/* ── Login: tablet unlock row ───────────────────────────────────────────── */
+.pos-tablet-panel {
+  padding: 0 24px 4px;
+}
+
+/* Tablet login — two-column split (see Pencil frame Ytpc7) */
+.pos-tablet-panel--split {
+  padding: 8px 16px 12px;
+}
+.pos-login-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(16px, 3vw, 32px);
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .pos-login-split {
+    grid-template-columns: 1fr;
+  }
+}
+.pos-login-split-col--context,
+.pos-login-split-col--pin {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.pos-store-section--split {
+  padding: 0;
+}
+#screen-login-tablet .pos-store-section--split {
+  padding: 0;
+}
+
+.pos-store-auto-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--text2);
+}
+body.pos-store-login-shell .pos-store-auto-hint {
+  color: #94a3b8;
+}
+.pos-tablet-id-gate {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 18px 18px;
+  background: var(--pos-bg);
+}
+.pos-tablet-gate-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text2);
+  line-height: 1.4;
+}
+.pos-tablet-id-field-label {
+  display: block;
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+.pos-tablet-pin-column {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 16px 16px;
+  background: var(--pos-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: stretch;
+}
+.pos-pin-label--tablet {
+  text-align: center;
+  width: 100%;
+}
+.pos-numpad--tablet-split {
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+  padding: 0;
+}
+.pos-login-btn--tablet-split {
+  width: 100%;
+  margin-top: 4px;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.22);
+}
+.pos-tablet-id-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--pos-border, var(--border));
+  font-size: 18px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--pos-text-1, var(--text1));
+  background: var(--pos-card, var(--card));
+}
+.pos-tablet-ready {
+  text-align: center;
+  padding: 8px 0 4px;
+}
+.pos-tablet-ready-msg {
+  font-size: 14px;
+  color: var(--pos-text-2, var(--text2));
+  margin-bottom: 4px;
+}
+.pos-hint-link {
+  background: none;
+  border: none;
+  color: var(--acc2, var(--pos-text-2));
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 8px;
+  font-family: inherit;
+}
+
+.pos-staff-login-store-banner {
+  padding: 20px 40px 8px;
+}
+
+.pos-staff-store-line {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text1);
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.pos-staff-tablet-reset {
+  display: block;
+  width: calc(100% - 80px);
+  margin: 0 auto 4px;
+  text-align: center;
+}
+
+.pos-card-footer-tablet-only {
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 40px 32px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Store OS login shell (dark) — while tablet or staff login screen is active
+   body.pos-store-login-shell toggled in pos.js showScreen()
+   ═══════════════════════════════════════════════════════════════════════════ */
+body.pos-store-login-shell {
+  background: #0b1220;
+  color: #f1f5f9;
+}
+
+body.pos-store-login-shell #screen-login-tablet,
+body.pos-store-login-shell #screen-login-staff {
+  background:
+    radial-gradient(ellipse 130% 85% at 50% -35%, rgba(99, 102, 241, 0.38) 0%, transparent 52%),
+    linear-gradient(165deg, #0f172a 0%, #080d18 55%, #020617 100%);
+}
+
+body.pos-store-login-shell .pos-login-card {
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow:
+    0 32px 72px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(16px);
+}
+
+body.pos-store-login-shell .pos-app-name {
+  color: #f8fafc;
+}
+
+body.pos-store-login-shell .pos-login-tagline {
+  color: #94a3b8;
+}
+
+body.pos-store-login-shell .pos-module-badge {
+  background: rgba(129, 140, 248, 0.16);
+  border-color: rgba(129, 140, 248, 0.4);
+  color: #c7d2fe;
+}
+
+body.pos-store-login-shell .pos-field-label {
+  color: #94a3b8;
+}
+
+body.pos-store-login-shell .pos-divider {
+  background: rgba(148, 163, 184, 0.18);
+}
+
+body.pos-store-login-shell .pos-store-selector {
+  background: rgba(2, 6, 23, 0.55);
+  border-color: rgba(148, 163, 184, 0.28);
+  color: #f1f5f9;
+}
+
+body.pos-store-login-shell .pos-store-icon {
+  background: rgba(99, 102, 241, 0.22);
+}
+
+body.pos-store-login-shell .pos-store-name {
+  color: #f1f5f9;
+}
+
+body.pos-store-login-shell .pos-chevron {
+  color: #94a3b8;
+}
+
+body.pos-store-login-shell .pos-store-dropdown {
+  background: rgba(15, 23, 42, 0.98);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.65);
+}
+
+body.pos-store-login-shell .pos-store-option {
+  color: #e2e8f0;
+  border-bottom-color: rgba(148, 163, 184, 0.2);
+}
+
+body.pos-store-login-shell .pos-store-option:hover,
+body.pos-store-login-shell .pos-store-option:focus {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+body.pos-store-login-shell .pos-store-option.selected {
+  background: rgba(99, 102, 241, 0.3);
+}
+
+body.pos-store-login-shell .pos-store-option-name {
+  color: #f1f5f9;
+}
+
+body.pos-store-login-shell .pos-tablet-id-input {
+  background: rgba(2, 6, 23, 0.55);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #f8fafc;
+}
+
+body.pos-store-login-shell .pos-tablet-ready-msg {
+  color: #cbd5e1;
+}
+
+body.pos-store-login-shell .pos-hint-link {
+  color: #a5b4fc;
+}
+
+body.pos-store-login-shell .pos-pin-label {
+  color: #cbd5e1;
+}
+
+body.pos-store-login-shell .pos-pin-dot {
+  background: rgba(2, 6, 23, 0.45);
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+body.pos-store-login-shell .pos-pin-dot.filled {
+  background: #818cf8;
+  border-color: #a5b4fc;
+}
+
+body.pos-store-login-shell .pos-numpad-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+body.pos-store-login-shell .pos-numpad-num {
+  color: #f1f5f9;
+}
+
+body.pos-store-login-shell .pos-numpad-sub {
+  color: #64748b;
+}
+
+body.pos-store-login-shell .pos-hint-text {
+  color: #94a3b8;
+}
+
+body.pos-store-login-shell .pos-staff-store-line {
+  background: rgba(2, 6, 23, 0.55);
+  border-color: rgba(148, 163, 184, 0.28);
+  color: #f1f5f9;
+}
+
+body.pos-target-tablet-landscape.pos-store-login-shell #screen-login-tablet .pos-login-split-col--context {
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  padding-right: clamp(8px, 2vw, 16px);
+  margin-right: 0;
+}
+@media (max-width: 700px) {
+  body.pos-target-tablet-landscape.pos-store-login-shell #screen-login-tablet .pos-login-split-col--context {
+    border-right: none;
+    padding-right: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  }
+}
+body.pos-store-login-shell .pos-tablet-id-gate {
+  background: rgba(2, 6, 23, 0.55);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+body.pos-store-login-shell .pos-tablet-gate-hint {
+  color: #94a3b8;
+}
+body.pos-store-login-shell .pos-tablet-pin-column {
+  background: rgba(2, 6, 23, 0.48);
+  border-color: rgba(148, 163, 184, 0.22);
+}
+body.pos-store-login-shell .pos-login-btn--tablet-split {
+  box-shadow: 0 12px 32px rgba(37, 99, 235, 0.35);
+}
+
+/* Set PIN screen */
+#screen-pos-set-pin {
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(165deg, var(--bg) 0%, #eef2f7 45%, #e8ecf4 100%);
+}
+.pos-setpin-card {
+  max-width: 440px;
 }

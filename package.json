@@ -8,6 +8,9 @@
     "dev": "nodemon app.js",
     "restore:cursor-rules": "node scripts/restore-cursor-rules.js",
     "migrate:passwords": "node scripts/migrate-passwords.js",
+    "migrate:40-invoice-json": "node scripts/run-migration-40-invoice-display-json.js",
+    "migrate:41-sub-order-pairs": "node scripts/run-migration-41-sub-order-pairs.js",
+    "verify:api-modules": "node -e \"require('./src/api/orders');require('./src/api/pos');require('./src/services/orderService');console.log('api modules ok')\"",
     "deploy:pos-sql": "node scripts/deploy_pos_sql.js",
     "publish:design-local": "node -e \"require('fs').copyFileSync('pencil-new.pen','src/public/design/pencil-local/pencil-new.pen'); console.log('Copied pencil-new.pen → src/public/design/pencil-local/')\"",
     "merge:pen": "node scripts/merge-pen-into-primary.js"

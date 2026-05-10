@@ -5,118 +5,242 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Store OS — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css">
-<link rel="stylesheet" href="/css/pos.css">
-<link rel="stylesheet" href="/css/lenskart-pos.css">
+<link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
+<link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260608b">
 <script src="/js/cosmos-ui-polish.js" defer></script>
-<script src="/js/pos.js" defer></script>
+<script src="/js/pos.js?v=storeos-20260608b" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
 <!-- ═══════════════════════════════════════════════════════════════════════
-     SCREEN 1 — Staff PIN Login
+     SCREEN 1a — Tablet unlock (device + store gate; no staff PIN here)
      ═══════════════════════════════════════════════════════════════════ -->
-<div id="screen-login" class="pos-screen">
-  <div class="pos-login-card">
+<div id="screen-login-tablet" class="pos-screen">
+  <div class="pos-login-card pos-login-card-tablet">
 
-    <!-- Branding -->
     <div class="pos-branding">
       <div class="pos-logo-row">
         <div class="pos-logo-icon">✦</div>
         <span class="pos-app-name">Cosmos ERP</span>
       </div>
-      <span class="pos-module-badge">STORE OS</span>
+      <span class="pos-module-badge pos-login-step-badge pos-login-badge-tablet">Step 1 · Tablet</span>
+      <p class="pos-login-tagline">Register this device for the store, then continue to staff PIN on the next screen.</p>
     </div>
 
     <div class="pos-divider"></div>
 
-    <!-- Store selector -->
-    <div class="pos-store-section">
-      <div class="pos-field-label">STORE</div>
-      <div class="pos-store-dropdown-wrap">
-        <button
-          id="store-selector-btn"
-          class="pos-store-selector"
-          aria-haspopup="listbox"
-          aria-expanded="false"
-          aria-label="Select store"
-          tabindex="0"
-        >
-          <div class="pos-store-left">
-            <div class="pos-store-icon">🏪</div>
-            <span id="store-selector-name" class="pos-store-name">Select a store</span>
-          </div>
-          <span class="pos-chevron" aria-hidden="true">⌄</span>
-        </button>
+    <div id="pos-tablet-panel" class="pos-tablet-panel pos-tablet-panel--split" aria-labelledby="pos-tablet-login-heading">
+      <div class="pos-login-split">
+        <div class="pos-login-split-col pos-login-split-col--context">
+          <div class="pos-store-section pos-store-section--split">
+            <div class="pos-field-label">STORE</div>
+            <p class="pos-store-auto-hint" id="pos-store-auto-hint">Store is set from your tablet when you unlock with Tablet ID + PIN.</p>
+            <div class="pos-store-dropdown-wrap">
+              <button
+                id="store-selector-btn"
+                class="pos-store-selector"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-label="Select store"
+                tabindex="0"
+              >
+                <div class="pos-store-left">
+                  <div class="pos-store-icon">🏪</div>
+                  <span id="store-selector-name" class="pos-store-name">Unlock tablet to link store</span>
+                </div>
+                <span class="pos-chevron" aria-hidden="true">⌄</span>
+              </button>
 
-        <div id="store-dropdown" class="pos-store-dropdown" role="listbox" aria-label="Store list">
-          <!-- Populated by pos.js -->
+              <div id="store-dropdown" class="pos-store-dropdown" role="listbox" aria-label="Store list">
+              </div>
+            </div>
+          </div>
+
+          <div class="pos-tablet-id-gate">
+            <div class="pos-field-label" id="pos-tablet-login-heading">TABLET LOGIN</div>
+            <p class="pos-tablet-gate-hint" id="pos-tablet-gate-hint">Device ID from Command Unit</p>
+            <label class="pos-field-label pos-tablet-id-field-label" for="pos-tablet-id-input">Tablet ID</label>
+            <input
+              id="pos-tablet-id-input"
+              class="pos-tablet-id-input"
+              type="text"
+              inputmode="numeric"
+              maxlength="12"
+              placeholder="Type ID issued in Command Unit"
+              autocomplete="off"
+              aria-label="Tablet ID"
+            >
+          </div>
+        </div>
+
+        <div class="pos-login-split-col pos-login-split-col--pin">
+          <div class="pos-tablet-pin-column">
+            <span class="pos-pin-label pos-pin-label--tablet">Tablet PIN (4 digits)</span>
+            <div id="pos-tablet-pin-dots" class="pos-pin-dots" role="img" aria-label="Tablet PIN progress">
+              <div class="pos-pin-dot" data-tab-idx="0"></div>
+              <div class="pos-pin-dot" data-tab-idx="1"></div>
+              <div class="pos-pin-dot" data-tab-idx="2"></div>
+              <div class="pos-pin-dot" data-tab-idx="3"></div>
+            </div>
+            <div id="pos-tablet-pin-error" class="pos-pin-error" role="alert" aria-live="polite"></div>
+
+            <div class="pos-numpad pos-numpad--tablet-split" id="pos-numpad-tablet">
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn" data-digit="1" aria-label="1" tabindex="0">
+          <span class="pos-numpad-num">1</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="2" aria-label="2 ABC" tabindex="0">
+          <span class="pos-numpad-num">2</span>
+          <span class="pos-numpad-sub">ABC</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="3" aria-label="3 DEF" tabindex="0">
+          <span class="pos-numpad-num">3</span>
+          <span class="pos-numpad-sub">DEF</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn" data-digit="4" aria-label="4 GHI" tabindex="0">
+          <span class="pos-numpad-num">4</span>
+          <span class="pos-numpad-sub">GHI</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="5" aria-label="5 JKL" tabindex="0">
+          <span class="pos-numpad-num">5</span>
+          <span class="pos-numpad-sub">JKL</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="6" aria-label="6 MNO" tabindex="0">
+          <span class="pos-numpad-num">6</span>
+          <span class="pos-numpad-sub">MNO</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn" data-digit="7" aria-label="7 PQRS" tabindex="0">
+          <span class="pos-numpad-num">7</span>
+          <span class="pos-numpad-sub">PQRS</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="8" aria-label="8 TUV" tabindex="0">
+          <span class="pos-numpad-num">8</span>
+          <span class="pos-numpad-sub">TUV</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="9" aria-label="9 WXYZ" tabindex="0">
+          <span class="pos-numpad-num">9</span>
+          <span class="pos-numpad-sub">WXYZ</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn ghost" aria-hidden="true" tabindex="-1"></button>
+        <button type="button" class="pos-numpad-btn" data-digit="0" aria-label="0" tabindex="0">
+          <span class="pos-numpad-num">0</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" id="btn-backspace-tablet" aria-label="Delete" tabindex="0">
+          <span class="pos-numpad-num" style="font-size:20px">⌫</span>
+        </button>
+      </div>
+            </div>
+
+            <button type="button" id="btn-unlock-tablet" class="pos-login-btn pos-login-btn--tablet-split" aria-label="Unlock tablet for this store" tabindex="0">
+              Unlock tablet
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="pos-divider"></div>
 
-    <!-- PIN entry -->
-    <div class="pos-pin-section">
-      <span class="pos-pin-label">Enter Staff PIN</span>
+    <div class="pos-card-footer pos-card-footer-tablet-only">
+      <span class="pos-hint-text">Unlock persists for this shift. Staff sign-in opens after tablet OK.</span>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 1b — Staff PIN (requires tablet JWT; does not unlock device)
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="screen-login-staff" class="pos-screen">
+  <div class="pos-login-card pos-login-card-staff">
+
+    <div class="pos-branding">
+      <div class="pos-logo-row">
+        <div class="pos-logo-icon">✦</div>
+        <span class="pos-app-name">Cosmos ERP</span>
+      </div>
+      <span class="pos-module-badge pos-login-step-badge">Step 2 · Staff</span>
+      <p class="pos-login-tagline">Enter your PIN to unlock Store OS for this shift.</p>
+    </div>
+
+    <div class="pos-divider"></div>
+
+    <div class="pos-staff-login-store-banner">
+      <div class="pos-field-label">STORE</div>
+      <div id="pos-staff-store-line" class="pos-staff-store-line" aria-live="polite"></div>
+    </div>
+
+    <div class="pos-divider"></div>
+
+    <button type="button" class="pos-hint-link pos-staff-tablet-reset" id="btn-pos-sign-out-tablet" tabindex="0">
+      Sign out this tablet…
+    </button>
+
+    <div id="pos-staff-pin-block" class="pos-pin-section">
+      <span class="pos-pin-label">Enter staff PIN</span>
       <div class="pos-pin-dots" role="img" aria-label="PIN input progress">
         <div class="pos-pin-dot" data-idx="0"></div>
         <div class="pos-pin-dot" data-idx="1"></div>
         <div class="pos-pin-dot" data-idx="2"></div>
         <div class="pos-pin-dot" data-idx="3"></div>
       </div>
-      <div id="pin-error" class="pos-pin-error" role="alert" aria-live="polite"></div>
+      <div id="pin-error-staff" class="pos-pin-error" role="alert" aria-live="polite"></div>
     </div>
 
-    <!-- Number pad -->
-    <div class="pos-numpad" id="pos-numpad">
+    <div class="pos-numpad" id="pos-numpad-staff">
       <div class="pos-numpad-row">
-        <button class="pos-numpad-btn" data-digit="1" aria-label="1" tabindex="0">
+        <button type="button" class="pos-numpad-btn" data-digit="1" aria-label="1" tabindex="0">
           <span class="pos-numpad-num">1</span>
         </button>
-        <button class="pos-numpad-btn" data-digit="2" aria-label="2 ABC" tabindex="0">
+        <button type="button" class="pos-numpad-btn" data-digit="2" aria-label="2 ABC" tabindex="0">
           <span class="pos-numpad-num">2</span>
           <span class="pos-numpad-sub">ABC</span>
         </button>
-        <button class="pos-numpad-btn" data-digit="3" aria-label="3 DEF" tabindex="0">
+        <button type="button" class="pos-numpad-btn" data-digit="3" aria-label="3 DEF" tabindex="0">
           <span class="pos-numpad-num">3</span>
           <span class="pos-numpad-sub">DEF</span>
         </button>
       </div>
       <div class="pos-numpad-row">
-        <button class="pos-numpad-btn" data-digit="4" aria-label="4 GHI" tabindex="0">
+        <button type="button" class="pos-numpad-btn" data-digit="4" aria-label="4 GHI" tabindex="0">
           <span class="pos-numpad-num">4</span>
           <span class="pos-numpad-sub">GHI</span>
         </button>
-        <button class="pos-numpad-btn" data-digit="5" aria-label="5 JKL" tabindex="0">
+        <button type="button" class="pos-numpad-btn" data-digit="5" aria-label="5 JKL" tabindex="0">
           <span class="pos-numpad-num">5</span>
           <span class="pos-numpad-sub">JKL</span>
         </button>
-        <button class="pos-numpad-btn" data-digit="6" aria-label="6 MNO" tabindex="0">
+        <button type="button" class="pos-numpad-btn" data-digit="6" aria-label="6 MNO" tabindex="0">
           <span class="pos-numpad-num">6</span>
           <span class="pos-numpad-sub">MNO</span>
         </button>
       </div>
       <div class="pos-numpad-row">
-        <button class="pos-numpad-btn" data-digit="7" aria-label="7 PQRS" tabindex="0">
+        <button type="button" class="pos-numpad-btn" data-digit="7" aria-label="7 PQRS" tabindex="0">
           <span class="pos-numpad-num">7</span>
           <span class="pos-numpad-sub">PQRS</span>
         </button>
-        <button class="pos-numpad-btn" data-digit="8" aria-label="8 TUV" tabindex="0">
+        <button type="button" class="pos-numpad-btn" data-digit="8" aria-label="8 TUV" tabindex="0">
           <span class="pos-numpad-num">8</span>
           <span class="pos-numpad-sub">TUV</span>
         </button>
-        <button class="pos-numpad-btn" data-digit="9" aria-label="9 WXYZ" tabindex="0">
+        <button type="button" class="pos-numpad-btn" data-digit="9" aria-label="9 WXYZ" tabindex="0">
           <span class="pos-numpad-num">9</span>
           <span class="pos-numpad-sub">WXYZ</span>
         </button>
       </div>
       <div class="pos-numpad-row">
-        <button class="pos-numpad-btn ghost" aria-hidden="true" tabindex="-1"></button>
-        <button class="pos-numpad-btn" data-digit="0" aria-label="0" tabindex="0">
+        <button type="button" class="pos-numpad-btn ghost" aria-hidden="true" tabindex="-1"></button>
+        <button type="button" class="pos-numpad-btn" data-digit="0" aria-label="0" tabindex="0">
           <span class="pos-numpad-num">0</span>
         </button>
-        <button class="pos-numpad-btn" id="btn-backspace" aria-label="Delete" tabindex="0">
+        <button type="button" class="pos-numpad-btn" id="btn-backspace-staff" aria-label="Delete" tabindex="0">
           <span class="pos-numpad-num" style="font-size:20px">⌫</span>
         </button>
       </div>
@@ -124,86 +248,92 @@
 
     <div class="pos-divider"></div>
 
-    <!-- Footer / login button -->
     <div class="pos-card-footer">
       <button
         id="btn-unlock-pos"
         class="pos-login-btn"
-        aria-label="Unlock Store OS"
+        aria-label="Unlock Store OS with staff PIN"
         tabindex="0"
       >
         Unlock POS
       </button>
-      <span class="pos-hint-text">Each tablet logs in independently per shift</span>
+      <span class="pos-hint-text">Sign out from the sidebar only ends your staff session — the tablet stays unlocked.</span>
     </div>
 
   </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
-     SCREEN 2 — Login Success
+     SCREEN 1b — Set staff PIN (post-login, self-service)
      ═══════════════════════════════════════════════════════════════════ -->
-<div id="screen-login-success" class="pos-screen">
-  <div class="pos-success-card">
-    <div class="pos-check-circle" aria-hidden="true">✓</div>
-    <span class="pos-welcome-txt">Welcome back!</span>
-    <span id="success-staff-name" class="pos-staff-name"></span>
-    <span id="success-role-badge" class="pos-role-badge"></span>
-
-    <div id="success-store-box" class="pos-store-info-box">
-      <span class="pos-store-info-icon">🏪</span>
-      <span id="success-store-name" class="pos-store-info-name"></span>
+<div id="screen-pos-set-pin" class="pos-screen">
+  <div class="pos-login-card pos-setpin-card">
+    <div class="pos-branding">
+      <div class="pos-logo-row">
+        <div class="pos-logo-icon">✦</div>
+        <span class="pos-app-name">Cosmos ERP</span>
+      </div>
+      <span class="pos-module-badge">STORE OS</span>
     </div>
-
-    <div class="pos-success-divider"></div>
-
-    <div class="pos-session-row">
-      <span class="pos-session-lbl">Session started</span>
-      <span id="success-session-time" class="pos-session-time"></span>
+    <div class="pos-divider"></div>
+    <div class="pos-pin-section">
+      <span id="pos-setpin-step-label" class="pos-pin-label">New PIN (4 digits)</span>
+      <div id="pos-setpin-dots" class="pos-pin-dots" role="img" aria-label="Set PIN progress">
+        <div class="pos-pin-dot" data-sp-idx="0"></div>
+        <div class="pos-pin-dot" data-sp-idx="1"></div>
+        <div class="pos-pin-dot" data-sp-idx="2"></div>
+        <div class="pos-pin-dot" data-sp-idx="3"></div>
+      </div>
+      <div id="pos-setpin-error" class="pos-pin-error" role="alert" aria-live="polite"></div>
     </div>
-
-    <div class="pos-success-actions">
-      <button
-        id="btn-enter-pos"
-        class="pos-enter-btn"
-        aria-label="Enter Store OS"
-        tabindex="0"
-      >
-        Enter Store OS
-      </button>
-      <button
-        type="button"
-        class="pos-success-logout-btn pos-lk-logout-btn"
-        aria-label="Log out and return to PIN login"
-        tabindex="0"
-      >
-        Logout
-      </button>
+    <div class="pos-numpad" id="pos-setpin-numpad" aria-label="PIN keypad">
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn" data-sp-digit="1" aria-label="1" tabindex="0"><span class="pos-numpad-num">1</span></button>
+        <button type="button" class="pos-numpad-btn" data-sp-digit="2" aria-label="2" tabindex="0"><span class="pos-numpad-num">2</span></button>
+        <button type="button" class="pos-numpad-btn" data-sp-digit="3" aria-label="3" tabindex="0"><span class="pos-numpad-num">3</span></button>
+      </div>
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn" data-sp-digit="4" aria-label="4" tabindex="0"><span class="pos-numpad-num">4</span></button>
+        <button type="button" class="pos-numpad-btn" data-sp-digit="5" aria-label="5" tabindex="0"><span class="pos-numpad-num">5</span></button>
+        <button type="button" class="pos-numpad-btn" data-sp-digit="6" aria-label="6" tabindex="0"><span class="pos-numpad-num">6</span></button>
+      </div>
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn" data-sp-digit="7" aria-label="7" tabindex="0"><span class="pos-numpad-num">7</span></button>
+        <button type="button" class="pos-numpad-btn" data-sp-digit="8" aria-label="8" tabindex="0"><span class="pos-numpad-num">8</span></button>
+        <button type="button" class="pos-numpad-btn" data-sp-digit="9" aria-label="9" tabindex="0"><span class="pos-numpad-num">9</span></button>
+      </div>
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn ghost" aria-hidden="true" tabindex="-1"></button>
+        <button type="button" class="pos-numpad-btn" data-sp-digit="0" aria-label="0" tabindex="0"><span class="pos-numpad-num">0</span></button>
+        <button type="button" class="pos-numpad-btn" id="btn-setpin-backspace" aria-label="Delete" tabindex="0"><span class="pos-numpad-num" style="font-size:20px">⌫</span></button>
+      </div>
+    </div>
+    <div class="pos-divider"></div>
+    <div class="pos-card-footer" style="flex-direction:column;gap:10px">
+      <button type="button" id="btn-setpin-save" class="pos-login-btn" aria-label="Save PIN" tabindex="0">Save PIN</button>
+      <button type="button" id="btn-setpin-back" class="pos-success-logout-btn" style="width:100%" tabindex="0">Back to catalogue</button>
     </div>
   </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
-     SCREEN 3 — Product Catalogue
+     PRODUCT CATALOGUE
      Pencil: pencil-new.pen (repo root). PNG reference: pencil-exports/00-catalogue.png
-     Routes: /pos/catalogue (canonical), /pos/catelogue, /pos/catalog (aliases)
+     Routes: /storeos/catalogue (canonical); aliases include /pos/dashboard→dashboard→catalogue, /pos/catelogue, /pos/catalog
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-pos-catalogue" class="pos-screen">
   <div class="pos-lk-page">
-    <header class="pos-lk-header pos-lk-header--catalogue" aria-label="Store top bar">
-      <div class="pos-lk-header-left">
-        <span class="pos-lk-logo" aria-hidden="true">C</span>
-        <span class="pos-lk-brand">Cosmos</span>
-        <span class="pos-lk-crumb-sep">/</span>
-        <span class="pos-lk-crumb">Catalogue</span>
-      </div>
-      <div class="pos-lk-header-search" role="search" aria-label="Search catalogue by code">
-        <div class="pos-search-input-wrap pos-search-input-wrap--header">
+    <div class="pos-catalogue-topbar" aria-label="Catalogue quick controls">
+      <div class="pos-catalogue-topbar-search" role="search" aria-label="Search catalogue by code">
+        <div class="pos-search-input-wrap pos-search-input-wrap--header pos-search-input-wrap--with-scan">
           <input id="pos-search-code" class="pos-search-input" type="text" inputmode="search" autocomplete="off" placeholder="SKU / Barcode / Code" aria-label="Search product by SKU, barcode, or code">
-          <button id="btn-pos-search" class="pos-search-btn" aria-label="Run search" tabindex="0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg></button>
+          <button type="button" id="btn-pos-catalogue-scan" class="pos-search-btn pos-search-btn--scan" aria-label="Scan QR code or barcode" tabindex="0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 012-2h2"/><path d="M17 3h2a2 2 0 012 2v2"/><path d="M21 17v2a2 2 0 01-2 2h-2"/><path d="M7 21H5a2 2 0 01-2-2v-2"/><path d="M9 12h6"/><path d="M12 9v6"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>
+          </button>
+          <button type="button" id="btn-pos-search" class="pos-search-btn pos-search-btn--catalogue-submit" aria-label="Run search" tabindex="0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg></button>
         </div>
       </div>
-      <div class="pos-lk-header-cart-wrap">
+      <div class="pos-catalogue-topbar-cart">
         <button id="btn-pos-header-cart" class="pos-lk-header-cart-btn" type="button" aria-label="Open cart" tabindex="0">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="9" cy="20" r="1"></circle>
@@ -213,7 +343,7 @@
           <span id="pos-header-cart-count" class="pos-lk-header-cart-count" aria-live="polite" hidden>0</span>
         </button>
       </div>
-    </header>
+    </div>
     <nav class="pos-catalogue-filters" aria-label="Catalogue filters">
       <span class="pos-catalogue-filters-label">Catalogue scope</span>
       <div class="pos-catalogue-toggle" role="group" aria-label="Catalogue view">
@@ -252,16 +382,9 @@
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-pos-product" class="pos-screen">
   <div class="pos-lk-page">
-    <header class="pos-lk-header" aria-label="Store top bar">
-      <div class="pos-lk-header-left">
-        <button type="button" id="btn-pdp-back" class="pos-lk-back-link pos-pdp-header-back" aria-label="Back to catalogue" tabindex="0">‹ Back</button>
-        <span class="pos-lk-logo" aria-hidden="true">C</span>
-        <button type="button" class="pos-lk-brand-link" data-pos-nav="catalogue" aria-label="Cosmos home, back to catalogue" tabindex="0">Cosmos</button>
-        <span class="pos-lk-crumb-sep">/</span>
-        <span class="pos-lk-crumb">Product Page</span>
-      </div>
-    </header>
-    <p class="pos-lk-step-hint">Step 1: review product details and tap Select Lenses</p>
+    <div class="pos-lk-lens-toolbar pos-pdp-toolbar">
+      <button type="button" id="btn-pdp-back" class="pos-lk-back-link pos-pdp-header-back" aria-label="Back to catalogue" tabindex="0">‹ Back</button>
+    </div>
   <div class="pos-pdp-shell">
     <div class="pos-pdp-main">
       <section class="pos-pdp-media">
@@ -282,13 +405,17 @@
           <div id="pos-pdp-price" class="pos-pdp-price">₹0</div>
           <div id="pos-pdp-strike" class="pos-pdp-strike">₹0</div>
           <div id="pos-pdp-delivery" class="pos-pdp-delivery">⚡ Delivery by 6, May</div>
+          <div id="pos-pdp-colour-block" class="pos-pdp-colour-block" hidden>
+            <div class="pos-field-label pos-pdp-colour-lbl">COLOUR</div>
+            <div id="pos-pdp-colour-swatches" class="pos-sku-swatches pos-pdp-colour-swatches" role="group" aria-label="Frame colour"></div>
+            <div id="pos-pdp-colour-name" class="pos-pdp-colour-name" aria-live="polite"></div>
+          </div>
           <div class="pos-lk-pdp-chips">
             <span id="pos-pdp-chip-instore" class="pos-lk-pdp-chip-instore">In Store</span>
           </div>
         </div>
         <div class="pos-pdp-detail-footer">
           <div class="pos-pdp-total-wrap">
-            <div class="pos-pdp-total-lbl">Frame + Lens</div>
             <div id="pos-pdp-total" class="pos-pdp-total-val">₹0</div>
           </div>
           <button type="button" id="btn-pdp-select-lenses" class="pos-ob-proceed-btn" tabindex="0">Select Lenses</button>
@@ -307,15 +434,6 @@
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-pos-order-builder" class="pos-screen">
   <div class="pos-lk-page">
-    <header class="pos-lk-header" aria-label="Store top bar">
-      <div class="pos-lk-header-left">
-        <span class="pos-lk-logo" aria-hidden="true">C</span>
-        <span class="pos-lk-brand">Cosmos</span>
-        <span class="pos-lk-crumb-sep">/</span>
-        <span class="pos-lk-crumb">Cart</span>
-      </div>
-    </header>
-    <p class="pos-lk-step-hint">Step 5: review items, delivery, and proceed to payment</p>
     <div class="pos-visually-hidden">
       <span id="pos-ob-staff"></span>
       <span id="pos-ob-store"></span>
@@ -323,19 +441,23 @@
 
   <div class="pos-lk-cart-layout">
     <div class="pos-lk-cart-maincol">
-    <button id="btn-ob-back" type="button" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Back</button>
-    <div class="pos-lk-cart-main-head">
-      <h2 class="pos-lk-cart-title">Cart (<span id="pos-lk-cart-count">0</span> items)</h2>
-      <button type="button" class="pos-lk-text-link" aria-disabled="true">Help</button>
-    </div>
 
-    <section class="pos-ob-section">
+    <section class="pos-ob-section pos-lk-cart-order-kind" hidden aria-hidden="true">
       <div class="pos-ob-section-label">ORDER KIND</div>
       <div id="pos-ob-kind-wrap" class="pos-ob-kind-wrap">
         <span id="pos-ob-kind-chip" class="pos-ob-kind-chip" aria-live="polite">Instant</span>
-        <span class="pos-ob-kind-hint">Based on items in cart</span>
       </div>
     </section>
+
+    <div id="pos-ob-draft-banner" class="pos-ob-draft-banner" hidden role="region" aria-label="Saved draft"></div>
+
+    <div class="pos-lk-cart-toolbar">
+      <div class="pos-lk-cart-toolbar-start">
+        <button id="btn-ob-back" type="button" class="pos-lk-back-link pos-lk-cart-back-btn" aria-label="Back" tabindex="0">‹ Back</button>
+      </div>
+      <h2 class="pos-lk-cart-title" id="pos-lk-cart-heading-line">Cart · 0 items</h2>
+      <div class="pos-lk-cart-toolbar-end" aria-hidden="true"></div>
+    </div>
 
     <section class="pos-ob-section" style="background:transparent;border:none;padding:0">
       <div id="pos-ob-cart" class="pos-ob-cart" aria-live="polite"></div>
@@ -359,35 +481,24 @@
     </section>
     </div>
 
-    <aside class="pos-lk-cart-aside" aria-label="Offers and checkout">
-      <div class="pos-lk-side-card">
-        <h3>Offers</h3>
-        <div id="pos-lk-offers-banner" class="pos-lk-offer-banner">
-          <div class="pos-lk-offer-row">
-            <span>🏷  On Sale item discount</span>
-            <span id="pos-ob-discount-val">−₹0</span>
-          </div>
+    <aside class="pos-lk-cart-aside pos-lk-cart-aside--mid" aria-label="Customer profile">
+      <!-- 1. Customer (matches Pencil mid column — first) -->
+      <div class="pos-lk-side-card pos-lk-cart-customer-card pos-lk-bill-customer-strip" id="pos-lk-cart-customer-card">
+        <h3 class="pos-lk-bill-customer-h">Customer</h3>
+        <div id="pos-lk-cart-customer-body" class="pos-lk-cart-customer-body"></div>
+        <div class="pos-lk-cart-customer-actions">
+          <button type="button" id="btn-cart-customer-change" class="pos-lk-cart-customer-btn" tabindex="0">Change customer</button>
+          <button type="button" id="btn-cart-customer-search" class="pos-lk-cart-customer-btn pos-lk-cart-customer-btn--search" tabindex="0">Search customer</button>
         </div>
-        <button type="button" class="pos-lk-text-link" style="display:flex;justify-content:space-between;width:100%;align-items:center">
-          <span>View all coupons</span><span aria-hidden="true">›</span>
-        </button>
       </div>
-      <div class="pos-lk-side-card" style="padding:0;overflow:hidden">
-        <label class="pos-lk-radio-row" style="padding:14px;border-bottom:1px solid var(--lk-border)">
-          <input type="radio" name="pos-lk-delivery" value="customer" tabindex="0">
-          <span><strong>Deliver to customer</strong><br><span style="font-size:12px;color:var(--lk-text-muted)">Customer address on file</span></span>
-        </label>
-        <label class="pos-lk-radio-row" style="padding:14px;background:#ECFDF5;border-bottom:none;flex-direction:column;align-items:flex-start;gap:6px">
-          <span style="display:flex;align-items:center;gap:10px">
-            <input type="radio" name="pos-lk-delivery" value="store" checked tabindex="0">
-            <strong>Deliver to Store</strong>
-          </span>
-          <span style="font-size:12px;color:var(--lk-text-muted);padding-left:28px" id="pos-lk-delivery-store-name">Pickup at this location</span>
-          <span style="display:inline-flex;background:#D1FAE5;color:#065F46;font-size:11px;font-weight:800;padding:4px 8px;border-radius:999px;margin-left:28px">Extra ₹100 OFF (Prepaid Only)</span>
-        </label>
-      </div>
-      <div class="pos-lk-side-card pos-lk-summary-card">
-        <div class="pos-ob-summary-lines pos-lk-summary-lines">
+
+    </aside>
+
+    <aside class="pos-lk-cart-aside pos-lk-cart-aside--checkout" aria-label="Bill details, coupon, secure benefits and checkout">
+      <h3 class="pos-lk-bill-detail-h">Bill Details</h3>
+
+      <div class="pos-lk-side-card pos-lk-bill-summary-card">
+        <div class="pos-ob-summary-lines pos-lk-summary-lines pos-lk-bill-summary-lines">
           <div class="pos-ob-summary-row">
             <span class="pos-ob-summary-lbl">Subtotal</span>
             <span id="pos-ob-subtotal" class="pos-ob-summary-val">₹0</span>
@@ -397,18 +508,52 @@
             <span id="pos-ob-discount-line" class="pos-ob-summary-val">−₹0</span>
           </div>
           <div class="pos-ob-summary-row">
-            <span class="pos-ob-summary-lbl">GST</span>
+            <span id="pos-ob-gst-lbl" class="pos-ob-summary-lbl">GST</span>
             <span id="pos-ob-gst" class="pos-ob-summary-val">₹0</span>
           </div>
+          <div class="pos-ob-summary-row pos-lk-bill-dash-before-total" aria-hidden="true"></div>
           <div class="pos-ob-summary-row total">
             <span class="pos-ob-summary-lbl">Total</span>
             <span id="pos-ob-total" class="pos-ob-summary-val">₹0</span>
           </div>
         </div>
-        <button id="btn-ob-proceed" type="button" class="pos-lk-primary-wide pos-ob-proceed-btn" aria-label="Proceed to payment" tabindex="0">
-          ₹0 • Proceed to Payment
-        </button>
       </div>
+
+      <button type="button" class="pos-lk-bill-tap-row" id="btn-cart-apply-coupon" aria-label="Apply coupon">
+        <span class="pos-lk-bill-tap-row-text">
+          <span class="pos-lk-bill-tap-title">Apply Coupon</span>
+          <span class="pos-lk-bill-tap-sub">Check available offers</span>
+        </span>
+        <span class="pos-lk-bill-tap-go" aria-hidden="true">›</span>
+      </button>
+
+      <div id="pos-lk-offer-applied-card" class="pos-lk-side-card pos-lk-offer-applied-card" hidden>
+        <div class="pos-lk-offer-applied-copy">
+          <div id="pos-lk-offer-applied-title" class="pos-lk-offer-applied-title">Offer applied</div>
+          <div id="pos-lk-offer-applied-sub" class="pos-lk-offer-applied-sub">You are saving ₹0</div>
+        </div>
+        <button type="button" id="btn-cart-offer-remove" class="pos-lk-offer-remove-btn">REMOVE</button>
+      </div>
+
+      <!-- Eyewoot Secure -->
+      <button type="button" class="pos-lk-bill-tap-row" id="btn-cart-apply-insurance" aria-label="Insurance and secure benefits">
+        <span class="pos-lk-bill-tap-row-text">
+          <span class="pos-lk-bill-tap-title">Apply Insurance</span>
+          <span class="pos-lk-bill-tap-sub">Tap to view your benefits</span>
+        </span>
+        <span class="pos-lk-bill-tap-go" aria-hidden="true">›</span>
+      </button>
+
+      <div id="pos-lk-bill-benefit" class="pos-lk-bill-benefit" hidden role="region" aria-label="Membership or offer benefit" style="display:none">
+        <span class="pos-lk-bill-benefit-ic" aria-hidden="true">ⓘ</span>
+        <p id="pos-lk-bill-benefit-body" class="pos-lk-bill-benefit-body"></p>
+      </div>
+
+      <!-- Checkout + Save draft -->
+      <button id="btn-ob-proceed" type="button" class="pos-lk-primary-wide pos-ob-proceed-btn pos-lk-bill-checkout-btn" aria-label="Proceed to checkout" tabindex="0">
+        Proceed to checkout ›
+      </button>
+      <button type="button" id="btn-ob-save-draft" class="pos-lk-primary-wide pos-ob-save-draft-btn pos-lk-bill-save-draft-btn" tabindex="0">Save as draft</button>
     </aside>
   </div>
 
@@ -420,15 +565,6 @@
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-pos-customer" class="pos-screen">
   <div class="pos-lk-page">
-    <header class="pos-lk-header" aria-label="Store top bar">
-      <div class="pos-lk-header-left">
-        <span class="pos-lk-logo" aria-hidden="true">C</span>
-        <span class="pos-lk-brand">Cosmos</span>
-        <span class="pos-lk-crumb-sep">/</span>
-        <span class="pos-lk-crumb">Customer</span>
-      </div>
-    </header>
-    <p class="pos-lk-step-hint">Step 4: search or create a customer, then continue to cart</p>
   <div class="pos-cust-shell">
     <div class="pos-lk-lens-toolbar" style="margin-bottom:0">
       <button type="button" id="btn-cust-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Back</button>
@@ -463,28 +599,19 @@
      SCREEN — Lens configuration wizard
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-pos-lens" class="pos-screen">
-  <div class="pos-lk-page">
-    <header class="pos-lk-header" aria-label="Store top bar">
-      <div class="pos-lk-header-left">
-        <span class="pos-lk-logo" aria-hidden="true">C</span>
-        <span class="pos-lk-brand">Cosmos</span>
-        <span class="pos-lk-crumb-sep">/</span>
-        <span class="pos-lk-crumb">Lens Setup</span>
-      </div>
-    </header>
-    <p class="pos-lk-step-hint">Steps 2–4: pick power type, choose your lens, and add power details</p>
+  <div class="pos-lk-page pos-lk-page--lens-no-topbar">
   <div class="pos-lens-shell">
-    <div class="pos-lk-lens-toolbar">
-      <button type="button" id="btn-lens-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Back</button>
+    <div class="pos-lk-lens-toolbar pos-lk-lens-toolbar--solo">
       <h1 class="pos-lk-lens-heading">Add Lens Details</h1>
-      <button type="button" class="pos-lk-text-link" aria-disabled="true">Help</button>
     </div>
-    <nav id="pos-lk-lens-stepper" class="pos-lk-stepper" aria-label="Lens setup progress">
-      <div class="pos-lk-stepper-track">
-        <div class="pos-lk-step-dot active" data-step="0"><span>1</span><span>Power Type</span></div>
-        <div class="pos-lk-step-dot" data-step="1"><span>2</span><span>Lenses</span></div>
-        <div class="pos-lk-step-dot" data-step="2"><span>3</span><span>Add Power</span></div>
-      </div>
+    <nav id="pos-lk-lens-checkout-5" class="pos-checkout-5 pos-checkout-5--lens" aria-label="Order steps (lens setup)">
+      <ol class="pos-checkout-5__track" role="list">
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="1" aria-label="Step 1: Lens type">Type</button></li>
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="2" aria-label="Step 2: Lenses">Lenses</button></li>
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="3" aria-label="Step 3: Add-ons">Add-ons</button></li>
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="4" aria-label="Step 4: Customer and Rx">Customer</button></li>
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="5" aria-label="Step 5: Cart">Cart</button></li>
+      </ol>
     </nav>
     <div id="lens-step-indicator" class="pos-lens-steps" aria-live="polite" style="display:none"></div>
     <div id="lens-step-body" class="pos-lens-body"></div>
@@ -501,101 +628,71 @@
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-pos-payment" class="pos-screen">
   <div class="pos-lk-page">
-    <header class="pos-lk-header" aria-label="Store top bar">
-      <div class="pos-lk-header-left">
-        <span class="pos-lk-logo" aria-hidden="true">C</span>
-        <span class="pos-lk-brand">Cosmos</span>
-        <span class="pos-lk-crumb-sep">/</span>
-        <span class="pos-lk-crumb">Payment</span>
-      </div>
-    </header>
-    <p class="pos-lk-step-hint">Step 6: choose payment method and confirm</p>
   <div class="pos-lk-pay-grid">
     <div class="pos-lk-pay-main">
       <div class="pos-lk-lens-toolbar" style="margin-bottom:8px">
         <button type="button" id="btn-pay-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Cart</button>
       </div>
 
-      <!-- Delivery card (Pencil truck row at top of payment) -->
-      <div id="pay-delivery-slot" class="pos-lk-pay-card" style="padding:12px 14px">
+      <!-- Delivery card -->
+      <div id="pay-delivery-slot" class="pos-lk-pay-card" style="padding:12px 14px;margin-bottom:12px">
         <div class="pos-lk-delivery-line">
-          <div style="display:flex;align-items:flex-start;gap:10px">
-            <span aria-hidden="true" style="color:#0D9F7B;font-size:18px">🚚</span>
-            <div>
-              <strong id="pay-delivery-title">Deliver to Store</strong>
-              <div id="pay-delivery-sub" style="font-size:11px;color:var(--lk-text-muted);margin-top:2px">Pickup at this location</div>
+          <div style="display:flex;align-items:flex-start;gap:10px;flex:1">
+            <span aria-hidden="true" style="color:var(--teal);font-size:18px">🚚</span>
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <strong style="font-size:13px;color:var(--text1)">Delivery Mode</strong>
+              </div>
+              <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;width:fit-content">
+                <button type="button" id="pay-mode-store" class="pos-pay-mode-btn active" onclick="setPosDeliveryMode('STORE')" aria-pressed="true">
+                  🏪 Pickup at Store
+                </button>
+                <button type="button" id="pay-mode-home" class="pos-pay-mode-btn" onclick="setPosDeliveryMode('HOME')" aria-pressed="false">
+                  🏠 Home Delivery
+                </button>
+              </div>
+              <div id="pay-delivery-sub" style="font-size:11px;color:var(--text3);margin-top:6px"></div>
+              <!-- Date picker — visible for both modes -->
+              <div id="pay-delivery-date-row" style="margin-top:8px;display:flex;align-items:center;gap:8px">
+                <label for="pay-delivery-date" style="font-size:12px;color:var(--text2);white-space:nowrap">Expected Date</label>
+                <input type="date" id="pay-delivery-date" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;color:var(--text1);background:var(--bg)" aria-label="Expected delivery date">
+              </div>
             </div>
           </div>
-          <button type="button" class="pos-lk-text-link" style="font-size:12px">Change</button>
         </div>
       </div>
 
-      <!-- Recommended (Pencil CRED pay) — maps to CARD -->
+      <!-- Recommended — UPI (most used at store) -->
       <h4 class="pos-lk-pay-section-head">Recommended</h4>
-      <label class="pos-lk-pay-row recommended selected" data-method-row="CARD" data-method-key="cred">
+      <label class="pos-lk-pay-row recommended selected" data-method-row="UPI" data-method-key="upi">
         <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo cred" aria-hidden="true">C</span>
+          <span class="pos-lk-pay-row-logo upi-icon" aria-hidden="true">⬡</span>
           <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">CRED pay</span>
-            <span class="pos-lk-pay-row-sub">Save ₹100 · Linked card</span>
+            <span class="pos-lk-pay-row-title">UPI / QR Code</span>
+            <span class="pos-lk-pay-row-sub">Show QR · any UPI app</span>
           </span>
         </span>
-        <input type="radio" name="pos-lk-pay-method" value="CARD" data-method-key="cred" class="pos-lk-pay-radio" checked tabindex="0">
+        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="upi" class="pos-lk-pay-radio" checked tabindex="0">
       </label>
 
-      <!-- Cash on Delivery (disabled per Pencil) -->
-      <h4 class="pos-lk-pay-section-head">Cash On Delivery</h4>
-      <label class="pos-lk-pay-row disabled" data-method-row="COD">
+      <!-- Card -->
+      <h4 class="pos-lk-pay-section-head">Card</h4>
+      <label class="pos-lk-pay-row" data-method-row="CARD" data-method-key="card">
         <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo cash" aria-hidden="true">$</span>
+          <span class="pos-lk-pay-row-logo card-icon" aria-hidden="true">▣</span>
           <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">Cash on Delivery</span>
-            <span class="pos-lk-pay-row-sub">Not available for store pickup</span>
+            <span class="pos-lk-pay-row-title">Debit / Credit Card</span>
+            <span class="pos-lk-pay-row-sub">Swipe or tap on machine</span>
           </span>
         </span>
-        <button type="button" class="pos-lk-pay-row-link">Choose Home Delivery</button>
+        <input type="radio" name="pos-lk-pay-method" value="CARD" data-method-key="card" class="pos-lk-pay-radio" tabindex="0">
       </label>
+      <div id="pos-lk-pay-card-ref-wrap" class="pos-lk-pay-tendered-wrap" style="display:none">
+        <label for="pay-card-ref" style="font-size:12px;color:var(--text2)">Approval code / Last 4 digits <span style="color:var(--text3)">(optional)</span></label>
+        <input id="pay-card-ref" type="text" inputmode="text" placeholder="e.g. 123456 or 4242" aria-label="Card approval code or last 4 digits" style="max-width:220px">
+      </div>
 
-      <!-- UPI options -->
-      <h4 class="pos-lk-pay-section-head">UPI</h4>
-      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="gpay">
-        <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo gpay" aria-hidden="true">G</span>
-          <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">Google Pay</span>
-          </span>
-        </span>
-        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="gpay" class="pos-lk-pay-radio" tabindex="0">
-      </label>
-      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="paytm">
-        <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo paytm" aria-hidden="true">P</span>
-          <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">Paytm UPI</span>
-          </span>
-        </span>
-        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="paytm" class="pos-lk-pay-radio" tabindex="0">
-      </label>
-      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="credupi">
-        <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo cred-upi" aria-hidden="true">C</span>
-          <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">CRED UPI</span>
-          </span>
-        </span>
-        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="credupi" class="pos-lk-pay-radio" tabindex="0">
-      </label>
-      <label class="pos-lk-pay-row" data-method-row="UPI" data-method-key="amazon">
-        <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo amazon" aria-hidden="true">a</span>
-          <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">Amazon Pay UPI</span>
-          </span>
-        </span>
-        <input type="radio" name="pos-lk-pay-method" value="UPI" data-method-key="amazon" class="pos-lk-pay-radio" tabindex="0">
-      </label>
-
-      <!-- Cash (kept for POS staff fallback; not in Pencil but required for the till) -->
+      <!-- Cash (POS till) -->
       <h4 class="pos-lk-pay-section-head">Cash (POS till)</h4>
       <label class="pos-lk-pay-row" data-method-row="CASH" data-method-key="cash">
         <span class="pos-lk-pay-row-left">
@@ -610,12 +707,26 @@
       <div id="pos-lk-pay-tendered-wrap" class="pos-lk-pay-tendered-wrap">
         <label for="pay-tendered">Tendered (cash)</label>
         <input id="pay-tendered" type="text" inputmode="decimal" placeholder="Amount received" aria-label="Cash tendered">
+        <div id="pay-cash-change" style="font-size:12px;color:var(--green);font-weight:600;margin-top:4px;display:none"></div>
       </div>
 
+      <!-- Store Wallet (coming soon) -->
+      <h4 class="pos-lk-pay-section-head">Store Wallet</h4>
+      <label class="pos-lk-pay-row disabled" data-method-row="WALLET">
+        <span class="pos-lk-pay-row-left">
+          <span class="pos-lk-pay-row-logo wallet-icon" aria-hidden="true">◈</span>
+          <span class="pos-lk-pay-row-info">
+            <span class="pos-lk-pay-row-title">Loyalty Wallet</span>
+            <span class="pos-lk-pay-row-sub">Coming soon</span>
+          </span>
+        </span>
+        <span style="font-size:11px;color:var(--text3);background:var(--accL);color:var(--acc2);padding:2px 8px;border-radius:20px;font-weight:600">Soon</span>
+      </label>
+
       <select id="pay-method" class="pos-visually-hidden" aria-hidden="true" tabindex="-1" style="display:none">
+        <option value="UPI" selected>UPI</option>
+        <option value="CARD">Card</option>
         <option value="CASH">Cash</option>
-        <option value="CARD" selected>Card</option>
-        <option value="UPI">UPI</option>
       </select>
     </div>
 
@@ -624,6 +735,10 @@
         <h3 style="font-size:14px">Order Summary</h3>
         <div id="pay-summary-lines" class="pos-lk-order-lines" aria-live="polite"></div>
       </div>
+      <div class="pos-lk-side-card pos-lk-pay-offers-card">
+        <h3 style="font-size:14px;margin-bottom:8px">Active promos</h3>
+        <div id="pos-lk-pay-offers-list" class="pos-lk-offers-list pos-lk-pay-offers-list" role="radiogroup" aria-label="Confirm one offer for this payment" aria-live="polite"></div>
+      </div>
       <div id="pos-lk-pay-savings" class="pos-lk-saving-banner" hidden>
         <span aria-hidden="true">🏆</span>
         <span id="pos-lk-pay-savings-text">You're saving ₹0 on this order</span>
@@ -631,9 +746,30 @@
       <div class="pos-lk-side-card">
         <div class="pos-ob-summary-lines pos-lk-summary-lines">
           <div class="pos-ob-summary-row"><span class="pos-ob-summary-lbl">Subtotal</span><span id="pay-sub" class="pos-ob-summary-val">₹0</span></div>
-          <div class="pos-ob-summary-row"><span class="pos-ob-summary-lbl">GST</span><span id="pay-gst" class="pos-ob-summary-val">₹0</span></div>
+          <div id="pay-discount-row" class="pos-ob-summary-row pos-discount" style="display:none">
+            <span class="pos-ob-summary-lbl">Discount</span>
+            <span id="pay-discount" class="pos-ob-summary-val">−₹0</span>
+          </div>
+          <div class="pos-ob-summary-row">
+            <span id="pay-gst-lbl" class="pos-ob-summary-lbl">GST</span>
+            <span id="pay-gst" class="pos-ob-summary-val">₹0</span>
+          </div>
           <div class="pos-ob-summary-row total"><span class="pos-ob-summary-lbl">Total</span><span id="pay-total" class="pos-ob-summary-val">₹0</span></div>
         </div>
+      </div>
+      <!-- Advance / amount section -->
+      <div id="pay-amount-card" class="pos-lk-side-card" style="padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:12px;font-weight:600;color:var(--text2)" id="pay-amount-stage-label">Amount to collect</span>
+          <span id="pay-advance-badge" style="display:none;font-size:11px;background:var(--goldL);color:var(--gold);padding:2px 8px;border-radius:20px;font-weight:700">ADVANCE</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:22px;font-weight:800;color:var(--text1)">₹</span>
+          <input type="number" id="pay-amount-input" inputmode="decimal" min="0" step="1"
+            style="font-size:22px;font-weight:800;color:var(--text1);border:none;border-bottom:2px solid var(--border);background:transparent;width:100%;outline:none;padding:2px 0"
+            aria-label="Amount to collect">
+        </div>
+        <div id="pay-amount-hint" style="font-size:11px;color:var(--text3);margin-top:5px"></div>
       </div>
       <button type="button" id="btn-pay-submit" class="pos-lk-pay-cta" tabindex="0">
         <span aria-hidden="true">🔒</span>
@@ -651,15 +787,6 @@
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-pos-confirm" class="pos-screen">
   <div class="pos-lk-page">
-    <header class="pos-lk-header" aria-label="Store top bar">
-      <div class="pos-lk-header-left">
-        <span class="pos-lk-logo" aria-hidden="true">C</span>
-        <span class="pos-lk-brand">Cosmos</span>
-        <span class="pos-lk-crumb-sep">/</span>
-        <span class="pos-lk-crumb">Order Confirmation</span>
-      </div>
-    </header>
-    <p class="pos-lk-step-hint">Step 7: order complete — print or start a new order</p>
   <div class="pos-cust-shell" style="max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:22px">
     <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
       <div class="pos-confirm-check" aria-hidden="true">✓</div>
@@ -678,7 +805,11 @@
       <div id="confirm-breakdown" class="pos-confirm-breakdown" aria-live="polite"></div>
     </div>
 
-    <div style="display:flex;justify-content:center;gap:12px;padding-top:8px">
+    <div style="display:flex;justify-content:center;gap:12px;padding-top:8px;flex-wrap:wrap">
+      <button type="button" id="btn-confirm-whatsapp" class="pos-confirm-action-whatsapp" tabindex="0">
+        <span aria-hidden="true">💬</span>
+        <span>WhatsApp Receipt</span>
+      </button>
       <button type="button" id="btn-confirm-print" class="pos-confirm-action-print" tabindex="0">
         <span aria-hidden="true">🖨</span>
         <span>Print Bill</span>
@@ -723,15 +854,20 @@
           <button id="btn-pos-orders-search" class="pos-search-btn" tabindex="0">Search</button>
         </div>
       </div>
-      <div class="pos-filter-wrap" style="margin-left: 15px;">
-        <label class="pos-search-label" for="pos-orders-status">Filter by Status</label>
-        <select id="pos-orders-status" class="pos-search-input" style="min-width: 150px;">
-          <option value="">All Orders</option>
-          <option value="OPEN">Open</option>
-          <option value="PAID">Paid</option>
-          <option value="DELIVERED">Delivered</option>
-          <option value="CANCELLED">Cancelled</option>
-        </select>
+      <div class="pos-orders-status-tabs-wrap">
+        <span class="pos-search-label">Status</span>
+        <div id="pos-orders-status-tabs" class="pos-orders-status-tabs" role="tablist" aria-label="Filter orders by status">
+          <button type="button" role="tab" class="pos-order-tab active" data-pos-order-status="" aria-selected="true">Active</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="OPEN" aria-selected="false">Open</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="PAID" aria-selected="false">Paid</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="DELIVERED" aria-selected="false">Delivered</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="CANCELLED" aria-selected="false">Cancelled</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="PROCESSING" aria-selected="false">Processing (Lab)</button>
+        </div>
+        <p class="pos-orders-hint">Press and hold a row for full details · Double-click on desktop</p>
+      </div>
+      <div style="width:100%;margin-top:10px;font-size:12px;color:var(--text2);line-height:1.45;">
+        Completed sales are searchable in Cosmos CX Dashboard (completed filter). From StorePilot, open CX from the sidebar.
       </div>
     </section>
 
@@ -786,6 +922,15 @@
       <span class="pos-sb-label">New Order</span>
     </button>
 
+    <button type="button" class="pos-sb-item" data-pos-sb-nav="set-pin" aria-label="Set staff PIN" tabindex="0">
+      <span class="pos-sb-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M7 9V7a3 3 0 016 0v2"/>
+        </svg>
+      </span>
+      <span class="pos-sb-label">Set PIN</span>
+    </button>
+
     <button type="button" class="pos-sb-item" data-pos-sb-nav="orders" aria-label="Order History" tabindex="0">
       <span class="pos-sb-icon" aria-hidden="true">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -801,15 +946,186 @@
   <div class="pos-sb-divider"></div>
 
   <!-- Logout -->
-  <button type="button" class="pos-sb-item pos-sb-logout pos-lk-logout-btn" aria-label="Log out" tabindex="0">
+  <button type="button" class="pos-sb-item pos-sb-logout pos-lk-logout-btn" aria-label="Sign out staff session (tablet stays unlocked)" tabindex="0">
     <span class="pos-sb-icon" aria-hidden="true">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
         <path d="M7 3H4a1 1 0 00-1 1v12a1 1 0 001 1h3"/><polyline points="13 15 17 10 13 5"/><line x1="17" y1="10" x2="7" y2="10"/>
       </svg>
     </span>
-    <span class="pos-sb-label">Logout</span>
+    <span class="pos-sb-label">Staff logout</span>
   </button>
 </aside>
+
+<!-- Lens setup — “Customer not found” create modal (wired from pos.js) -->
+<div id="overlay-pos-lens-new-customer" class="pos-lens-newcust-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-lens-new-cust-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-lens-newcust-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-lens-new-cust-title" class="pos-lens-newcust-title">Customer not found</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-lens-new-cust-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <p id="pos-lens-new-cust-subtitle" class="pos-lens-newcust-sub"></p>
+    <label class="pos-field-label" for="pos-lens-new-cust-name">Full name</label>
+    <input id="pos-lens-new-cust-name" class="pos-search-input" type="text" autocomplete="name" style="width:100%;box-sizing:border-box;margin-bottom:10px" aria-required="true">
+    <label class="pos-field-label" for="pos-lens-new-cust-phone">Phone</label>
+    <input id="pos-lens-new-cust-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" style="width:100%;box-sizing:border-box;margin-bottom:16px" aria-required="true">
+    <div class="pos-lens-newcust-actions">
+      <button type="button" id="btn-pos-lens-new-cust-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
+      <button type="button" id="btn-pos-lens-new-cust-submit" class="pos-next-btn pos-lens-newcust-btn-submit">Create and link customer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lens setup — manual prescription (centered modal; same overlay pattern as new customer) -->
+<div id="overlay-pos-lens-rx-manual" class="pos-lens-newcust-overlay pos-lens-rx-manual-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-lens-rx-manual-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-lens-rx-manual-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-lens-rx-manual-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-lens-rx-manual-title" class="pos-lens-newcust-title">Enter power manually</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-lens-rx-manual-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <p class="pos-lens-newcust-sub" id="pos-lens-rx-manual-sub">Enter SPH, CYL, and axis for each eye. Use Plano if applicable.</p>
+    <div id="pos-lens-rx-manual-body"></div>
+    <div class="pos-lens-newcust-actions pos-lens-rx-manual-actions">
+      <button type="button" id="btn-pos-lens-rx-manual-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
+      <button type="button" id="btn-pos-lens-rx-manual-done" class="pos-next-btn pos-lens-newcust-btn-submit">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cart / nav — select or add customer (same centered overlay pattern as lens modals) -->
+<div id="overlay-pos-customer-picker" class="pos-lens-newcust-overlay pos-lens-customer-picker-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-cust-picker-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-cust-picker-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-lens-newcust-sheet--wide pos-lens-customer-picker-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-cust-picker-title" class="pos-lens-newcust-title">Select or add customer</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-cust-picker-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <div class="pos-cust-picker-scroll" id="pos-cust-picker-scroll">
+      <section class="pos-cust-section pos-cust-section--picker">
+        <label class="pos-field-label" for="cust-picker-search-input">Search phone or name</label>
+        <div class="pos-search-input-wrap">
+          <input id="cust-picker-search-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Phone / name" aria-label="Search customers">
+          <button type="button" id="cust-picker-btn-search" class="pos-search-btn" tabindex="0">Search</button>
+        </div>
+        <div id="cust-picker-results" class="pos-cust-results pos-cust-results--picker" role="list" aria-live="polite"></div>
+      </section>
+      <section class="pos-cust-section pos-cust-section--picker">
+        <div class="pos-ob-section-label">NEW WALK-IN</div>
+        <div class="pos-cust-form">
+          <label class="pos-field-label" for="cust-picker-new-name">Full name</label>
+          <input id="cust-picker-new-name" class="pos-search-input" type="text" autocomplete="name" aria-label="Customer full name">
+          <label class="pos-field-label" for="cust-picker-new-phone">Phone</label>
+          <input id="cust-picker-new-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" aria-label="Customer phone">
+          <label class="pos-field-label" for="cust-picker-new-email">Email (optional)</label>
+          <input id="cust-picker-new-email" class="pos-search-input" type="email" autocomplete="email" aria-label="Customer email">
+          <button type="button" id="cust-picker-btn-create" class="pos-next-btn" tabindex="0">Create customer</button>
+        </div>
+      </section>
+      <div id="cust-picker-banner" class="pos-cust-banner pos-cust-banner--picker" aria-live="polite"></div>
+    </div>
+    <div class="pos-lens-newcust-actions pos-cust-picker-actions">
+      <button type="button" id="cust-picker-btn-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
+      <button type="button" id="cust-picker-btn-done" class="pos-next-btn pos-lens-newcust-btn-submit">Continue to cart</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cart — Coupons overlay -->
+<div id="overlay-pos-cart-coupons" class="pos-lens-newcust-overlay pos-cart-coupon-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-cart-coupon-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-cart-coupon-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-cart-coupon-sheet">
+    <div class="pos-cart-coupon-top">
+      <button type="button" class="pos-lk-back-link pos-cart-coupon-back" id="btn-cart-coupon-back" aria-label="Back">‹</button>
+      <h2 id="pos-cart-coupon-title" class="pos-cart-coupon-title">Coupons for you</h2>
+      <span class="pos-cart-coupon-top-spacer" aria-hidden="true"></span>
+    </div>
+    <div class="pos-cart-coupon-filter-row">
+      <input id="cart-coupon-search" class="pos-search-input" type="text" inputmode="search" autocomplete="off" placeholder="Search offers" aria-label="Search offers">
+      <button type="button" id="btn-cart-coupon-search" class="pos-search-btn">Apply</button>
+    </div>
+    <div class="pos-cart-coupon-divider-row">
+      <span class="pos-cart-coupon-divider-line" aria-hidden="true"></span>
+      <span class="pos-cart-coupon-divider-label">Best offers for you</span>
+      <span class="pos-cart-coupon-divider-line" aria-hidden="true"></span>
+    </div>
+    <div id="pos-cart-coupon-list" class="pos-lk-offers-list pos-lk-pay-offers-list" role="radiogroup" aria-label="Available coupons"></div>
+  </div>
+</div>
+
+<!-- Catalogue — QR / barcode scanner (camera) -->
+<div id="overlay-pos-catalogue-scan" class="pos-lens-newcust-overlay pos-catalogue-scan-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-catalogue-scan-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-catalogue-scan-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-catalogue-scan-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-catalogue-scan-title" class="pos-lens-newcust-title">Scan QR or barcode</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-catalogue-scan-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <p id="pos-catalogue-scan-hint" class="pos-lens-newcust-sub">Point the camera at the code. The catalogue search runs when it is read.</p>
+    <div class="pos-catalogue-scan-video-wrap">
+      <video id="pos-barcode-scan-video" class="pos-catalogue-scan-video" muted playsinline></video>
+    </div>
+    <div class="pos-lens-newcust-actions pos-catalogue-scan-actions">
+      <button type="button" id="pos-catalogue-scan-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Order History — full detail (long-press / double-click row) -->
+<div id="overlay-pos-order-detail" class="pos-lens-newcust-overlay pos-order-detail-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pos-order-detail-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-order-detail-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-order-detail-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-order-detail-title" class="pos-lens-newcust-title">Order details</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-order-detail-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <div id="pos-order-detail-body" class="pos-order-detail-scroll"></div>
+  </div>
+</div>
+
+<!-- Lab balance — handover modal (Store Pilot parity + invoice snapshot) -->
+<div id="overlay-pos-handover" class="pos-lens-newcust-overlay pos-handover-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pos-handover-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-handover-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-handover-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-handover-title" class="pos-lens-newcust-title">Handover order</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-handover-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <div id="pos-handover-modal-body" class="pos-handover-modal-body"></div>
+  </div>
+</div>
+
+<div id="overlay-pos-handover-success" class="pos-lens-newcust-overlay pos-handover-success-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pos-handover-success-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-handover-success-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-handover-success-sheet">
+    <div class="pos-handover-success-icon" aria-hidden="true">✓</div>
+    <h2 id="pos-handover-success-title" class="pos-handover-success-title">Handover complete</h2>
+    <p id="pos-handover-success-sub" class="pos-handover-success-sub">Your order is handed over and invoiced.</p>
+    <p id="pos-handover-success-invoice" class="pos-handover-success-invoice"></p>
+    <div class="pos-handover-success-actions">
+      <button type="button" id="btn-pos-handover-success-whatsapp" class="pos-handover-success-btn pos-handover-success-btn-wa">WhatsApp</button>
+      <button type="button" id="btn-pos-handover-success-print" class="pos-handover-success-btn pos-handover-success-btn-print">Print</button>
+      <button type="button" id="btn-pos-handover-success-done" class="pos-handover-success-btn pos-handover-success-btn-done">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lab handover — invoice preview (in-page iframe; avoids pop-up blockers) -->
+<div id="overlay-pos-invoice-preview" class="pos-lens-newcust-overlay pos-invoice-preview-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pos-invoice-preview-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-invoice-preview-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-invoice-preview-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="pos-invoice-preview-title" class="pos-lens-newcust-title">Invoice preview</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="pos-invoice-preview-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <p id="pos-invoice-preview-meta" class="pos-invoice-preview-meta"></p>
+    <iframe id="pos-invoice-preview-frame" class="pos-invoice-preview-frame" title="Printed tax invoice preview"></iframe>
+    <div class="pos-invoice-preview-actions">
+      <button type="button" id="btn-pos-invoice-preview-print" class="pos-handover-btn pos-handover-btn-primary">Print</button>
+      <button type="button" id="btn-pos-invoice-preview-close" class="pos-handover-btn">Close</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>

@@ -1,0 +1,832 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#F7F5F2;--bg2:#FFFFFF;--bg3:#F0EDE8;--bg4:#E8E4DE;
+  --border:#E2DDD6;--border2:#D0C9C0;
+  --text:#1A1714;--text2:#6B6560;--text3:#A09890;
+  --plus:#5B4FE8;--plus2:#7B72F0;--plus-bg:#EEEDFE;--plus-border:#C8C4F8;
+  --gold:#C8860A;--gold-bg:#FDF3E0;--gold-border:#F0D090;
+  --green:#1A8C5A;--green-bg:#E8F7EF;
+  --red:#C43030;--red-bg:#FEF0F0;
+  --acc:#5B4FE8;
+  font-family:'DM Sans',sans-serif;
+  font-size:14px;
+}
+body{background:#D0CBC4;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px 0}
+
+/* Phone shell */
+.phone{width:390px;height:844px;background:var(--bg);border-radius:50px;overflow:hidden;position:relative;box-shadow:0 40px 80px rgba(0,0,0,.3),0 0 0 1px rgba(0,0,0,.15);display:flex;flex-direction:column}
+.phone-notch{height:50px;background:var(--bg2);display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;flex-shrink:0}
+.phone-time{font-size:15px;font-weight:600;color:var(--text);font-family:'DM Mono',monospace}
+.phone-screen{flex:1;overflow:hidden;position:relative;background:var(--bg)}
+.phone-home{height:34px;background:var(--bg2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.phone-home-bar{width:120px;height:5px;background:var(--text);border-radius:3px;opacity:.15}
+
+/* Screens */
+.screen{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;background:var(--bg);transition:transform .3s cubic-bezier(.4,0,.2,1),opacity .3s;transform:translateX(100%);opacity:0;pointer-events:none}
+.screen.active{transform:translateX(0);opacity:1;pointer-events:all}
+.screen.prev{transform:translateX(-30%);opacity:0;pointer-events:none}
+::-webkit-scrollbar{display:none}
+
+/* Top bar */
+.topbar{padding:16px 20px 12px;display:flex;align-items:center;gap:12px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+.tb-back{width:36px;height:36px;border-radius:10px;background:var(--bg3);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.tb-title{font-size:16px;font-weight:600;color:var(--text);font-family:'Syne',sans-serif}
+.tb-right{margin-left:auto}
+
+/* Bottom nav */
+.bottom-nav{position:absolute;bottom:0;left:0;right:0;height:72px;background:var(--bg2);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 8px;padding-bottom:8px;z-index:100}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:6px 0;border-radius:10px;transition:background .15s}
+.nav-item:hover{background:var(--bg3)}
+.nav-icon{width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:var(--text3)}
+.nav-item.active .nav-icon{color:var(--plus)}
+.nav-label{font-size:10px;color:var(--text3);font-weight:400}
+.nav-item.active .nav-label{color:var(--plus);font-weight:500}
+
+/* Cards */
+.card{background:var(--bg2);border-radius:16px;border:1px solid var(--border);overflow:hidden;margin:0 16px 12px}
+.card-pad{padding:16px}
+.section-label{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:1px;padding:16px 20px 8px}
+
+/* Buttons */
+.btn-primary{background:var(--plus);color:#fff;border:none;padding:14px 20px;border-radius:14px;font-size:15px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;width:100%;transition:opacity .15s}
+.btn-primary:hover{opacity:.9}
+.btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border);padding:12px 20px;border-radius:14px;font-size:14px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;width:100%;transition:all .15s}
+.btn-secondary:hover{border-color:var(--border2)}
+.btn-sm{padding:7px 14px;border-radius:9px;font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:'DM Sans',sans-serif;transition:opacity .15s}
+.btn-sm:hover{opacity:.8}
+
+/* Pills / badges */
+.pill-plus{background:var(--plus-bg);color:var(--plus);border:1px solid var(--plus-border);font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;font-family:'DM Mono',monospace;letter-spacing:.3px}
+.pill-gold{background:var(--gold-bg);color:var(--gold);border:1px solid var(--gold-border);font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px}
+.pill-green{background:var(--green-bg);color:var(--green);font-size:11px;padding:3px 10px;border-radius:20px}
+.pill-gray{background:var(--bg3);color:var(--text3);font-size:11px;padding:3px 10px;border-radius:20px}
+
+/* Input */
+.input-wrap{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:10px}
+.input-wrap input{background:transparent;border:none;outline:none;font-size:15px;color:var(--text);font-family:'DM Sans',sans-serif;flex:1;width:100%}
+.input-wrap input::placeholder{color:var(--text3)}
+
+/* Animations */
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.fade-up{animation:fadeUp .3s ease both}
+.fade-up:nth-child(2){animation-delay:.06s}
+.fade-up:nth-child(3){animation-delay:.12s}
+.fade-up:nth-child(4){animation-delay:.18s}
+.fade-up:nth-child(5){animation-delay:.24s}
+
+/* Divider */
+.divider{height:1px;background:var(--border);margin:0 20px}
+
+/* Row item */
+.row-item{display:flex;align-items:center;gap:12px;padding:13px 20px;cursor:pointer;transition:background .12s}
+.row-item:hover{background:var(--bg3)}
+.row-icon{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px}
+.row-title{font-size:14px;font-weight:500;color:var(--text)}
+.row-sub{font-size:12px;color:var(--text3);margin-top:1px}
+.row-right{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--text3)}
+
+/* Progress bar */
+.prog-bg{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.prog-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--gold),#F0B840)}
+
+/* Offer card */
+.offer-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start;cursor:pointer;transition:border-color .15s}
+.offer-card:hover{border-color:var(--border2)}
+.offer-card.plus-offer{border-left:3px solid var(--plus)}
+.offer-icon-box{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+
+/* Rx grid */
+.rx-block{background:var(--bg3);border-radius:12px;padding:14px 16px}
+.rx-eye-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+.rx-line{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)}
+.rx-line:last-child{border-bottom:none}
+.rx-k{font-size:12px;color:var(--text3)}
+.rx-v{font-size:12px;font-weight:500;color:var(--text);font-family:'DM Mono',monospace}
+
+/* History rows */
+.hist-row{display:flex;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.hist-row:hover{background:var(--bg3)}
+.hist-row:last-child{border-bottom:none}
+.hist-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="phone-notch"><div class="phone-time">9:41</div></div>
+  <div class="phone-screen" id="phone-screen">
+
+    <!-- ══════════════ SCREEN: HOME ══════════════ -->
+    <div class="screen active" id="screen-home" style="padding-bottom:80px">
+      <!-- Header -->
+      <div style="background:var(--plus);padding:24px 20px 28px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div>
+            <div style="font-size:13px;color:rgba(255,255,255,.7);font-weight:400">Good morning</div>
+            <div style="font-size:22px;font-weight:700;color:#fff;font-family:'Syne',sans-serif;margin-top:2px">Priya Mehta</div>
+          </div>
+          <div style="width:44px;height:44px;border-radius:14px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;font-family:'DM Mono',monospace;cursor:pointer" onclick="goTo('screen-profile')">PM</div>
+        </div>
+        <!-- Membership badge -->
+        <div style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:14px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="goTo('screen-membership')">
+          <div>
+            <div style="font-size:11px;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.8px;font-weight:500">✦ Eyewoot Plus</div>
+            <div style="font-size:15px;font-weight:600;color:#fff;margin-top:3px">Active · Expires Jan 2026</div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+      </div>
+
+      <!-- Loyalty points strip -->
+      <div class="card fade-up" style="margin-top:-14px;position:relative;z-index:1">
+        <div class="card-pad" style="cursor:pointer" onclick="goTo('screen-loyalty')">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div>
+              <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;font-weight:500">Loyalty Points</div>
+              <div style="font-size:28px;font-weight:700;color:var(--gold);font-family:'DM Mono',monospace;line-height:1.1;margin-top:4px">2,840</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px">≈ ₹284 value · Gold tier</div>
+            </div>
+            <div style="text-align:right">
+              <div class="pill-gold">Gold</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:6px">2,160 to Platinum</div>
+            </div>
+          </div>
+          <div class="prog-bg"><div class="prog-fill" style="width:57%"></div></div>
+        </div>
+      </div>
+
+      <!-- Quick actions -->
+      <div class="section-label fade-up">Quick Actions</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 16px 4px" class="fade-up">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s" onclick="goTo('screen-orders')" onmouseover="this.style.borderColor='var(--border2)'" onmouseout="this.style.borderColor='var(--border)'">
+          <div style="font-size:22px;margin-bottom:8px">📦</div>
+          <div style="font-size:14px;font-weight:500;color:var(--text)">My Orders</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">1 ready for pickup</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s" onclick="goTo('screen-power')" onmouseover="this.style.borderColor='var(--border2)'" onmouseout="this.style.borderColor='var(--border)'">
+          <div style="font-size:22px;margin-bottom:8px">👁️</div>
+          <div style="font-size:14px;font-weight:500;color:var(--text)">My Power</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">Last: Jan 2025</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s" onclick="goTo('screen-offers')" onmouseover="this.style.borderColor='var(--border2)'" onmouseout="this.style.borderColor='var(--border)'">
+          <div style="font-size:22px;margin-bottom:8px">🎁</div>
+          <div style="font-size:14px;font-weight:500;color:var(--text)">My Offers</div>
+          <div style="font-size:12px;color:var(--plus);margin-top:2px;font-weight:500">4 active offers</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s" onclick="goTo('screen-eyetests')" onmouseover="this.style.borderColor='var(--border2)'" onmouseout="this.style.borderColor='var(--border)'">
+          <div style="font-size:22px;margin-bottom:8px">🔬</div>
+          <div style="font-size:14px;font-weight:500;color:var(--text)">Eye Tests</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">3 visits</div>
+        </div>
+      </div>
+
+      <!-- Recent order -->
+      <div class="section-label fade-up">Recent Order</div>
+      <div class="card fade-up" style="cursor:pointer" onclick="goTo('screen-orders')">
+        <div class="card-pad">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:44px;height:44px;border-radius:12px;background:#F0EDE8;display:flex;align-items:center;justify-content:center;font-size:22px">🕶️</div>
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:500;color:var(--text)">Ray-Ban RB3547</div>
+              <div style="font-size:12px;color:var(--text3)">Gold · Single Vision · #ORD-2841</div>
+            </div>
+            <div style="text-align:right">
+              <div class="pill-green">Delivered</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:4px">₹4,800</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ SCREEN: MEMBERSHIP ══════════════ -->
+    <div class="screen" id="screen-membership" style="padding-bottom:80px">
+      <div class="topbar">
+        <div class="tb-back" onclick="goBack()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </div>
+        <div class="tb-title">Membership</div>
+      </div>
+
+      <!-- Plus hero card -->
+      <div style="background:linear-gradient(135deg,#4A40D4,#7B72F0);margin:16px;border-radius:20px;padding:22px;color:#fff">
+        <div style="font-size:11px;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:1.2px;font-weight:600">✦ Eyewoot Plus</div>
+        <div style="font-size:26px;font-weight:700;font-family:'Syne',sans-serif;margin-top:6px">Active Plan</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.75);margin-top:4px">Purchased 14 Jan 2025 · ₹999/year</div>
+        <div style="margin-top:16px;display:flex;gap:16px">
+          <div>
+            <div style="font-size:11px;color:rgba(255,255,255,.6)">Expires</div>
+            <div style="font-size:15px;font-weight:600;margin-top:2px">14 Jan 2026</div>
+          </div>
+          <div style="width:1px;background:rgba(255,255,255,.2)"></div>
+          <div>
+            <div style="font-size:11px;color:rgba(255,255,255,.6)">Days left</div>
+            <div style="font-size:15px;font-weight:600;margin-top:2px">259 days</div>
+          </div>
+          <div style="width:1px;background:rgba(255,255,255,.2)"></div>
+          <div>
+            <div style="font-size:11px;color:rgba(255,255,255,.6)">Tier</div>
+            <div style="font-size:15px;font-weight:600;margin-top:2px">Gold</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Benefits -->
+      <div class="section-label">Your Benefits</div>
+      <div class="card">
+        <div class="row-item">
+          <div class="row-icon" style="background:#EEEDFE">🎯</div>
+          <div><div class="row-title">20% off all frames</div><div class="row-sub">All brands, any store</div></div>
+          <div class="row-right"><span class="pill-green" style="font-size:10px">Active</span></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row-item">
+          <div class="row-icon" style="background:#E8F7EF">🔬</div>
+          <div><div class="row-title">Free annual eye test</div><div class="row-sub">1 of 1 remaining</div></div>
+          <div class="row-right"><span class="pill-green" style="font-size:10px">1 left</span></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row-item">
+          <div class="row-icon" style="background:#FDF3E0">✨</div>
+          <div><div class="row-title">Free lens upgrade</div><div class="row-sub">Anti-reflective on orders &gt;₹2,000</div></div>
+          <div class="row-right"><span class="pill-green" style="font-size:10px">Active</span></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row-item">
+          <div class="row-icon" style="background:#EEEDFE">⭐</div>
+          <div><div class="row-title">Priority appointments</div><div class="row-sub">Skip the queue at any store</div></div>
+          <div class="row-right"><span class="pill-green" style="font-size:10px">Active</span></div>
+        </div>
+      </div>
+
+      <!-- Dependents -->
+      <div class="section-label">Family Members (2/5)</div>
+      <div class="card">
+        <div class="row-item">
+          <div style="width:40px;height:40px;border-radius:11px;background:var(--plus-bg);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--plus);font-family:'DM Mono',monospace;flex-shrink:0">RK</div>
+          <div><div class="row-title">Raj Mehta</div><div class="row-sub">+91 98760 11111</div></div>
+          <div class="row-right"><span class="pill-plus" style="font-size:10px">Plus</span></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row-item">
+          <div style="width:40px;height:40px;border-radius:11px;background:var(--plus-bg);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--plus);font-family:'DM Mono',monospace;flex-shrink:0">AM</div>
+          <div><div class="row-title">Asha Mehta</div><div class="row-sub">+91 98760 22222</div></div>
+          <div class="row-right"><span class="pill-plus" style="font-size:10px">Plus</span></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row-item" style="cursor:pointer;opacity:.6">
+          <div style="width:40px;height:40px;border-radius:11px;background:var(--bg3);border:1.5px dashed var(--border2);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--text3);flex-shrink:0">+</div>
+          <div><div class="row-title" style="color:var(--text3)">Add family member</div><div class="row-sub">3 slots remaining</div></div>
+        </div>
+      </div>
+
+      <div style="padding:4px 16px 16px;display:flex;flex-direction:column;gap:8px">
+        <button class="btn-secondary">Renew Membership</button>
+      </div>
+    </div>
+
+    <!-- ══════════════ SCREEN: POWER & RX ══════════════ -->
+    <div class="screen" id="screen-power" style="padding-bottom:80px">
+      <div class="topbar">
+        <div class="tb-back" onclick="goBack()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </div>
+        <div class="tb-title">My Power</div>
+        <div class="tb-right"><span style="font-size:12px;color:var(--green);font-weight:500">● Jan 2025</span></div>
+      </div>
+
+      <div class="section-label">Current Prescription</div>
+      <div style="padding:0 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="rx-block">
+          <div class="rx-eye-label">Right Eye (RE)</div>
+          <div class="rx-line"><span class="rx-k">SPH</span><span class="rx-v">−2.50</span></div>
+          <div class="rx-line"><span class="rx-k">CYL</span><span class="rx-v">−0.75</span></div>
+          <div class="rx-line"><span class="rx-k">AXIS</span><span class="rx-v">180°</span></div>
+          <div class="rx-line"><span class="rx-k">ADD</span><span class="rx-v">+1.00</span></div>
+          <div class="rx-line"><span class="rx-k">VA</span><span class="rx-v">6/9</span></div>
+        </div>
+        <div class="rx-block">
+          <div class="rx-eye-label">Left Eye (LE)</div>
+          <div class="rx-line"><span class="rx-k">SPH</span><span class="rx-v">−2.00</span></div>
+          <div class="rx-line"><span class="rx-k">CYL</span><span class="rx-v">−0.50</span></div>
+          <div class="rx-line"><span class="rx-k">AXIS</span><span class="rx-v">175°</span></div>
+          <div class="rx-line"><span class="rx-k">ADD</span><span class="rx-v">+1.00</span></div>
+          <div class="rx-line"><span class="rx-k">VA</span><span class="rx-v">6/9</span></div>
+        </div>
+      </div>
+      <div style="padding:0 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px">
+        <div class="rx-block" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px">PD</div>
+          <div style="font-size:22px;font-weight:700;color:var(--text);font-family:'DM Mono',monospace;margin-top:4px">63mm</div>
+        </div>
+        <div class="rx-block" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px">Lens type</div>
+          <div style="font-size:16px;font-weight:600;color:var(--text);margin-top:4px">Progressive</div>
+        </div>
+      </div>
+
+      <div style="padding:4px 16px 8px">
+        <button class="btn-secondary" style="font-size:13px;padding:10px">Share Prescription as PDF</button>
+      </div>
+
+      <div class="section-label">Power History</div>
+      <div class="card">
+        <div class="hist-row">
+          <div class="hist-dot" style="background:var(--green)"></div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">January 2025</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">RE −2.50 · LE −2.00</div>
+          </div>
+          <span class="pill-gray" style="font-size:10px">Stable</span>
+        </div>
+        <div class="hist-row">
+          <div class="hist-dot" style="background:var(--border2)"></div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">March 2024</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">RE −2.25 · LE −1.75</div>
+          </div>
+          <span style="font-size:10px;background:var(--red-bg);color:var(--red);padding:3px 9px;border-radius:20px">↑ +0.25</span>
+        </div>
+        <div class="hist-row">
+          <div class="hist-dot" style="background:var(--border2)"></div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">August 2023</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">RE −2.00 · LE −1.50</div>
+          </div>
+          <span style="font-size:10px;background:var(--red-bg);color:var(--red);padding:3px 9px;border-radius:20px">↑ +0.25</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ SCREEN: ORDERS ══════════════ -->
+    <div class="screen" id="screen-orders" style="padding-bottom:80px">
+      <div class="topbar">
+        <div class="tb-back" onclick="goBack()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </div>
+        <div class="tb-title">My Orders</div>
+      </div>
+
+      <!-- In progress banner -->
+      <div style="background:var(--plus-bg);border:1px solid var(--plus-border);margin:16px;border-radius:14px;padding:14px 16px;cursor:pointer" onclick="goTo('screen-order-detail')">
+        <div style="font-size:11px;color:var(--plus);font-weight:600;text-transform:uppercase;letter-spacing:.8px">Ready for Pickup</div>
+        <div style="font-size:15px;font-weight:600;color:var(--text);margin-top:4px">Titan Eyewear TW1056</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">#ORD-2610 · Surat — Ring Road</div>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--plus)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          <span style="font-size:12px;color:var(--plus);font-weight:500">Available since 28 Apr</span>
+        </div>
+      </div>
+
+      <div class="section-label">All Orders</div>
+      <div class="card">
+        <div class="hist-row" onclick="goTo('screen-order-detail')">
+          <div style="width:42px;height:42px;border-radius:11px;background:#F0EDE8;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🕶️</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Titan Eyewear TW1056</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">#ORD-2610 · Progressive</div>
+          </div>
+          <div style="text-align:right">
+            <span class="pill-plus" style="font-size:10px;background:#E8F0FE;color:#1A56DB;border-color:#B4C6FC">Ready</span>
+            <div style="font-size:12px;color:var(--text3);margin-top:4px">₹6,200</div>
+          </div>
+        </div>
+        <div class="hist-row">
+          <div style="width:42px;height:42px;border-radius:11px;background:#F0EDE8;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🕶️</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Ray-Ban RB3547</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">#ORD-2841 · Single Vision</div>
+          </div>
+          <div style="text-align:right">
+            <span class="pill-green" style="font-size:10px">Delivered</span>
+            <div style="font-size:12px;color:var(--text3);margin-top:4px">₹4,800</div>
+          </div>
+        </div>
+        <div class="hist-row">
+          <div style="width:42px;height:42px;border-radius:11px;background:#F0EDE8;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">👓</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Fastrack FT1220</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">#ORD-1988 · Bifocal</div>
+          </div>
+          <div style="text-align:right">
+            <span class="pill-green" style="font-size:10px">Delivered</span>
+            <div style="font-size:12px;color:var(--text3);margin-top:4px">₹2,950</div>
+          </div>
+        </div>
+        <div class="hist-row">
+          <div style="width:42px;height:42px;border-radius:11px;background:#E8F7EF;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🔬</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Eye Test</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">#ORD-1540 · Dr. A. Sharma</div>
+          </div>
+          <div style="text-align:right">
+            <span class="pill-green" style="font-size:10px">Done</span>
+            <div style="font-size:12px;color:var(--text3);margin-top:4px">₹0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ SCREEN: ORDER DETAIL ══════════════ -->
+    <div class="screen" id="screen-order-detail" style="padding-bottom:80px">
+      <div class="topbar">
+        <div class="tb-back" onclick="goBack()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </div>
+        <div class="tb-title">#ORD-2610</div>
+        <div class="tb-right"><span style="font-size:11px;background:#E8F0FE;color:#1A56DB;border:1px solid #B4C6FC;padding:3px 10px;border-radius:20px;font-weight:500">Ready</span></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-pad">
+          <div style="display:flex;gap:14px;align-items:flex-start">
+            <div style="width:60px;height:60px;border-radius:14px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0">👓</div>
+            <div>
+              <div style="font-size:16px;font-weight:600;color:var(--text);font-family:'Syne',sans-serif">Titan Eyewear TW1056</div>
+              <div style="font-size:13px;color:var(--text3);margin-top:3px">Rimless · Black · Progressive</div>
+              <div style="font-size:15px;font-weight:600;color:var(--text);margin-top:6px">₹6,200</div>
+            </div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="card-pad" style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:var(--text3)">Ordered</span><span style="font-size:12px;color:var(--text)">20 Apr 2025</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:var(--text3)">Store</span><span style="font-size:12px;color:var(--text)">Surat — Ring Road</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:var(--text3)">Offer applied</span><span style="font-size:12px;color:var(--plus);font-weight:500">20% Plus discount (−₹1,240)</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:var(--text3)">Points earned</span><span style="font-size:12px;color:var(--gold);font-weight:500">+620 pts</span></div>
+        </div>
+      </div>
+
+      <!-- Timeline -->
+      <div class="section-label">Order Status</div>
+      <div class="card">
+        <div class="card-pad" style="display:flex;flex-direction:column;gap:0">
+          <div style="display:flex;gap:14px;align-items:flex-start;padding-bottom:16px">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:0">
+              <div style="width:12px;height:12px;border-radius:50%;background:var(--green);flex-shrink:0;margin-top:2px"></div>
+              <div style="width:2px;flex:1;background:var(--green);margin:3px 0;min-height:24px"></div>
+            </div>
+            <div><div style="font-size:13px;font-weight:500;color:var(--text)">Order placed</div><div style="font-size:11px;color:var(--text3);margin-top:2px">20 Apr · 11:32 AM</div></div>
+          </div>
+          <div style="display:flex;gap:14px;align-items:flex-start;padding-bottom:16px">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:0">
+              <div style="width:12px;height:12px;border-radius:50%;background:var(--green);flex-shrink:0;margin-top:2px"></div>
+              <div style="width:2px;flex:1;background:var(--green);margin:3px 0;min-height:24px"></div>
+            </div>
+            <div><div style="font-size:13px;font-weight:500;color:var(--text)">Lens fitting in progress</div><div style="font-size:11px;color:var(--text3);margin-top:2px">21 Apr · 10:00 AM</div></div>
+          </div>
+          <div style="display:flex;gap:14px;align-items:flex-start">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:0">
+              <div style="width:12px;height:12px;border-radius:50%;background:var(--plus);flex-shrink:0;margin-top:2px"></div>
+            </div>
+            <div><div style="font-size:13px;font-weight:500;color:var(--plus)">Ready for pickup</div><div style="font-size:11px;color:var(--text3);margin-top:2px">28 Apr · Store open 10AM–8PM</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ SCREEN: EYE TESTS ══════════════ -->
+    <div class="screen" id="screen-eyetests" style="padding-bottom:80px">
+      <div class="topbar">
+        <div class="tb-back" onclick="goBack()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </div>
+        <div class="tb-title">Eye Tests</div>
+      </div>
+
+      <!-- Free test CTA -->
+      <div style="background:var(--plus-bg);border:1px solid var(--plus-border);margin:16px;border-radius:14px;padding:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-size:11px;color:var(--plus);font-weight:600;text-transform:uppercase;letter-spacing:.8px">✦ Plus Benefit</div>
+            <div style="font-size:15px;font-weight:600;color:var(--text);margin-top:4px">1 free eye test available</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Use it before Jan 2026</div>
+          </div>
+          <button class="btn-sm" style="background:var(--plus);color:#fff;white-space:nowrap">Book Now</button>
+        </div>
+      </div>
+
+      <div class="section-label">Visit History</div>
+      <div class="card">
+        <div class="hist-row">
+          <div style="text-align:center;width:44px;flex-shrink:0">
+            <div style="font-size:18px;font-weight:700;color:var(--text);font-family:'DM Mono',monospace;line-height:1">14</div>
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-top:2px">Jan 25</div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Full Eye Examination</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Dr. A. Sharma · Ring Road</div>
+            <div style="margin-top:6px;display:flex;gap:6px">
+              <span style="font-size:11px;background:var(--bg3);color:var(--text2);padding:2px 8px;border-radius:5px;font-family:'DM Mono',monospace">RE −2.50</span>
+              <span style="font-size:11px;background:var(--bg3);color:var(--text2);padding:2px 8px;border-radius:5px;font-family:'DM Mono',monospace">LE −2.00</span>
+            </div>
+          </div>
+          <div style="color:var(--plus);font-size:12px;cursor:pointer;margin-left:8px;flex-shrink:0">PDF</div>
+        </div>
+        <div class="hist-row">
+          <div style="text-align:center;width:44px;flex-shrink:0">
+            <div style="font-size:18px;font-weight:700;color:var(--text);font-family:'DM Mono',monospace;line-height:1">10</div>
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-top:2px">Mar 24</div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Routine Check-up</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Dr. R. Patel · Ring Road</div>
+            <div style="margin-top:6px;display:flex;gap:6px">
+              <span style="font-size:11px;background:var(--bg3);color:var(--text2);padding:2px 8px;border-radius:5px;font-family:'DM Mono',monospace">RE −2.25</span>
+              <span style="font-size:11px;background:var(--bg3);color:var(--text2);padding:2px 8px;border-radius:5px;font-family:'DM Mono',monospace">LE −1.75</span>
+            </div>
+          </div>
+          <div style="color:var(--plus);font-size:12px;cursor:pointer;margin-left:8px;flex-shrink:0">PDF</div>
+        </div>
+        <div class="hist-row">
+          <div style="text-align:center;width:44px;flex-shrink:0">
+            <div style="font-size:18px;font-weight:700;color:var(--text);font-family:'DM Mono',monospace;line-height:1">22</div>
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-top:2px">Aug 23</div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">First Visit</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Dr. A. Sharma · Ring Road</div>
+          </div>
+          <div style="color:var(--plus);font-size:12px;cursor:pointer;margin-left:8px;flex-shrink:0">PDF</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ SCREEN: OFFERS ══════════════ -->
+    <div class="screen" id="screen-offers" style="padding-bottom:80px">
+      <div class="topbar">
+        <div class="tb-back" onclick="goBack()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </div>
+        <div class="tb-title">My Offers</div>
+      </div>
+
+      <div class="section-label">Plus Member Offers</div>
+      <div style="padding:0 16px;display:flex;flex-direction:column;gap:8px;margin-bottom:4px">
+        <div class="offer-card plus-offer">
+          <div class="offer-icon-box" style="background:var(--plus-bg)">🎯</div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span class="pill-plus" style="font-size:10px">✦ Plus</span></div>
+            <div style="font-size:14px;font-weight:600;color:var(--text)">20% off all frames</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">All brands · Any store</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Expires 14 Jan 2026</div>
+          </div>
+        </div>
+        <div class="offer-card plus-offer">
+          <div class="offer-icon-box" style="background:#E8F7EF">🔬</div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span class="pill-plus" style="font-size:10px">✦ Plus</span></div>
+            <div style="font-size:14px;font-weight:600;color:var(--text)">Free annual eye test</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">1 remaining this year</div>
+            <div style="font-size:11px;color:var(--green);margin-top:4px;font-weight:500">Book at any store</div>
+          </div>
+        </div>
+        <div class="offer-card plus-offer">
+          <div class="offer-icon-box" style="background:var(--gold-bg)">✨</div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span class="pill-gold" style="font-size:10px">Gold tier</span></div>
+            <div style="font-size:14px;font-weight:600;color:var(--text)">Free lens upgrade</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Anti-reflective on orders &gt;₹2,000</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Expires 30 Jun 2025</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-label">Open Offers</div>
+      <div style="padding:0 16px;display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+        <div class="offer-card">
+          <div class="offer-icon-box" style="background:var(--bg3)">🕶️</div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span class="pill-gray" style="font-size:10px">All customers</span></div>
+            <div style="font-size:14px;font-weight:600;color:var(--text)">₹200 off sunglasses</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Min bill ₹1,500 · Sunglasses only</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Expires 31 May 2025</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ SCREEN: LOYALTY ══════════════ -->
+    <div class="screen" id="screen-loyalty" style="padding-bottom:80px">
+      <div class="topbar">
+        <div class="tb-back" onclick="goBack()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </div>
+        <div class="tb-title">Loyalty Points</div>
+      </div>
+
+      <div style="background:linear-gradient(135deg,#C8860A,#E8A020);margin:16px;border-radius:20px;padding:22px;color:#fff">
+        <div style="font-size:11px;color:rgba(255,255,255,.75);text-transform:uppercase;letter-spacing:1px;font-weight:500">Available Balance</div>
+        <div style="font-size:40px;font-weight:700;font-family:'DM Mono',monospace;margin-top:6px;line-height:1">2,840</div>
+        <div style="font-size:14px;color:rgba(255,255,255,.8);margin-top:4px">≈ ₹284 redeemable value</div>
+        <div style="margin-top:16px;display:flex;gap:16px">
+          <div>
+            <div style="font-size:10px;color:rgba(255,255,255,.65)">Tier</div>
+            <div style="font-size:15px;font-weight:600;margin-top:2px">Gold</div>
+          </div>
+          <div style="width:1px;background:rgba(255,255,255,.2)"></div>
+          <div>
+            <div style="font-size:10px;color:rgba(255,255,255,.65)">To Platinum</div>
+            <div style="font-size:15px;font-weight:600;margin-top:2px">2,160 pts</div>
+          </div>
+          <div style="width:1px;background:rgba(255,255,255,.2)"></div>
+          <div>
+            <div style="font-size:10px;color:rgba(255,255,255,.65)">Expiry</div>
+            <div style="font-size:15px;font-weight:600;margin-top:2px">Dec 2025</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;height:6px;background:rgba(255,255,255,.25);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:57%;background:#fff;border-radius:3px;opacity:.85"></div>
+        </div>
+      </div>
+
+      <div class="section-label">Recent Activity</div>
+      <div class="card">
+        <div class="hist-row">
+          <div style="width:36px;height:36px;border-radius:10px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">+</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Earned · Bill #POS-2841</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">28 Apr 2025</div>
+          </div>
+          <span style="font-size:14px;font-weight:600;color:var(--green)">+120</span>
+        </div>
+        <div class="hist-row">
+          <div style="width:36px;height:36px;border-radius:10px;background:var(--red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">−</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Redeemed · Bill #POS-2610</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">20 Apr 2025</div>
+          </div>
+          <span style="font-size:14px;font-weight:600;color:var(--red)">−500</span>
+        </div>
+        <div class="hist-row">
+          <div style="width:36px;height:36px;border-radius:10px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px">+</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Earned · Raj's bill #POS-2580</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">12 Apr 2025</div>
+          </div>
+          <span style="font-size:14px;font-weight:600;color:var(--green)">+80</span>
+        </div>
+        <div class="hist-row">
+          <div style="width:36px;height:36px;border-radius:10px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px">+</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Earned · Bill #POS-2400</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">02 Feb 2025</div>
+          </div>
+          <span style="font-size:14px;font-weight:600;color:var(--green)">+295</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ SCREEN: PROFILE ══════════════ -->
+    <div class="screen" id="screen-profile" style="padding-bottom:80px">
+      <div class="topbar">
+        <div class="tb-back" onclick="goBack()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </div>
+        <div class="tb-title">My Profile</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;align-items:center;padding:24px 20px 16px">
+        <div style="width:72px;height:72px;border-radius:20px;background:var(--plus-bg);border:2px solid var(--plus-border);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:var(--plus);font-family:'DM Mono',monospace">PM</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text);font-family:'Syne',sans-serif;margin-top:12px">Priya Mehta</div>
+        <div style="font-size:13px;color:var(--text3);margin-top:3px">CX-00482 · Member since Jan 2023</div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <span class="pill-plus">✦ Plus Member</span>
+          <span class="pill-gold">Gold tier</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row-item">
+          <div class="row-icon" style="background:var(--bg3)">📱</div>
+          <div><div class="row-title">Phone</div><div class="row-sub">+91 98765 43210</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row-item">
+          <div class="row-icon" style="background:var(--bg3)">✉️</div>
+          <div><div class="row-title">Email</div><div class="row-sub">priya@gmail.com</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row-item">
+          <div class="row-icon" style="background:var(--bg3)">🎂</div>
+          <div><div class="row-title">Date of birth</div><div class="row-sub">14 Mar 1993 · Age 32</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row-item">
+          <div class="row-icon" style="background:var(--bg3)">🏪</div>
+          <div><div class="row-title">Home store</div><div class="row-sub">Surat — Ring Road</div></div>
+        </div>
+      </div>
+
+      <div class="section-label">Lifestyle Preferences</div>
+      <div class="card">
+        <div class="row-item">
+          <div class="row-icon" style="background:var(--bg3)">💻</div>
+          <div><div class="row-title">Screen time</div><div class="row-sub">8–10 hrs/day</div></div>
+          <div class="row-right"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row-item">
+          <div class="row-icon" style="background:var(--bg3)">🕶️</div>
+          <div><div class="row-title">Frame preference</div><div class="row-sub">Rimless · Lightweight · Neutral tones</div></div>
+          <div class="row-right"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
+        </div>
+        <div class="divider"></div>
+        <div class="row-item">
+          <div class="row-icon" style="background:var(--bg3)">💰</div>
+          <div><div class="row-title">Budget range</div><div class="row-sub">₹3,000 – ₹8,000</div></div>
+          <div class="row-right"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
+        </div>
+      </div>
+
+      <div style="padding:4px 16px 8px">
+        <button class="btn-secondary" style="color:var(--red);border-color:#F0C0C0">Sign Out</button>
+      </div>
+    </div>
+
+    <!-- Bottom Nav -->
+    <div class="bottom-nav">
+      <div class="nav-item active" id="nav-home" onclick="navTo('screen-home','nav-home')">
+        <div class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+        <div class="nav-label">Home</div>
+      </div>
+      <div class="nav-item" id="nav-orders" onclick="navTo('screen-orders','nav-orders')">
+        <div class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg></div>
+        <div class="nav-label">Orders</div>
+      </div>
+      <div class="nav-item" id="nav-offers" onclick="navTo('screen-offers','nav-offers')">
+        <div class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></div>
+        <div class="nav-label">Offers</div>
+      </div>
+      <div class="nav-item" id="nav-power" onclick="navTo('screen-power','nav-power')">
+        <div class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg></div>
+        <div class="nav-label">My Power</div>
+      </div>
+      <div class="nav-item" id="nav-profile" onclick="navTo('screen-profile','nav-profile')">
+        <div class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+        <div class="nav-label">Profile</div>
+      </div>
+    </div>
+
+  </div>
+  <div class="phone-home"><div class="phone-home-bar"></div></div>
+</div>
+
+<script>
+let history = ['screen-home'];
+
+function goTo(id) {
+  const current = history[history.length - 1];
+  if (current === id) return;
+  document.getElementById(current).classList.remove('active');
+  document.getElementById(current).classList.add('prev');
+  document.getElementById(id).classList.add('active');
+  document.getElementById(id).classList.remove('prev');
+  history.push(id);
+  setTimeout(() => {
+    const prev = document.getElementById(current);
+    if (prev) prev.classList.remove('prev');
+  }, 350);
+}
+
+function goBack() {
+  if (history.length <= 1) return;
+  const current = history.pop();
+  const prev = history[history.length - 1];
+  const curEl = document.getElementById(current);
+  const prevEl = document.getElementById(prev);
+  curEl.style.transform = 'translateX(100%)';
+  curEl.style.opacity = '0';
+  curEl.style.pointerEvents = 'none';
+  prevEl.classList.add('active');
+  prevEl.style.transform = '';
+  prevEl.style.opacity = '';
+  setTimeout(() => {
+    curEl.classList.remove('active');
+    curEl.style.transform = '';
+    curEl.style.opacity = '';
+    curEl.style.pointerEvents = '';
+  }, 320);
+}
+
+function navTo(screenId, navId) {
+  history = [screenId];
+  document.querySelectorAll('.screen').forEach(s => {
+    s.classList.remove('active','prev');
+    s.style.transform = '';
+    s.style.opacity = '';
+    s.style.pointerEvents = '';
+  });
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(screenId).classList.add('active');
+  document.getElementById(navId).classList.add('active');
+}
+</script>
+</body>
+</html>
