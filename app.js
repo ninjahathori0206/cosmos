@@ -90,10 +90,49 @@ const PORT = process.env.PORT || 4000;
 const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
 const API_RATE_LIMIT_WINDOW_MS = Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const API_RATE_LIMIT_MAX = Number(process.env.API_RATE_LIMIT_MAX || 1000);
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:4000')
+
+/** Canonical form for Origin comparison — trims paths, slashes, folds host case, drops default ports. */
+function normalizeCorsOrigin(origin) {
+  if (origin == null || typeof origin !== 'string') return '';
+  const trimmed = origin.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  try {
+    const u = new URL(trimmed);
+    const protocol = u.protocol.toLowerCase();
+    const hostname = u.hostname.toLowerCase();
+    let port = String(u.port || '');
+    if (protocol === 'https:' && port === '443') port = '';
+    if (protocol === 'http:' && port === '80') port = '';
+    const host =
+      hostname.includes(':') && !hostname.startsWith('[') ? `[${hostname}]` : hostname;
+    const portPart = port ? `:${port}` : '';
+    return `${protocol}//${host}${portPart}`;
+  } catch {
+    return '';
+  }
+}
+
+const allowedOriginEntries = (process.env.ALLOWED_ORIGINS || 'http://localhost:4000')
   .split(',')
-  .map((origin) => origin.trim())
+  .map((o) => o.trim())
   .filter(Boolean);
+
+const allowedOriginSet = new Set(
+  allowedOriginEntries.map(normalizeCorsOrigin).filter(Boolean)
+);
+
+const unparsableCorsOrigins = allowedOriginEntries.filter((raw) => !normalizeCorsOrigin(raw));
+if (unparsableCorsOrigins.length) {
+  console.warn(
+    '[cors] Invalid ALLOWED_ORIGINS entries (use full origins, e.g. https://app.example.com):',
+    unparsableCorsOrigins.join(' | ')
+  );
+}
+if (allowedOriginEntries.length && allowedOriginSet.size === 0) {
+  console.error(
+    '[cors] No valid ALLOWED_ORIGINS — cross-origin browser requests will be rejected until fixed.'
+  );
+}
 
 /** Private LAN / loopback origins (tablet on same Wi‑Fi, etc.). Used only when CORS allows it. */
 function isPrivateLanOrigin(origin) {
@@ -197,8 +236,14 @@ app.use(
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      if (!origin || allowedOriginSet.has(normalizeCorsOrigin(origin))) return callback(null, true);
       if (corsAllowPrivateLan && isPrivateLanOrigin(origin)) return callback(null, true);
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[cors] blocked Origin:',
+        origin,
+        '| add exact front-end URL to ALLOWED_ORIGINS on the server (https + host, comma-separated).'
+      );
       return callback(new Error('CORS not allowed'));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

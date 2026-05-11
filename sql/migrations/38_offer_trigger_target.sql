@@ -1,6 +1,8 @@
 PRINT N'--- 38_offer_trigger_target.sql ---';
 GO
 
+-- Columns only (separate batch from CHECK constraints — avoids "Invalid column name"
+-- when the engine resolves the constraint before ALTER visibility in one batch).
 IF OBJECT_ID(N'dbo.customer_offers', N'U') IS NOT NULL
 BEGIN
   IF COL_LENGTH('dbo.customer_offers', 'trigger_type') IS NULL
@@ -32,7 +34,11 @@ BEGIN
     ALTER TABLE dbo.customer_offers
       ADD scope_mode NVARCHAR(30) NOT NULL CONSTRAINT DF_co_scope_mode DEFAULT (N'ALL_PRODUCTS');
   END;
+END;
+GO
 
+IF OBJECT_ID(N'dbo.customer_offers', N'U') IS NOT NULL
+BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM sys.check_constraints
