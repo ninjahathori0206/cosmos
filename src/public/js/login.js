@@ -3,6 +3,23 @@ const LS_PASS = 'cosmos_login_password';
 
 let resolvedApiKey = '';
 
+/** Fetch failed before HTTP — not auth/CORS body; usually server down, wrong URL, or file:// page. */
+function isConnectionLayerFailure(err) {
+  if (!err) return false;
+  if (err.name === 'TypeError') return true;
+  const m = String(err.message || '');
+  return /networkerror|failed to fetch|load failed|network error/i.test(m);
+}
+
+function connectionFailureMessage() {
+  return (
+    'Cannot reach the API (connection failed). Do not change security settings to fix this. ' +
+    'Start the backend (e.g. npm run dev or node app.js), open this site at the same host and port as the server ' +
+    '(e.g. http://localhost:4000 — not a file:// page), confirm SQL Server is running if the app needs the database, ' +
+    'and check the terminal for startup errors.'
+  );
+}
+
 async function fetchBootstrap() {
   const res = await fetch('/config/bootstrap.json');
   const text = await res.text();
@@ -85,7 +102,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!form) return;
 
   fetchBootstrap().catch((err) => {
-    errorEl.textContent = err.message || 'Could not reach the server configuration endpoint.';
+    errorEl.textContent = isConnectionLayerFailure(err)
+      ? connectionFailureMessage()
+      : err.message || 'Could not reach the server configuration endpoint.';
   });
 
   form.addEventListener('submit', async (e) => {
@@ -105,7 +124,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } catch (bootErr) {
         cosmosBtnDone(btn);
-        errorEl.textContent = bootErr.message || 'Configuration load failed.';
+        errorEl.textContent = isConnectionLayerFailure(bootErr)
+          ? connectionFailureMessage()
+          : bootErr.message || 'Configuration load failed.';
         return;
       }
 
@@ -173,6 +194,10 @@ document.addEventListener('DOMContentLoaded', () => {
       window.location.href = dest;
     } catch (err) {
       cosmosBtnDone(btn);
+      if (isConnectionLayerFailure(err)) {
+        errorEl.textContent = connectionFailureMessage();
+        return;
+      }
       errorEl.textContent = err.message || 'Login failed';
     }
   });
