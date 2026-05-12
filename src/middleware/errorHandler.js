@@ -57,6 +57,15 @@ function errorHandler(err, req, res, next) {
     console.error('Error:', err.message, err.stack);
   }
 
+  // CORS middleware passes this through — return a clear message (prod otherwise hides err.message on 500).
+  if (/cors not allowed/i.test(String(err.message || ''))) {
+    return res.status(403).json({
+      success: false,
+      message:
+        'Browser blocked this request (CORS). On the server set ALLOWED_ORIGINS or APP_PUBLIC_ORIGIN to this site URL (e.g. http://147.93.153.10:4000). If nginx or another proxy sits in front of Node, set TRUST_PROXY=1 (or BEHIND_PROXY=1) and forward X-Forwarded-Host / X-Forwarded-Proto, then restart the API.'
+    });
+  }
+
   // Try to classify as a SQL error first
   const sqlClassification = classifySqlError(err);
   if (sqlClassification) {

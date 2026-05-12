@@ -113,7 +113,10 @@ function normalizeCorsOrigin(origin) {
   }
 }
 
-const allowedOriginEntries = (process.env.ALLOWED_ORIGINS || 'http://localhost:4000')
+const allowedOriginEntries = (
+  process.env.ALLOWED_ORIGINS ||
+  'http://localhost:4000,http://127.0.0.1:4000'
+)
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);
@@ -121,6 +124,10 @@ const allowedOriginEntries = (process.env.ALLOWED_ORIGINS || 'http://localhost:4
 const allowedOriginSet = new Set(
   allowedOriginEntries.map(normalizeCorsOrigin).filter(Boolean)
 );
+
+/** Single public URL of this app (scheme + host + port). Added to CORS allow list; use when behind a proxy where Host does not match the browser URL. */
+const appPublicOriginNorm = normalizeCorsOrigin(String(process.env.APP_PUBLIC_ORIGIN || '').trim());
+if (appPublicOriginNorm) allowedOriginSet.add(appPublicOriginNorm);
 
 const unparsableCorsOrigins = allowedOriginEntries.filter((raw) => !normalizeCorsOrigin(raw));
 if (unparsableCorsOrigins.length) {
@@ -144,7 +151,7 @@ function isPrivateLanOrigin(origin) {
   } catch {
     return false;
   }
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return true;
   if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
   if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
   const m = /^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(hostname);
@@ -158,6 +165,61 @@ function isPrivateLanOrigin(origin) {
 const corsAllowPrivateLan =
   !isProductionEnv &&
   !['0', 'false', 'no'].includes(String(process.env.CORS_ALLOW_PRIVATE_LAN || 'true').toLowerCase());
+
+function firstForwardedHeader(val) {
+  if (!val || typeof val !== 'string') return '';
+  return val.split(',')[0].trim();
+}
+
+/**
+ * Origin the browser used for this request, as seen by Node (or after reverse proxy).
+ * When trust proxy is enabled, prefers X-Forwarded-Host / X-Forwarded-Proto so
+ * nginx + Node on localhost still matches Origin http://PUBLIC_IP:4000.
+ */
+function effectiveRequestOrigin(req) {
+  if (!req) return '';
+  const trust = Boolean(req.app && req.app.get('trust proxy'));
+  let host = req.get('host') || '';
+  if (trust) {
+    const xfHost = firstForwardedHeader(req.get('x-forwarded-host'));
+    if (xfHost) host = xfHost;
+  }
+  if (!host) return '';
+  let proto = req.protocol || 'http';
+  if (trust) {
+    const xfProto = firstForwardedHeader(req.get('x-forwarded-proto')).toLowerCase();
+    if (xfProto === 'https' || xfProto === 'http') proto = xfProto;
+  }
+  if (proto !== 'https' && proto !== 'http') proto = 'http';
+  try {
+    return normalizeCorsOrigin(`${proto}://${host}`);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Browser Origin matches the URL this request is considered to have hit (Host or forwarded).
+ */
+function originMatchesRequestHost(origin, req) {
+  if (!origin || !req) return false;
+  try {
+    const requestOrigin = effectiveRequestOrigin(req);
+    return Boolean(requestOrigin) && requestOrigin === normalizeCorsOrigin(origin);
+  } catch {
+    return false;
+  }
+}
+
+if (
+  ['1', 'true', 'yes'].includes(
+    String(process.env.TRUST_PROXY || process.env.BEHIND_PROXY || '').toLowerCase()
+  )
+) {
+  app.set('trust proxy', 1);
+  // eslint-disable-next-line no-console
+  console.log('[cors] trust proxy enabled (TRUST_PROXY or BEHIND_PROXY) — using X-Forwarded-Host / X-Forwarded-Proto when present');
+}
 
 let apiRateLimitStore;
 if (process.env.RATE_LIMIT_REDIS_URL || process.env.REDIS_URL) {
@@ -272,25 +334,28 @@ app.use(
   })
 );
 
-// CORS (can be tightened later)
-app.use(
+// CORS — closure over `req` so same-host browser tabs always work (IP / hostname / loopback).
+app.use((req, res, next) => {
   cors({
-    origin: (origin, callback) => {
+    origin(origin, callback) {
       if (!origin || allowedOriginSet.has(normalizeCorsOrigin(origin))) return callback(null, true);
       if (corsAllowPrivateLan && isPrivateLanOrigin(origin)) return callback(null, true);
+      if (originMatchesRequestHost(origin, req)) return callback(null, true);
       // eslint-disable-next-line no-console
       console.warn(
         '[cors] blocked Origin:',
         origin,
-        '| add exact front-end URL to ALLOWED_ORIGINS on the server (https + host, comma-separated).'
+        '| set ALLOWED_ORIGINS or APP_PUBLIC_ORIGIN; behind nginx use TRUST_PROXY=1 so X-Forwarded-* match the browser URL.'
       );
-      return callback(new Error('CORS not allowed'));
+      const corsErr = new Error('CORS not allowed');
+      corsErr.statusCode = 403;
+      return callback(corsErr);
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
     maxAge: 86400
-  })
-);
+  })(req, res, next);
+});
 
 // Body parsing
 // Keep uploads on multer routes; allow larger metadata payloads on JSON/urlencoded endpoints.
