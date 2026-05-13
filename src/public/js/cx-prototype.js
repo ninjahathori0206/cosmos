@@ -1,23 +1,14 @@
 /* ─── CX (Customer Experience) — Analytics shell ───────────────────────────── */
 
-const CX_API_KEY_FALLBACK = 'CHANGE_ME_API_KEY'
-
-function cxResolveApiKey () {
-  try {
-    var k = sessionStorage.getItem('cosmos_api_key')
-    if (k && String(k).trim()) return String(k).trim()
-  } catch (_) {}
-  return CX_API_KEY_FALLBACK
-}
-
 function getToken () {
   return sessionStorage.getItem('cosmos_token') || ''
 }
 
 async function cxApiFetch (method, path, body) {
+  const apiKey = await window.cosmosEnsureApiKey()
   const headers = {
     'Content-Type': 'application/json',
-    'X-API-Key': cxResolveApiKey(),
+    'X-API-Key': apiKey,
     Authorization: 'Bearer ' + getToken()
   }
   const res = await fetch(path, {

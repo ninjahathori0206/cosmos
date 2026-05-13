@@ -41,10 +41,13 @@ cosmos/
 │
 ├── sql/
 │   ├── create_database.sql         # Create CosmosERP database
-│   ├── tables/                     # Table definitions (run in order)
+│   ├── manifest.json               # Canonical order for sql/tables (run-sql.js)
+│   ├── README.md                   # SQL deploy guide
+│   ├── tables/                     # Table definitions (order = manifest.json)
 │   │   ├── 01_shared_core.sql
 │   │   ├── 02_command_unit.sql
 │   │   ├── 03_foundry_core.sql
+│   │   ├── 04_branding_agents.sql
 │   │   └── 04_foundry_stock_rate.sql
 │   ├── sp/                         # Stored procedures
 │   │   ├── auth.sql
@@ -58,8 +61,13 @@ cosmos/
 │   │   ├── foundry_lookups.sql
 │   │   ├── system_settings.sql
 │   │   └── ...
-│   ├── alter/                      # Incremental schema migrations (01–11)
+│   ├── alter/                      # Early incremental DDL (numeric order)
+│   ├── migrations/               # Ongoing release migrations
 │   └── seed/                       # Seed data
+│
+├── docs/
+│   └── database/
+│       └── schema-overview.md      # How SQL is layered and deployed
 │
 ├── src/
 │   ├── api/                        # REST API route handlers
@@ -152,23 +160,16 @@ Run these SQL scripts against your MSSQL instance **in order**:
 # 1. Create the database
 sqlcmd -S localhost -U sa -P password -i sql/create_database.sql
 
-# 2. Create tables (run in numbered order)
-sqlcmd -S localhost -U sa -P password -d CosmosERP -i sql/tables/01_shared_core.sql
-sqlcmd -S localhost -U sa -P password -d CosmosERP -i sql/tables/02_command_unit.sql
-sqlcmd -S localhost -U sa -P password -d CosmosERP -i sql/tables/03_foundry_core.sql
-sqlcmd -S localhost -U sa -P password -d CosmosERP -i sql/tables/04_foundry_stock_rate.sql
+# 2. Create tables in the order listed in sql/manifest.json (or run the helper below)
+npm run sql:tables
 
-# 3. Deploy all stored procedures (sp/ folder)
-# 4. Run alter scripts in order (alter/01_ through alter/11_)
+# 3. Deploy all stored procedures (sql/sp/)
+# 4. Run sql/alter/*.sql in numeric filename order, then sql/migrations/* as needed
 # 5. Seed initial data
 sqlcmd -S localhost -U sa -P password -d CosmosERP -i sql/seed/01_seed_core.sql
 ```
 
-Or use the helper script:
-
-```bash
-node scripts/run-sql.js
-```
+See `sql/README.md` and `docs/database/schema-overview.md` for layout and deploy order.
 
 ### 5. Start the server
 

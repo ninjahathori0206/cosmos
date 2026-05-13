@@ -441,6 +441,7 @@ AS BEGIN
   LEFT JOIN dbo.stock_balances sb
     ON sb.sku_id = pic.linked_sku_id
    AND sb.location_type = 'WAREHOUSE'
+   AND sb.location_id = dbo.fn_Foundry_PrimaryWarehouseLocationId()
   WHERE pi.header_id = @header_id
   ORDER BY pi.item_id, pic.colour_id;
 END;
@@ -452,6 +453,8 @@ GO
 CREATE PROCEDURE dbo.sp_PurchaseHeader_WarehouseReady @header_id INT
 AS BEGIN
   SET NOCOUNT ON;
+  DECLARE @wh_id INT = dbo.fn_Foundry_PrimaryWarehouseLocationId();
+  DECLARE @wh_name VARCHAR(200) = LEFT(CAST(dbo.fn_Foundry_WarehouseDisplayName() AS VARCHAR(200)), 200);
   BEGIN TRY
     IF NOT EXISTS (
       SELECT 1
@@ -484,10 +487,11 @@ AS BEGIN
       ON sk.sku_id = sb.sku_id
      AND sk.header_id = @header_id
      AND sb.location_type = 'WAREHOUSE'
+     AND sb.location_id = @wh_id
     JOIN dbo.purchase_item_colours pic ON pic.colour_id = sk.item_colour_id;
 
-    INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, qty, last_updated)
-    SELECT sk.sku_id, 'WAREHOUSE', 1, pic.quantity, DATEADD(MINUTE, 330, SYSUTCDATETIME())
+    INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, location_name, qty, last_updated)
+    SELECT sk.sku_id, 'WAREHOUSE', @wh_id, @wh_name, pic.quantity, DATEADD(MINUTE, 330, SYSUTCDATETIME())
     FROM dbo.skus sk
     JOIN dbo.purchase_item_colours pic ON pic.colour_id = sk.item_colour_id
     WHERE sk.header_id = @header_id
@@ -496,6 +500,7 @@ AS BEGIN
         FROM dbo.stock_balances sb
         WHERE sb.sku_id = sk.sku_id
           AND sb.location_type = 'WAREHOUSE'
+          AND sb.location_id = @wh_id
       );
 
     -- Restock lines: increase total purchased qty and warehouse stock on the linked SKU.
@@ -515,12 +520,13 @@ AS BEGIN
     JOIN dbo.purchase_item_colours pic
       ON pic.linked_sku_id = sb.sku_id
      AND sb.location_type = 'WAREHOUSE'
+     AND sb.location_id = @wh_id
     JOIN dbo.purchase_items pi ON pi.item_id = pic.item_id
     WHERE pi.header_id = @header_id
       AND pic.linked_sku_id IS NOT NULL;
 
-    INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, qty, last_updated)
-    SELECT pic.linked_sku_id, 'WAREHOUSE', 1, pic.quantity, DATEADD(MINUTE, 330, SYSUTCDATETIME())
+    INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, location_name, qty, last_updated)
+    SELECT pic.linked_sku_id, 'WAREHOUSE', @wh_id, @wh_name, pic.quantity, DATEADD(MINUTE, 330, SYSUTCDATETIME())
     FROM dbo.purchase_item_colours pic
     JOIN dbo.purchase_items pi ON pi.item_id = pic.item_id
     WHERE pi.header_id = @header_id
@@ -530,6 +536,7 @@ AS BEGIN
         FROM dbo.stock_balances sb
         WHERE sb.sku_id = pic.linked_sku_id
           AND sb.location_type = 'WAREHOUSE'
+          AND sb.location_id = @wh_id
       );
 
     SELECT header_id, pipeline_status, warehouse_at

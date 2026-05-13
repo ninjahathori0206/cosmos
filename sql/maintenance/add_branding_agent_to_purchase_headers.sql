@@ -11,7 +11,7 @@
       -i sql/maintenance/add_branding_agent_to_purchase_headers.sql
 
   Prerequisites:
-    - sql/tables/branding_agents.sql must have been run first.
+    - sql/tables/04_branding_agents.sql must have been run first.
 */
 USE [CosmosERP];
 GO

@@ -83,7 +83,7 @@ BEGIN
       RETURN;
     END;
 
-    INSERT INTO dbo.users (username, password, full_name, email, phone, role_key, store_id, is_active, created_at, updated_at)
+    INSERT INTO dbo.users (username, password_hash, full_name, email, phone, role_key, store_id, is_active, created_at, updated_at)
     VALUES (@username, @password, @full_name, @email, @phone, @role_key, @store_id, ISNULL(@is_active, 1), DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
 
     DECLARE @new_id INT = SCOPE_IDENTITY();
@@ -129,7 +129,7 @@ BEGIN
       role_key   = @role_key,
       store_id   = @store_id,
       is_active  = ISNULL(@is_active, 1),
-      password   = CASE WHEN @password IS NOT NULL AND LEN(@password) > 0 THEN @password ELSE password END,
+      password_hash = CASE WHEN @password IS NOT NULL AND LEN(@password) > 0 THEN @password ELSE password_hash END,
       updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE user_id = @user_id;
 

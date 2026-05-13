@@ -9,7 +9,7 @@ BEGIN
   CREATE TABLE dbo.users (
     user_id      INT IDENTITY(1,1) PRIMARY KEY,
     username     VARCHAR(100) NOT NULL,
-    password     VARCHAR(200) NOT NULL,
+    password_hash VARCHAR(200) NOT NULL,
     full_name    VARCHAR(200) NOT NULL,
     email        VARCHAR(200) NULL,
     phone        VARCHAR(20) NULL,

@@ -31,3 +31,7 @@ Thumbs.db
 # Build artifacts
 dist/
 build/
+
+# Local installers / SSL bundles (do not commit)
+RealVNC*.exe
+SSL WEBSITE/

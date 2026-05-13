@@ -1,5 +1,6 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Table: dbo.branding_agents
+-- Deploy order: after Foundry core (purchase pipeline references agents via FK alters).
 -- Master list of external branding vendors (screen printers, label applicators, etc.)
 -- that receive dispatched goods during Stage 3 of the procurement pipeline.
 -- ─────────────────────────────────────────────────────────────────────────────

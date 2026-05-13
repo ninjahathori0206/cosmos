@@ -1,4 +1,3 @@
-const API_KEY = 'CHANGE_ME_API_KEY';
 
 const COMMAND_UNIT_PAGE_PATHS = {
   dashboard: '/command-unit/dashboard',
@@ -47,11 +46,23 @@ function fmtIstTime(v) {
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const token = sessionStorage.getItem('cosmos_token');
   const userRaw = sessionStorage.getItem('cosmos_user');
 
   if (!token || !userRaw) {
+    window.location.href = '/';
+    return;
+  }
+
+  let API_KEY;
+  try {
+    API_KEY = await window.cosmosEnsureApiKey();
+  } catch (e) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(e.message || 'Invalid or missing API key');
+    sessionStorage.removeItem('cosmos_token');
+    sessionStorage.removeItem('cosmos_user');
+    sessionStorage.removeItem('cosmos_api_key');
     window.location.href = '/';
     return;
   }
@@ -89,6 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else {
       sessionStorage.removeItem('cosmos_token');
       sessionStorage.removeItem('cosmos_user');
+      sessionStorage.removeItem('cosmos_api_key');
       window.location.href = '/';
     }
     return;
@@ -977,6 +989,41 @@ document.addEventListener('DOMContentLoaded', () => {
     return gaps;
   }
 
+  async function deleteRoleByKey(roleKey) {
+    const key = String(roleKey || '').trim();
+    if (!key) return;
+    if (key.toLowerCase() === 'super_admin') {
+      if (typeof window.cosmosToastWarn === 'function') {
+        window.cosmosToastWarn('The super_admin role cannot be deleted.');
+      }
+      throw new Error('Cannot delete super_admin');
+    }
+    await apiDelete(`/api/roles/${encodeURIComponent(key)}`);
+    await loadRoles();
+  }
+
+  async function handleDeleteRoleFromList(roleKey, btn) {
+    const key = String(roleKey || '').trim();
+    if (!key) return;
+    if (key.toLowerCase() === 'super_admin') {
+      if (typeof window.cosmosToastWarn === 'function') {
+        window.cosmosToastWarn('The super_admin role cannot be deleted.');
+      }
+      return;
+    }
+    if (!window.confirm(`Delete role "${key}"? This cannot be undone.`)) return;
+    if (btn && typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn);
+    try {
+      await deleteRoleByKey(key);
+      if (btn && typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn);
+    } catch (err) {
+      if (btn && typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError(err.message || 'Failed to delete role');
+      }
+    }
+  }
+
   async function loadRoles() {
     const tbody = document.getElementById('roles-tbody');
     if (!tbody) return;
@@ -992,12 +1039,18 @@ document.addEventListener('DOMContentLoaded', () => {
       roles.forEach((r) => {
         const tr = document.createElement('tr');
         tr.dataset.roleKey = r.role_key;
+        const rk = String(r.role_key || '').toLowerCase();
+        const deleteBtn =
+          rk === 'super_admin'
+            ? ''
+            : `<button type="button" class="topbar-btn role-delete-list-btn" style="padding:5px 10px;font-size:12px;border-color:var(--red,#DC2626);color:var(--red,#DC2626)">Delete</button>`;
         tr.innerHTML = `
           <td><div class="fw-600 font-mono">${escHtml(r.role_key)}</div><div class="td-muted">${escHtml(r.display_name)}</div></td>
           <td><span class="badge badge-green">Active</span></td>
-          <td style="display:flex;gap:6px;padding:8px 12px">
-            <button class="topbar-btn role-view-btn" style="padding:5px 10px;font-size:12px">View</button>
-            <button class="topbar-btn role-edit-btn" style="padding:5px 10px;font-size:12px">Edit</button>
+          <td style="display:flex;gap:6px;padding:8px 12px;flex-wrap:wrap">
+            <button type="button" class="topbar-btn role-view-btn" style="padding:5px 10px;font-size:12px">View</button>
+            <button type="button" class="topbar-btn role-edit-btn" style="padding:5px 10px;font-size:12px">Edit</button>
+            ${deleteBtn}
           </td>
         `;
         tbody.appendChild(tr);
@@ -1014,6 +1067,13 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', (e) => {
           const key = e.target.closest('tr').dataset.roleKey;
           loadRolePermissionsPanel(key);
+        });
+      });
+
+      document.querySelectorAll('.role-delete-list-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          const key = e.target.closest('tr').dataset.roleKey;
+          void handleDeleteRoleFromList(key, e.currentTarget);
         });
       });
     } catch (err) {
@@ -1262,6 +1322,13 @@ document.addEventListener('DOMContentLoaded', () => {
     showError('edit-role-error', '');
     const modal = document.getElementById('modal-edit-role');
     if (modal) modal.dataset.roleKey = r.role_key;
+    const delBtn = document.getElementById('edit-role-delete-btn');
+    if (delBtn) {
+      const isSuper = String(r.role_key || '').toLowerCase() === 'super_admin';
+      delBtn.style.display = isSuper ? 'none' : '';
+      delBtn.disabled = isSuper;
+      delBtn.title = isSuper ? 'super_admin cannot be deleted' : '';
+    }
     window.openModal && window.openModal('modal-edit-role');
   }
 
@@ -1291,13 +1358,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const modal = document.getElementById('modal-edit-role');
     if (!modal) return;
     const roleKey = modal.dataset.roleKey;
-    if (!roleKey || !window.confirm(`Delete role "${roleKey}"? This cannot be undone.`)) return;
+    if (!roleKey) return;
+    if (String(roleKey).toLowerCase() === 'super_admin') {
+      showError('edit-role-error', 'The super_admin role cannot be deleted.');
+      return;
+    }
+    if (!window.confirm(`Delete role "${roleKey}"? This cannot be undone.`)) return;
     showError('edit-role-error', '');
+    const delBtn = document.getElementById('edit-role-delete-btn');
+    if (delBtn && typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(delBtn);
     try {
-      await apiDelete(`/api/roles/${roleKey}`);
+      await deleteRoleByKey(roleKey);
       window.closeModal && window.closeModal('modal-edit-role');
-      await loadRoles();
+      if (delBtn && typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(delBtn);
+      else if (delBtn && typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(delBtn);
     } catch (err) {
+      if (delBtn && typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(delBtn);
       showError('edit-role-error', err.message || 'Failed to delete role');
     }
   }
@@ -2764,6 +2840,75 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function loadInventoryHubSettings() {
+    const sel = document.getElementById('cu-primary-wh-select');
+    const status = document.getElementById('cu-primary-wh-status');
+    if (!sel) return;
+    if (status) status.textContent = '';
+    try {
+      const [storeRows, hub] = await Promise.all([
+        apiGet('/api/stores'),
+        apiGet('/api/settings/inventory-hub')
+      ]);
+      const stores = Array.isArray(storeRows) ? storeRows : [];
+      const hq = stores.filter(function (s) {
+        return String(s.store_type || '').toUpperCase() === 'HQ'
+          && s.is_active
+          && String(s.status || 'ACTIVE').toUpperCase() === 'ACTIVE';
+      });
+      sel.innerHTML = '<option value="">— Select —</option>'
+        + hq.map(function (s) {
+          return '<option value="' + Number(s.store_id) + '">' + escHtml(s.store_name) + ' (' + escHtml(s.store_code) + ')</option>';
+        }).join('');
+      const cur = hub && hub.primary_warehouse_store_id != null ? Number(hub.primary_warehouse_store_id) : null;
+      if (cur) sel.value = String(cur);
+      else sel.value = '';
+      if (status && hub && hub.configured === false) {
+        status.textContent = 'Not configured — pick an HQ store and save.';
+      }
+    } catch (err) {
+      sel.innerHTML = '<option value="">—</option>';
+      if (status) status.textContent = err.message || 'Could not load';
+      const msg = String(err.message || '');
+      const silent =
+        /resource not found/i.test(msg) ||
+        /\b404\b/i.test(msg) ||
+        /inventory-hub/i.test(msg);
+      if (!silent && typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError(err.message || 'Could not load inventory hub settings');
+      }
+    }
+  }
+
+  async function handleSaveInventoryHub() {
+    const sel = document.getElementById('cu-primary-wh-select');
+    const status = document.getElementById('cu-primary-wh-status');
+    const btn = document.getElementById('btn-cu-save-inventory-hub');
+    if (!sel || !btn) return;
+    const sid = parseInt(sel.value, 10);
+    if (!sid) {
+      if (typeof window.cosmosFieldError === 'function') window.cosmosFieldError(sel, 'Select a store');
+      return;
+    }
+    if (typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(sel);
+    if (status) status.textContent = '';
+    if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn);
+    try {
+      await apiPut('/api/settings/inventory-hub', { primary_warehouse_store_id: sid });
+      if (typeof window.cosmosToastSuccess === 'function') {
+        window.cosmosToastSuccess('Primary warehouse saved.');
+      }
+      if (status) status.textContent = 'Saved.';
+    } catch (err) {
+      if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError(err.message || 'Save failed');
+      }
+      return;
+    }
+    if (typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn);
+  }
+
   function renderLookupTypeTabs() {
     const container = document.getElementById('foundry-lookup-tabs');
     if (!container) return;
@@ -2895,6 +3040,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   bind('foundry-lookup-save-btn', handleSaveLookupValue);
   document.getElementById('foundry-add-value-btn')?.addEventListener('click', openNewLookupModal);
+  document.getElementById('btn-cu-save-inventory-hub')?.addEventListener('click', function () {
+    void handleSaveInventoryHub();
+  });
+  const _cuPrimaryWhSel = document.getElementById('cu-primary-wh-select');
+  if (_cuPrimaryWhSel) {
+    _cuPrimaryWhSel.addEventListener('input', function () {
+      if (typeof window.cosmosFieldClear === 'function') window.cosmosFieldClear(_cuPrimaryWhSel);
+    });
+  }
 
   // ─── FOUNDRY MASTERS: SUPPLIERS ───────────────────────────────────────────
 
@@ -3495,6 +3649,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (id === 'cu-maker-master')    loadCuMakers();
       if (id === 'cu-branding-agents') loadCuBrandingAgents();
       if (id === 'tablets') void loadTablets();
+      if (id === 'foundry-settings') {
+        void loadFoundrySettings();
+        void loadInventoryHubSettings();
+      }
     };
   }
 
@@ -3508,10 +3666,13 @@ document.addEventListener('DOMContentLoaded', () => {
   loadMembershipTiers();
   loadLeaveTypes();
   loadCuPosSettings();
-  loadFoundrySettings();
   loadAuditLogs();
   loadDashboard();
 
   const _cuBootPage = getCommandUnitPageFromPath(window.location.pathname);
   if (_cuBootPage === 'tablets') void loadTablets();
+  if (_cuBootPage === 'foundry-settings') {
+    void loadFoundrySettings();
+    void loadInventoryHubSettings();
+  }
 });

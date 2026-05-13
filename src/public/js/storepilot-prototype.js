@@ -12,15 +12,19 @@ function closeSidebar() {
   document.body.style.overflow = '';
 }
 
-const SP_API_KEY = 'CHANGE_ME_API_KEY';
-
-// ── Auth helpers ───────────────────────────────────────────────────────────────
-function getToken() { return sessionStorage.getItem('cosmos_token') || ''; }
-
 async function apiFetch(method, path, body) {
+  let apiKey;
+  try {
+    apiKey = typeof window.cosmosEnsureApiKey === 'function'
+      ? await window.cosmosEnsureApiKey()
+      : '';
+  } catch (e) {
+    throw new Error(e.message || 'Invalid or missing API key');
+  }
+  if (!apiKey) throw new Error('Invalid or missing API key');
   const headers = {
     'Content-Type':  'application/json',
-    'X-API-Key':     SP_API_KEY,
+    'X-API-Key':     apiKey,
     'Authorization': 'Bearer ' + getToken()
   };
   const res = await fetch(path, {
@@ -90,6 +94,35 @@ let _tcDebounce      = null;
 let _transferCart    = [];
 let _spPermissions   = [];
 let _spNoAccess      = false;
+let _warehouseDisplayName = 'Warehouse';
+
+function primaryWarehouseLabel() {
+  return _warehouseDisplayName || 'Warehouse';
+}
+
+function primaryWarehouseLabelHtml() {
+  return String(primaryWarehouseLabel())
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
+}
+
+function primaryWarehouseTitleAttr() {
+  return String(primaryWarehouseLabel())
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function refreshWarehouseContext() {
+  try {
+    const wh = await apiGet('/api/foundry-lookups/warehouse-context');
+    if (wh && wh.data && typeof wh.data.warehouse_display_name === 'string') {
+      const t = wh.data.warehouse_display_name.trim();
+      if (t) _warehouseDisplayName = t;
+    }
+  } catch (_) {}
+}
 
 const SP_MENU_PERM_MAP = {
   dashboard: ['storepilot.dashboard.view'],
@@ -705,6 +738,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   loadUser();
   if (_spNoAccess) return;
+  await refreshWarehouseContext();
   loadDashboard();
   startDashRefresh();
 });
@@ -831,7 +865,7 @@ function renderDashRecentTransfers(rows) {
               <td>${fmtDate(r.created_at || r.transfer_date)}</td>
               <td class="mono">${escHtml(r.sku_code || r.sku_id)}</td>
               <td>${escHtml(r.description || r.sku_description || '')}</td>
-              <td style="color:var(--text3);font-size:12px">${escHtml(r.from_location || 'HQ Warehouse')}</td>
+              <td style="color:var(--text3);font-size:12px">${escHtml(r.from_location || primaryWarehouseLabel())}</td>
               <td style="text-align:right"><span class="b b-blue">${qty}</span></td>
             </tr>`;
           }).join('')}
@@ -1395,7 +1429,7 @@ window.onTransferSearch = function (q) {
   clearTimeout(_tcDebounce);
   const resultsEl = document.getElementById('tc-results');
   if (!q.trim()) {
-    if (resultsEl) resultsEl.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Search to see stock available at HQ Warehouse</div></div>`;
+    if (resultsEl) resultsEl.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Search to see stock available at ${primaryWarehouseLabelHtml()}</div></div>`;
     return;
   }
   _tcDebounce = setTimeout(() => doTransferSearch(q.trim()), 350);
@@ -1410,7 +1444,7 @@ async function doTransferSearch(q) {
     const data = await apiGet('/api/stock-transfers/available?q=' + encodeURIComponent(q));
     const rows = data.data || [];
     if (!rows.length) {
-      resultsEl.innerHTML = `<div class="empty-state"><div class="ei">📦</div><div class="et">No HQ Warehouse stock found for "${escHtml(q)}"</div></div>`;
+      resultsEl.innerHTML = `<div class="empty-state"><div class="ei">📦</div><div class="et">No ${primaryWarehouseLabelHtml()} stock found for "${escHtml(q)}"</div></div>`;
       return;
     }
     resultsEl.innerHTML = rows.map((r) => {
@@ -1494,7 +1528,7 @@ function renderTransferCart() {
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
         <input type="number" class="qty-input" min="1" max="${item.avail_qty || 9999}" value="${item.qty}"
           onchange="updateCartQty(${item.sku_id}, this.value)" oninput="updateCartQty(${item.sku_id}, this.value)">
-        <span style="font-size:11px;color:var(--text3)" title="Available in HQ Warehouse">/ ${item.avail_qty} WH</span>
+        <span style="font-size:11px;color:var(--text3)" title="Available in ${primaryWarehouseTitleAttr()}">/ ${item.avail_qty} WH</span>
         <button class="btn sm" style="color:var(--red);border-color:var(--red);padding:4px 8px"
           onclick="removeFromCart(${item.sku_id})">✕</button>
       </div>
@@ -1532,7 +1566,7 @@ window.submitTransfer = async function () {
     renderTransferCart();
     const si = document.getElementById('tc-search');   if (si) si.value = '';
     const ri = document.getElementById('tc-results');
-    if (ri) ri.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Search to see stock available at HQ Warehouse</div></div>`;
+    if (ri) ri.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Search to see stock available at ${primaryWarehouseLabelHtml()}</div></div>`;
     const ni = document.getElementById('tc-notes');     if (ni) ni.value = '';
 
     if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Request submitted — pending HQ approval.'; }
@@ -1641,7 +1675,7 @@ function loadReports() {
                     <td>${fmtDate(r.created_at || r.transfer_date)}</td>
                     <td class="mono">${escHtml(r.sku_code || r.sku_id)}</td>
                     <td>${escHtml(r.description || r.sku_description || '')}</td>
-                    <td style="color:var(--text3);font-size:12px">${escHtml(r.from_location || 'HQ Warehouse')}</td>
+                    <td style="color:var(--text3);font-size:12px">${escHtml(r.from_location || primaryWarehouseLabel())}</td>
                     <td style="text-align:right"><span class="b b-blue">${qty}</span></td>
                     <td style="font-size:12px;color:var(--text3)">${escHtml(r.notes || '')}</td>
                   </tr>`;
@@ -2183,7 +2217,7 @@ window.loadSpMovementList = async function () {
     const docs = await apiGet('/api/stock-transfer-docs' + qs);
     const list = Array.isArray(docs) ? docs : (docs.data || []);
     if (!list.length) {
-      wrap.innerHTML = '<div class="empty-state"><div class="ei">📋</div><div class="et">No transfer documents found</div><div class="es">Stock dispatched from HQ Warehouse will appear here.</div></div>';
+      wrap.innerHTML = '<div class="empty-state"><div class="ei">📋</div><div class="et">No transfer documents found</div><div class="es">Stock dispatched from ' + primaryWarehouseLabelHtml() + ' will appear here.</div></div>';
       return;
     }
     const statusBadge = s => {
@@ -2194,7 +2228,7 @@ window.loadSpMovementList = async function () {
       <div class="inc-tr-row" onclick="expandSpMlDoc(${d.doc_id})">
         <div class="inc-tr-meta">
           <div><span class="inc-tr-id">DOC-${d.doc_id}</span> &nbsp;${d.doc_type === 'DIRECT' ? '📦 Direct' : '📬 From Request #' + d.source_request_id}</div>
-          <div class="inc-tr-sub">HQ Warehouse → ${d.store_name || 'Your Store'} &nbsp;·&nbsp; ${d.dispatched_at ? new Date(d.dispatched_at).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '—'}</div>
+          <div class="inc-tr-sub">${primaryWarehouseLabelHtml()} → ${d.store_name || 'Your Store'} &nbsp;·&nbsp; ${d.dispatched_at ? new Date(d.dispatched_at).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '—'}</div>
         </div>
         <div>${statusBadge(d.status)}</div>
       </div>`).join('');

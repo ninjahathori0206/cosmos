@@ -604,6 +604,9 @@ BEGIN
   SET NOCOUNT ON;
 
   BEGIN TRY
+    DECLARE @wh_id INT = dbo.fn_Foundry_PrimaryWarehouseLocationId();
+    DECLARE @wh_name VARCHAR(200) = LEFT(CAST(dbo.fn_Foundry_WarehouseDisplayName() AS VARCHAR(200)), 200);
+
     -- Publish all DRAFT SKUs for this purchase
     UPDATE sk
     SET sk.status = 'LIVE', sk.updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
@@ -619,13 +622,13 @@ BEGIN
 
     -- Seed stock balances for warehouse
     INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, location_name, qty)
-    SELECT sk.sku_id, 'WAREHOUSE', 1, 'HQ Warehouse', pc.quantity
+    SELECT sk.sku_id, 'WAREHOUSE', @wh_id, @wh_name, pc.quantity
     FROM dbo.skus sk
     JOIN dbo.purchase_colours pc ON sk.purchase_colour_id = pc.colour_id
     WHERE pc.purchase_id = @purchase_id
       AND NOT EXISTS (
         SELECT 1 FROM dbo.stock_balances sb
-        WHERE sb.sku_id = sk.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = 1
+        WHERE sb.sku_id = sk.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = @wh_id
       );
 
     SELECT purchase_id, pipeline_status FROM dbo.purchases WHERE purchase_id = @purchase_id;
@@ -732,7 +735,8 @@ BEGIN
 
   SELECT ISNULL(SUM(sb.qty), 0) AS warehouse_stock
   FROM dbo.stock_balances sb
-  WHERE sb.location_type = 'WAREHOUSE';
+  WHERE sb.location_type = 'WAREHOUSE'
+    AND sb.location_id = dbo.fn_Foundry_PrimaryWarehouseLocationId();
 
   SELECT COUNT(DISTINCT s.supplier_id) AS active_suppliers
   FROM dbo.suppliers s

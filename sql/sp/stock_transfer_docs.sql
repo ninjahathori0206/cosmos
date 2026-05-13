@@ -52,6 +52,10 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM #lines)
       RAISERROR('No valid transfer lines provided.', 16, 1);
 
+    DECLARE @wh_id INT = dbo.fn_Foundry_PrimaryWarehouseLocationId();
+    IF @wh_id IS NULL
+      RAISERROR('Primary warehouse is not configured. Set app_settings.foundry_primary_warehouse_location_id or add an active HQ store.', 16, 1);
+
     -- Create the document header
     INSERT INTO dbo.stock_transfer_docs
       (doc_type, source_request_id, to_store_id, status, notes, dispatched_by, dispatched_at)
@@ -72,7 +76,7 @@ BEGIN
     BEGIN
       SELECT @wh_qty = ISNULL(qty, 0)
       FROM dbo.stock_balances
-      WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE';
+      WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE' AND location_id = @wh_id;
 
       IF ISNULL(@wh_qty, 0) < @qty
         RAISERROR('Insufficient warehouse stock for one or more SKUs.', 16, 1);
@@ -80,7 +84,7 @@ BEGIN
       -- Decrement WAREHOUSE (stock physically leaving HQ)
       UPDATE dbo.stock_balances
       SET qty = qty - @qty, last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-      WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE';
+      WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE' AND location_id = @wh_id;
 
       -- Insert document line
       INSERT INTO dbo.stock_transfer_doc_lines (doc_id, sku_id, qty_sent)
@@ -162,6 +166,10 @@ BEGIN
 
     SELECT @store_name = store_name FROM dbo.stores WHERE store_id = @to_store_id;
 
+    DECLARE @wh_id INT = dbo.fn_Foundry_PrimaryWarehouseLocationId();
+    IF @wh_id IS NULL
+      RAISERROR('Primary warehouse is not configured. Set app_settings.foundry_primary_warehouse_location_id or add an active HQ store.', 16, 1);
+
     -- Parse received quantities into temp table
     CREATE TABLE #recv (line_id INT NOT NULL, qty_received INT NOT NULL);
 
@@ -208,7 +216,7 @@ BEGIN
           (sku_id, from_location_type, from_location_id, to_location_type, to_location_id,
            qty, movement_type, reference_id, notes, created_by)
         VALUES
-          (@sku_id, 'WAREHOUSE', 1, 'STORE', @to_store_id,
+          (@sku_id, 'WAREHOUSE', @wh_id, 'STORE', @to_store_id,
            @qty_recv, 'HQ_TO_STORE', @doc_id, NULL, @stocked_by);
       END;
 

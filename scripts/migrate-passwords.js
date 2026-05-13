@@ -12,13 +12,13 @@ async function main() {
   const pool = await getPool()
 
   const usersResult = await pool.request().query(`
-    SELECT user_id, username, password
+    SELECT user_id, username, password_hash
     FROM dbo.users
     WHERE is_active = 1
   `)
 
   const users = usersResult.recordset || []
-  const targets = users.filter((u) => !looksLikeBcryptHash(u.password))
+  const targets = users.filter((u) => !looksLikeBcryptHash(u.password_hash))
 
   // eslint-disable-next-line no-console
   console.log(`[migrate-passwords] active users: ${users.length}`)
@@ -55,7 +55,7 @@ async function main() {
     await pool.request()
       .input('uid', sql.Int, user.user_id)
       .input('pwd', sql.VarChar(200), hashed)
-      .query('UPDATE dbo.users SET password = @pwd WHERE user_id = @uid')
+      .query('UPDATE dbo.users SET password_hash = @pwd WHERE user_id = @uid')
     // eslint-disable-next-line no-console
     console.log(`[migrate-passwords] migrated user_id=${user.user_id} username=${user.username}`)
   }

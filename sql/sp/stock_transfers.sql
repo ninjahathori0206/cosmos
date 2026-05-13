@@ -16,6 +16,10 @@ CREATE PROCEDURE dbo.sp_StockTransfer_ListAvailable
   @product_type VARCHAR(50)  = NULL
 AS BEGIN
   SET NOCOUNT ON;
+  DECLARE @wh INT = dbo.fn_Foundry_PrimaryWarehouseLocationId();
+  IF @wh IS NULL
+    RAISERROR('Primary warehouse is not configured.', 16, 1);
+
   SELECT
     sk.sku_id,
     sk.sku_code,
@@ -37,7 +41,7 @@ AS BEGIN
   LEFT JOIN dbo.maker_master mm      ON pm.maker_master_id   = mm.maker_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
   LEFT JOIN dbo.stock_balances sb
-    ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE'
+    ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = @wh
   WHERE sk.status IN ('LIVE', 'ACTIVE')
     AND ISNULL(sb.qty, 0) > 0
     AND (ISNULL(@brand_id,0) = 0 OR pm.home_brand_id = @brand_id)
@@ -71,6 +75,10 @@ CREATE PROCEDURE dbo.sp_StockTransfer_LookupByCode
   @code VARCHAR(200)
 AS BEGIN
   SET NOCOUNT ON;
+  DECLARE @wh INT = dbo.fn_Foundry_PrimaryWarehouseLocationId();
+  IF @wh IS NULL
+    RAISERROR('Primary warehouse is not configured.', 16, 1);
+
   SELECT TOP 1
     sk.sku_id,
     sk.sku_code,
@@ -90,7 +98,7 @@ AS BEGIN
   LEFT JOIN dbo.home_brands hb       ON pm.home_brand_id      = hb.brand_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
   LEFT JOIN dbo.stock_balances sb
-    ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE'
+    ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = @wh
   WHERE sk.sku_code = @code OR sk.barcode = @code;
 END;
 GO
@@ -138,6 +146,10 @@ AS BEGIN
     IF NOT EXISTS (SELECT 1 FROM #lines)
       RAISERROR('No valid transfer lines provided', 16, 1);
 
+    DECLARE @wh_id INT = dbo.fn_Foundry_PrimaryWarehouseLocationId();
+    IF @wh_id IS NULL
+      RAISERROR('Primary warehouse is not configured.', 16, 1);
+
     -- Validate and apply each line
     DECLARE
       @sku_id        INT,
@@ -158,7 +170,7 @@ AS BEGIN
       -- Check warehouse balance
       SELECT @wh_qty = ISNULL(qty, 0)
       FROM dbo.stock_balances
-      WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE';
+      WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE' AND location_id = @wh_id;
 
       IF ISNULL(@wh_qty, 0) < @qty
         RAISERROR('Insufficient warehouse stock for one or more items', 16, 1);
@@ -166,7 +178,7 @@ AS BEGIN
       -- Decrement warehouse
       UPDATE dbo.stock_balances
       SET qty = qty - @qty, last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-      WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE';
+      WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE' AND location_id = @wh_id;
 
       -- Upsert store balance
       IF EXISTS (
@@ -185,7 +197,7 @@ AS BEGIN
         (sku_id, from_location_type, from_location_id, to_location_type, to_location_id,
          qty, movement_type, reference_id, notes, created_by)
       VALUES
-        (@sku_id, 'WAREHOUSE', 1, 'STORE', @to_store_id,
+        (@sku_id, 'WAREHOUSE', @wh_id, 'STORE', @to_store_id,
          @qty, 'HQ_TO_STORE', NULL, @notes, @created_by);
 
       FETCH NEXT FROM line_cursor INTO @sku_id, @qty;

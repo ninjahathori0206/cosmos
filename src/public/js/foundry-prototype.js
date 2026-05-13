@@ -1,4 +1,3 @@
-const API_KEY = 'CHANGE_ME_API_KEY';
 
 // ── Mobile sidebar toggle ──────────────────────────────────────────────────────
 function openSidebar() {
@@ -12,7 +11,7 @@ function closeSidebar() {
   document.body.style.overflow = '';
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Visual-only theme polish for Foundry prototype screens.
   // Keeps existing behavior and structure intact.
   (function injectFoundryPrototypeUiPolish() {
@@ -160,6 +159,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (!token || !userRaw) { window.location.href = '/'; return; }
 
+  let apiKey;
+  try {
+    apiKey = await window.cosmosEnsureApiKey();
+  } catch (e) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(e.message || 'Invalid or missing API key');
+    sessionStorage.removeItem('cosmos_token');
+    sessionStorage.removeItem('cosmos_user');
+    window.location.href = '/';
+    return;
+  }
+
   const user = JSON.parse(userRaw);
   const userPermissions = Array.isArray(user.permissions) ? user.permissions : [];
 
@@ -224,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── HTTP helpers ──────────────────────────────────────────────────────────
   function authHeaders(extra) {
-    return Object.assign({ 'X-API-Key': API_KEY, Authorization: `Bearer ${token}` }, extra || {});
+    return Object.assign({ 'X-API-Key': apiKey, Authorization: `Bearer ${token}` }, extra || {});
   }
 
   function _buildApiError(data, status) {
@@ -334,6 +344,30 @@ document.addEventListener('DOMContentLoaded', () => {
   let _homeBrands        = [];
   let _allBrandingAgents = [];
   let _itemCount         = 0;
+  let _warehouseDisplayName = 'Warehouse';
+
+  function primaryWarehouseLabel() {
+    return _warehouseDisplayName || 'Warehouse';
+  }
+
+  function primaryWarehouseLabelHtml() {
+    return String(primaryWarehouseLabel())
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  async function refreshWarehouseContext() {
+    try {
+      const wh = await apiGet('/api/foundry-lookups/warehouse-context');
+      if (wh && typeof wh.warehouse_display_name === 'string') {
+        const t = wh.warehouse_display_name.trim();
+        if (t) _warehouseDisplayName = t;
+      }
+    } catch (e) {
+      console.error('refreshWarehouseContext', e);
+    }
+  }
   window._brandingReceiptDraftByHeader = {};
   window._currentHeaderId = null;
   window._purchaseActiveItemIdx = 1;
@@ -347,6 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Use allSettled so one failing endpoint (e.g. branding-agents) does not block suppliers.
     // Use GET /api/suppliers?status=active (full list) — search?q= uses sp_Supplier_Search TOP 20 only.
     showErr('new-purchase-error', '');
+    await refreshWarehouseContext();
     const [supR, makersR, lookupsR, brandsR, ptR, agentsR] = await Promise.allSettled([
       apiGet('/api/suppliers?status=active'),
       apiGet('/api/maker-master'),
@@ -992,6 +1027,7 @@ document.addEventListener('DOMContentLoaded', () => {
       lowStockCount.textContent = 'Loading…';
     }
     try {
+      await refreshWarehouseContext();
       const [data, availableStock] = await Promise.all([
         apiGet('/api/purchases/dashboard-stats'),
         apiGet('/api/stock-transfers/available').catch(() => [])
@@ -4375,7 +4411,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const warehouseRow = `
         <div class="flex ic" style="justify-content:space-between;padding:4px 0">
-          <span class="xs td2" style="display:flex;align-items:center;gap:4px">🏭 <span>HQ Warehouse</span></span>
+          <span class="xs td2" style="display:flex;align-items:center;gap:4px">🏭 <span>${primaryWarehouseLabelHtml()}</span></span>
           <span class="mono fw6" style="color:${warehouseAvailable ? 'var(--green)' : 'var(--text3)'}">${hasAnyBreakdownQty ? wqty : (warehouseAvailable ? 'Available' : 'N/A')}</span>
         </div>`;
       const storeRow = `
@@ -6121,7 +6157,7 @@ ${initScript}
             <div class="mono" style="font-size:12px;font-weight:700;color:var(--acc2)">${stEsc(r.sku_code)}</div>
             <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stEsc(r.product_name)}</div>
             <div style="font-size:11.5px;color:var(--text3)">${stEsc(r.brand_name)} · ${stEsc(r.colour_name)}</div>
-            <div style="font-size:11px;color:var(--text3)">HQ stock: <strong>${r.warehouse_qty}</strong></div>
+            <div style="font-size:11px;color:var(--text3)">${primaryWarehouseLabelHtml()} stock: <strong>${r.warehouse_qty}</strong></div>
           </div>
           <div class="st-cart-qty">
             <button class="st-qty-btn" onclick="stChangeQty(${r.sku_id}, -1)">−</button>
@@ -6663,7 +6699,7 @@ ${initScript}
             </table>
           </div>
           <div style="margin-bottom:16px;padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border)">
-            <div style="font-weight:600;margin-bottom:8px;font-size:13px">Add item from HQ Warehouse</div>
+            <div style="font-weight:600;margin-bottom:8px;font-size:13px">Add item from ${primaryWarehouseLabelHtml()}</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
               <input type="text" id="ftr-dispatch-search" placeholder="SKU code or keyword…"
                 style="flex:1;min-width:180px;max-width:320px;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
@@ -6905,7 +6941,7 @@ ${initScript}
         body.innerHTML = `
           <div style="padding:20px 22px">
             <div style="color:var(--green);font-weight:700;font-size:15px;margin-bottom:10px">Goods Transfer created</div>
-            <p style="margin:0 0 8px;font-size:13px;color:var(--text2)">Transfer document <strong class="mono">#${docId != null ? docId : '—'}</strong> is <strong>Dispatched</strong>. HQ Warehouse stock has been decremented.</p>
+            <p style="margin:0 0 8px;font-size:13px;color:var(--text2)">Transfer document <strong class="mono">#${docId != null ? docId : '—'}</strong> is <strong>Dispatched</strong>. ${primaryWarehouseLabelHtml()} stock has been decremented.</p>
             <p style="margin:0 0 16px;font-size:13px;color:var(--text2)">The store will see it under <strong>Incoming Goods</strong>, then <strong>Accept</strong> and <strong>Verify &amp; Stock</strong> to credit store balance.</p>
             <button type="button" class="btn primary" onclick="ftrAfterDispatchNav()">Open Movement List</button>
           </div>`;

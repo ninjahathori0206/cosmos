@@ -29,7 +29,7 @@ BEGIN
     sk.sale_price,
     sk.status,
     ISNULL((SELECT SUM(sb2.qty) FROM dbo.stock_balances sb2 WHERE sb2.sku_id = sk.sku_id), 0)                          AS total_stock,
-    ISNULL((SELECT sb3.qty FROM dbo.stock_balances sb3 WHERE sb3.sku_id = sk.sku_id AND sb3.location_type = 'WAREHOUSE'), 0) AS warehouse_qty
+    ISNULL((SELECT sb3.qty FROM dbo.stock_balances sb3 WHERE sb3.sku_id = sk.sku_id AND sb3.location_type = 'WAREHOUSE' AND sb3.location_id = dbo.fn_Foundry_PrimaryWarehouseLocationId()), 0) AS warehouse_qty
   FROM dbo.skus sk
   JOIN  dbo.product_master       pm  ON sk.product_master_id  = pm.product_id
   LEFT JOIN dbo.home_brands      hb  ON pm.home_brand_id      = hb.brand_id
@@ -80,7 +80,7 @@ BEGIN
     sk.cost_price,
     sk.status,
     ISNULL((SELECT SUM(sb2.qty) FROM dbo.stock_balances sb2 WHERE sb2.sku_id = sk.sku_id), 0) AS total_stock,
-    ISNULL((SELECT sb3.qty FROM dbo.stock_balances sb3 WHERE sb3.sku_id = sk.sku_id AND sb3.location_type = 'WAREHOUSE'), 0) AS warehouse_qty,
+    ISNULL((SELECT sb3.qty FROM dbo.stock_balances sb3 WHERE sb3.sku_id = sk.sku_id AND sb3.location_type = 'WAREHOUSE' AND sb3.location_id = dbo.fn_Foundry_PrimaryWarehouseLocationId()), 0) AS warehouse_qty,
     ISNULL((SELECT SUM(sb4.qty) FROM dbo.stock_balances sb4 WHERE sb4.sku_id = sk.sku_id AND sb4.location_type = 'STORE'), 0) AS store_qty
   FROM dbo.skus sk
   JOIN  dbo.product_master       pm  ON sk.product_master_id  = pm.product_id
@@ -96,7 +96,7 @@ BEGIN
     sb.location_id,
     ISNULL(sb.location_name,
       CASE sb.location_type
-        WHEN 'WAREHOUSE' THEN 'HQ Warehouse'
+        WHEN 'WAREHOUSE' THEN CAST(dbo.fn_Foundry_WarehouseDisplayName() AS VARCHAR(200))
         ELSE sb.location_type + ' ' + CAST(sb.location_id AS VARCHAR(20))
       END
     ) AS location_name,

@@ -1,18 +1,9 @@
 /*
-  Cosmos ERP — Database Bootstrap Script
+  Cosmos ERP — Database bootstrap
 
-  This script creates the main MSSQL database used by the
-  Node.js + stored procedure backend.
-
-  Run this once against the server:
-    Server: 147.93.153.10
-    Port:   3411
-    Login:  sa
-
-  Example (SQL Server Management Studio):
-    - Connect to 147.93.153.10,1433 or 147.93.153.10,3411
-    - Open this file
-    - Execute
+  Creates the CosmosERP database on your SQL Server instance.
+  Run once with sufficient privileges (e.g. SSMS or sqlcmd), then deploy
+  schema using sql/manifest.json + sql/tables (see sql/README.md).
 */
 
 IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = N'CosmosERP')

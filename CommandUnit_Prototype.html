@@ -467,7 +467,7 @@
           <thead><tr><th>Type Key</th><th>Display Name</th><th>Icon</th><th>Visible To Roles</th><th>Scope</th><th>Built-in</th><th>Status</th><th></th></tr></thead>
           <tbody>
             <tr>
-              <td class="font-mono text-xs">WAREHOUSE</td><td>HQ Warehouse</td><td>🏭</td>
+              <td class="font-mono text-xs">WAREHOUSE</td><td>Primary warehouse</td><td>🏭</td>
               <td class="td-muted text-xs">Super Admin, Procurement Mgr, Store Manager (read)</td>
               <td><span class="badge badge-purple">All</span></td>
               <td><span class="badge badge-gray">Built-in</span></td>
@@ -773,6 +773,21 @@
         <div class="page-subtitle"></div>
       </div>
       <button class="topbar-btn primary ml-auto" id="foundry-add-value-btn">+ Add Value</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px" id="cu-inventory-hub-card">
+      <div class="card-header">
+        <div class="card-title">Primary warehouse (inventory hub)</div>
+        <div class="td-muted text-xs">Foundry WAREHOUSE stock uses this store’s <code>store_id</code> as <code>stock_balances.location_id</code>. Only active stores with type HQ are listed.</div>
+      </div>
+      <div style="padding:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+        <div style="min-width:240px">
+          <label for="cu-primary-wh-select" style="display:block;font-size:12px;color:var(--text2);margin-bottom:6px">HQ store</label>
+          <select id="cu-primary-wh-select" style="width:100%;max-width:360px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text1)"></select>
+        </div>
+        <button type="button" class="topbar-btn primary" id="btn-cu-save-inventory-hub">Save</button>
+        <span class="td-muted text-xs" id="cu-primary-wh-status" style="align-self:center"></span>
+      </div>
     </div>
 
     <div class="alert alert-blue" style="margin-bottom:16px">

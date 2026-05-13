@@ -1,15 +1,22 @@
 /* ─── Finance Prototype — Client JS ─────────────────────────────────────────── */
 
-const FIN_API_KEY = 'CHANGE_ME_API_KEY';
-
 // ── Auth helpers ───────────────────────────────────────────────────────────────
 function getToken() { return sessionStorage.getItem('cosmos_token') || ''; }
 
 async function apiFetch(method, path, body) {
   const token = getToken();
+  let apiKey;
+  try {
+    apiKey = typeof window.cosmosEnsureApiKey === 'function'
+      ? await window.cosmosEnsureApiKey()
+      : '';
+  } catch (e) {
+    throw new Error(e.message || 'Invalid or missing API key');
+  }
+  if (!apiKey) throw new Error('Invalid or missing API key');
   const headers = {
     'Content-Type':  'application/json',
-    'X-API-Key':     FIN_API_KEY,
+    'X-API-Key':     apiKey,
     'Authorization': 'Bearer ' + token
   };
 

@@ -178,6 +178,127 @@ router.put('/pos', ...settingsManage, async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
+// ─── INVENTORY HUB (primary warehouse = HQ store_id for WAREHOUSE stock) ─────
+const inventoryHubPutSchema = Joi.object({
+  primary_warehouse_store_id: Joi.number().integer().positive().required()
+});
+
+router.get('/inventory-hub', ...settingsView, async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const q = await pool.request().query(`
+      SELECT
+        dbo.fn_Foundry_PrimaryWarehouseLocationId() AS primary_warehouse_store_id,
+        CAST(dbo.fn_Foundry_WarehouseDisplayName() AS NVARCHAR(200)) AS warehouse_display_name
+    `);
+    const row = (q.recordset && q.recordset[0]) || {};
+    const sid = row.primary_warehouse_store_id;
+    if (sid == null || Number.isNaN(Number(sid))) {
+      return res.json({
+        success: true,
+        data: {
+          primary_warehouse_store_id: null,
+          warehouse_display_name: null,
+          configured: false
+        }
+      });
+    }
+    return res.json({
+      success: true,
+      data: {
+        primary_warehouse_store_id: Number(sid),
+        warehouse_display_name: row.warehouse_display_name || 'Warehouse',
+        configured: true
+      }
+    });
+  } catch (err) {
+    if (err.code === 'EREQUEST' || /fn_Foundry|Invalid object name/i.test(String(err.message || ''))) {
+      return res.status(503).json({
+        success: false,
+        message:
+          'Primary warehouse SQL functions missing. Deploy sql/migrations/46_foundry_primary_warehouse_functions.sql.'
+      });
+    }
+    return next(err);
+  }
+});
+
+router.put('/inventory-hub', ...settingsManage, async (req, res, next) => {
+  try {
+    const { error, value } = inventoryHubPutSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      });
+    }
+
+    const pool = await getPool();
+    const chk = await pool.request()
+      .input('sid', sql.Int, value.primary_warehouse_store_id)
+      .query(`
+        SELECT store_id, store_type, status, is_active
+        FROM dbo.stores
+        WHERE store_id = @sid
+      `);
+    const st = chk.recordset && chk.recordset[0];
+    if (!st) {
+      return res.status(422).json({ success: false, message: 'Store not found.' });
+    }
+    if (String(st.store_type || '').toUpperCase() !== 'HQ') {
+      return res.status(422).json({
+        success: false,
+        message: 'Primary warehouse must be a store with store_type HQ.'
+      });
+    }
+    if (!st.is_active || String(st.status || '').toUpperCase() !== 'ACTIVE') {
+      return res.status(422).json({
+        success: false,
+        message: 'Primary warehouse must be an active store (is_active = 1, status ACTIVE).'
+      });
+    }
+
+    await upsertAppSetting(pool, {
+      settingKey: 'foundry_primary_warehouse_location_id',
+      settingValue: String(value.primary_warehouse_store_id),
+      settingGroup: 'inventory',
+      description: 'Primary WAREHOUSE stock_balances.location_id (HQ hub store_id).'
+    });
+
+    try {
+      await writeAuditLog({
+        userId: req.user && req.user.user_id ? Number(req.user.user_id) : null,
+        action: 'INVENTORY_HUB_PRIMARY_WAREHOUSE_SET',
+        module: 'command_unit',
+        entityType: 'app_settings',
+        entityId: null,
+        newValue: JSON.stringify({ primary_warehouse_store_id: value.primary_warehouse_store_id }),
+        ipAddress: req.ip || null
+      });
+    } catch (_auditErr) {
+      /* non-fatal */
+    }
+
+    const q2 = await pool.request().query(`
+      SELECT
+        dbo.fn_Foundry_PrimaryWarehouseLocationId() AS primary_warehouse_store_id,
+        CAST(dbo.fn_Foundry_WarehouseDisplayName() AS NVARCHAR(200)) AS warehouse_display_name
+    `);
+    const row2 = (q2.recordset && q2.recordset[0]) || {};
+    return res.json({
+      success: true,
+      data: {
+        primary_warehouse_store_id: Number(row2.primary_warehouse_store_id),
+        warehouse_display_name: row2.warehouse_display_name || 'Warehouse',
+        configured: true
+      }
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // ─── GST RATES ───────────────────────────────────────────────────────────────
 
 const gstSchema = Joi.object({

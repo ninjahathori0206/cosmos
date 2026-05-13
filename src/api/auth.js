@@ -18,6 +18,13 @@ function looksLikeBcryptHash(v) {
   return /^\$2[abxy]\$\d{2}\$/.test(String(v || ''));
 }
 
+/** Hash column is `password_hash` in DB; keep `password_stored` / `password` fallbacks for older SPs still selecting `password`. */
+function hashFromLoginRow(user) {
+  if (!user || typeof user !== 'object') return '';
+  const raw = user.password_hash ?? user.password_stored ?? user.password;
+  return raw != null ? String(raw) : '';
+}
+
 router.post('/login', async (req, res, next) => {
   try {
     const { error, value } = loginSchema.validate(req.body);
@@ -46,7 +53,7 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
-    const storedPassword = user.password || '';
+    const storedPassword = hashFromLoginRow(user);
     let isValidPassword = false;
 
     if (looksLikeBcryptHash(storedPassword)) {
@@ -61,7 +68,7 @@ router.post('/login', async (req, res, next) => {
           await pool.request()
             .input('uid', sql.Int, user.user_id)
             .input('pwd', sql.VarChar(200), hashed)
-            .query('UPDATE dbo.users SET password = @pwd WHERE user_id = @uid');
+            .query('UPDATE dbo.users SET password_hash = @pwd WHERE user_id = @uid');
         } catch (rehashErr) {
           // Non-fatal: login should still succeed; next login will retry migration.
           console.warn('[auth/login] password rehash failed:', rehashErr.message);

@@ -1,11 +1,20 @@
-const FOUNDRY_API_KEY = 'CHANGE_ME_API_KEY';
-
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const token = sessionStorage.getItem('cosmos_token');
   const userRaw = sessionStorage.getItem('cosmos_user');
 
   if (!token || !userRaw) {
     window.location.href = '/login.html';
+    return;
+  }
+
+  let apiKey;
+  try {
+    apiKey = await window.cosmosEnsureApiKey();
+  } catch (e) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(e.message || 'Invalid or missing API key');
+    sessionStorage.removeItem('cosmos_token');
+    sessionStorage.removeItem('cosmos_user');
+    window.location.href = '/';
     return;
   }
 
@@ -22,6 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
     logoutBtn.addEventListener('click', () => {
       sessionStorage.removeItem('cosmos_token');
       sessionStorage.removeItem('cosmos_user');
+      sessionStorage.removeItem('cosmos_api_key');
       window.location.href = '/';
     });
   }
@@ -29,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function apiGet(path) {
     const res = await fetch(path, {
       headers: {
-        'X-API-Key': FOUNDRY_API_KEY,
+        'X-API-Key': apiKey,
         Authorization: `Bearer ${token}`
       }
     });
@@ -45,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': FOUNDRY_API_KEY,
+        'X-API-Key': apiKey,
         Authorization: `Bearer ${token}`
       },
       body: JSON.stringify(body)

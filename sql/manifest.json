@@ -1,0 +1,18 @@
+{
+  "description": "Canonical greenfield order for sql/tables. Run sql/create_database.sql first, then node scripts/run-sql.js (or sqlcmd each file). After tables: sql/alter/* in numeric order, sql/migrations/* per release notes, deploy sql/sp/*.sql, then sql/seed/*.sql.",
+  "tables": [
+    "01_shared_core.sql",
+    "02_command_unit.sql",
+    "03_foundry_core.sql",
+    "04_branding_agents.sql",
+    "04_foundry_stock_rate.sql",
+    "05_pos_config.sql",
+    "06_pos_lens_catalog.sql",
+    "07_pos_customers.sql",
+    "08_pos_orders.sql",
+    "09_pos_payments.sql",
+    "10_pos_points.sql",
+    "11_pos_advanced.sql",
+    "12_order_engine.sql"
+  ]
+}

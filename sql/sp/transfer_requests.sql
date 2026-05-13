@@ -147,7 +147,7 @@ BEGIN
   JOIN dbo.product_master pm              ON sk.product_master_id  = pm.product_id
   LEFT JOIN dbo.home_brands hb            ON pm.home_brand_id      = hb.brand_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id     = pic.colour_id
-  LEFT JOIN dbo.stock_balances sb         ON sb.sku_id = l.sku_id AND sb.location_type = 'WAREHOUSE'
+  LEFT JOIN dbo.stock_balances sb         ON sb.sku_id = l.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = dbo.fn_Foundry_PrimaryWarehouseLocationId()
   WHERE l.request_id = @request_id
   ORDER BY l.line_id;
 END;

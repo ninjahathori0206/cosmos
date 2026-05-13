@@ -1,7 +1,7 @@
 const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
-const { executeStoredProcedure } = require('../config/db');
+const { executeStoredProcedure, getPool } = require('../config/db');
 const { withCache, clearCacheByPrefix } = require('../cache/ttlCache');
 const {
   isSuperAdmin,
@@ -11,7 +11,52 @@ const {
   requirePermission
 } = require('../middleware/authorize');
 
+/** Primary warehouse label + id for Foundry / StorePilot UIs (read-only). */
+function warehouseContextAuth(req, res, next) {
+  if (isSuperAdmin(req)) return next();
+  if (hasModuleAccess(req, 'foundry')) return next();
+  if (hasModuleAccess(req, 'storepilot')) return next();
+  return res.status(403).json({ success: false, message: 'Module access denied.' });
+}
+
 const router = express.Router();
+
+// GET /api/foundry-lookups/warehouse-context — must stay above `/:id` routes
+router.get('/warehouse-context', warehouseContextAuth, async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const q = await pool.request().query(`
+      SELECT
+        dbo.fn_Foundry_PrimaryWarehouseLocationId() AS primary_warehouse_location_id,
+        CAST(dbo.fn_Foundry_WarehouseDisplayName() AS NVARCHAR(200)) AS warehouse_display_name
+    `);
+    const row = (q.recordset && q.recordset[0]) || {};
+    const wid = row.primary_warehouse_location_id;
+    if (wid == null || Number.isNaN(Number(wid))) {
+      return res.status(503).json({
+        success: false,
+        message:
+          'Primary warehouse not configured. Run sql/migrations/46_foundry_primary_warehouse_functions.sql, set app_settings.foundry_primary_warehouse_location_id, or ensure an active HQ store exists.'
+      });
+    }
+    return res.json({
+      success: true,
+      data: {
+        primary_warehouse_location_id: Number(wid),
+        warehouse_display_name: row.warehouse_display_name || 'Warehouse'
+      }
+    });
+  } catch (err) {
+    if (err.code === 'EREQUEST' || /Invalid object name|Could not find stored procedure|fn_Foundry/i.test(String(err.message || ''))) {
+      return res.status(503).json({
+        success: false,
+        message:
+          'Primary warehouse functions missing. Deploy sql/migrations/46_foundry_primary_warehouse_functions.sql against this database.'
+      });
+    }
+    return next(err);
+  }
+});
 
 /** ?type= — Foundry form dropdowns; no type — full admin list (Command Unit). */
 function foundryLookupListAuth(req, res, next) {

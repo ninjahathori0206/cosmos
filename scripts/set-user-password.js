@@ -54,7 +54,7 @@ async function run() {
     await pool.request()
       .input('uid', sql.Int, user.user_id)
       .input('pwd', sql.VarChar(200), hash)
-      .query('UPDATE dbo.users SET password = @pwd, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME()) WHERE user_id = @uid')
+      .query('UPDATE dbo.users SET password_hash = @pwd, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME()) WHERE user_id = @uid')
 
     console.log('Password updated for:', user.username, '(' + user.full_name + ')', 'user_id=', user.user_id)
   } finally {

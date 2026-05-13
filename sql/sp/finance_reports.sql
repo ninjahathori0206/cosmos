@@ -182,7 +182,7 @@ AS BEGIN
   LEFT JOIN dbo.home_brands hb ON pm.home_brand_id = hb.brand_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
   LEFT JOIN dbo.stock_balances sb
-    ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE'
+    ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = dbo.fn_Foundry_PrimaryWarehouseLocationId()
   WHERE
     (ISNULL(@brand_id,0) = 0 OR pm.home_brand_id = @brand_id)
     AND (ISNULL(@product_type,'') = '' OR pm.product_type = @product_type)

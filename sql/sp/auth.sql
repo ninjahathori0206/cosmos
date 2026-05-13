@@ -12,7 +12,7 @@ BEGIN
   SELECT
     u.user_id,
     u.username,
-    u.password,
+    u.password_hash,
     u.full_name,
     u.email,
     u.phone,
