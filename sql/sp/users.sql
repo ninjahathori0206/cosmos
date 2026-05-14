@@ -83,10 +83,29 @@ BEGIN
       RETURN;
     END;
 
-    INSERT INTO dbo.users (username, password_hash, full_name, email, phone, role_key, store_id, is_active, created_at, updated_at)
-    VALUES (@username, @password, @full_name, @email, @phone, @role_key, @store_id, ISNULL(@is_active, 1), DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
+    DECLARE @credCol SYSNAME =
+      CASE
+        WHEN COL_LENGTH(N'dbo.users', N'password_hash') IS NOT NULL THEN N'password_hash'
+        ELSE N'password'
+      END;
+    DECLARE @ins NVARCHAR(800) =
+      N'INSERT INTO dbo.users (username, ' + QUOTENAME(@credCol)
+      + N', full_name, email, phone, role_key, store_id, is_active, created_at, updated_at) '
+      + N'VALUES (@username, @password, @full_name, @email, @phone, @role_key, @store_id, '
+      + N'ISNULL(@is_active, 1), DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()))';
+    EXEC sys.sp_executesql
+      @ins,
+      N'@username VARCHAR(100), @password VARCHAR(200), @full_name VARCHAR(200), @email VARCHAR(200), @phone VARCHAR(20), @role_key VARCHAR(50), @store_id INT, @is_active BIT',
+      @username = @username,
+      @password = @password,
+      @full_name = @full_name,
+      @email = @email,
+      @phone = @phone,
+      @role_key = @role_key,
+      @store_id = @store_id,
+      @is_active = @is_active;
 
-    DECLARE @new_id INT = SCOPE_IDENTITY();
+    DECLARE @new_id INT = CAST(SCOPE_IDENTITY() AS INT);
 
     SELECT
       u.user_id, u.username, u.full_name, u.email, u.phone, u.role_key,
@@ -121,17 +140,32 @@ AS
 BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
-    UPDATE dbo.users
-    SET
-      full_name  = @full_name,
-      email      = @email,
-      phone      = @phone,
-      role_key   = @role_key,
-      store_id   = @store_id,
-      is_active  = ISNULL(@is_active, 1),
-      password_hash = CASE WHEN @password IS NOT NULL AND LEN(@password) > 0 THEN @password ELSE password_hash END,
-      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-    WHERE user_id = @user_id;
+    DECLARE @credCol SYSNAME =
+      CASE
+        WHEN COL_LENGTH(N'dbo.users', N'password_hash') IS NOT NULL THEN N'password_hash'
+        ELSE N'password'
+      END;
+    DECLARE @upd NVARCHAR(1200) =
+      N'UPDATE dbo.users SET '
+      + N'full_name = @full_name, email = @email, phone = @phone, role_key = @role_key, store_id = @store_id, '
+      + N'is_active = ISNULL(@is_active, 1), '
+      + QUOTENAME(@credCol)
+      + N' = CASE WHEN @password IS NOT NULL AND LEN(@password) > 0 THEN @password ELSE '
+      + QUOTENAME(@credCol)
+      + N' END, '
+      + N'updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME()) '
+      + N'WHERE user_id = @user_id';
+    EXEC sys.sp_executesql
+      @upd,
+      N'@user_id INT, @full_name VARCHAR(200), @email VARCHAR(200), @phone VARCHAR(20), @role_key VARCHAR(50), @store_id INT, @is_active BIT, @password VARCHAR(200)',
+      @user_id = @user_id,
+      @full_name = @full_name,
+      @email = @email,
+      @phone = @phone,
+      @role_key = @role_key,
+      @store_id = @store_id,
+      @is_active = @is_active,
+      @password = @password;
 
     SELECT
       u.user_id, u.username, u.full_name, u.email, u.phone, u.role_key,

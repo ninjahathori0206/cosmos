@@ -65,10 +65,18 @@ router.post('/login', async (req, res, next) => {
         try {
           const hashed = await bcrypt.hash(password, 12);
           const pool = await getPool();
-          await pool.request()
+          const colRs = await pool.request().query(`
+            SELECT CASE WHEN COL_LENGTH(N'dbo.users', N'password_hash') IS NOT NULL THEN 1 ELSE 0 END AS has_hash
+          `);
+          const hasHash = colRs.recordset[0]?.has_hash === 1;
+          const updateSql = hasHash
+            ? 'UPDATE dbo.users SET password_hash = @pwd WHERE user_id = @uid'
+            : 'UPDATE dbo.users SET password = @pwd WHERE user_id = @uid';
+          await pool
+            .request()
             .input('uid', sql.Int, user.user_id)
             .input('pwd', sql.VarChar(200), hashed)
-            .query('UPDATE dbo.users SET password_hash = @pwd WHERE user_id = @uid');
+            .query(updateSql);
         } catch (rehashErr) {
           // Non-fatal: login should still succeed; next login will retry migration.
           console.warn('[auth/login] password rehash failed:', rehashErr.message);

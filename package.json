@@ -13,6 +13,7 @@
     "migrate:45-users-password-hash": "node scripts/run-migration-45-users-password-hash.js",
     "migrate:46-foundry-primary-warehouse-functions": "node scripts/run-migration-46-foundry-primary-warehouse-functions.js",
     "maintenance:migrate-store-in-charge-role": "node scripts/run-maintenance-migrate-store-in-charge-role.js",
+    "maintenance:purge-keep-user": "node scripts/run-maintenance-purge-keep-user.js",
     "deploy:auth-users-sp": "node scripts/deploy-auth-users-sp.js",
     "migrate:pos-checkout-inventory-drafts": "node scripts/run-migration-pos-checkout-inventory-drafts.js",
     "verify:api-modules": "node -e \"require('./src/api/orders');require('./src/api/pos');require('./src/services/orderService');console.log('api modules ok')\"",
