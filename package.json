@@ -12,6 +12,8 @@
     "migrate:41-sub-order-pairs": "node scripts/run-migration-41-sub-order-pairs.js",
     "migrate:45-users-password-hash": "node scripts/run-migration-45-users-password-hash.js",
     "migrate:46-foundry-primary-warehouse-functions": "node scripts/run-migration-46-foundry-primary-warehouse-functions.js",
+    "migrate:47-store-type-catalog": "node scripts/run-migration-47-store-type-catalog.js",
+    "migrate:48-foundry-lookup-update-key": "node scripts/run-migration-48-foundry-lookup-update-key.js",
     "maintenance:migrate-store-in-charge-role": "node scripts/run-maintenance-migrate-store-in-charge-role.js",
     "maintenance:purge-keep-user": "node scripts/run-maintenance-purge-keep-user.js",
     "deploy:auth-users-sp": "node scripts/deploy-auth-users-sp.js",

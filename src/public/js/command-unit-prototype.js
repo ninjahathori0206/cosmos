@@ -448,20 +448,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     return 'Active';
   }
 
-  function mapFormatToStoreType(format) {
-    if (format === 'Eyewoot-Owned') return 'Owned';
-    if (format === 'Franchise') return 'Franchise';
-    if (format === 'Kiosk / Pop-up') return 'Kiosk';
-    if (format === 'Online / D2C') return 'Online';
-    return format;
+  /** Populated from GET /api/meta/store-types (see src/config/storeTypesCatalog.js). */
+  let storeTypesCatalogRows = null;
+
+  function storeTypeLabelForKey(key) {
+    const k = String(key || '');
+    const row = (storeTypesCatalogRows || []).find((r) => r.key === k);
+    return row ? row.label : k || 'Store';
   }
 
-  function mapStoreTypeToFormat(storeType) {
-    if (storeType === 'Owned') return 'Eyewoot-Owned';
-    if (storeType === 'Franchise') return 'Franchise';
-    if (storeType === 'Kiosk') return 'Kiosk / Pop-up';
-    if (storeType === 'Online') return 'Online / D2C';
-    return storeType || 'Eyewoot-Owned';
+  function applyStoreTypeOptionsToSelect(sel, includeEmptyFirst, emptyLabel) {
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '';
+    if (includeEmptyFirst) {
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = emptyLabel || '—';
+      sel.appendChild(o);
+    }
+    (storeTypesCatalogRows || []).forEach((row) => {
+      const o = document.createElement('option');
+      o.value = row.key;
+      o.textContent = row.label;
+      if (row.description) o.title = row.description;
+      sel.appendChild(o);
+    });
+    if (prev && [...sel.options].some((x) => x.value === prev)) sel.value = prev;
+  }
+
+  function setNewStoreFormatHint() {
+    const hint = document.getElementById('new-store-format-hint');
+    if (!hint) return;
+    const hq = (storeTypesCatalogRows || []).find((r) => r.key === 'HQ');
+    hint.textContent = hq && hq.description ? hq.description : '';
+  }
+
+  async function ensureStoreTypesCatalogLoaded() {
+    if (storeTypesCatalogRows && storeTypesCatalogRows.length) return;
+    const data = await apiGet('/api/stores/store-types');
+    storeTypesCatalogRows = data.store_types || [];
+    applyStoreTypeOptionsToSelect(document.getElementById('store-filter-format'), true, 'All formats');
+    applyStoreTypeOptionsToSelect(document.getElementById('new-store-format'), true, 'Select format…');
+    applyStoreTypeOptionsToSelect(document.getElementById('edit-store-format'), false);
+    setNewStoreFormatHint();
   }
 
   function statusBadge(code, text) {
@@ -480,6 +510,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!tbody) return;
     tbody.innerHTML = '';
     try {
+      await ensureStoreTypesCatalogLoaded();
       const stores = await apiGet('/api/stores');
       cachedStores = stores;
 
@@ -503,7 +534,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       bindStoreFilters();
       refreshStoreDropdowns();
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="8" class="td-muted">Error: ${err.message}</td></tr>`;
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to load stores');
+      tbody.innerHTML = `<tr><td colspan="8" class="td-muted">Error: ${escHtml(err.message || 'Request failed')}</td></tr>`;
     }
   }
 
@@ -542,7 +574,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       tr.innerHTML = `
         <td><div class="fw-600">${s.store_name}</div><div class="td-muted">${s.address || ''}</div></td>
         <td class="font-mono text-xs">${s.store_code}</td>
-        <td><span class="badge badge-purple">${s.store_type || 'Store'}</span></td>
+        <td><span class="badge badge-purple">${escHtml(storeTypeLabelForKey(s.store_type))}</span></td>
         <td>${s.city || ''}${s.city && s.state ? ', ' : ''}${s.state || ''}</td>
         <td class="font-mono text-xs">${s.gstin || ''}</td>
         <td><span class="badge badge-green">All</span></td>
@@ -576,7 +608,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const body = {
         store_name: val('new-store-name'),
         store_code: val('new-store-code'),
-        store_type: mapFormatToStoreType(val('new-store-format')),
+        store_type: val('new-store-format'),
         gstin: val('new-store-gstin') || null,
         address: val('new-store-address') || null,
         city: val('new-store-city') || null,
@@ -585,6 +617,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         status: mapDropdownStatusToCode(val('new-store-status'))
       };
       if (!body.store_name || !body.store_code) throw new Error('Store name and store code are required.');
+      if (!body.store_type) throw new Error('Select a store format.');
       await apiPost('/api/stores', body);
       window.closeModal && window.closeModal('modal-new-store');
       document.getElementById('new-store-name').value = '';
@@ -607,11 +640,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const title = document.getElementById('edit-store-title');
     const sub = document.getElementById('edit-store-subtitle');
     if (title) title.textContent = s.store_name;
-    if (sub) sub.textContent = `${s.store_code} · ${mapStoreTypeToFormat(s.store_type)} · ${statusText}`;
+    if (sub) sub.textContent = `${s.store_code} · ${storeTypeLabelForKey(s.store_type)} · ${statusText}`;
 
     document.getElementById('edit-store-name').value = s.store_name || '';
     document.getElementById('edit-store-code').value = s.store_code || '';
-    document.getElementById('edit-store-format').value = mapStoreTypeToFormat(s.store_type);
+    const editFmt = document.getElementById('edit-store-format');
+    if (editFmt) {
+      const v = String(s.store_type || '');
+      if (v && ![...editFmt.options].some((o) => o.value === v)) {
+        const lo = document.createElement('option');
+        lo.value = v;
+        lo.textContent = `${v} (legacy)`;
+        editFmt.appendChild(lo);
+      }
+      editFmt.value = v;
+    }
     document.getElementById('edit-store-status').value = statusText;
     document.getElementById('edit-store-gstin').value = s.gstin || '';
     document.getElementById('edit-store-state').value = s.state || '';
@@ -660,7 +703,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const body = {
         store_name: val('edit-store-name'),
         store_code: val('edit-store-code'),
-        store_type: mapFormatToStoreType(val('edit-store-format')),
+        store_type: val('edit-store-format'),
         gstin: val('edit-store-gstin') || null,
         address: val('edit-store-address') || null,
         city: val('edit-store-city') || null,
@@ -669,6 +712,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         status: mapDropdownStatusToCode(val('edit-store-status'))
       };
       if (!body.store_name || !body.store_code) throw new Error('Store name and store code are required.');
+      if (!body.store_type) throw new Error('Select a store format.');
       await apiPut(`/api/stores/${id}`, body);
       window.closeModal && window.closeModal('modal-store-detail');
       await loadStores();
@@ -2827,6 +2871,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   let _foundryLookupAll = [];
   let _activeLookupType = Object.keys(LOOKUP_TYPE_META)[0];
   let _editingLookupId = null;
+  /** New lookup only: skip auto key from label after user edits Key; cleared when Key is emptied. */
+  let _foundryLookupKeyTouched = false;
+
+  /** Normalise to UPPER_SNAKE_CASE — same rules for auto-fill and save (alphanumeric + underscores). */
+  function normalizeFoundryLookupKey(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    let t = s.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/_+/g, '_');
+    return t.replace(/^_|_$/g, '');
+  }
+
+  function syncFoundryLookupKeyFromLabel() {
+    if (_editingLookupId != null) return;
+    if (_foundryLookupKeyTouched) return;
+    const labelEl = document.getElementById('fl-label');
+    const keyEl = document.getElementById('fl-key');
+    if (!labelEl || !keyEl || keyEl.readOnly) return;
+    keyEl.value = normalizeFoundryLookupKey(labelEl.value);
+  }
+
+  function onFoundryLookupKeyInput() {
+    if (_editingLookupId != null) return;
+    const keyEl = document.getElementById('fl-key');
+    if (!keyEl || keyEl.readOnly) return;
+    if (!String(keyEl.value || '').trim()) {
+      _foundryLookupKeyTouched = false;
+      syncFoundryLookupKeyFromLabel();
+      return;
+    }
+    _foundryLookupKeyTouched = true;
+  }
 
   async function loadFoundrySettings() {
     try {
@@ -2974,6 +3049,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const el = (id) => document.getElementById(id);
     el('fl-type').value = `${_activeLookupType}  —  ${meta ? meta.label : ''}`;
     el('fl-type').dataset.typeKey = _activeLookupType;
+    _foundryLookupKeyTouched = false;
     el('fl-key').value = '';
     el('fl-key').readOnly = false;
     el('fl-key').style.background = '';
@@ -2982,6 +3058,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     el('fl-order').value = (_foundryLookupAll.filter((v) => v.lookup_type === _activeLookupType).length + 1).toString();
     el('fl-active').value = '1';
     showError('foundry-lookup-error', '');
+    const delBtn = document.getElementById('foundry-lookup-delete-btn');
+    if (delBtn) delBtn.style.display = 'none';
     window.openModal && window.openModal('modal-foundry-lookup');
   }
 
@@ -2996,14 +3074,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     el('fl-type').value = `${v.lookup_type}  —  ${meta ? meta.label : ''}`;
     el('fl-type').dataset.typeKey = v.lookup_type;
     el('fl-key').value = v.lookup_key;
-    el('fl-key').readOnly = true;
-    el('fl-key').style.background = 'var(--bg2)';
+    el('fl-key').readOnly = false;
+    el('fl-key').style.background = '';
     el('fl-label').value = v.lookup_label;
     el('fl-desc').value = v.description || '';
     el('fl-order').value = String(v.display_order ?? 0);
     el('fl-active').value = v.is_active ? '1' : '0';
     showError('foundry-lookup-error', '');
+    const delBtn = document.getElementById('foundry-lookup-delete-btn');
+    if (delBtn) delBtn.style.display = 'inline-block';
     window.openModal && window.openModal('modal-foundry-lookup');
+  }
+
+  async function handleDeleteLookupValue() {
+    if (!_editingLookupId) return;
+    const v = _foundryLookupAll.find((x) => x.lookup_id === _editingLookupId);
+    const labelBit = v && v.lookup_label ? ' "' + v.lookup_label + '"' : '';
+    if (!window.confirm('Deactivate this lookup value' + labelBit + '? It will disappear from dropdowns. You can restore it later by editing and setting Status to Active.')) {
+      return;
+    }
+    showError('foundry-lookup-error', '');
+    const delBtn = document.getElementById('foundry-lookup-delete-btn');
+    if (delBtn && typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(delBtn);
+    try {
+      await apiDelete('/api/foundry-lookups/' + _editingLookupId);
+      window.closeModal && window.closeModal('modal-foundry-lookup');
+      if (typeof window.cosmosToastSuccess === 'function') {
+        window.cosmosToastSuccess('Lookup value deactivated.');
+      }
+      await loadFoundrySettings();
+    } catch (err) {
+      if (typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError(err.message || 'Failed to delete lookup value');
+      } else {
+        showError('foundry-lookup-error', err.message || 'Failed to delete lookup value');
+      }
+    } finally {
+      if (delBtn && typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(delBtn);
+    }
   }
 
   async function handleSaveLookupValue() {
@@ -3019,13 +3127,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
       if (!body.lookup_label) throw new Error('Label is required.');
       if (_editingLookupId) {
-        await apiPut(`/api/foundry-lookups/${_editingLookupId}`, body);
+        const keyNorm = normalizeFoundryLookupKey(val('fl-key'));
+        if (!keyNorm) throw new Error('Key (internal code) is required.');
+        await apiPut(`/api/foundry-lookups/${_editingLookupId}`, {
+          lookup_key: keyNorm,
+          ...body
+        });
       } else {
-        const keyRaw = val('fl-key');
-        if (!keyRaw) throw new Error('Key is required.');
+        const keyNorm = normalizeFoundryLookupKey(val('fl-key'));
+        if (!keyNorm) throw new Error('Key is required.');
         await apiPost('/api/foundry-lookups', {
           lookup_type:   typeKey,
-          lookup_key:    keyRaw.toUpperCase().replace(/\s+/g, '_'),
+          lookup_key:    keyNorm,
           ...body
         });
       }
@@ -3039,7 +3152,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   bind('foundry-lookup-save-btn', handleSaveLookupValue);
+  document.getElementById('foundry-lookup-delete-btn')?.addEventListener('click', function () { void handleDeleteLookupValue(); });
   document.getElementById('foundry-add-value-btn')?.addEventListener('click', openNewLookupModal);
+  (function wireFoundryLookupKeyAutoFill() {
+    const labelEl = document.getElementById('fl-label');
+    const keyEl = document.getElementById('fl-key');
+    if (labelEl && !labelEl.dataset.cuLookupKeySync) {
+      labelEl.dataset.cuLookupKeySync = '1';
+      labelEl.addEventListener('input', function () { syncFoundryLookupKeyFromLabel() });
+    }
+    if (keyEl && !keyEl.dataset.cuLookupKeySync) {
+      keyEl.dataset.cuLookupKeySync = '1';
+      keyEl.addEventListener('input', onFoundryLookupKeyInput);
+    }
+  })();
   document.getElementById('btn-cu-save-inventory-hub')?.addEventListener('click', function () {
     void handleSaveInventoryHub();
   });

@@ -10,6 +10,7 @@ END;
 
 IF NOT EXISTS (SELECT 1 FROM dbo.stores WHERE store_code = 'CORP-HQ-001')
 BEGIN
+  /* store_type key 'HQ' must match src/config/storeTypesCatalog.js */
   INSERT INTO dbo.stores (store_name, store_code, store_type, city, state, is_active)
   VALUES ('Corporate HQ', 'CORP-HQ-001', 'HQ', '—', '—', 1);
 END;

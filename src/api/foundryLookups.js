@@ -102,6 +102,7 @@ const createSchema = Joi.object({
 });
 
 const updateSchema = Joi.object({
+  lookup_key:    Joi.string().max(100).allow(null, '').optional(),
   lookup_label:  Joi.string().max(200).required(),
   description:   Joi.string().max(500).allow(null, '').optional(),
   display_order: Joi.number().integer().min(0).optional(),
@@ -169,12 +170,16 @@ router.put(
         return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });
       }
 
+      const keyNorm = value.lookup_key != null && String(value.lookup_key).trim() !== ''
+        ? String(value.lookup_key).toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')
+        : null;
       const result = await executeStoredProcedure('sp_FoundryLookup_Update', {
         lookup_id:     { type: sql.Int,          value: lookupId },
         lookup_label:  { type: sql.VarChar(200), value: value.lookup_label },
         description:   { type: sql.VarChar(500), value: value.description || null },
         display_order: { type: sql.Int,          value: value.display_order ?? 0 },
-        is_active:     { type: sql.Bit,          value: value.is_active !== false ? 1 : 0 }
+        is_active:     { type: sql.Bit,          value: value.is_active !== false ? 1 : 0 },
+        lookup_key:    { type: sql.VarChar(100), value: keyNorm }
       });
       clearCacheByPrefix('foundry-lookups:');
 

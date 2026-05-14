@@ -57,6 +57,7 @@ erDiagram
 - Avoid re-running base table scripts except where they are strictly idempotent guards.
 - Ship structural changes through **`sql/migrations/`** and redeploy affected procedures.
 - **`45_users_rename_password_to_password_hash.sql`** — one-time rename/consolidate of staff credential column to **`password_hash`**; run **`npm run migrate:45-users-password-hash`**, then **`npm run deploy:auth-users-sp`** (or redeploy **`sql/sp/auth.sql`** and **`sql/sp/users.sql`** manually).
+- **`47_store_type_catalog.sql`** — reference table **`dbo.store_type_catalog`** for **`stores.store_type`** keys (HQ, Owned, Franchise, Kiosk, Online); optional **`FK_stores_store_type_catalog`** when data is clean. App catalogue: **`src/config/storeTypesCatalog.js`**. Run **`npm run migrate:47-store-type-catalog`**.
 
 ## See also
 

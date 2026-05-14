@@ -2,4 +2,17 @@
 alwaysApply: true
 ---
 
-Do not hardcode user names, role names, store IDs, menu labels, or route paths in logic branches.    Drive visibility and authorization from permission keys only.    Reuse existing middleware/helpers (requirePermission, module guards, existing role-permission tables).    Keep compatibility by allowing existing Foundry keys only as fallback where migration is not yet complete.    All menu/route mappings should be declared once in config-style constants, then consumed by UI + guards.
+Do not hardcode user names, role names, store IDs, menu labels, or route paths in logic branches. Drive visibility and authorization from permission keys only. Reuse existing middleware/helpers (`requirePermission`, module guards, existing role-permission tables). Keep compatibility by allowing existing Foundry keys only as fallback where migration is not yet complete. All menu/route mappings should be declared once in config-style constants, then consumed by UI + guards.
+
+## Structured domain values (core)
+
+Do **not** scatter domain enumerations as raw string literals across HTML (`<option>` lists), long `if`/`switch` maps in JS, or ad hoc SQL string checks that duplicate the same list.
+
+**Required pattern**
+
+- Define each enumeration **once** in a **structured, JSON-serializable** catalog (e.g. array of `{ key, label, ...optional hints }`) under **`src/config/`**, or serve it from a **single** `GET /api/meta/...` (or existing bootstrap/meta) that reads that module so the server and UI share the same keys.
+- **UI:** Build dropdowns and labels by **iterating** that catalog (or API response), not hand-maintained parallel copies.
+- **API validation:** Joi (or guards) should allow only **`key` values from the same catalog** (import the shared module or shared allowed-key list), not duplicated string arrays.
+- **SQL/seed:** Reference the same canonical **`key`** values documented next to the catalog (comments or shared doc), not one-off spellings invented in UI.
+
+Examples: **`store_type`** uses [`src/config/storeTypesCatalog.js`](src/config/storeTypesCatalog.js) and **`GET /api/meta/store-types`**. Extend the catalog for new types instead of adding options or mapper branches in the Command Unit shell.

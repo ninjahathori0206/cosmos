@@ -84,7 +84,8 @@ CREATE PROCEDURE dbo.sp_FoundryLookup_Update
   @lookup_label VARCHAR(200),
   @description  VARCHAR(500) = NULL,
   @display_order INT = 0,
-  @is_active    BIT = 1
+  @is_active    BIT = 1,
+  @lookup_key   VARCHAR(100) = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -94,8 +95,28 @@ BEGIN
       RAISERROR('Lookup value not found.', 16, 1);
       RETURN;
     END;
+
+    DECLARE @newKey VARCHAR(100) = NULL;
+    IF @lookup_key IS NOT NULL AND LEN(LTRIM(RTRIM(@lookup_key))) > 0
+      SET @newKey = LTRIM(RTRIM(@lookup_key));
+
+    IF @newKey IS NOT NULL
+    BEGIN
+      DECLARE @lt VARCHAR(50);
+      SELECT @lt = lookup_type FROM dbo.foundry_lookup_values WHERE lookup_id = @lookup_id;
+      IF EXISTS (
+        SELECT 1 FROM dbo.foundry_lookup_values
+        WHERE lookup_type = @lt AND lookup_key = @newKey AND lookup_id <> @lookup_id
+      )
+      BEGIN
+        RAISERROR('A value with this key already exists for this lookup type.', 16, 1);
+        RETURN;
+      END;
+    END;
+
     UPDATE dbo.foundry_lookup_values
-    SET lookup_label  = @lookup_label,
+    SET lookup_key    = ISNULL(@newKey, lookup_key),
+        lookup_label  = @lookup_label,
         description   = @description,
         display_order = ISNULL(@display_order, 0),
         is_active     = ISNULL(@is_active, 1),

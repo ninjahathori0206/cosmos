@@ -35,6 +35,10 @@ Works in **bash**, **cmd**, and **PowerShell 7+**. On **Windows PowerShell 5.1**
 
 - **`migrations/46_foundry_primary_warehouse_functions.sql`** — **`dbo.fn_Foundry_PrimaryWarehouseLocationId()`** and **`dbo.fn_Foundry_WarehouseDisplayName()`**, plus optional bootstrap of **`app_settings.foundry_primary_warehouse_location_id`** from the first active HQ store. Run **`npm run migrate:46-foundry-primary-warehouse-functions`** once per database, then redeploy **`sql/sp/stock_transfers.sql`** and **`sql/sp/stock_transfer_docs.sql`** (or your usual SP deploy) so WAREHOUSE operations filter by **`location_id`**.
 
+## Brownfield — store type catalog (`stores.store_type`)
+
+- **`migrations/47_store_type_catalog.sql`** — creates **`dbo.store_type_catalog`**, MERGE-seeds **`HQ`**, **`Owned`**, **`Franchise`**, **`Kiosk`**, **`Online`** (same keys as **`src/config/storeTypesCatalog.js`**). Adds **`FK_stores_store_type_catalog`** only when every **`dbo.stores.store_type`** exists in the catalog; if you have legacy types, fix or extend the catalog first, then re-run. Run **`npm run migrate:47-store-type-catalog`** once per database.
+
 ## Brownfield — duplicate store incharge roles (`store_in_charge` vs `store_incharge`)
 
 - **Preflight:** run **`sql/maintenance/preflight_store_incharge_roles.sql`** (or open in SSMS) to see user and permission counts per key.

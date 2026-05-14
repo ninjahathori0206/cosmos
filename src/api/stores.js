@@ -3,13 +3,31 @@ const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
 const { requireModule, requirePermission } = require('../middleware/authorize');
+const { getStoreTypeKeys, getStoreTypesCatalog } = require('../config/storeTypesCatalog');
 
 const router = express.Router();
+
+router.get(
+  '/store-types',
+  requireModule('command_unit'),
+  requirePermission('command_unit.stores.view'),
+  (req, res) => {
+    res.json({
+      success: true,
+      data: {
+        store_types: getStoreTypesCatalog()
+      }
+    });
+  }
+);
 
 const storeSchema = Joi.object({
   store_name: Joi.string().max(200).required(),
   store_code: Joi.string().max(20).required(),
-  store_type: Joi.string().max(50).required(),
+  store_type: Joi.string()
+    .valid(...getStoreTypeKeys())
+    .required()
+    .messages({ 'any.only': 'store_type must be a configured store type (see Command Unit catalog).' }),
   gstin: Joi.string().max(20).allow(null, ''),
   address: Joi.string().max(500).allow(null, ''),
   city: Joi.string().max(100).allow(null, ''),

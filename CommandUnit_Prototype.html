@@ -254,12 +254,8 @@
             <span class="search-icon">🔍</span>
             <input id="store-search" type="text" placeholder="Search stores..." style="width:100%">
           </div>
-          <select id="store-filter-format" style="min-width:140px">
-            <option value="">All Formats</option>
-            <option value="Eyewoot-Owned">Eyewoot-Owned</option>
-            <option value="Franchise">Franchise</option>
-            <option value="Kiosk / Pop-up">Kiosk / Pop-up</option>
-            <option value="Online / D2C">Online / D2C</option>
+          <select id="store-filter-format" style="min-width:140px" aria-label="Filter by store format">
+            <option value="">All formats</option>
           </select>
           <select id="store-filter-status" style="min-width:130px">
             <option value="">All Statuses</option>
@@ -1113,7 +1109,7 @@
       <div class="form-grid">
         <div class="form-group"><label>Store Name <span class="label-req">*</span></label><input id="new-store-name" type="text" placeholder="e.g. Eyewoot Surat Main"></div>
         <div class="form-group"><label>Store Code <span class="label-req">*</span></label><input id="new-store-code" type="text" placeholder="e.g. EW-SRT-01"><div class="form-hint">Override optional</div></div>
-        <div class="form-group"><label>Store Format <span class="label-req">*</span></label><select id="new-store-format"><option>Eyewoot-Owned</option><option>Franchise</option><option>Kiosk / Pop-up</option><option>Online / D2C</option></select></div>
+        <div class="form-group"><label>Store format <span class="label-req">*</span></label><select id="new-store-format" required aria-label="Store type"></select><p id="new-store-format-hint" class="td-muted" style="font-size:12px;margin-top:6px;line-height:1.4"></p></div>
         <div class="form-group"><label>Status</label><select id="new-store-status"><option>Coming Soon</option><option selected>Active</option><option>Inactive</option></select></div>
         <div class="form-group"><label>GSTIN</label><input id="new-store-gstin" type="text" placeholder="24AABCE1234F1Z5" class="font-mono"></div>
         <div class="form-group"><label>State (for GST)</label><input id="new-store-state" type="text" placeholder="e.g. Gujarat"></div>
@@ -1358,7 +1354,7 @@
         <div class="form-grid">
           <div class="form-group"><label>Store Name</label><input id="edit-store-name"></div>
           <div class="form-group"><label>Store Code</label><input id="edit-store-code" class="font-mono"></div>
-          <div class="form-group"><label>Store Format</label><select id="edit-store-format"><option>Eyewoot-Owned</option><option>Franchise</option><option>Kiosk / Pop-up</option><option>Online / D2C</option></select></div>
+          <div class="form-group"><label>Store format</label><select id="edit-store-format" aria-label="Store type"></select></div>
           <div class="form-group"><label>Status</label><select id="edit-store-status"><option>Active</option><option>Inactive</option><option>Coming Soon</option></select></div>
           <div class="form-group"><label>GSTIN</label><input id="edit-store-gstin" class="font-mono"></div>
           <div class="form-group"><label>State</label><input id="edit-store-state"></div>
@@ -1573,8 +1569,8 @@
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-group"><label>Lookup Type</label><input id="fl-type" readonly style="background:var(--bg2);font-family:monospace"></div>
-        <div class="form-group"><label>Key (Internal Code) <span class="label-req">*</span></label><input id="fl-key" placeholder="e.g. LOCAL_SUPPLIER" class="font-mono"><div class="form-hint">Uppercase, underscores — auto-format on save</div></div>
         <div class="form-group span2"><label>Label (shown in forms) <span class="label-req">*</span></label><input id="fl-label" placeholder="e.g. Local Supplier (Home Brand)"></div>
+        <div class="form-group span2"><label>Key (Internal Code) <span class="label-req">*</span></label><input id="fl-key" placeholder="e.g. LOCAL_SUPPLIER" class="font-mono"><div class="form-hint">Auto-filled from the label when adding — you can edit anytime. Changing the key updates how it’s stored for new selections; existing product rows may still hold the old key until updated.</div></div>
         <div class="form-group span2"><label>Description / Use Case</label><textarea id="fl-desc" placeholder="Explain when and why this option is used..."></textarea></div>
         <div class="form-group"><label>Display Order</label><input id="fl-order" type="number" min="0" placeholder="0"></div>
         <div class="form-group"><label>Status</label>
@@ -1586,9 +1582,12 @@
       </div>
       <div id="foundry-lookup-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
     </div>
-    <div class="modal-footer">
+    <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <button type="button" class="topbar-btn" id="foundry-lookup-delete-btn" style="border-color:var(--red);color:var(--red);display:none" aria-label="Deactivate lookup value">Delete</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
       <button class="topbar-btn" onclick="closeModal('modal-foundry-lookup')">Cancel</button>
       <button class="topbar-btn primary" id="foundry-lookup-save-btn">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1841,6 +1840,6 @@ function switchTab(el, targetId) {
 
 // showRoleDetail is now handled dynamically by command-unit-prototype.js
 </script>
-<script src="/js/command-unit-prototype.js?v=cu-prototype-bogo-scope-20260502" defer></script>
+<script src="/js/command-unit-prototype.js?v=cu-store-types-stores-endpoint-20260514" defer></script>
 </body>
 </html>
