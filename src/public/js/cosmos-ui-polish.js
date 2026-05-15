@@ -429,31 +429,36 @@
   }
 
   /**
-   * Value for X-API-Key — same source as login (sessionStorage), then bootstrap.json.
+   * Value for X-API-Key — always aligned with /config/bootstrap.json (server API_KEY),
+   * then mirrored to sessionStorage. Session alone is not trusted so keys stay valid after .env changes.
    */
   window.cosmosEnsureApiKey = async function cosmosEnsureApiKey() {
     try {
-      var k = sessionStorage.getItem('cosmos_api_key')
-      if (k && String(k).trim()) return String(k).trim()
-    } catch (_) {}
-    var res = await fetch('/config/bootstrap.json', { cache: 'no-store' })
-    var text = await res.text()
-    var data
-    try {
-      data = JSON.parse(text)
-    } catch (_) {
-      throw new Error('Configuration response was not JSON.')
+      var res = await fetch('/config/bootstrap.json', { cache: 'no-store' })
+      var text = await res.text()
+      var data
+      try {
+        data = JSON.parse(text)
+      } catch (_) {
+        throw new Error('Configuration response was not JSON.')
+      }
+      if (!res.ok || !data.success) {
+        throw new Error((data && data.message) || 'Could not load app configuration.')
+      }
+      var key = data.data && data.data.apiKey ? String(data.data.apiKey).trim() : ''
+      if (!key) {
+        throw new Error('API_KEY is not set on the server. Add API_KEY to .env (see .env.example).')
+      }
+      try {
+        sessionStorage.setItem('cosmos_api_key', key)
+      } catch (_) {}
+      return key
+    } catch (err) {
+      try {
+        var k = sessionStorage.getItem('cosmos_api_key')
+        if (k && String(k).trim()) return String(k).trim()
+      } catch (_) {}
+      throw err
     }
-    if (!res.ok || !data.success) {
-      throw new Error((data && data.message) || 'Could not load app configuration.')
-    }
-    var key = data.data && data.data.apiKey ? String(data.data.apiKey).trim() : ''
-    if (!key) {
-      throw new Error('API_KEY is not set on the server. Add API_KEY to .env (see .env.example).')
-    }
-    try {
-      sessionStorage.setItem('cosmos_api_key', key)
-    } catch (_) {}
-    return key
   }
 })()

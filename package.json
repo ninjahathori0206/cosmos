@@ -33,6 +33,7 @@
     "verify:api-modules": "node -e \"require('./src/api/orders');require('./src/api/pos');require('./src/services/orderService');console.log('api modules ok')\"",
     "deploy:pos-sql": "node scripts/deploy_pos_sql.js",
     "publish:design-local": "node -e \"require('fs').copyFileSync('pencil-new.pen','src/public/design/pencil-local/pencil-new.pen'); console.log('Copied pencil-new.pen → src/public/design/pencil-local/')\"",
+    "generate:favicon": "node scripts/generate-favicon.js",
     "merge:pen": "node scripts/merge-pen-into-primary.js",
     "sql:tables": "node scripts/run-sql.js"
   },

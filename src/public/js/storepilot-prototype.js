@@ -12,6 +12,10 @@ function closeSidebar() {
   document.body.style.overflow = '';
 }
 
+function getToken() {
+  return sessionStorage.getItem('cosmos_token') || '';
+}
+
 async function apiFetch(method, path, body) {
   let apiKey;
   try {

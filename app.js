@@ -301,6 +301,15 @@ app.get('/storepilot.html', (req, res) => res.redirect(302, '/storepilot/dashboa
 app.get('/finance.html', (req, res) => res.redirect(302, '/finance/dashboard'));
 app.get('/command-unit.html', (req, res) => res.redirect(302, '/command-unit/dashboard'));
 app.get('/cx.html', (req, res) => res.redirect(302, '/cx/dashboard'));
+
+// Default browser probe — many agents request `/favicon.ico`; we ship a PNG under that URL (widely supported).
+const faviconPngPath = path.join(__dirname, 'src', 'public', 'favicon.png');
+app.get('/favicon.ico', (req, res) => {
+  res.type('image/png');
+  res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
+  return res.sendFile(faviconPngPath);
+});
+
 // Self-hosted fonts: long cache lifetime + immutable.
 app.use(
   '/fonts',
