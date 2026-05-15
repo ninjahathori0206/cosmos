@@ -1,26 +1,12 @@
--- One-shot deploy: restock-aware SKU generation with purchase-level restock IDs
-
-IF OBJECT_ID('dbo.purchase_restock_events','U') IS NULL
-BEGIN
-  CREATE TABLE dbo.purchase_restock_events (
-    event_id            INT IDENTITY(1,1) PRIMARY KEY,
-    purchase_event_id   VARCHAR(80) NOT NULL UNIQUE,
-    header_id           INT NOT NULL,
-    item_id             INT NOT NULL,
-    item_colour_id      INT NOT NULL,
-    linked_sku_id       INT NOT NULL,
-    sale_price_snapshot DECIMAL(10,2) NOT NULL,
-    created_at          DATETIME NOT NULL DEFAULT DATEADD(MINUTE, 330, SYSUTCDATETIME()),
-    CONSTRAINT FK_pre_header FOREIGN KEY (header_id) REFERENCES dbo.purchase_headers(header_id),
-    CONSTRAINT FK_pre_item FOREIGN KEY (item_id) REFERENCES dbo.purchase_items(item_id),
-    CONSTRAINT FK_pre_colour FOREIGN KEY (item_colour_id) REFERENCES dbo.purchase_item_colours(colour_id),
-    CONSTRAINT FK_pre_sku FOREIGN KEY (linked_sku_id) REFERENCES dbo.skus(sku_id),
-    CONSTRAINT UQ_pre_header_item_colour UNIQUE (header_id, item_id, item_colour_id)
-  );
-END;
+USE [CosmosERP];
 GO
 
--- Canonical sp_SKUv2_Generate: keep in sync with sql/sp/pipeline_v2.sql (also npm run migrate:34-branding-bypass-sync-sku-model).
+-- Migration 37: SKU generation — fall back to source_brand when home_brand_id is not linked
+-- Canonical: sql/sp/pipeline_v2.sql
+--
+-- Change: @brandPfx now uses COALESCE(@brand_name, @source_brand_match, 'GEN')
+-- so that products bypassed with source_brand='BLNK' (or any source brand) produce
+-- the correct prefix (e.g. BLN) instead of GEN when home_brand_id is NULL.
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- sp_SKUv2_Generate  (Stage 4 – per colour per item)
@@ -92,7 +78,8 @@ AS BEGIN
         sk.sku_code,
         sk.barcode,
         pic.quantity,
-        pi.purchase_rate AS cost_price,
+        CASE WHEN pi.quantity > 0 AND pi.finance_payable_amt IS NOT NULL
+          THEN ROUND(pi.finance_payable_amt / pi.quantity, 2) ELSE NULL END AS cost_price,
         sk.sale_price,
         sk.status,
         pic.colour_id AS item_colour_id,
@@ -144,7 +131,8 @@ AS BEGIN
       @maker_master_id = pm.maker_master_id,
       @source_brand_match = pm.source_brand,
       @source_model_match = pm.source_model_number,
-      @cost_price = pi.purchase_rate,
+      @cost_price = CASE WHEN pi.quantity > 0 AND pi.finance_payable_amt IS NOT NULL
+        THEN ROUND(pi.finance_payable_amt / pi.quantity, 2) ELSE NULL END,
       @quantity = pic.quantity,
       @ew_collection = pm.ew_collection,
       @colour_code = pic.colour_code,
@@ -223,7 +211,8 @@ AS BEGIN
         sk.sku_code,
         sk.barcode,
         pic.quantity,
-        pi.purchase_rate AS cost_price,
+        CASE WHEN pi.quantity > 0 AND pi.finance_payable_amt IS NOT NULL
+          THEN ROUND(pi.finance_payable_amt / pi.quantity, 2) ELSE NULL END AS cost_price,
         sk.sale_price,
         sk.status,
         pic.colour_id AS item_colour_id,
@@ -301,7 +290,10 @@ AS BEGIN
       RETURN;
     END;
 
-    DECLARE @brandPfx VARCHAR(10) = UPPER(LEFT(ISNULL(@brand_name, 'GEN'), 3));
+    -- Brand prefix: prefer linked home_brand name, fall back to source_brand, then 'GEN'.
+    -- This ensures bypassed products (Source Brand = Home Brand) use the correct prefix
+    -- even when home_brand_id was not yet set at the time of SKU generation.
+    DECLARE @brandPfx VARCHAR(10) = UPPER(LEFT(COALESCE(@brand_name, @source_brand_match, 'GEN'), 3));
     DECLARE @collPfx  VARCHAR(10) = UPPER(LEFT(REPLACE(ISNULL(@ew_collection, 'XX'), ' ', ''), 4));
     DECLARE @modelSrc VARCHAR(200) = LTRIM(RTRIM(ISNULL(@source_model_number, '')));
     IF @modelSrc = '' SET @modelSrc = LTRIM(RTRIM(ISNULL(@style_model, '')));

@@ -67,6 +67,10 @@ const RAW_PERMISSION_GROUPS = [
   ]],
   ['Finance', [
     ['finance.dashboard.view', 'Dashboard — View'],
+    ['finance.challan_valuation.view', 'Challan valuation — View'],
+    ['finance.challan_valuation.create', 'Challan valuation — Set payable'],
+    ['finance.purchase_invoices.view', 'Purchase invoices — View'],
+    ['finance.purchase_invoices.create', 'Purchase invoices — Post'],
     ['finance.payments.view', 'Payments — View'],
     ['finance.payments.create', 'Payments — Create'],
     ['finance.payments.edit', 'Payments — Edit / Void'],

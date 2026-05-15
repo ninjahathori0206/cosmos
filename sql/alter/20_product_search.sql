@@ -34,7 +34,18 @@ BEGIN
     COUNT(DISTINCT CASE WHEN sk.status = 'LIVE' THEN sk.sku_id END) AS live_sku_count,
     COUNT(DISTINCT ph.header_id)                                         AS total_purchases,
     MAX(ph.purchase_date)                                                AS last_purchase_date,
-    MAX(pi.purchase_rate)                                                AS last_purchase_rate
+    (
+      SELECT TOP 1
+        CASE
+          WHEN pi2.quantity > 0 AND pi2.finance_payable_amt IS NOT NULL
+            THEN ROUND(pi2.finance_payable_amt / pi2.quantity, 2)
+          ELSE pi2.purchase_rate
+        END
+      FROM dbo.purchase_items pi2
+      INNER JOIN dbo.purchase_headers ph2 ON ph2.header_id = pi2.header_id
+      WHERE pi2.product_master_id = pm.product_id
+      ORDER BY ph2.purchase_date DESC, pi2.item_id DESC
+    ) AS last_purchase_rate
   FROM dbo.product_master pm
   LEFT JOIN dbo.maker_master     mm ON mm.maker_id     = pm.maker_master_id
   LEFT JOIN dbo.skus             sk ON sk.product_master_id = pm.product_id

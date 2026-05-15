@@ -18,38 +18,50 @@ const itemSchema = Joi.object({
   product_master_id: Joi.number().integer().required(),
   maker_master_id:   Joi.number().integer().allow(null),
   category:          Joi.string().max(50).required(),
-  purchase_rate:     Joi.number().precision(2).positive().required(),
   quantity:          Joi.number().integer().positive().required(),
-  gst_pct:           Joi.number().precision(4).min(0).required(),
   colours:           Joi.array().items(colourSchema).default([])
 });
 
 const createSchema = Joi.object({
   supplier_id:    Joi.number().integer().required(),
   source_type:    Joi.string().max(50).allow('', null),
-  bill_ref:       Joi.string().max(100).allow('', null),
+  challan_number: Joi.string().max(100).allow('', null),
+  challan_date:   Joi.date().allow(null),
   purchase_date:  Joi.date().required(),
-  transport_cost: Joi.number().precision(2).min(0).default(0),
   po_reference:   Joi.string().max(100).allow('', null),
   notes:          Joi.string().max(500).allow('', null),
-  items:          Joi.array().items(itemSchema).min(1).required()
+  items:          Joi.array().items(itemSchema).min(1).required(),
+  save_as_draft:  Joi.boolean().default(false)
+}).custom((value, helpers) => {
+  if (!value.save_as_draft) {
+    if (!value.challan_number || !String(value.challan_number).trim()) {
+      return helpers.error('any.custom', { message: 'Challan number is required when submitting.' });
+    }
+    if (!value.challan_date) {
+      return helpers.error('any.custom', { message: 'Challan date is required when submitting.' });
+    }
+  }
+  return value;
+});
+
+const submitDraftSchema = Joi.object({
+  challan_number: Joi.string().max(100).trim().required(),
+  challan_date:   Joi.date().required()
+});
+
+/** Same payload as POST create; `save_as_draft` is ignored (strip). */
+const replaceDraftSchema = createSchema.keys({
+  save_as_draft: Joi.boolean().strip()
 });
 
 const updateSchema = Joi.object({
   supplier_id:    Joi.number().integer().allow(null),
   source_type:    Joi.string().max(50).allow('', null),
-  bill_ref:       Joi.string().max(100).allow('', null),
+  challan_number: Joi.string().max(100).allow('', null),
+  challan_date:   Joi.date().allow(null),
   purchase_date:  Joi.date().allow(null),
-  transport_cost: Joi.number().precision(2).min(0).allow(null),
   po_reference:   Joi.string().max(100).allow('', null),
   notes:          Joi.string().max(500).allow('', null)
-});
-
-const billVerifySchema = Joi.object({
-  actual_bill_amt:  Joi.number().precision(2).required(),
-  bill_number:      Joi.string().max(100).required(),
-  bill_date:        Joi.date().required(),
-  discrepancy_note: Joi.string().max(500).allow('', null)
 });
 
 const itemBrandSchema = Joi.object({
@@ -216,22 +228,21 @@ router.post(
         product_master_id: it.product_master_id,
         maker_master_id:   it.maker_master_id || null,
         category:          it.category,
-        purchase_rate:     it.purchase_rate,
         quantity:          it.quantity,
-        gst_pct:           it.gst_pct,
         colours:           it.colours
       })));
 
       const result = await executeStoredProcedure('sp_PurchaseHeader_Create', {
         supplier_id:    { type: sql.Int,              value: value.supplier_id },
         source_type:    { type: sql.VarChar(50),       value: value.source_type || null },
-        bill_ref:       { type: sql.VarChar(100),      value: value.bill_ref || null },
+        challan_number: { type: sql.VarChar(100),      value: value.challan_number || null },
+        challan_date:   { type: sql.DateTime,          value: value.challan_date || null },
         purchase_date:  { type: sql.DateTime,          value: value.purchase_date },
-        transport_cost: { type: sql.Decimal(10,2),     value: value.transport_cost || 0 },
         po_reference:   { type: sql.VarChar(100),      value: value.po_reference || null },
         notes:          { type: sql.VarChar(500),      value: value.notes || null },
         created_by:     { type: sql.Int,              value: userId },
-        items_json:     { type: sql.NVarChar(sql.MAX), value: itemsJson }
+        items_json:     { type: sql.NVarChar(sql.MAX), value: itemsJson },
+        save_as_draft:  { type: sql.Bit,              value: value.save_as_draft ? 1 : 0 }
       });
 
       const header  = result.recordsets[0] && result.recordsets[0][0];
@@ -240,6 +251,99 @@ router.post(
       items.forEach((item) => { item.colours = colours.filter((c) => c.item_id === item.item_id); });
 
       return res.status(201).json({ success: true, data: { header, items } });
+    } catch (err) {
+      if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });
+      return next(err);
+    }
+  }
+);
+
+// ── PUT submit draft → challan submitted (ops pipeline) ─────────────────────
+router.put(
+  '/:id/submit-draft',
+  requireModule('foundry'),
+  requirePermission('foundry.purchases.create'),
+  async (req, res, next) => {
+    try {
+      const { error, value } = submitDraftSchema.validate(req.body, { abortEarly: false });
+      if (error) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors: error.details.map((d) => d.message)
+        });
+      }
+      const result = await executeStoredProcedure('sp_PurchaseHeader_SubmitDraft', {
+        header_id:      { type: sql.Int,         value: Number(req.params.id) },
+        challan_number: { type: sql.VarChar(100), value: value.challan_number },
+        challan_date:   { type: sql.DateTime,    value: value.challan_date }
+      });
+      const row = result.recordset && result.recordset[0];
+      if (!row) return res.status(404).json({ success: false, message: 'Purchase not found' });
+      return res.json({ success: true, data: row });
+    } catch (err) {
+      if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });
+      return next(err);
+    }
+  }
+);
+
+// ── PUT replace draft (full header + items, DRAFT only) ─────────────────────
+router.put(
+  '/:id/draft',
+  requireModule('foundry'),
+  requirePermission('foundry.purchases.create', 'foundry.purchases.edit'),
+  async (req, res, next) => {
+    try {
+      const { error, value } = replaceDraftSchema.validate(req.body, { abortEarly: false });
+      if (error) return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });
+      const headerId = Number(req.params.id);
+      const itemsJson = JSON.stringify(value.items.map((it) => ({
+        product_master_id: it.product_master_id,
+        maker_master_id:   it.maker_master_id || null,
+        category:          it.category,
+        quantity:          it.quantity,
+        colours:           it.colours
+      })));
+
+      const result = await executeStoredProcedure('sp_PurchaseHeader_ReplaceDraft', {
+        header_id:      { type: sql.Int,              value: headerId },
+        supplier_id:    { type: sql.Int,              value: value.supplier_id },
+        source_type:    { type: sql.VarChar(50),       value: value.source_type || null },
+        challan_number: { type: sql.VarChar(100),      value: value.challan_number || null },
+        challan_date:   { type: sql.DateTime,          value: value.challan_date || null },
+        purchase_date:  { type: sql.DateTime,          value: value.purchase_date },
+        po_reference:   { type: sql.VarChar(100),      value: value.po_reference || null },
+        notes:          { type: sql.VarChar(500),      value: value.notes || null },
+        items_json:     { type: sql.NVarChar(sql.MAX), value: itemsJson }
+      });
+
+      const header  = result.recordsets[0] && result.recordsets[0][0];
+      const items   = result.recordsets[1] || [];
+      const colours = result.recordsets[2] || [];
+      items.forEach((item) => { item.colours = colours.filter((c) => c.item_id === item.item_id); });
+      if (!header) return res.status(404).json({ success: false, message: 'Purchase not found' });
+      return res.json({ success: true, data: { header, items } });
+    } catch (err) {
+      if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });
+      return next(err);
+    }
+  }
+);
+
+// ── PUT revert to draft (from pending bill verification or bill discrepancy) ─
+router.put(
+  '/:id/revert-to-draft',
+  requireModule('foundry'),
+  requirePermission('foundry.purchases.edit', 'foundry.purchases.create', 'foundry.bill_verification.create'),
+  async (req, res, next) => {
+    try {
+      const result = await executeStoredProcedure('sp_PurchaseHeader_RevertToDraft', {
+        header_id: { type: sql.Int, value: Number(req.params.id) }
+      });
+      const row = result.recordset && result.recordset[0];
+      if (!row) return res.status(404).json({ success: false, message: 'Purchase not found' });
+      return res.json({ success: true, data: row });
     } catch (err) {
       if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });
       return next(err);
@@ -260,39 +364,14 @@ router.put(
         header_id:      { type: sql.Int,           value: Number(req.params.id) },
         supplier_id:    { type: sql.Int,           value: value.supplier_id    || null },
         source_type:    { type: sql.VarChar(50),   value: value.source_type    || null },
-        bill_ref:       { type: sql.VarChar(100),  value: value.bill_ref       || null },
+        challan_number: { type: sql.VarChar(100),  value: value.challan_number || null },
+        challan_date:   { type: sql.DateTime,      value: value.challan_date   || null },
         purchase_date:  { type: sql.DateTime,      value: value.purchase_date  || null },
-        transport_cost: { type: sql.Decimal(10,2), value: value.transport_cost ?? null },
         po_reference:   { type: sql.VarChar(100),  value: value.po_reference   || null },
         notes:          { type: sql.VarChar(500),  value: value.notes          || null }
       });
       const row = result.recordset && result.recordset[0];
       if (!row) return res.status(404).json({ success: false, message: 'Purchase not found' });
-      return res.json({ success: true, data: row });
-    } catch (err) {
-      if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });
-      return next(err);
-    }
-  }
-);
-
-// ── PUT Stage 2: Verify Bill ─────────────────────────────────────────────────
-router.put(
-  '/:id/verify-bill',
-  requireModule('foundry'),
-  requirePermission('foundry.bill_verification.create'),
-  async (req, res, next) => {
-    try {
-      const { error, value } = billVerifySchema.validate(req.body, { abortEarly: false });
-      if (error) return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });
-      const result = await executeStoredProcedure('sp_PurchaseHeader_VerifyBill', {
-        header_id:        { type: sql.Int,          value: Number(req.params.id) },
-        actual_bill_amt:  { type: sql.Decimal(10,2), value: value.actual_bill_amt },
-        bill_number:      { type: sql.VarChar(100),  value: value.bill_number },
-        bill_date:        { type: sql.DateTime,      value: value.bill_date },
-        discrepancy_note: { type: sql.VarChar(500),  value: value.discrepancy_note || null }
-      });
-      const row = result.recordset && result.recordset[0];
       return res.json({ success: true, data: row });
     } catch (err) {
       if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });

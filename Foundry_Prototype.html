@@ -36,7 +36,7 @@
     <div class="nav-group" data-foundry-nav-group="procurement">Procurement</div>
     <div class="nav-item" data-foundry-permission="foundry.purchases.view" onclick="nav('purchases',this)"><span class="ic">📋</span> Purchases <span id="purchases-nav-badge" class="nav-badge" style="display:none"></span></div>
     <div class="nav-item" data-foundry-permission="foundry.purchases.create" onclick="nav('new-purchase',this)"><span class="ic">＋</span> New Purchase</div>
-    <div class="nav-item" data-foundry-permission="foundry.bill_verification.view" onclick="nav('bill-verify',this)"><span class="ic">🧾</span> Bill Verification <span id="bv-nav-badge" class="nav-badge gold" style="display:none"></span></div>
+    <div class="nav-item" 
     <div class="nav-item" data-foundry-permission="foundry.branding.view" onclick="nav('branding',this)"><span class="ic">🏷️</span> Branding <span id="branding-nav-badge" class="nav-badge gold" style="display:none"></span></div>
     <div class="nav-item" data-foundry-permission="foundry.digitisation.view" onclick="nav('digitisation',this)"><span class="ic">📸</span> Digitisation <span id="digi-nav-badge" class="nav-badge gold" style="display:none"></span></div>
 
@@ -150,12 +150,13 @@
     </div>
 
     <div id="new-purchase-error" style="display:none;color:var(--red);background:var(--redL);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+    <div id="new-purchase-draft-banner" style="display:none;background:var(--accL);border:1px solid var(--acc2);border-radius:8px;padding:12px 14px;margin-bottom:12px"></div>
 
     <div class="np-layout">
       <aside class="np-aside">
-        <!-- ── Bill Header (shared across all items in this bill) ── -->
+        <!-- ── Challan header (shared across all items in this bill) ── -->
         <div class="card mb4">
-          <div class="ch"><div class="ct">Bill Header</div></div>
+          <div class="ch"><div class="ct">Challan header</div></div>
           <div class="cb">
             <div class="fg3">
               <div class="fgrp">
@@ -165,9 +166,9 @@
                 </select>
                 <div class="fhint" id="bill-supplier-hint" style="display:none"></div>
               </div>
-              <div class="fgrp"><label>Invoice No.</label><input id="bill-ref-input" placeholder="e.g. INV-2024-001 (optional)"></div>
+              <div class="fgrp"><label>Challan No. <span class="req">*</span></label><input id="bill-ref-input" placeholder="Supplier challan number"></div>
+              <div class="fgrp"><label>Challan date <span class="req">*</span></label><input type="text" id="challan-date-input" placeholder="dd/MM/yyyy" readonly class="datepicker"></div>
               <div class="fgrp"><label>Purchase Date <span class="req">*</span></label><input type="text" id="bill-purchase-date-input" placeholder="dd/MM/yyyy" readonly class="datepicker"></div>
-              <div class="fgrp"><label>Transport Cost (₹)</label><input type="number" id="bill-transport-input" placeholder="0" min="0" step="0.01" oninput="recalcGrandTotal()"></div>
               <div class="fgrp"><label>PO Reference</label><input id="bill-po-ref-input" placeholder="Optional PO number"></div>
               <div class="fgrp"><label>Notes</label><input id="bill-notes-input" placeholder="Any additional notes..."></div>
             </div>
@@ -253,21 +254,10 @@
           <span class="xs td2" id="items-count-hint">1 item</span>
         </div>
 
-        <!-- ── Bill Grand Total Summary ── -->
-        <div class="card mb4">
-          <div class="ch"><div class="ct">Grand Total Summary</div></div>
-          <div class="cb">
-            <div id="bill-grand-total-rows" style="display:flex;flex-direction:column;gap:8px">
-              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Items Sub-Total</span><span class="mono xs" id="grand-subtotal">₹0</span></div>
-              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Total GST</span><span class="mono xs" id="grand-gst">₹0</span></div>
-              <div class="flex ic" style="justify-content:space-between"><span class="sm-txt td2">Transport Cost</span><span class="mono xs" id="grand-transport">₹0</span></div>
-              <hr class="sep" style="margin:4px 0">
-              <div class="flex ic" style="justify-content:space-between"><span class="fw6">Grand Total (Expected Bill)</span><span class="mono fw6" id="grand-total" style="font-size:16px;color:var(--acc)">₹0</span></div>
-            </div>
-          </div>
+        <div class="flex ic g2" style="flex-wrap:wrap;justify-content:flex-start;align-items:stretch;max-width:520px">
+          <button type="button" class="btn" id="save-purchase-draft-btn" data-foundry-permission="foundry.purchases.create" style="justify-content:center;padding:12px 20px;font-size:14px;flex:1;min-width:160px" onclick="handleSavePurchaseDraft()">Save as Draft</button>
+          <button type="button" class="btn primary" id="save-purchase-btn" data-foundry-permission="foundry.purchases.create" style="justify-content:center;padding:12px 20px;font-size:14px;flex:1;min-width:200px" onclick="handleSavePurchase()">Submit challan</button>
         </div>
-
-        <button class="btn primary" id="save-purchase-btn" style="justify-content:center;padding:12px 32px;font-size:14px;max-width:420px" onclick="handleSavePurchase()">Save All Items → Bill Verification</button>
       </div>
     </div>
   </div>
@@ -276,7 +266,7 @@
   <div class="page" id="page-purchases">
     <div class="ph flex ic"><div><div class="pt">All Purchases</div></div><button class="btn primary mla" data-foundry-permission="foundry.purchases.create" onclick="nav('new-purchase',document.querySelector('[onclick*=new-purchase]'))">+ New Purchase</button></div>
     <div class="sg4">
-      <div class="sc" style="--sc-color:var(--gold)"><div class="sl">Bill Verification</div><div class="sv" id="pstat-bill">—</div></div>
+      <div class="sc" style="--sc-color:var(--gold)"><div class="sl">Pending valuation</div><div class="sv" id="pstat-bill">—</div></div>
       <div class="sc" style="--sc-color:var(--acc)"><div class="sl">Branding</div><div class="sv" id="pstat-brand">—</div></div>
       <div class="sc" style="--sc-color:var(--teal)"><div class="sl">Digitisation</div><div class="sv" id="pstat-digit">—</div></div>
       <div class="sc" style="--sc-color:var(--green)"><div class="sl">Warehouse Ready</div><div class="sv" id="pstat-wh">—</div></div>
@@ -287,7 +277,8 @@
           <div class="sw" style="flex:1;max-width:280px"><span class="si">🔍</span><input id="purchases-search" placeholder="Search purchases..." oninput="loadPurchases()"></div>
           <select id="purchases-stage-filter" style="min-width:160px" onchange="loadPurchases()">
             <option value="">All Stages</option>
-            <option value="PENDING_BILL_VERIFICATION">Pending Bill Verification</option>
+            <option value="DRAFT">Draft</option>
+            <option value="PENDING_BILL_VERIFICATION">Pending Pending valuation</option>
             <option value="BILL_DISCREPANCY">Bill Discrepancy</option>
             <option value="PENDING_BRANDING">Pending Branding</option>
             <option value="BRANDING_DISPATCHED">Branding Dispatched</option>
@@ -307,12 +298,12 @@
 
   <!-- ═══ BILL VERIFICATION ═══ -->
   <div class="page" id="page-bill-verify">
-    <div class="ph flex ic"><div><div class="pt">Bill Verification</div></div><button class="btn sm mla" id="bv-print-btn" onclick="printBillSummary()" style="display:none">🖨 Print Summary</button></div>
+    <div class="ph flex ic"><div><div class="pt">Pending valuation</div></div><button class="btn sm mla" id="bv-print-btn" onclick="printBillSummary()" style="display:none">🖨 Print Summary</button></div>
 
     <!-- LIST VIEW -->
     <div id="bv-list-section">
       <div class="card mb4">
-        <div class="ch"><div class="ct">Pending Bill Verification</div><span class="b b-gold" id="bv-list-count">—</span></div>
+        <div class="ch"><div class="ct">Pending Pending valuation</div><span class="b b-gold" id="bv-list-count">—</span></div>
         <div class="cb">
           <div class="tw"><table>
             <thead><tr><th>Bill ID</th><th>Supplier</th><th>Invoice No.</th><th>Items</th><th>Total Qty</th><th>Expected Bill</th><th>Date</th><th>Action</th></tr></thead>
@@ -376,6 +367,7 @@
             <div class="xs td2">Threshold: <span class="mono" style="color:var(--text1)">±₹50</span> auto-approved · Beyond requires Super Admin</div>
           </div>
         </div>
+        <button type="button" class="btn w100" id="bv-revert-to-purchase-btn" style="display:none;justify-content:center;padding:11px;font-size:14px;margin-bottom:8px" onclick="handleRevertPurchaseToDraft(this)">Correct in purchase stage</button>
         <button class="btn primary w100" id="verify-bill-btn" style="justify-content:center;padding:11px;font-size:14px" onclick="handleVerifyBill()">Verify Bill → Next Stage</button>
       </div>
     </div>
@@ -519,7 +511,7 @@
         <div class="pstep-num">STAGE 1</div><div class="pstep-title">&#128203; Purchase Reg.</div>
         <div class="pstep-sub" id="pv-sub-1">&#10003; Complete</div>
       </div>
-      <div class="pstep" id="pv-step-2" onclick="switchPVStage(2)" title="View Bill Verification">
+      <div class="pstep" id="pv-step-2" onclick="switchPVStage(2)" title="View Pending valuation">
         <div class="pstep-num">STAGE 2</div><div class="pstep-title">&#129534; Bill Verify</div>
         <div class="pstep-sub" id="pv-sub-2">&#10003; Verified</div>
       </div>
@@ -1102,6 +1094,31 @@
   </div>
 </div>
 
+<!-- ── Submit challan (from purchases list) ── -->
+<div class="overlay" id="modal-submit-challan">
+  <div class="modal" style="max-width:440px">
+    <div class="mh"><div class="mt-title">Submit challan</div><div class="mc" onclick="closeM('modal-submit-challan')" role="button" tabindex="0" aria-label="Close">×</div></div>
+    <div class="mb">
+      <div id="submit-challan-error" class="err-msg" style="display:none"></div>
+      <p class="xs td2" id="submit-challan-hint" style="margin:0 0 14px">Enter the supplier challan details to release this draft to ops and Finance.</p>
+      <div class="fg2">
+        <div class="fgrp">
+          <label>Challan No. <span class="req">*</span></label>
+          <input type="text" id="submit-challan-number" placeholder="Supplier challan number" autocomplete="off">
+        </div>
+        <div class="fgrp">
+          <label>Challan date <span class="req">*</span></label>
+          <input type="text" id="submit-challan-date-input" placeholder="dd/MM/yyyy" readonly class="datepicker">
+        </div>
+      </div>
+    </div>
+    <div class="mf">
+      <button type="button" class="btn" onclick="closeM('modal-submit-challan')">Cancel</button>
+      <button type="button" class="btn primary" id="submit-challan-confirm-btn" onclick="confirmSubmitChallanFromModal()">Submit challan</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Edit Purchase (Stage 1 only) ── -->
 <div class="overlay" id="modal-edit-purchase">
   <div class="modal" style="max-width:520px">
@@ -1342,7 +1359,7 @@
 <script>
 const bcMap = {
   dashboard:'Dashboard', purchases:'All Purchases', 'new-purchase':'New Purchase',
-  'bill-verify':'Bill Verification', branding:'Branding', digitisation:'Digitisation',
+  'bill-verify':'Pending valuation', branding:'Branding', digitisation:'Digitisation',
   'sku-catalogue':'SKU Catalogue', 'stock-view':'Stock View',
   'lens-packages':'Lens packages', 'lens-addons':'Lens add-ons', 'lens-package-addons':'Lens link matrix', 'lens-wizard-rules':'Lens wizard rules',
   'master-catalogue':'Master Catalogue', 'rate-intelligence':'Rate Intelligence',

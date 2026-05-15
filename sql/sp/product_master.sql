@@ -188,8 +188,20 @@ BEGIN
   OUTER APPLY (
     SELECT
       COUNT(DISTINCT pi.header_id) AS purchase_count,
-      MIN(pi.purchase_rate) AS purchase_rate_min,
-      MAX(pi.purchase_rate) AS purchase_rate_max
+      MIN(
+        CASE
+          WHEN pi.quantity > 0 AND pi.finance_payable_amt IS NOT NULL
+            THEN ROUND(pi.finance_payable_amt / pi.quantity, 2)
+          ELSE pi.purchase_rate
+        END
+      ) AS purchase_rate_min,
+      MAX(
+        CASE
+          WHEN pi.quantity > 0 AND pi.finance_payable_amt IS NOT NULL
+            THEN ROUND(pi.finance_payable_amt / pi.quantity, 2)
+          ELSE pi.purchase_rate
+        END
+      ) AS purchase_rate_max
     FROM dbo.purchase_items pi
     WHERE pi.product_master_id = pm.product_id
   ) pc

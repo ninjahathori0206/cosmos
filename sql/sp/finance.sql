@@ -45,7 +45,7 @@ AS BEGIN
       ph.bill_date,
       ISNULL(ph.actual_bill_amt, ph.expected_bill_amt) AS bill_amount
     FROM dbo.purchase_headers ph
-    WHERE ph.pipeline_status <> 'PENDING_BILL_VERIFICATION'
+    WHERE ph.pipeline_status NOT IN ('PENDING_BILL_VERIFICATION','DRAFT')
   ),
   bill_paid AS (
     SELECT
@@ -161,7 +161,7 @@ AS BEGIN
     GROUP BY pa.header_id
   ) paid ON paid.header_id = ph.header_id
   WHERE ph.supplier_id = @supplier_id
-    AND ph.pipeline_status <> 'PENDING_BILL_VERIFICATION'
+    AND ph.pipeline_status NOT IN ('PENDING_BILL_VERIFICATION','DRAFT')
   ORDER BY ph.bill_date DESC, ph.header_id DESC;
 
   -- Result set 3: Payment history
@@ -288,7 +288,7 @@ AS BEGIN
   -- total payable = opening balances + verified bills
   SELECT @total_payable = ISNULL((SELECT SUM(opening_balance) FROM dbo.suppliers WHERE vendor_status='active'), 0)
     + ISNULL(SUM(
-        CASE WHEN pipeline_status <> 'PENDING_BILL_VERIFICATION'
+        CASE WHEN pipeline_status NOT IN ('PENDING_BILL_VERIFICATION','DRAFT')
              THEN ISNULL(actual_bill_amt, expected_bill_amt)
              ELSE 0 END), 0)
   FROM dbo.purchase_headers;
@@ -313,7 +313,7 @@ AS BEGIN
       WHERE sp2.is_void = 0
       GROUP BY pa.header_id
     ) paid ON paid.header_id = ph.header_id
-    WHERE ph.pipeline_status <> 'PENDING_BILL_VERIFICATION'
+    WHERE ph.pipeline_status NOT IN ('PENDING_BILL_VERIFICATION','DRAFT')
       AND ph.bill_date IS NOT NULL
   ) x
   WHERE x.bill_out > 0
@@ -333,7 +333,7 @@ AS BEGIN
     GROUP BY pa.header_id
   ) paid2 ON paid2.header_id = ph.header_id
   WHERE s.vendor_status = 'active'
-    AND ph.pipeline_status <> 'PENDING_BILL_VERIFICATION'
+    AND ph.pipeline_status NOT IN ('PENDING_BILL_VERIFICATION','DRAFT')
     AND ISNULL(ph.actual_bill_amt, ph.expected_bill_amt) - ISNULL(paid2.paid_amt, 0) > 0.005;
 
   SELECT @payments_30d = COUNT(*)

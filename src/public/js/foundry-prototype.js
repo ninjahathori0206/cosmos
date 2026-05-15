@@ -12,6 +12,9 @@ function closeSidebar() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  document.querySelectorAll('.nav-item[data-foundry-permission="foundry.bill_verification.view"]').forEach((el) => { el.style.display = 'none'; });
+  const bvPage = document.getElementById('page-bill-verify');
+  if (bvPage) bvPage.style.display = 'none';
   // Visual-only theme polish for Foundry prototype screens.
   // Keeps existing behavior and structure intact.
   (function injectFoundryPrototypeUiPolish() {
@@ -173,6 +176,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   const user = JSON.parse(userRaw);
   const userPermissions = Array.isArray(user.permissions) ? user.permissions : [];
 
+  /** Matches PUT /api/purchases/:id/revert-to-draft (OR semantics). */
+  function fyCanRevertPurchaseToDraft() {
+    if (user && String(user.role || '') === 'super_admin') return true;
+    const pl = userPermissions.map((x) => String(x).toLowerCase());
+    return (
+      pl.includes('foundry.purchases.edit')
+      || pl.includes('foundry.purchases.create')
+      || pl.includes('foundry.bill_verification.create')
+    );
+  }
+
+  /** Needed to open New Purchase and edit the draft after revert. */
+  function fyCanEditPurchaseDraftAfterRevert() {
+    if (user && String(user.role || '') === 'super_admin') return true;
+    const pl = userPermissions.map((x) => String(x).toLowerCase());
+    return pl.includes('foundry.purchases.create') || pl.includes('foundry.purchases.edit');
+  }
+
   const mods = user.modules;
   const hasMap = mods && typeof mods === 'object' && Object.keys(mods).length > 0;
   if (hasMap && mods.foundry === false) {
@@ -326,7 +347,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function stageBadge(s) {
     const map = {
-      PENDING_BILL_VERIFICATION: ['b-gold',  'Pending Bill Verification'],
+      DRAFT:                     ['b-gray',  'Draft'],
+      PENDING_BILL_VERIFICATION: ['b-gold',  'Challan submitted'],
+      CHALLAN_VALUED:              ['b-teal',  'Valued by Finance'],
       BILL_DISCREPANCY:          ['b-red',   'Bill Discrepancy'],
       PENDING_BRANDING:          ['b-blue',  'Pending Branding'],
       BRANDING_DISPATCHED:       ['b-blue',  'Branding Dispatched'],
@@ -369,6 +392,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
   window._brandingReceiptDraftByHeader = {};
+  /** When set, New Purchase opens this draft for edit (line items + header). */
+  window._resumeDraftHeaderId = null;
+  /** Active draft header id while the New Purchase form is bound to an existing draft. */
+  window._editingDraftHeaderId = null;
   window._currentHeaderId = null;
   window._purchaseActiveItemIdx = 1;
   window._purchaseLineModes = {};
@@ -1093,7 +1120,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ─────────────────────────────────────────────────────────────────────────
   // NEW PURCHASE FORM (multi-item)
   // ─────────────────────────────────────────────────────────────────────────
+  function setNewPurchaseDraftBanner(headerId) {
+    const el = document.getElementById('new-purchase-draft-banner');
+    if (!el) return;
+    if (headerId) {
+      el.style.display = 'block';
+      el.innerHTML = `<div style="font-size:14px;font-weight:600;color:var(--text1);margin-bottom:4px">Editing draft purchase <span class="mono">#${headerId}</span></div>
+        <div style="font-size:13px;color:var(--text2)">Save as Draft to keep changes, or use Save All Items → Bill Verification when you are ready to verify the supplier invoice.</div>`;
+    } else {
+      el.style.display = 'none';
+      el.innerHTML = '';
+    }
+  }
+
+  function unlockPurchaseLineFieldsForEdit(idx) {
+    ['item-source-brand', 'item-source-coll', 'item-source-model', 'item-maker-name'].forEach((prefix) => {
+      const field = document.getElementById(`${prefix}-${idx}`);
+      if (field) { field.readOnly = false; field.style.background = ''; field.style.color = ''; }
+    });
+    const ptEl = document.getElementById(`item-product-type-${idx}`);
+    if (ptEl) { ptEl.disabled = false; ptEl.style.opacity = ''; }
+  }
+
   function initNewPurchaseForm() {
+    window._editingDraftHeaderId = null;
+    setNewPurchaseDraftBanner(null);
     _itemCount = 0;
     const container = document.getElementById('purchase-items-container');
     if (container) container.innerHTML = '';
@@ -1185,21 +1236,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
 
           <div class="mb3" style="border-top:1px solid var(--border);padding-top:12px">
-            <div class="item-line-rate-gst-brand-dup">
-              <div class="fg3 mb3">
-                <div class="fgrp">
-                  <label>Purchase Rate (₹) <span class="req">*</span></label>
-                  <input type="number" id="item-rate-${idx}" placeholder="Per unit rate" oninput="calcItemBill(${idx})">
-                </div>
-                <div class="fgrp">
-                  <label>GST % <span class="req">*</span></label>
-                  <input type="number" id="item-gst-${idx}" placeholder="e.g. 12 for 12%" step="0.01" min="0" max="100" oninput="calcItemBill(${idx})">
-                </div>
-              </div>
-              <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
-                <input type="checkbox" id="item-branding-${idx}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--acc2)">
-                <label for="item-branding-${idx}" style="font-size:13px;font-weight:600;cursor:pointer">Branding Required</label>
-              </div>
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+              <input type="checkbox" id="item-branding-${idx}" style="width:16px;height:16px;cursor:pointer;accent-color:var(--acc2)">
+              <label for="item-branding-${idx}" style="font-size:13px;font-weight:600;cursor:pointer">Branding Required</label>
             </div>
           </div>
 
@@ -1211,17 +1250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
             <div class="fgrp">
               <label>Quantity <span class="req">*</span></label>
-              <input type="number" id="item-qty-${idx}" placeholder="Total units" oninput="calcItemBill(${idx});validateColourQty(${idx})">
-            </div>
-            <div class="item-totals-cluster">
-              <div class="item-mini-amts">
-                <div class="item-money-row"><span class="td2">Base value</span><span class="mono" id="item-base-${idx}">₹0</span></div>
-                <div class="item-money-row"><span class="td2">GST amount</span><span class="mono" id="item-gst-amt-${idx}">₹0</span></div>
-              </div>
-              <div class="item-total-cell">
-                <div class="item-total-lbl">Item total</div>
-                <span class="mono" id="item-total-${idx}">₹0</span>
-              </div>
+              <input type="number" id="item-qty-${idx}" placeholder="Total units" oninput="validateColourQty(${idx})">
             </div>
           </div>
         </div>
@@ -1505,18 +1534,153 @@ document.addEventListener('DOMContentLoaded', async () => {
     setT('grand-total', grand);
   };
 
-  // ── Save Purchase ─────────────────────────────────────────────────────────
-  window.handleSavePurchase = async function() {
+  async function loadDraftPurchaseIntoForm(headerId) {
+    showErr('new-purchase-error', '');
+    const id = Number(headerId);
+    if (!id) return;
+    try {
+      const data = await apiGet(`/api/purchases/${id}`);
+      const h = data.header;
+      const items = data.items || [];
+      if (!h || h.pipeline_status !== 'DRAFT') {
+        const msg = h && h.pipeline_status ? 'This purchase is not a draft anymore.' : 'Purchase not found.';
+        if (typeof cosmosToastError === 'function') cosmosToastError(msg);
+        showErr('new-purchase-error', msg);
+        initNewPurchaseForm();
+        return;
+      }
+
+      const container = document.getElementById('purchase-items-container');
+      if (container) container.innerHTML = '';
+      _itemCount = 0;
+      _colourCounters = {};
+
+      const sup = document.getElementById('bill-supplier-select');
+      if (sup) sup.value = String(h.supplier_id || '');
+      const billRefEl = document.getElementById('bill-ref-input');
+      if (billRefEl) billRefEl.value = h.challan_number || h.bill_ref || '';
+      const challanDateEl = document.getElementById('challan-date-input');
+      if (challanDateEl && h.challan_date) {
+        if (challanDateEl._flatpickr) challanDateEl._flatpickr.setDate(new Date(h.challan_date), true);
+        else challanDateEl.value = h.challan_date;
+      }
+      const transportEl = document.getElementById('bill-transport-input');
+      if (transportEl) transportEl.value = h.transport_cost != null ? String(h.transport_cost) : '0';
+      const poEl = document.getElementById('bill-po-ref-input');
+      if (poEl) poEl.value = h.po_reference || '';
+      const notesEl = document.getElementById('bill-notes-input');
+      if (notesEl) notesEl.value = h.notes || '';
+
+      const pdEl = document.getElementById('bill-purchase-date-input');
+      if (pdEl && h.purchase_date) {
+        const d = new Date(h.purchase_date);
+        if (pdEl._flatpickr) pdEl._flatpickr.setDate(d, true);
+        else pdEl.value = new Date(h.purchase_date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      }
+
+      window._purchaseLineModes = {};
+      items.forEach(() => {
+        addPurchaseItem({ skipDefaultsApply: true });
+      });
+
+      const cards = document.querySelectorAll('.purchase-item-card');
+      items.forEach((it, ord) => {
+        const card = cards[ord];
+        if (!card) return;
+        const idx = parseInt(card.dataset.idx, 10);
+        const pmEl = document.getElementById(`item-selected-pm-${idx}`);
+        if (pmEl) pmEl.value = String(it.product_master_id || '');
+        const makerNameEl = document.getElementById(`item-maker-name-${idx}`);
+        const makerEl = document.getElementById(`item-maker-${idx}`);
+        if (it.maker_name && makerNameEl) makerNameEl.value = it.maker_name;
+        if (it.maker_master_id != null && makerEl) makerEl.value = String(it.maker_master_id);
+        const brandEl = document.getElementById(`item-source-brand-${idx}`);
+        if (brandEl) brandEl.value = it.source_brand || '';
+        const collEl = document.getElementById(`item-source-coll-${idx}`);
+        if (collEl) collEl.value = it.source_collection || '';
+        const modelEl = document.getElementById(`item-source-model-${idx}`);
+        const modelVal = it.style_model || it.source_model_number || '';
+        if (modelEl) modelEl.value = modelVal;
+        const ptEl = document.getElementById(`item-product-type-${idx}`);
+        if (ptEl && it.category) ptEl.value = it.category;
+        const rateEl = document.getElementById(`item-rate-${idx}`);
+        if (rateEl) rateEl.value = it.purchase_rate != null ? String(it.purchase_rate) : '';
+        const qtyEl = document.getElementById(`item-qty-${idx}`);
+        if (qtyEl) qtyEl.value = it.quantity != null ? String(it.quantity) : '';
+        const gstEl = document.getElementById(`item-gst-${idx}`);
+        const gFrac = Number(it.gst_pct) || 0;
+        if (gstEl) gstEl.value = String(Math.round(gFrac * 10000) / 100);
+        const br = document.getElementById(`item-branding-${idx}`);
+        if (br) br.checked = !!it.branding_required;
+
+        const colCont = document.getElementById(`colours-container-${idx}`);
+        if (colCont) colCont.innerHTML = '';
+        const cols = it.colours || [];
+        const isStdOnly = cols.length === 1
+          && String(cols[0].colour_name || '').toLowerCase() === 'standard'
+          && String(cols[0].colour_code || '').toUpperCase() === 'STD';
+        if (cols.length && !isStdOnly) {
+          cols.forEach((c) => {
+            addColourToItem(idx);
+            const cidx = _colourCounters[idx];
+            const nEl = document.getElementById(`clr-name-${idx}-${cidx}`);
+            const codeEl = document.getElementById(`clr-code-${idx}-${cidx}`);
+            const qEl = document.getElementById(`clr-qty-${idx}-${cidx}`);
+            if (nEl) nEl.value = c.colour_name || '';
+            if (codeEl) codeEl.value = c.colour_code || '';
+            if (qEl) qEl.value = c.quantity != null ? String(c.quantity) : '';
+          });
+        }
+
+        const banner = document.getElementById(`item-selected-banner-${idx}`);
+        if (banner) banner.style.display = 'none';
+        unlockPurchaseLineFieldsForEdit(idx);
+        window._purchaseLineModes[idx] = 'new';
+        calcItemBill(idx);
+        validateColourQty(idx);
+      });
+
+      window._editingDraftHeaderId = id;
+      setNewPurchaseDraftBanner(id);
+      if (typeof window.setPurchaseActiveItem === 'function') window.setPurchaseActiveItem(1);
+      recalcGrandTotal();
+      const hint = document.getElementById('items-count-hint');
+      if (hint) hint.textContent = items.length === 1 ? '1 item' : `${items.length} items`;
+      if (typeof cosmosToastInfo === 'function') {
+        cosmosToastInfo('Draft loaded — edit lines and save.');
+      }
+    } catch (e) {
+      const m = e && e.message ? e.message : String(e);
+      if (typeof cosmosToastError === 'function') cosmosToastError(m);
+      showErr('new-purchase-error', m);
+      initNewPurchaseForm();
+    }
+  }
+
+  window.resumeDraftPurchaseForEdit = function(headerId) {
+    const hid = Number(headerId);
+    if (!hid) return;
+    window._resumeDraftHeaderId = hid;
+    const navBtn = document.querySelector('.nav-item[onclick*="new-purchase"]');
+    nav('new-purchase', navBtn || undefined);
+  };
+
+  // ── Save Purchase (submit to bill verification or save as draft) ─────────
+  async function savePurchaseInternal(asDraft) {
     showErr('new-purchase-error', '');
     const supplierId = val('bill-supplier-select');
-    const billRef    = val('bill-ref-input');
+    const challanNum = val('bill-ref-input');
+    const challanDate = (typeof getFpIso === 'function' ? getFpIso('challan-date-input') : null) || val('challan-date-input');
     const purchDate  = (typeof getFpIso === 'function' ? getFpIso('bill-purchase-date-input') : null) || val('bill-purchase-date-input');
-    const transport  = parseFloat(val('bill-transport-input')) || 0;
     const poRef      = val('bill-po-ref-input');
     const notes      = val('bill-notes-input');
 
     if (!supplierId)  return showErr('new-purchase-error', 'Please select a Supplier.');
-    if (!purchDate)   return showErr('new-purchase-error', 'Please enter a Purchase Date.');
+    if (!purchDate)   return showErr('new-purchase-error', 'Please enter a Purchase date.');
+    if (!asDraft) {
+      if (!challanNum || !String(challanNum).trim()) return showErr('new-purchase-error', 'Enter Challan No. before submitting.');
+      if (!challanDate) return showErr('new-purchase-error', 'Enter Challan date before submitting.');
+    }
 
     const itemCards = document.querySelectorAll('.purchase-item-card');
     if (!itemCards.length) return showErr('new-purchase-error', 'Add at least one item.');
@@ -1527,9 +1691,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const sourceBrand = val(`item-source-brand-${i}`);
       const sourceColl = val(`item-source-coll-${i}`) || null;
       const sourceModel = val(`item-source-model-${i}`);
-      const rate       = parseFloat(val(`item-rate-${i}`));
-      const qty        = parseInt(val(`item-qty-${i}`));
-      const gstPct     = parseFloat(val(`item-gst-${i}`));
+      const qty        = parseInt(val(`item-qty-${i}`), 10);
       const makerMasterId = val(`item-maker-${i}`) || null;
       const category = val(`item-product-type-${i}`);
       const brandingRequired = document.getElementById(`item-branding-${i}`)?.checked ?? false;
@@ -1540,12 +1702,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!sourceBrand) return showErr('new-purchase-error', `Item #${i}: Enter Source Brand.`);
       if (!sourceModel) return showErr('new-purchase-error', `Item #${i}: Enter Source Model Number.`);
       if (!category) return showErr('new-purchase-error', `Item #${i}: Select Product Type.`);
-      if (!rate || rate <= 0)  return showErr('new-purchase-error', `Item #${i}: Enter a valid Rate.`);
       if (!qty  || qty  <= 0)  return showErr('new-purchase-error', `Item #${i}: Enter a valid Quantity.`);
-      if (gstPct == null || isNaN(gstPct) || gstPct < 0) return showErr('new-purchase-error', `Item #${i}: Enter GST% (e.g. 12 for 12%).`);
       if (!validateColourQty(i)) return showErr('new-purchase-error', `Item #${i}: Colour quantities must match item total.`);
 
-      // Collect colours
       const colours = [];
       const colourRows = card.querySelectorAll(`[id^="clr-qty-${i}-"]`);
       colourRows.forEach((cqEl) => {
@@ -1555,12 +1714,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const cQty  = parseInt(cqEl.value) || 0;
         if (cName && cQty > 0) colours.push({ colour_name: cName, colour_code: cCode || cName.replace(/\s+/g,'').toUpperCase().slice(0,8), quantity: cQty });
       });
-      // If no colour variants were filled in, insert a generic "Standard" variant
-      // so that SKU generation is always possible in the digitisation stage.
       if (colours.length === 0) {
         colours.push({ colour_name: 'Standard', colour_code: 'STD', quantity: qty });
       }
-      // Use explicitly selected product (from search picker) or resolve via repeat-check / create
       let productMasterId = val(`item-selected-pm-${i}`) || null;
 
       if (!productMasterId) {
@@ -1573,7 +1729,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       if (!productMasterId) {
-        // Keep legacy fields populated to remain compatible with existing reports.
         const ewCollection = sourceColl || sourceBrand;
         try {
           const pm = await apiPost('/api/products', {
@@ -1596,44 +1751,100 @@ document.addEventListener('DOMContentLoaded', async () => {
         product_master_id: productMasterId,
         maker_master_id:   Number(makerMasterId),
         category,
-        purchase_rate:     rate,
         quantity:          qty,
-        gst_pct:           gstPct / 100,   // convert % to fraction for DB (12 → 0.12)
         colours
       });
     }
 
-    const btn = document.getElementById('save-purchase-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    const editingDraftId = window._editingDraftHeaderId ? Number(window._editingDraftHeaderId) : 0;
+
+    const btnSubmit = document.getElementById('save-purchase-btn');
+    const btnDraft  = document.getElementById('save-purchase-draft-btn');
+    const activeBtn = asDraft ? btnDraft : btnSubmit;
+    if (activeBtn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(activeBtn);
+    else if (activeBtn) { activeBtn.disabled = true; }
+
     try {
-      const result = await apiPost('/api/purchases', {
+      const payload = {
         supplier_id: Number(supplierId),
         source_type: null,
-        bill_ref: billRef || null,
+        challan_number: challanNum || null,
+        challan_date: challanDate || null,
         purchase_date: purchDate,
-        transport_cost: transport,
         po_reference: poRef || null,
         notes: notes || null,
-        items: itemsPayload
-      });
-      const headerId = result.header && result.header.header_id;
+        items: itemsPayload,
+        save_as_draft: !!asDraft
+      };
+
+      let result;
+      if (editingDraftId) {
+        result = await apiPut(`/api/purchases/${editingDraftId}/draft`, payload);
+      } else {
+        result = await apiPost('/api/purchases', payload);
+      }
+
+      const headerId = (result.header && result.header.header_id) || editingDraftId;
       window._currentHeaderId = headerId;
-      // Reset form
+      window._editingDraftHeaderId = null;
+      setNewPurchaseDraftBanner(null);
       document.getElementById('purchase-items-container').innerHTML = '';
       _itemCount = 0;
       _colourCounters = {};
       document.getElementById('bill-supplier-select').value   = '';
-      document.getElementById('bill-ref-input').value          = '';
-      document.getElementById('bill-transport-input').value    = '';
+      document.getElementById('bill-ref-input').value = '';
+      const cdEl = document.getElementById('challan-date-input');
+      if (cdEl && cdEl._flatpickr) cdEl._flatpickr.clear(); else if (cdEl) cdEl.value = '';
       const pdEl = document.getElementById('bill-purchase-date-input');
       if (pdEl && pdEl._flatpickr) pdEl._flatpickr.clear(); else if (pdEl) pdEl.value = '';
-      // Navigate to bill verify — openBillVerifyPage handles nav internally
-      openBillVerifyPage(headerId);
+
+      if (asDraft) {
+        if (typeof cosmosToastSuccess === 'function') {
+          cosmosToastSuccess(editingDraftId ? 'Draft updated.' : 'Purchase saved as draft. Submit challan from All Purchases when ready.');
+        }
+        if (editingDraftId) {
+          window._resumeDraftHeaderId = editingDraftId;
+          const navBtn = document.querySelector('.nav-item[onclick*="new-purchase"]');
+          const path = (typeof FOUNDRY_PAGE_PATHS !== 'undefined' && FOUNDRY_PAGE_PATHS['new-purchase']) || '/foundry/new-purchase';
+          if (window.history && typeof window.history.replaceState === 'function') {
+            window.history.replaceState({ module: 'foundry', page: 'new-purchase' }, '', `${path}?draft=${editingDraftId}`);
+          }
+          nav('new-purchase', navBtn || undefined);
+        } else {
+          const navPurch = document.querySelector('.sidebar-nav .nav-item[onclick*="purchases"]')
+            || document.querySelector('[onclick*="purchases"]');
+          nav('purchases', navPurch || undefined);
+        }
+      } else {
+        if (editingDraftId && window.history && typeof window.history.replaceState === 'function') {
+          const path = (typeof FOUNDRY_PAGE_PATHS !== 'undefined' && FOUNDRY_PAGE_PATHS['new-purchase']) || '/foundry/new-purchase';
+          window.history.replaceState({ module: 'foundry', page: 'new-purchase' }, '', path);
+        }
+        if (typeof cosmosToastSuccess === 'function') {
+          cosmosToastSuccess('Challan submitted. Finance will set payable amounts; ops can continue in parallel.');
+        }
+        const navPurch = document.querySelector('.sidebar-nav .nav-item[onclick*="purchases"]')
+          || document.querySelector('[onclick*="purchases"]');
+        nav('purchases', navPurch || undefined);
+        loadPurchases();
+      }
     } catch (err) {
       showErr('new-purchase-error', err.message);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Save All Items → Bill Verification'; }
+      if (btnSubmit && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnSubmit);
+      else if (btnSubmit) { btnSubmit.disabled = false; }
+      if (btnDraft && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnDraft);
+      else if (btnDraft) { btnDraft.disabled = false; }
     }
+  }
+
+  window.handleSavePurchase = async function() {
+    await savePurchaseInternal(false);
+  };
+
+  window.handleSavePurchaseDraft = async function() {
+    await savePurchaseInternal(true);
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1668,8 +1879,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       tb.innerHTML = rows.map((r) => {
         const actions = [];
-        if (r.pipeline_status === 'PENDING_BILL_VERIFICATION')
+        if (r.pipeline_status === 'PENDING_BILL_VERIFICATION') {
           actions.push(`<button class="btn xs primary" data-action="open-bill-verify" data-id="${r.header_id}">Verify Bill</button>`);
+          if (fyCanRevertPurchaseToDraft()) {
+            actions.push(`<button type="button" class="btn xs" data-action="revert-to-purchase" data-id="${r.header_id}">Correct in purchase stage</button>`);
+          }
+        } else if (r.pipeline_status === 'BILL_DISCREPANCY') {
+          actions.push(`<button type="button" class="btn xs primary" data-action="open-bill-verify" data-id="${r.header_id}">Review discrepancy</button>`);
+          if (fyCanRevertPurchaseToDraft()) {
+            actions.push(`<button type="button" class="btn xs" data-action="revert-to-purchase" data-id="${r.header_id}">Correct in purchase stage</button>`);
+          }
+          actions.push(`<button type="button" class="btn xs" data-action="open-purchase-view" data-id="${r.header_id}">View</button>`);
+        } else if (r.pipeline_status === 'DRAFT') {
+          actions.push(`<button type="button" class="btn xs" data-action="resume-draft" data-id="${r.header_id}">Edit draft</button>`);
+          actions.push(`<button type="button" class="btn xs primary" data-action="submit-draft" data-id="${r.header_id}">Submit challan</button>`);
+        }
         else if (['PENDING_BRANDING','BRANDING_DISPATCHED'].includes(r.pipeline_status))
           actions.push(`<button class="btn xs primary" data-action="open-branding" data-id="${r.header_id}">Branding</button>`);
         else if (r.pipeline_status === 'PENDING_DIGITISATION')
@@ -1680,7 +1904,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `<tr>
           <td class="mono xs">#${r.header_id}</td>
           <td class="fw6">${r.supplier_name || '—'}</td>
-          <td class="mono xs td2">${r.bill_ref || r.bill_number || '—'}</td>
+          <td class="mono xs td2">${r.challan_number || r.bill_ref || '—'}</td>
           <td class="tc">${r.item_count || 0}</td>
           <td class="tc">${r.total_qty || 0}</td>
           <td class="mono xs">${inrD(r.expected_bill_amt)}</td>
@@ -1739,7 +1963,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (loadEl) loadEl.style.display = 'none';
 
       // Mark completed stages (done class) + the active/current stage
-      const stageNum = { PENDING_BILL_VERIFICATION: 1, PENDING_BRANDING: 2,
+      const stageNum = { DRAFT: 1, PENDING_BILL_VERIFICATION: 1, PENDING_BRANDING: 2,
         BRANDING_DISPATCHED: 3, PENDING_DIGITISATION: 4, WAREHOUSE_READY: 5 };
       const completedUpTo = stageNum[h.pipeline_status] || 5;
       for (let s = 1; s <= 5; s++) {
@@ -1972,38 +2196,96 @@ document.addEventListener('DOMContentLoaded', async () => {
     </div>`;
   }
 
+  window.runRevertPurchaseToDraft = async function runRevertPurchaseToDraft(headerId, buttonEl) {
+    const id = Number(headerId);
+    if (!id) return;
+    if (!window.confirm('Return this purchase to the purchase registration stage? Bill verification fields will be cleared. You can edit lines and submit to bill verification again.')) return;
+    if (buttonEl && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(buttonEl);
+    try {
+      await apiPut(`/api/purchases/${id}/revert-to-draft`, {});
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess(
+          fyCanEditPurchaseDraftAfterRevert()
+            ? 'Purchase moved to draft. Edit and submit again when ready.'
+            : 'Purchase moved to draft. Someone with purchase registration access can edit lines and resubmit to bill verification.'
+        );
+      }
+      loadPurchases();
+      if (fyCanEditPurchaseDraftAfterRevert()) {
+        resumeDraftPurchaseForEdit(id);
+      } else {
+        const navPurch = document.querySelector('.nav-item[onclick*="purchases"]');
+        nav('purchases', navPurch || undefined);
+      }
+    } catch (e) {
+      const m = e && e.message ? e.message : String(e);
+      if (typeof cosmosToastError === 'function') cosmosToastError(m);
+      else showErr('bill-verify-error', m);
+    } finally {
+      if (buttonEl && typeof cosmosBtnDone === 'function') cosmosBtnDone(buttonEl);
+    }
+  };
+
+  window.handleRevertPurchaseToDraft = function handleRevertPurchaseToDraft(buttonEl) {
+    const id = window._currentHeaderId;
+    if (!id) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('No purchase selected.');
+      return;
+    }
+    return window.runRevertPurchaseToDraft(id, buttonEl);
+  };
+
   window.openBillVerifyPage = async function openBillVerifyPage(headerId) {
     window._currentHeaderId = headerId;
     nav('bill-verify', document.querySelector('.nav-item[onclick*="bill-verify"]'), true);
     showBvDetail();
     showErr('bill-verify-error', '');
-    // Restore form and button visibility (in case previously hidden by openPurchaseView)
     const formCard = document.getElementById('bill-entry-form-card');
-    if (formCard) formCard.style.display = '';
     const verifyBtn = document.getElementById('verify-bill-btn');
+    const revertBtn = document.getElementById('bv-revert-to-purchase-btn');
+    if (formCard) formCard.style.display = '';
     if (verifyBtn) verifyBtn.style.display = '';
+    if (revertBtn) revertBtn.style.display = 'none';
     try {
       const data = await apiGet(`/api/purchases/${headerId}`);
       const h = data.header;
       const items = data.items || [];
 
-      // If purchase is beyond bill verification stage, use the full purchase history view
-      if (h.pipeline_status !== 'PENDING_BILL_VERIFICATION') {
+      const isPending = h.pipeline_status === 'PENDING_BILL_VERIFICATION';
+      const isDisc = h.pipeline_status === 'BILL_DISCREPANCY';
+      if (!isPending && !isDisc) {
         return window.openPurchaseView(headerId);
       }
 
-      // Update title/badge
       document.getElementById('bv-title').textContent = `Purchase #${h.header_id} — ${h.supplier_name || ''}`;
       const badge = document.getElementById('bv-status-badge');
-      badge.className = 'b b-gold';
-      badge.textContent = 'Pending Bill Verification';
-
-      document.getElementById('bv-meta').innerHTML = `
+      if (isPending) {
+        badge.className = 'b b-gold';
+        badge.textContent = 'Pending Bill Verification';
+        document.getElementById('bv-meta').innerHTML = `
         <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
         <div><div class="xs td2">Invoice No.</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
         <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>`;
+        if (formCard) formCard.style.display = '';
+        if (verifyBtn) verifyBtn.style.display = '';
+        const billDateEl = document.getElementById('bill-date-input');
+        if (billDateEl && !billDateEl.value && billDateEl._flatpickr) billDateEl._flatpickr.setDate(new Date(), true);
+      } else {
+        badge.className = 'b b-red';
+        badge.textContent = 'Bill Discrepancy';
+        const discNote = h.discrepancy_note ? _mcEsc(String(h.discrepancy_note)) : '';
+        document.getElementById('bv-meta').innerHTML = `
+        <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
+        <div><div class="xs td2">Invoice No. (ref)</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
+        <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>
+        <div><div class="xs td2">Entered bill amount</div><div class="fw6 mono">${inrD(h.actual_bill_amt)}</div></div>
+        <div><div class="xs td2">Bill number</div><div class="fw6 mono">${_mcEsc(h.bill_number || '—')}</div></div>
+        <div><div class="xs td2">Bill date</div><div class="fw6">${fmtDate(h.bill_date)}</div></div>
+        ${discNote ? `<div style="grid-column:1/-1"><div class="xs td2">Discrepancy note</div><div class="fw6">${discNote}</div></div>` : ''}`;
+        if (formCard) formCard.style.display = 'none';
+        if (verifyBtn) verifyBtn.style.display = 'none';
+      }
 
-      // Items table
       let itemRows = '';
       items.forEach((it) => {
         itemRows += `<tr>
@@ -2018,7 +2300,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       document.getElementById('bv-items-tbody').innerHTML = itemRows || '<tr><td colspan="7" class="tc td2">No items</td></tr>';
 
-      // Expected breakdown
       const itemsSubtotal = items.reduce((s, it) => s + Number(it.base_value), 0);
       const totalGst      = items.reduce((s, it) => s + Number(it.gst_amt), 0);
       const transport     = Number(h.transport_cost) || 0;
@@ -2029,13 +2310,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('bv-gst').textContent        = inrD(totalGst);
       document.getElementById('bv-expected').textContent   = inrD(expected);
 
-      // Pre-fill date
-      const todayStr = istToday();
-      const billDateEl = document.getElementById('bill-date-input');
-      if (billDateEl && !billDateEl.value && billDateEl._flatpickr) billDateEl._flatpickr.setDate(new Date(), true);
-
-    } catch (err) { showErr('bill-verify-error', err.message); }
-  }
+      if (revertBtn) revertBtn.style.display = fyCanRevertPurchaseToDraft() ? '' : 'none';
+    } catch (err) {
+      showErr('bill-verify-error', err.message);
+      if (revertBtn) revertBtn.style.display = 'none';
+    }
+  };
 
   window.reconcile = function() {
     const actual   = parseFloat(document.getElementById('actual-bill')?.value) || 0;
@@ -3190,6 +3470,119 @@ document.addEventListener('DOMContentLoaded', async () => {
     el.style.removeProperty('display');
     el.classList.add('open');
   };
+  let _submitChallanHeaderId = null;
+  let _submitChallanTriggerBtn = null;
+
+  function ensureSubmitChallanDatePicker() {
+    const el = document.getElementById('submit-challan-date-input');
+    if (!el || el._flatpickr || typeof flatpickr === 'undefined') return;
+    flatpickr(el, {
+      dateFormat: 'd/m/Y',
+      allowInput: false,
+      disableMobile: true,
+      onChange(selectedDates) {
+        const iso = selectedDates[0]
+          ? selectedDates[0].toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+          : '';
+        let hidden = el.parentElement.querySelector('input[type=hidden][data-fp]');
+        if (!hidden) {
+          hidden = document.createElement('input');
+          hidden.type = 'hidden';
+          hidden.dataset.fp = '1';
+          hidden.id = el.id + '_iso';
+          el.parentElement.appendChild(hidden);
+        }
+        hidden.value = iso;
+      }
+    });
+  }
+
+  window.openSubmitChallanModal = async function openSubmitChallanModal(headerId, triggerBtn) {
+    _submitChallanHeaderId = Number(headerId);
+    _submitChallanTriggerBtn = triggerBtn || null;
+    showErr('submit-challan-error', '');
+    const numEl = document.getElementById('submit-challan-number');
+    const dateEl = document.getElementById('submit-challan-date-input');
+    if (numEl) {
+      numEl.value = '';
+      if (typeof cosmosFieldClear === 'function') cosmosFieldClear(numEl);
+    }
+    if (dateEl) {
+      if (typeof cosmosFieldClear === 'function') cosmosFieldClear(dateEl);
+    }
+    const hint = document.getElementById('submit-challan-hint');
+    if (hint) hint.textContent = 'Enter the supplier challan details to release this draft to ops and Finance.';
+    ensureSubmitChallanDatePicker();
+    if (dateEl && dateEl._flatpickr) dateEl._flatpickr.setDate(new Date(), true);
+    else if (dateEl) dateEl.value = '';
+
+    try {
+      const data = await apiGet(`/api/purchases/${_submitChallanHeaderId}`);
+      const h = data.header;
+      if (h && h.pipeline_status === 'DRAFT') {
+        if (numEl && (h.challan_number || h.bill_ref)) numEl.value = h.challan_number || h.bill_ref || '';
+        if (dateEl && h.challan_date) {
+          const d = new Date(h.challan_date);
+          if (dateEl._flatpickr) dateEl._flatpickr.setDate(d, true);
+          else dateEl.value = fmtDate(h.challan_date);
+        }
+        const supplierLabel = h.vendor_name || h.supplier_name || '';
+        if (hint && supplierLabel) {
+          hint.textContent = `Draft #${_submitChallanHeaderId} · ${supplierLabel} — enter challan details to submit.`;
+        }
+      }
+    } catch (_) { /* optional preload */ }
+
+    window.openM('modal-submit-challan');
+    if (numEl) numEl.focus();
+  };
+
+  window.confirmSubmitChallanFromModal = async function confirmSubmitChallanFromModal() {
+    const headerId = _submitChallanHeaderId;
+    if (!headerId) return;
+    showErr('submit-challan-error', '');
+    const numEl = document.getElementById('submit-challan-number');
+    const dateEl = document.getElementById('submit-challan-date-input');
+    const challanNum = numEl ? numEl.value.trim() : '';
+    const challanDate = (typeof getFpIso === 'function' ? getFpIso('submit-challan-date-input') : null)
+      || (dateEl ? dateEl.value.trim() : '');
+
+    if (!challanNum) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(numEl, 'Required');
+      return;
+    }
+    if (!challanDate) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(dateEl, 'Required');
+      return;
+    }
+
+    const btn = document.getElementById('submit-challan-confirm-btn');
+    const listBtn = _submitChallanTriggerBtn;
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    if (listBtn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(listBtn);
+
+    try {
+      await apiPut(`/api/purchases/${headerId}/submit-draft`, {
+        challan_number: challanNum,
+        challan_date: challanDate
+      });
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('Challan submitted. Finance can value it; branding/digitisation can proceed.');
+      }
+      window.closeM('modal-submit-challan');
+      _submitChallanHeaderId = null;
+      _submitChallanTriggerBtn = null;
+      loadPurchases();
+    } catch (e) {
+      const m = e && e.message ? e.message : String(e);
+      showErr('submit-challan-error', m);
+      if (typeof cosmosToastError === 'function') cosmosToastError(m);
+    } finally {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (listBtn && typeof cosmosBtnDone === 'function') cosmosBtnDone(listBtn);
+    }
+  };
+
   window.closeM = function(id) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -3253,7 +3646,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (tb) tb.innerHTML = '<tr><td colspan="8" class="tc td2 p12">No bills pending verification</td></tr>';
         return;
       }
-      if (tb) tb.innerHTML = rows.map((r) => `<tr>
+      if (tb) {
+        tb.innerHTML = rows.map((r) => {
+          const revertBtn = fyCanRevertPurchaseToDraft()
+            ? `<button type="button" class="btn xs" data-action="revert-to-purchase" data-id="${r.header_id}">Correct in purchase stage</button>`
+            : '';
+          return `<tr>
         <td class="mono xs fw6">#${r.header_id}</td>
         <td class="fw6">${r.supplier_name || '—'}</td>
         <td class="mono xs td2">${r.bill_ref || r.bill_number || '—'}</td>
@@ -3261,8 +3659,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         <td class="tc">${r.total_qty || 0}</td>
         <td class="mono xs">${inrD(r.expected_bill_amt)}</td>
         <td class="xs td2">${fmtDate(r.created_at)}</td>
-        <td><button class="btn xs primary" data-action="open-bill-verify" data-id="${r.header_id}">Verify Bill</button></td>
-      </tr>`).join('');
+        <td><div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end">
+          <button type="button" class="btn xs primary" data-action="open-bill-verify" data-id="${r.header_id}">Verify Bill</button>
+          ${revertBtn}
+        </div></td>
+      </tr>`;
+        }).join('');
+      }
     } catch (err) {
       if (tb) tb.innerHTML = `<tr><td colspan="8" class="tc td2 p12" style="color:var(--red)">${err.message}</td></tr>`;
     }
@@ -3463,7 +3866,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `<tr${rowAction}${rowStyle}>
           <td class="mono xs fw6">#${r.header_id}</td>
           <td class="fw6">${r.supplier_name || '—'}</td>
-          <td class="mono xs td2">${r.bill_ref || r.bill_number || '—'}</td>
+          <td class="mono xs td2">${r.challan_number || r.bill_ref || '—'}</td>
           <td class="tc">${r.item_count || 0}</td>
           <td class="tc">${r.total_qty || 0}</td>
           <td>${stageBadge(r.pipeline_status)}</td>
@@ -5197,15 +5600,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     const navOptions = options || {};
     if (typeof origNav === 'function') origNav(id, el);
     const nextPath = FOUNDRY_PAGE_PATHS[id] || '/foundry/dashboard';
-    if (!navOptions.fromHistory && window.location.pathname !== nextPath) {
-      window.history.pushState({ module: 'foundry', page: id }, '', nextPath);
+    let pathForHistory = nextPath;
+    if (id === 'new-purchase' && window._resumeDraftHeaderId) {
+      pathForHistory = `${FOUNDRY_PAGE_PATHS['new-purchase']}?draft=${window._resumeDraftHeaderId}`;
+    }
+    if (!navOptions.fromHistory) {
+      const cur = window.location.pathname + (window.location.search || '');
+      if (cur !== pathForHistory) {
+        window.history.pushState({ module: 'foundry', page: id }, '', pathForHistory);
+      }
     }
     if (id === 'dashboard')    loadDashboard();
     if (id === 'purchases')    loadPurchases();
     if (id === 'new-purchase') {
+      const resumeSnapshot = window._resumeDraftHeaderId;
+      window._resumeDraftHeaderId = null;
       void (async () => {
         await loadFormData();
-        initNewPurchaseForm();
+        if (resumeSnapshot) {
+          await loadDraftPurchaseIntoForm(resumeSnapshot);
+        } else {
+          initNewPurchaseForm();
+        }
       })();
     }
     if (id === 'sku-catalogue')    loadSkuCatalogue();
@@ -5230,6 +5646,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function applyFoundryRouteFromPath() {
     const pageId = getFoundryPageFromPath(window.location.pathname);
+    const qs = new URLSearchParams(window.location.search || '');
+    const draftQ = qs.get('draft');
+    if (pageId === 'new-purchase' && draftQ && /^\d+$/.test(String(draftQ))) {
+      window._resumeDraftHeaderId = Number(draftQ);
+    }
     window.nav(pageId, getFoundryNavEl(pageId), false, { fromHistory: true });
   }
 
@@ -7138,6 +7559,20 @@ ${initScript}
         openBillVerifyPage(id);
         return;
       }
+      if (action === 'revert-to-purchase' && id) {
+        window.runRevertPurchaseToDraft(id, actionEl);
+        return;
+      }
+      if (action === 'resume-draft' && id) {
+        resumeDraftPurchaseForEdit(id);
+        return;
+      }
+      if (action === 'submit-draft' && id) {
+        if (typeof window.openSubmitChallanModal === 'function') {
+          window.openSubmitChallanModal(id, actionEl);
+        }
+        return;
+      }
       if (action === 'open-branding' && id) {
         openBrandingPage(id);
         return;
@@ -7549,6 +7984,17 @@ ${initScript}
   // ─────────────────────────────────────────────────────────────────────────
   // INIT
   // ─────────────────────────────────────────────────────────────────────────
+  (function bindSubmitChallanModalFields() {
+    const numEl = document.getElementById('submit-challan-number');
+    const dateEl = document.getElementById('submit-challan-date-input');
+    if (numEl && typeof cosmosFieldClear === 'function') {
+      numEl.addEventListener('input', () => cosmosFieldClear(numEl));
+    }
+    if (dateEl && typeof cosmosFieldClear === 'function') {
+      dateEl.addEventListener('change', () => cosmosFieldClear(dateEl));
+    }
+  })();
+
   bindDelegatedTableActions();
   loadFormData();
   loadDashboard();

@@ -1,0 +1,30 @@
+  <!-- CHALLAN VALUATION -->
+  <motion class="page" id="page-challan-valuation">
+    <div class="ph"><div class="pt">Challan Valuation</div><div class="ps">Set payable per line and transport</div></div>
+    <div style="display:grid;grid-template-columns:minmax(280px,360px) 1fr;gap:22px;align-items:start">
+      <div class="card"><div class="ch flex ic"><motion class="ct">Unvalued challans</div><span class="b b-gold" id="cv-list-count">—</span></div>
+        <div class="cb" style="padding:0"><div class="tw" style="max-height:520px;overflow:auto"><table><thead><tr><th>ID</th><th>Challan</th><th>Supplier</th><th>Date</th></tr></thead><tbody id="cv-list-body"><tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">—</td></tr></tbody></table></div></div></div>
+      <div class="card" id="cv-detail-card" style="display:none"><div class="ch"><div class="ct" id="cv-detail-title">Valuation</div></div><div class="cb">
+        <div id="cv-detail-error" class="err-msg"></div><div class="fg3 mb3" id="cv-header-meta"></div>
+        <div class="fgrp mb3"><label>Transport (₹)</label><input type="number" id="cv-transport" min="0" step="0.01" value="0" oninput="updateCvTotalPreview()"></div>
+        <div class="tw mb3"><table><thead><tr><th>Model</th><th>Brand</th><th class="text-right">Qty</th><th class="text-right">Payable (₹)</th></tr></thead><tbody id="cv-lines-body"></tbody></table></motion></motion>
+        <div class="flex ic" style="justify-content:space-between"><div class="mono fw6" id="cv-total-preview">Total payable: ₹0.00</div><button type="button" class="btn primary" id="cv-save-btn" onclick="saveChallanValuation()">Save valuation</button></div>
+      </div></div>
+      <div class="card" id="cv-empty-detail"><div class="cb"><div class="empty"><div class="empty-ic">📦</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">Select a challan</div><div style="font-size:13px;color:var(--text2)">Choose a challan from the list.</div></div></div></div>
+    </div>
+  </div>
+
+  <!-- PURCHASE INVOICES -->
+  <div class="page" id="page-purchase-invoices">
+    <div class="ph"><div class="pt">Register Purchase Invoice</div><div class="ps">FIFO allocation to valued challans</div></div>
+    <div class="card" style="max-width:720px"><div class="ch"><div class="ct">New supplier invoice</div></div><div class="cb">
+      <div id="pi-error" class="err-msg"></div>
+      <div class="fg2 mb3"><div class="fgrp"><label>Supplier <span class="req">*</span></label><select id="pi-supplier"><option value="">— Select —</option></select></div><div class="fgrp"><label>Invoice date <span class="req">*</span></label><input type="date" id="pi-invoice-date"></div></div>
+      <div class="fg2 mb3"><div class="fgrp"><label>Invoice number <span class="req">*</span></label><input type="text" id="pi-invoice-number"></div><div class="fgrp"><label>Total (₹) <span class="req">*</span></label><input type="number" id="pi-total" min="0.01" step="0.01"></div></div>
+      <div class="fg3 mb3"><div class="fgrp"><label>Taxable</label><input type="number" id="pi-taxable" min="0" step="0.01"></div><div class="fgrp"><label>CGST</label><input type="number" id="pi-cgst" min="0" step="0.01" value="0"></div><div class="fgrp"><label>SGST</label><input type="number" id="pi-sgst" min="0" step="0.01" value="0"></div></div>
+      <div class="fgrp mb3"><label>IGST</label><input type="number" id="pi-igst" min="0" step="0.01" value="0"></div>
+      <div class="fgrp mb3"><label>Note</label><input type="text" id="pi-note"></div>
+      <div id="pi-result" style="display:none;margin-bottom:12px;padding:12px;background:var(--accL);border-radius:8px;font-size:13px"></div>
+      <div style="display:flex;justify-content:flex-end"><button type="button" class="btn primary" id="pi-submit-btn" onclick="submitPurchaseInvoice()">Post invoice</button></div>
+    </div></div>
+  </div>

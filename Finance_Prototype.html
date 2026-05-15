@@ -211,6 +211,9 @@
     <div class="nav-item" onclick="nav('supplier-master',this)"><span class="ic">🏭</span> Supplier Master</div>
 
     <div class="nav-group">Payables</div>
+    <div class="nav-item" onclick="nav('challan-list',this)"><span class="ic">📋</span> Challans</div>
+    <div class="nav-item" onclick="nav('challan-valuation',this)"><span class="ic">📦</span> Challan Valuation</div>
+    <div class="nav-item" onclick="nav('purchase-invoices',this)"><span class="ic">🧾</span> Purchase Invoices</div>
     <div class="nav-item" onclick="nav('supplier-ledger',this)"><span class="ic">📊</span> Supplier Ledger</div>
     <div class="nav-item" onclick="nav('payments',this)"><span class="ic">💸</span> Record Payment</div>
 
@@ -340,7 +343,7 @@
   <div class="page" id="page-payments">
     <div class="ph">
       <div class="pt">Record Payment</div>
-      <div class="ps">Register a supplier payment and optionally allocate it to specific bills</div>
+      <div class="ps">Register payment against posted supplier invoices only</div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 400px;gap:22px;align-items:start">
@@ -398,7 +401,7 @@
 
           <!-- Bill allocations -->
           <div id="alloc-section" style="display:none">
-            <div class="section-lbl mb2">Allocate to Bills (optional)</div>
+            <div class="section-lbl mb2">Allocate to invoices (required)</div>
             <div id="alloc-rows"></div>
             <div id="alloc-remaining" style="font-size:12.5px;color:var(--text2);margin-top:8px;font-family:'JetBrains Mono',monospace"></div>
           </div>
@@ -412,24 +415,117 @@
       <!-- Outstanding sidebar -->
       <div>
         <div class="card" id="pay-outstanding-card" style="display:none">
-          <div class="ch"><div class="ct" id="pay-outstanding-title">Outstanding Bills</div></div>
+          <div class="ch"><div class="ct" id="pay-outstanding-title">Outstanding Invoices</div></div>
           <div class="cb" id="pay-outstanding-body">
-            <div class="empty td3 xs">Select a supplier to see outstanding bills</div>
+            <div class="empty td3 xs">Select a supplier to see outstanding invoices</div>
           </div>
         </div>
         <div class="card">
           <div class="ch"><div class="ct">Payment Tips</div></div>
           <div class="cb">
             <div style="font-size:12.5px;color:var(--text2);line-height:1.6">
-              <p class="mb2">• Enter the <strong>total payment amount</strong> received/sent.</p>
-              <p class="mb2">• Optionally <strong>allocate</strong> the amount to specific bills to track outstanding per bill.</p>
-              <p class="mb2">• If no allocation is set, the payment reduces the <strong>supplier-level outstanding</strong> only.</p>
+              <p class="mb2">• Every payment must be <strong>fully allocated</strong> to posted supplier invoices.</p>
+              <p class="mb2">• Payment amount must <strong>equal</strong> the sum of invoice allocations.</p>
+              <p class="mb2">• Post purchase invoices under <strong>Purchase Invoices</strong> before recording payment.</p>
               <p>• You can void a payment later if it was entered incorrectly.</p>
             </div>
           </div>
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- CHALLAN LIST -->
+  <div class="page" id="page-challan-list">
+    <div class="ph"><div class="pt">Purchase Challans</div><div class="ps">All submitted challans — valuation and invoice status</div></div>
+    <div class="card">
+      <div class="ch flex ic" style="flex-wrap:wrap;gap:12px">
+        <div class="ct">Challan list</div>
+        <span class="b b-blue" id="cl-list-count">—</span>
+        <div style="margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <select id="cl-supplier-filter" style="min-width:160px" onchange="loadChallanListPage()">
+            <option value="">All suppliers</option>
+          </select>
+          <select id="cl-status-filter" style="min-width:160px" onchange="loadChallanListPage()">
+            <option value="">All statuses</option>
+            <option value="unvalued">Awaiting valuation</option>
+            <option value="valued">Valued</option>
+            <option value="not_invoiced">Valued, not invoiced</option>
+          </select>
+          <button type="button" class="btn sm" onclick="nav('challan-valuation',document.querySelector('[onclick*=challan-valuation]'))">Valuation workspace →</button>
+        </div>
+      </div>
+      <div class="cb" style="padding:0">
+        <div class="tw"><table>
+          <thead><tr>
+            <th>ID</th><th>Challan #</th><th>Supplier</th><th>Date</th>
+            <th class="text-right">Qty</th><th class="text-right">Payable</th>
+            <th class="text-right">Invoiced</th><th>Status</th><th>Pipeline</th>
+          </tr></thead>
+          <tbody id="cl-list-body"><tr><td colspan="9" style="text-align:center;padding:18px;color:var(--text3)">—</td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+  <!-- CHALLAN VALUATION -->
+  <div class="page" id="page-challan-valuation">
+    <div class="ph"><div class="pt">Challan Valuation</div><div class="ps">Set purchase rate per line; line payable is calculated automatically</div></div>
+    <div style="display:grid;grid-template-columns:minmax(280px,360px) 1fr;gap:22px;align-items:start">
+      <div class="card"><div class="ch flex ic"><div class="ct">Unvalued challans</div><span class="b b-gold" id="cv-list-count">—</span></div>
+        <div class="cb" style="padding:0"><div class="tw" style="max-height:520px;overflow:auto"><table><thead><tr><th>ID</th><th>Challan</th><th>Supplier</th><th>Date</th></tr></thead><tbody id="cv-list-body"><tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">—</td></tr></tbody></table></div></div></div>
+      <div class="card" id="cv-detail-card" style="display:none"><div class="ch"><div class="ct" id="cv-detail-title">Valuation</div></div><div class="cb">
+        <div id="cv-detail-error" class="err-msg"></div><div class="fg3 mb3" id="cv-header-meta"></div>
+        <div class="fgrp mb3"><label>Transport (₹)</label><input type="number" id="cv-transport" min="0" step="0.01" value="0" oninput="updateCvTotalPreview()"></div>
+        <div class="tw mb3"><table><thead><tr><th>Model</th><th>Brand</th><th>Source collection</th><th class="text-right">Qty</th><th class="text-right">Purchase rate (₹/unit)</th><th class="text-right">Line payable (₹)</th></tr></thead><tbody id="cv-lines-body"></tbody></table></div></div>
+        <div class="flex ic" style="justify-content:space-between"><div class="mono fw6" id="cv-total-preview">Total payable: ₹0.00</div><button type="button" class="btn primary" id="cv-save-btn" onclick="saveChallanValuation()">Save valuation</button></div>
+      </div></div>
+      <div class="card" id="cv-empty-detail"><div class="cb"><div class="empty"><div class="empty-ic">📦</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">Select a challan</div><div style="font-size:13px;color:var(--text2)">Choose a challan from the list.</div></div></div></div>
+    </div>
+  </div>
+
+  <!-- PURCHASE INVOICES -->
+  <div class="page" id="page-purchase-invoices">
+    <div class="ph"><div class="pt">Purchase Invoices</div><div class="ps">View posted invoices and register new ones against valued challans</div></div>
+    <div class="card mb4">
+      <div class="ch flex ic" style="flex-wrap:wrap;gap:12px">
+        <div class="ct">Posted invoices</div>
+        <span class="b b-blue" id="pi-list-count">—</span>
+        <div style="margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <select id="pi-list-supplier-filter" style="min-width:180px" onchange="loadPurchaseInvoiceList()">
+            <option value="">All suppliers</option>
+          </select>
+          <button type="button" class="btn sm" onclick="focusNewPurchaseInvoiceForm()">+ New invoice</button>
+        </div>
+      </div>
+      <div class="cb" style="padding:0">
+        <div class="tw"><table>
+          <thead><tr>
+            <th>Invoice #</th><th>Supplier</th><th>Date</th>
+            <th class="text-right">Total</th><th class="text-right">Paid</th>
+            <th class="text-right">Outstanding</th><th>Status</th>
+          </tr></thead>
+          <tbody id="pi-list-body"><tr><td colspan="7" style="text-align:center;padding:18px;color:var(--text3)">—</td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="card" id="pi-form-card" style="max-width:720px"><div class="ch"><div class="ct">New supplier invoice</div></div><div class="cb">
+      <div id="pi-error" class="err-msg"></div>
+      <div class="fg2 mb3"><div class="fgrp"><label>Supplier <span class="req">*</span></label><select id="pi-supplier"><option value="">— Select —</option></select></div><div class="fgrp"><label>Invoice date <span class="req">*</span></label><input type="date" id="pi-invoice-date"></div></div>
+      <div class="fg2 mb3"><div class="fgrp"><label>Invoice number <span class="req">*</span></label><input type="text" id="pi-invoice-number"></div><div class="fgrp"><label>GST type</label><select id="pi-gst-type"><option value="intra">CGST + SGST (intra-state)</option><option value="inter">IGST (inter-state)</option></select></div></div>
+      <div class="fgrp mb3"><label>Taxable amount (₹) <span class="req">*</span></label><input type="number" id="pi-taxable" min="0.01" step="0.01" placeholder="Base amount before tax"></div>
+      <div class="fgrp mb3"><label>Combined GST rate (%)</label><input type="number" id="pi-gst-combined-pct" min="0" max="100" step="0.01" placeholder="e.g. 5 for 2.5% CGST + 2.5% SGST"><div style="font-size:12px;color:var(--text3);margin-top:4px">Optional — auto-fills the rate fields below.</div></div>
+      <div id="pi-gst-intra">
+        <div class="fg2 mb3"><div class="fgrp"><label>CGST (%)</label><input type="number" id="pi-cgst-pct" min="0" max="100" step="0.01" value="0"></div><div class="fgrp"><label>SGST (%)</label><input type="number" id="pi-sgst-pct" min="0" max="100" step="0.01" value="0"></div></div>
+      </div>
+      <div id="pi-gst-inter" style="display:none">
+        <div class="fgrp mb3"><label>IGST (%)</label><input type="number" id="pi-igst-pct" min="0" max="100" step="0.01" value="0"></div>
+      </div>
+      <div id="pi-breakdown" style="display:none;margin-bottom:12px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text2)"></div>
+      <div class="fgrp mb3"><label>Invoice total (₹) <span class="req">*</span></label><input type="text" id="pi-total" readonly tabindex="-1" style="background:var(--bg);font-weight:600;color:var(--text1)" placeholder="Calculated from taxable + GST"></div>
+      <div class="fgrp mb3"><label>Note</label><input type="text" id="pi-note"></div>
+      <div id="pi-result" style="display:none;margin-bottom:12px;padding:12px;background:var(--accL);border-radius:8px;font-size:13px"></div>
+      <div style="display:flex;justify-content:flex-end"><button type="button" class="btn primary" id="pi-submit-btn" onclick="submitPurchaseInvoice()">Post invoice</button></div>
+    </div></div>
   </div>
 
   <!-- ═══ PURCHASE REPORTS ═══ -->
@@ -855,6 +951,9 @@
 const bcMap = {
   'dashboard':        'Dashboard',
   'supplier-master':  'Supplier Master',
+  'challan-list': 'Purchase Challans',
+  'challan-valuation': 'Challan Valuation',
+  'purchase-invoices': 'Purchase Invoices',
   'supplier-ledger':  'Supplier Ledger',
   'payments':         'Record Payment',
   'purchase-reports': 'Purchase Reports',

@@ -82,6 +82,7 @@ AS BEGIN
     AND (@to_date IS NULL OR CAST(h.purchase_date AS DATE) <= @to_date)
     AND (@supplier_id IS NULL OR h.supplier_id = @supplier_id)
     AND (@pipeline_status IS NULL OR h.pipeline_status = @pipeline_status)
+    AND (@pipeline_status IS NOT NULL OR h.pipeline_status <> 'DRAFT')
     AND (
       @category IS NULL
       OR EXISTS (

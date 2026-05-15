@@ -8,6 +8,7 @@ GO
 -- sp_PurchaseHeader_Create
 -- Creates a purchase header + N items + colours in one call.
 -- @items_json  = JSON: [{product_master_id,maker_master_id,category,purchase_rate,quantity,gst_pct,colours:[{colour_name,colour_code,quantity}]}]
+-- @save_as_draft = 1 → pipeline + bill_status stay DRAFT until sp_PurchaseHeader_SubmitDraft
 -- ══════════════════════════════════════════════════════════════════════════════
 IF OBJECT_ID('dbo.sp_PurchaseHeader_Create','P') IS NOT NULL DROP PROCEDURE dbo.sp_PurchaseHeader_Create;
 GO
@@ -20,7 +21,8 @@ CREATE PROCEDURE dbo.sp_PurchaseHeader_Create
   @po_reference   VARCHAR(100)  = NULL,
   @notes          VARCHAR(500)  = NULL,
   @created_by     INT           = NULL,
-  @items_json     NVARCHAR(MAX)           -- JSON array of items
+  @items_json     NVARCHAR(MAX),          -- JSON array of items
+  @save_as_draft BIT           = 0
 AS BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
@@ -65,6 +67,9 @@ AS BEGIN
     DECLARE @items_total DECIMAL(10,2) = (SELECT SUM(item_total) FROM @items);
     DECLARE @expected    DECIMAL(10,2) = @items_total + ISNULL(@transport_cost, 0);
 
+    DECLARE @bill_st VARCHAR(50) = CASE WHEN @save_as_draft = 1 THEN 'DRAFT' ELSE 'PENDING_BILL_VERIFICATION' END;
+    DECLARE @pipe_st VARCHAR(50) = CASE WHEN @save_as_draft = 1 THEN 'DRAFT' ELSE 'PENDING_BILL_VERIFICATION' END;
+
     -- Insert header
     INSERT INTO dbo.purchase_headers (
       supplier_id, source_type, bill_ref, purchase_date, transport_cost,
@@ -73,7 +78,7 @@ AS BEGIN
     ) VALUES (
       @supplier_id, @source_type, @bill_ref, @purchase_date, ISNULL(@transport_cost,0),
       @po_reference, @notes, @expected,
-      'PENDING_BILL_VERIFICATION', 'PENDING_BILL_VERIFICATION', @created_by, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      @bill_st, @pipe_st, @created_by, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME())
     );
     DECLARE @header_id INT = SCOPE_IDENTITY();
 
@@ -253,13 +258,14 @@ END;
 GO
 
 -- ══════════════════════════════════════════════════════════════════════════════
--- sp_PurchaseHeader_Update  (Stage 1 edit, only while PENDING_BILL_VERIFICATION)
+-- sp_PurchaseHeader_Update  (Stage 1 edit: PENDING_BILL_VERIFICATION or DRAFT)
 -- ══════════════════════════════════════════════════════════════════════════════
 IF OBJECT_ID('dbo.sp_PurchaseHeader_Update','P') IS NOT NULL DROP PROCEDURE dbo.sp_PurchaseHeader_Update;
 GO
 CREATE PROCEDURE dbo.sp_PurchaseHeader_Update
   @header_id      INT,
   @supplier_id    INT           = NULL,
+  @source_type    VARCHAR(50)   = NULL,
   @bill_ref       VARCHAR(100)  = NULL,
   @purchase_date  DATETIME      = NULL,
   @transport_cost DECIMAL(10,2) = NULL,
@@ -268,10 +274,11 @@ CREATE PROCEDURE dbo.sp_PurchaseHeader_Update
 AS BEGIN
   SET NOCOUNT ON;
   BEGIN TRY
-    IF NOT EXISTS (SELECT 1 FROM dbo.purchase_headers WHERE header_id=@header_id AND pipeline_status='PENDING_BILL_VERIFICATION')
-    BEGIN RAISERROR('Header can only be edited at Stage 1.',16,1); RETURN; END;
+    IF NOT EXISTS (SELECT 1 FROM dbo.purchase_headers WHERE header_id=@header_id AND pipeline_status IN ('PENDING_BILL_VERIFICATION','DRAFT'))
+    BEGIN RAISERROR('Header can only be edited while pending bill verification or in draft.',16,1); RETURN; END;
     UPDATE dbo.purchase_headers SET
       supplier_id    = ISNULL(@supplier_id,    supplier_id),
+      source_type    = ISNULL(@source_type,    source_type),
       bill_ref       = ISNULL(@bill_ref,        bill_ref),
       purchase_date  = ISNULL(@purchase_date,   purchase_date),
       transport_cost = ISNULL(@transport_cost,  transport_cost),
@@ -285,6 +292,211 @@ AS BEGIN
     WHERE h.header_id = @header_id;
   END TRY
   BEGIN CATCH DECLARE @e NVARCHAR(4000)=ERROR_MESSAGE(); RAISERROR(@e,16,1); END CATCH;
+END;
+GO
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- sp_PurchaseHeader_SubmitDraft  — move DRAFT → PENDING_BILL_VERIFICATION
+-- ══════════════════════════════════════════════════════════════════════════════
+IF OBJECT_ID('dbo.sp_PurchaseHeader_SubmitDraft','P') IS NOT NULL DROP PROCEDURE dbo.sp_PurchaseHeader_SubmitDraft;
+GO
+CREATE PROCEDURE dbo.sp_PurchaseHeader_SubmitDraft
+  @header_id INT
+AS BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRY
+    IF NOT EXISTS (SELECT 1 FROM dbo.purchase_headers WHERE header_id=@header_id AND pipeline_status='DRAFT')
+    BEGIN RAISERROR('Only draft purchases can be submitted to bill verification.',16,1); RETURN; END;
+    UPDATE dbo.purchase_headers SET
+      bill_status     = 'PENDING_BILL_VERIFICATION',
+      pipeline_status = 'PENDING_BILL_VERIFICATION',
+      updated_at      = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+    WHERE header_id = @header_id;
+    SELECT header_id, pipeline_status, bill_status FROM dbo.purchase_headers WHERE header_id = @header_id;
+  END TRY
+  BEGIN CATCH DECLARE @e NVARCHAR(4000)=ERROR_MESSAGE(); RAISERROR(@e,16,1); END CATCH;
+END;
+GO
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- sp_PurchaseHeader_ReplaceDraft  — replace header + items for DRAFT only
+-- ══════════════════════════════════════════════════════════════════════════════
+IF OBJECT_ID('dbo.sp_PurchaseHeader_ReplaceDraft','P') IS NOT NULL DROP PROCEDURE dbo.sp_PurchaseHeader_ReplaceDraft;
+GO
+CREATE PROCEDURE dbo.sp_PurchaseHeader_ReplaceDraft
+  @header_id      INT,
+  @supplier_id    INT,
+  @source_type    VARCHAR(50)   = NULL,
+  @bill_ref       VARCHAR(100)  = NULL,
+  @purchase_date  DATETIME,
+  @transport_cost DECIMAL(10,2) = 0,
+  @po_reference   VARCHAR(100)  = NULL,
+  @notes          VARCHAR(500)  = NULL,
+  @items_json     NVARCHAR(MAX)
+AS BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRY
+    IF NOT EXISTS (SELECT 1 FROM dbo.purchase_headers WHERE header_id=@header_id AND pipeline_status='DRAFT')
+    BEGIN RAISERROR('Only draft purchases can be replaced from the purchase form.',16,1); RETURN; END;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.suppliers WHERE supplier_id = @supplier_id)
+    BEGIN RAISERROR('Supplier not found.',16,1); RETURN; END;
+
+    DECLARE @items TABLE (
+      idx               INT,
+      product_master_id INT,
+      maker_master_id   INT,
+      category          VARCHAR(50) NULL,
+      purchase_rate     DECIMAL(10,2),
+      quantity          INT,
+      gst_pct           DECIMAL(5,2),
+      base_value        DECIMAL(10,2),
+      gst_amt           DECIMAL(10,2),
+      item_total        DECIMAL(10,2)
+    );
+
+    INSERT INTO @items (idx, product_master_id, maker_master_id, category, purchase_rate, quantity, gst_pct, base_value, gst_amt, item_total)
+    SELECT
+      ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1,
+      CAST(j.[product_master_id] AS INT),
+      TRY_CAST(j.[maker_master_id] AS INT),
+      NULLIF(LTRIM(RTRIM(j.[category])), ''),
+      CAST(j.[purchase_rate] AS DECIMAL(10,2)),
+      CAST(j.[quantity] AS INT),
+      CAST(j.[gst_pct] AS DECIMAL(5,2)),
+      CAST(j.[purchase_rate] AS DECIMAL(10,2)) * CAST(j.[quantity] AS INT),
+      CAST(j.[purchase_rate] AS DECIMAL(10,2)) * CAST(j.[quantity] AS INT) * CAST(j.[gst_pct] AS DECIMAL(5,2)),
+      CAST(j.[purchase_rate] AS DECIMAL(10,2)) * CAST(j.[quantity] AS INT) * (1 + CAST(j.[gst_pct] AS DECIMAL(5,2)))
+    FROM OPENJSON(@items_json) WITH (
+      product_master_id INT         '$.product_master_id',
+      maker_master_id   INT         '$.maker_master_id',
+      category          VARCHAR(50) '$.category',
+      purchase_rate     FLOAT       '$.purchase_rate',
+      quantity          INT         '$.quantity',
+      gst_pct           FLOAT       '$.gst_pct'
+    ) j;
+
+    DECLARE @items_total DECIMAL(10,2) = (SELECT SUM(item_total) FROM @items);
+    DECLARE @expected    DECIMAL(10,2) = @items_total + ISNULL(@transport_cost, 0);
+
+    DELETE pic
+    FROM dbo.purchase_item_colours pic
+    INNER JOIN dbo.purchase_items pi ON pic.item_id = pi.item_id
+    WHERE pi.header_id = @header_id;
+
+    DELETE FROM dbo.purchase_items WHERE header_id = @header_id;
+
+    UPDATE dbo.purchase_headers SET
+      supplier_id       = @supplier_id,
+      source_type       = @source_type,
+      bill_ref          = @bill_ref,
+      purchase_date     = @purchase_date,
+      transport_cost    = ISNULL(@transport_cost, 0),
+      po_reference      = @po_reference,
+      notes             = @notes,
+      expected_bill_amt = @expected,
+      updated_at        = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+    WHERE header_id = @header_id;
+
+    DECLARE @idx INT = 0;
+    DECLARE @max_idx INT = (SELECT MAX(idx) FROM @items);
+
+    WHILE @idx <= @max_idx
+    BEGIN
+      DECLARE @pmid INT, @mmid INT, @cat VARCHAR(50), @rate DECIMAL(10,2), @qty INT, @gst DECIMAL(5,2),
+              @bval DECIMAL(10,2), @gamt DECIMAL(10,2), @itot DECIMAL(10,2);
+      SELECT @pmid=product_master_id, @mmid=maker_master_id, @cat=category, @rate=purchase_rate, @qty=quantity,
+             @gst=gst_pct, @bval=base_value, @gamt=gst_amt, @itot=item_total
+      FROM @items WHERE idx=@idx;
+
+      INSERT INTO dbo.purchase_items (header_id,product_master_id,maker_master_id,category,purchase_rate,quantity,gst_pct,base_value,gst_amt,item_total)
+      VALUES (@header_id,@pmid,@mmid,@cat,@rate,@qty,@gst,@bval,@gamt,@itot);
+      DECLARE @item_id INT = SCOPE_IDENTITY();
+
+      DECLARE @colours_json NVARCHAR(MAX);
+      SELECT @colours_json = JSON_QUERY(value,'$.colours')
+      FROM OPENJSON(@items_json) AS ij
+      WHERE CAST(JSON_VALUE(ij.value,'$.product_master_id') AS INT) = @pmid
+        AND (SELECT COUNT(*) FROM @items it2 WHERE it2.idx < @idx AND it2.product_master_id = @pmid) = 0;
+
+      IF @colours_json IS NOT NULL
+      BEGIN
+        INSERT INTO dbo.purchase_item_colours (item_id, colour_name, colour_code, quantity)
+        SELECT @item_id, colour_name, colour_code, qty
+        FROM OPENJSON(@colours_json) WITH (
+          colour_name VARCHAR(100) '$.colour_name',
+          colour_code VARCHAR(20)  '$.colour_code',
+          qty         INT          '$.quantity'
+        );
+      END;
+
+      IF @mmid IS NOT NULL
+        UPDATE dbo.product_master SET maker_master_id = @mmid, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+        WHERE product_id = @pmid AND maker_master_id IS NULL;
+
+      SET @idx = @idx + 1;
+    END;
+
+    SELECT h.*, s.vendor_name AS supplier_name
+    FROM dbo.purchase_headers h
+    LEFT JOIN dbo.suppliers s ON h.supplier_id = s.supplier_id
+    WHERE h.header_id = @header_id;
+
+    SELECT pi.*, pm.ew_collection, pm.style_model, pm.source_type, pm.branding_required,
+           pm.source_brand, pm.source_collection, pm.home_brand_id,
+           hb.brand_name, mk.maker_name
+    FROM dbo.purchase_items pi
+    LEFT JOIN dbo.product_master pm ON pi.product_master_id = pm.product_id
+    LEFT JOIN dbo.home_brands hb    ON pm.home_brand_id = hb.brand_id
+    LEFT JOIN dbo.maker_master mk   ON pi.maker_master_id = mk.maker_id
+    WHERE pi.header_id = @header_id;
+
+    SELECT pic.*, pi.header_id
+    FROM dbo.purchase_item_colours pic
+    JOIN dbo.purchase_items pi ON pic.item_id = pi.item_id
+    WHERE pi.header_id = @header_id;
+
+  END TRY
+  BEGIN CATCH
+    DECLARE @err NVARCHAR(4000) = ERROR_MESSAGE();
+    RAISERROR(@err,16,1);
+  END CATCH;
+END;
+GO
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- sp_PurchaseHeader_RevertToDraft  — PENDING_BILL_VERIFICATION or BILL_DISCREPANCY → DRAFT
+-- ══════════════════════════════════════════════════════════════════════════════
+IF OBJECT_ID('dbo.sp_PurchaseHeader_RevertToDraft','P') IS NOT NULL DROP PROCEDURE dbo.sp_PurchaseHeader_RevertToDraft;
+GO
+CREATE PROCEDURE dbo.sp_PurchaseHeader_RevertToDraft
+  @header_id INT
+AS BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRY
+    IF NOT EXISTS (
+      SELECT 1 FROM dbo.purchase_headers
+      WHERE header_id = @header_id
+        AND pipeline_status IN ('PENDING_BILL_VERIFICATION', 'BILL_DISCREPANCY')
+    )
+    BEGIN
+      RAISERROR('Revert to draft is only allowed while pending bill verification or in bill discrepancy.', 16, 1);
+      RETURN;
+    END;
+
+    UPDATE dbo.purchase_headers SET
+      pipeline_status    = 'DRAFT',
+      bill_status          = 'DRAFT',
+      actual_bill_amt      = NULL,
+      bill_number          = NULL,
+      bill_date            = NULL,
+      discrepancy_note     = NULL,
+      updated_at           = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+    WHERE header_id = @header_id;
+
+    SELECT header_id, pipeline_status, bill_status FROM dbo.purchase_headers WHERE header_id = @header_id;
+  END TRY
+  BEGIN CATCH DECLARE @e NVARCHAR(4000) = ERROR_MESSAGE(); RAISERROR(@e, 16, 1); END CATCH;
 END;
 GO
 
@@ -411,6 +623,76 @@ AS BEGIN
       pipeline_status = 'PENDING_DIGITISATION',
       updated_at      = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE header_id = @header_id;
+
+    DECLARE @pm_id INT;
+    DECLARE @src_brand VARCHAR(200);
+    DECLARE @src_coll  VARCHAR(200);
+    DECLARE @match_brand_id INT;
+    DECLARE @raw_brand_name VARCHAR(200);
+    DECLARE @slug VARCHAR(32);
+    DECLARE @try_code VARCHAR(10);
+    DECLARE @code_n INT;
+
+    DECLARE @pm_work TABLE (product_id INT PRIMARY KEY);
+    INSERT INTO @pm_work (product_id)
+    SELECT DISTINCT pi.product_master_id
+    FROM dbo.purchase_items pi
+    WHERE pi.header_id = @header_id;
+
+    WHILE EXISTS (SELECT 1 FROM @pm_work)
+    BEGIN
+      SELECT TOP (1) @pm_id = product_id FROM @pm_work ORDER BY product_id;
+      DELETE FROM @pm_work WHERE product_id = @pm_id;
+
+      SET @src_brand = NULL;
+      SET @src_coll  = NULL;
+      SELECT @src_brand = pm.source_brand, @src_coll = pm.source_collection
+      FROM dbo.product_master pm
+      WHERE pm.product_id = @pm_id;
+
+      IF NULLIF(LTRIM(RTRIM(ISNULL(@src_coll, ''))), '') IS NOT NULL
+      BEGIN
+        UPDATE dbo.product_master
+        SET ew_collection = @src_coll,
+            updated_at    = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+        WHERE product_id = @pm_id;
+      END;
+
+      IF NULLIF(LTRIM(RTRIM(ISNULL(@src_brand, ''))), '') IS NOT NULL
+      BEGIN
+        SET @match_brand_id = NULL;
+        SELECT TOP (1) @match_brand_id = hb.brand_id
+        FROM dbo.home_brands hb
+        WHERE LOWER(LTRIM(RTRIM(hb.brand_name))) = LOWER(LTRIM(RTRIM(@src_brand)));
+
+        IF @match_brand_id IS NULL
+        BEGIN
+          SET @raw_brand_name = LTRIM(RTRIM(@src_brand));
+          SET @slug = @raw_brand_name;
+          WHILE PATINDEX('%[^a-zA-Z0-9]%', @slug) > 0
+            SET @slug = STUFF(@slug, PATINDEX('%[^a-zA-Z0-9]%', @slug), 1, '');
+          IF NULLIF(LTRIM(RTRIM(ISNULL(@slug, ''))), '') IS NULL
+            SET @slug = N'AUTO';
+          SET @slug = UPPER(LEFT(@slug, 10));
+          SET @try_code = LEFT(@slug, 10);
+          SET @code_n = 0;
+          WHILE EXISTS (SELECT 1 FROM dbo.home_brands WHERE brand_code = @try_code)
+          BEGIN
+            SET @code_n = @code_n + 1;
+            SET @try_code = LEFT(@slug, 7) + RIGHT('000' + CAST(@code_n AS VARCHAR(3)), 3);
+          END;
+          INSERT INTO dbo.home_brands (brand_name, brand_code, brand_description, is_active, created_by, created_at, updated_at)
+          VALUES (@raw_brand_name, @try_code, NULL, 1, NULL, DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()));
+          SET @match_brand_id = CAST(SCOPE_IDENTITY() AS INT);
+        END;
+
+        UPDATE dbo.product_master
+        SET home_brand_id = @match_brand_id,
+            updated_at    = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+        WHERE product_id = @pm_id;
+      END;
+    END;
+
     SELECT header_id, pipeline_status FROM dbo.purchase_headers WHERE header_id = @header_id;
   END TRY
   BEGIN CATCH DECLARE @e NVARCHAR(4000)=ERROR_MESSAGE(); RAISERROR(@e,16,1); END CATCH;
@@ -510,7 +792,8 @@ AS BEGIN
         sk.sku_code,
         sk.barcode,
         pic.quantity,
-        pi.purchase_rate AS cost_price,
+        CASE WHEN pi.quantity > 0 AND pi.finance_payable_amt IS NOT NULL
+          THEN ROUND(pi.finance_payable_amt / pi.quantity, 2) ELSE NULL END AS cost_price,
         sk.sale_price,
         sk.status,
         pic.colour_id AS item_colour_id,
@@ -552,6 +835,8 @@ AS BEGIN
     DECLARE @ew_collection VARCHAR(200);
     DECLARE @colour_code VARCHAR(50);
     DECLARE @brand_name VARCHAR(200);
+    DECLARE @source_model_number VARCHAR(200);
+    DECLARE @style_model VARCHAR(200);
     DECLARE @colour_image_url VARCHAR(500);
     DECLARE @colour_video_url VARCHAR(500);
 
@@ -560,11 +845,14 @@ AS BEGIN
       @maker_master_id = pm.maker_master_id,
       @source_brand_match = pm.source_brand,
       @source_model_match = pm.source_model_number,
-      @cost_price = pi.purchase_rate,
+      @cost_price = CASE WHEN pi.quantity > 0 AND pi.finance_payable_amt IS NOT NULL
+        THEN ROUND(pi.finance_payable_amt / pi.quantity, 2) ELSE NULL END,
       @quantity = pic.quantity,
       @ew_collection = pm.ew_collection,
       @colour_code = pic.colour_code,
       @brand_name = hb.brand_name,
+      @source_model_number = pm.source_model_number,
+      @style_model = pm.style_model,
       @colour_image_url = pic.image_url,
       @colour_video_url = pic.video_url
     FROM dbo.purchase_items pi
@@ -637,7 +925,8 @@ AS BEGIN
         sk.sku_code,
         sk.barcode,
         pic.quantity,
-        pi.purchase_rate AS cost_price,
+        CASE WHEN pi.quantity > 0 AND pi.finance_payable_amt IS NOT NULL
+          THEN ROUND(pi.finance_payable_amt / pi.quantity, 2) ELSE NULL END AS cost_price,
         sk.sale_price,
         sk.status,
         pic.colour_id AS item_colour_id,
@@ -715,16 +1004,21 @@ AS BEGIN
       RETURN;
     END;
 
-    DECLARE @brandPfx VARCHAR(10) = UPPER(LEFT(ISNULL(@brand_name, 'GEN'), 3));
+    DECLARE @brandPfx VARCHAR(10) = UPPER(LEFT(COALESCE(@brand_name, @source_brand_match, 'GEN'), 3));
     DECLARE @collPfx  VARCHAR(10) = UPPER(LEFT(REPLACE(ISNULL(@ew_collection, 'XX'), ' ', ''), 4));
+    DECLARE @modelSrc VARCHAR(200) = LTRIM(RTRIM(ISNULL(@source_model_number, '')));
+    IF @modelSrc = '' SET @modelSrc = LTRIM(RTRIM(ISNULL(@style_model, '')));
+    DECLARE @modelRaw VARCHAR(200) = NULLIF(@modelSrc, '');
+    DECLARE @modelPfx VARCHAR(12) = UPPER(LEFT(REPLACE(REPLACE(ISNULL(@modelRaw, ''), '-', ''), ' ', ''), 8));
+    IF NULLIF(LTRIM(RTRIM(ISNULL(@modelPfx, ''))), '') IS NULL
+      SET @modelPfx = 'UNK';
     DECLARE @colPfx   VARCHAR(6)  = UPPER(LEFT(REPLACE(ISNULL(@colour_code, '00'), ' ', ''), 3));
 
-    -- Catalogue-style code: Brand-Collection-Colour only (duplicate rows differentiated by pid).
-    DECLARE @skuCode VARCHAR(50) = @brandPfx + '-' + @collPfx + '-' + @colPfx;
+    DECLARE @skuCode VARCHAR(100) = @brandPfx + '-' + @collPfx + '-' + @modelPfx + '-' + @colPfx;
 
     -- Purchase-scoped PID (NOT NULL on dbo.skus); must be unique (UQ_skus_pid).
-    DECLARE @pidBase VARCHAR(80) = @skuCode + '-P' + CAST(@header_id AS VARCHAR(20));
-    DECLARE @pid VARCHAR(80) = @pidBase;
+    DECLARE @pidBase VARCHAR(120) = @skuCode + '-P' + CAST(@header_id AS VARCHAR(20));
+    DECLARE @pid VARCHAR(120) = @pidBase;
     DECLARE @pidSuffix INT = 1;
     WHILE EXISTS (SELECT 1 FROM dbo.skus WHERE pid = @pid)
     BEGIN
@@ -791,7 +1085,10 @@ AS BEGIN
   SET NOCOUNT ON;
   SELECT sk.sku_id, sk.item_colour_id, sk.sku_code, sk.pid, sk.barcode, sk.sale_price, sk.status,
          pic.colour_name, pic.colour_code, pic.quantity,
-         pi.item_id, pi.purchase_rate, pi.quantity AS item_qty,
+         pi.item_id,
+         CASE WHEN pi.quantity > 0 AND pi.finance_payable_amt IS NOT NULL
+           THEN ROUND(pi.finance_payable_amt / pi.quantity, 2) ELSE NULL END AS purchase_rate,
+         pi.quantity AS item_qty,
          pm.ew_collection, pm.style_model,
          sk.pid AS purchase_event_id,
          CAST(0 AS BIT) AS is_restock,
@@ -804,7 +1101,10 @@ AS BEGIN
   UNION ALL
   SELECT sk.sku_id, pic.colour_id AS item_colour_id, sk.sku_code, sk.pid, sk.barcode, sk.sale_price, sk.status,
          pic.colour_name, pic.colour_code, pic.quantity,
-         pi.item_id, pi.purchase_rate, pi.quantity AS item_qty,
+         pi.item_id,
+         CASE WHEN pi.quantity > 0 AND pi.finance_payable_amt IS NOT NULL
+           THEN ROUND(pi.finance_payable_amt / pi.quantity, 2) ELSE NULL END AS purchase_rate,
+         pi.quantity AS item_qty,
          pm.ew_collection, pm.style_model,
          pre.purchase_event_id,
          CAST(1 AS BIT) AS is_restock,
@@ -815,7 +1115,7 @@ AS BEGIN
   JOIN dbo.skus sk ON sk.sku_id = pre.linked_sku_id
   JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
   WHERE pre.header_id = @header_id
-  ORDER BY pi.item_id, pic.colour_id;
+  ORDER BY item_id, item_colour_id;
 END;
 GO
 
@@ -887,6 +1187,7 @@ AS BEGIN
   SELECT
     COUNT(CASE WHEN pipeline_status NOT IN ('WAREHOUSE_READY','CANCELLED') THEN 1 END) AS active_purchases,
     COUNT(CASE WHEN pipeline_status = 'PENDING_BILL_VERIFICATION' THEN 1 END) AS pending_bill,
+    COUNT(CASE WHEN pipeline_status = 'DRAFT' THEN 1 END) AS purchase_drafts,
     COUNT(CASE WHEN pipeline_status IN ('PENDING_BRANDING','BRANDING_DISPATCHED') THEN 1 END) AS in_branding,
     COUNT(CASE WHEN pipeline_status = 'PENDING_DIGITISATION' THEN 1 END) AS in_digitisation,
     COUNT(CASE WHEN pipeline_status = 'WAREHOUSE_READY' THEN 1 END) AS warehouse_ready,
