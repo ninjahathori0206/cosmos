@@ -29,6 +29,7 @@
     "maintenance:migrate-store-in-charge-role": "node scripts/run-maintenance-migrate-store-in-charge-role.js",
     "maintenance:purge-keep-user": "node scripts/run-maintenance-purge-keep-user.js",
     "deploy:auth-users-sp": "node scripts/deploy-auth-users-sp.js",
+    "deploy:sp-user-set-pos-pin": "node scripts/deploy-sp-user-set-pos-pin.js",
     "migrate:pos-checkout-inventory-drafts": "node scripts/run-migration-pos-checkout-inventory-drafts.js",
     "verify:api-modules": "node -e \"require('./src/api/orders');require('./src/api/pos');require('./src/services/orderService');console.log('api modules ok')\"",
     "deploy:pos-sql": "node scripts/deploy_pos_sql.js",

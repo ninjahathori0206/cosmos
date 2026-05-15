@@ -21,6 +21,7 @@ BEGIN
     s.store_name,
     u.is_active,
     u.last_login,
+    CAST(CASE WHEN u.pos_pin_hash IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS has_pos_pin,
     u.created_at,
     u.updated_at
   FROM dbo.users u
@@ -51,6 +52,7 @@ BEGIN
     s.store_name,
     u.is_active,
     u.last_login,
+    CAST(CASE WHEN u.pos_pin_hash IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS has_pos_pin,
     u.created_at,
     u.updated_at
   FROM dbo.users u
@@ -207,5 +209,25 @@ BEGIN
     DECLARE @ErrMsg NVARCHAR(4000) = ERROR_MESSAGE();
     RAISERROR(@ErrMsg, 16, 1);
   END CATCH;
+END;
+GO
+
+-- Admin / Command Unit: set POS PIN regardless of is_active (uniqueness enforced in app layer).
+IF OBJECT_ID('dbo.sp_User_SetPosPin', 'P') IS NOT NULL
+  DROP PROCEDURE dbo.sp_User_SetPosPin;
+GO
+
+CREATE PROCEDURE dbo.sp_User_SetPosPin
+  @user_id  INT,
+  @pin_hash VARCHAR(200)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  UPDATE dbo.users
+  SET pos_pin_hash = @pin_hash,
+      updated_at   = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+  WHERE user_id = @user_id;
+
+  SELECT @@ROWCOUNT AS rows_updated;
 END;
 GO

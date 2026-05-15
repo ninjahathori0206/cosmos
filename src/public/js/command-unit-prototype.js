@@ -855,12 +855,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       const users = await apiGet('/api/users');
       cachedUsers = users;
       if (!users.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="td-muted">No users found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="td-muted">No users found.</td></tr>';
         return;
       }
       users.forEach((u) => {
         const initials = (u.full_name || u.username || '?').split(' ').filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
         const roleBadge = u.role_key === 'super_admin' ? 'badge-purple' : 'badge-blue';
+        const pinBadge = u.has_pos_pin
+          ? '<span class="badge badge-green" style="font-size:10px">Set</span>'
+          : '<span class="badge badge-gray" style="font-size:10px">None</span>';
         const storeLabel = u.store_name
           ? `<span class="td-muted">${escHtml(u.store_name)}</span>`
           : '<span class="badge badge-gray" style="font-size:10px">HQ / Global</span>';
@@ -877,6 +880,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <td class="font-mono text-xs">${u.phone || '—'}</td>
           <td class="td-muted">${u.email || '—'}</td>
           <td><span class="badge ${roleBadge}">${u.role_display || u.role_key}</span></td>
+          <td>${pinBadge}</td>
           <td class="td-muted">${u.last_login ? fmtIstDateTime(u.last_login) : 'Never'}</td>
           <td>${u.is_active ? '<span class="badge badge-green"><span class="badge-dot"></span>Active</span>' : '<span class="badge badge-gray">Inactive</span>'}</td>
           <td><button class="topbar-btn user-edit-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>
@@ -886,7 +890,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       refreshStoreDropdowns();
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="8" class="td-muted">Error: ${err.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="td-muted">Error: ${err.message}</td></tr>`;
     }
   }
 
@@ -907,8 +911,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!body.username) throw new Error('Username is required.');
       if (!body.password || body.password.length < 4) throw new Error('Password must be at least 4 characters.');
       if (!body.full_name) throw new Error('Full name is required.');
-      await apiPost('/api/users', body);
+      const created = await apiPost('/api/users', body);
+      const pin = created && created.pos_pin ? String(created.pos_pin) : null;
       window.closeModal && window.closeModal('modal-new-user');
+      if (pin) {
+        const msg = `User created. Store OS PIN: ${pin} (unique — share securely; not shown again here).`;
+        if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess(msg);
+        else if (typeof cosmosToastInfo === 'function') cosmosToastInfo(msg);
+        else window.alert(msg);
+      } else if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('User created.');
+      }
       ['new-user-fullname','new-user-username','new-user-password','new-user-email','new-user-phone'].forEach((id) => {
         const el = document.getElementById(id); if (el) el.value = '';
       });
@@ -921,11 +934,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  function setEditUserPosPinDisplay(plainPin, hasPosPin) {
+    const pinEl = document.getElementById('edit-user-pos-pin');
+    const copyBtn = document.getElementById('edit-user-copy-pos-pin-btn');
+    if (pinEl) {
+      pinEl.value = plainPin || '';
+      pinEl.placeholder = plainPin ? '' : (hasPosPin ? '•••• (set)' : 'Regenerate to reveal');
+    }
+    if (copyBtn) copyBtn.style.display = plainPin ? '' : 'none';
+  }
+
   function openEditUserModal(userId) {
     const u = cachedUsers.find((x) => x.user_id === userId);
     if (!u) return;
     const title = document.getElementById('edit-user-title');
     if (title) title.textContent = `Edit — ${u.full_name}`;
+    setEditUserPosPinDisplay('', Boolean(u.has_pos_pin));
     document.getElementById('edit-user-fullname').value = u.full_name || '';
     document.getElementById('edit-user-role').value = u.role_key || '';
     document.getElementById('edit-user-phone').value = u.phone || '';
@@ -970,6 +994,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     } finally {
       setBtn('edit-user-save-btn', false);
     }
+  }
+
+  async function handleRegenerateUserPosPin() {
+    const modal = document.getElementById('modal-edit-user');
+    if (!modal) return;
+    const id = Number(modal.dataset.userId);
+    if (!id) return;
+    if (!window.confirm('Generate a new unique 4-digit Store OS PIN? The previous PIN will stop working at POS.')) return;
+    showError('edit-user-error', '');
+    const btn = document.getElementById('edit-user-regenerate-pos-pin-btn');
+    if (typeof cosmosBtnLoading === 'function' && btn) cosmosBtnLoading(btn);
+    try {
+      const data = await apiPost(`/api/users/${id}/regenerate-pos-pin`, {});
+      const pin = data && data.pos_pin ? String(data.pos_pin) : null;
+      if (!pin) throw new Error('PIN was not returned.');
+      setEditUserPosPinDisplay(pin, true);
+      const idx = cachedUsers.findIndex((x) => x.user_id === id);
+      if (idx >= 0) cachedUsers[idx].has_pos_pin = true;
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess(`New Store OS PIN: ${pin} (share securely)`);
+      }
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+      showError('edit-user-error', err.message || 'Failed to regenerate PIN');
+    } finally {
+      if (typeof cosmosBtnDone === 'function' && btn) cosmosBtnDone(btn);
+    }
+  }
+
+  function handleCopyUserPosPin() {
+    const pinEl = document.getElementById('edit-user-pos-pin');
+    const pin = pinEl && pinEl.value ? String(pinEl.value).trim() : '';
+    if (!pin || pin.length !== 4) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Regenerate PIN first to copy it.');
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(pin).then(() => {
+        if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('PIN copied');
+      }).catch(() => {
+        if (typeof cosmosToastError === 'function') cosmosToastError('Could not copy PIN');
+      });
+      return;
+    }
+    if (typeof cosmosToastInfo === 'function') cosmosToastInfo(`PIN: ${pin}`);
   }
 
   async function handleDeactivateUser() {
@@ -2824,6 +2893,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   bind('new-user-save-btn', handleCreateUser);
   bind('edit-user-save-btn', handleSaveUserChanges);
   bind('edit-user-deactivate-btn', handleDeactivateUser);
+  bind('edit-user-regenerate-pos-pin-btn', handleRegenerateUserPosPin);
+  bind('edit-user-copy-pos-pin-btn', handleCopyUserPosPin);
   bindPasswordToggle('new-user-password', 'new-user-password-toggle');
   bindPasswordToggle('edit-user-password', 'edit-user-password-toggle');
   bindTableDelegation();

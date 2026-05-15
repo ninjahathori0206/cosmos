@@ -350,7 +350,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>User</th><th>Store</th><th>Phone</th><th>Email</th><th>Role</th><th>Last Login</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>User</th><th>Store</th><th>Phone</th><th>Email</th><th>Role</th><th>Store OS PIN</th><th>Last Login</th><th>Status</th><th></th></tr></thead>
           <tbody id="users-tbody"></tbody>
         </table>
       </div>
@@ -1134,7 +1134,7 @@
       <div class="modal-close" onclick="closeModal('modal-new-user')">×</div>
     </div>
     <div class="modal-body">
-      <div class="alert alert-purple"><span class="alert-icon">ℹ️</span><div>This creates a <strong>Super Admin</strong> or <strong>HR Admin</strong> account only. Store staff are created in Army by HR Admin.</div></div>
+      <div class="alert alert-purple"><span class="alert-icon">ℹ️</span><div>This creates a <strong>Super Admin</strong> or <strong>HR Admin</strong> account only. Store staff are created in Army by HR Admin. A unique <strong>4-digit Store OS PIN</strong> is generated automatically on create (shown once).</div></div>
       <div class="form-grid">
         <div class="form-group"><label>Full Name <span class="label-req">*</span></label><input id="new-user-fullname" type="text" placeholder="Full name"></div>
         <div class="form-group"><label>Username <span class="label-req">*</span></label><input id="new-user-username" type="text" placeholder="e.g. talha.junani"></div>
@@ -1202,6 +1202,15 @@
           <select id="edit-user-store">
             <option value="">— HQ / Global (no single store) —</option>
           </select>
+        </div>
+        <div class="form-group span2">
+          <label>Store OS PIN (4 digits)</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input id="edit-user-pos-pin" type="text" readonly class="font-mono" placeholder="Regenerate to reveal" style="flex:1 1 120px;max-width:140px;letter-spacing:0.2em;text-align:center" aria-label="Store OS PIN">
+            <button type="button" class="topbar-btn" id="edit-user-regenerate-pos-pin-btn" aria-label="Regenerate Store OS PIN">Regenerate PIN</button>
+            <button type="button" class="topbar-btn" id="edit-user-copy-pos-pin-btn" aria-label="Copy Store OS PIN" style="display:none">Copy</button>
+          </div>
+          <div class="td-muted text-xs" style="margin-top:4px">Unique across all users. Shown only after create or regenerate — share securely with the staff member.</div>
         </div>
         <div class="form-group"><label>Status</label>
           <select id="edit-user-status">

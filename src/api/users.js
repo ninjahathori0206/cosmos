@@ -4,6 +4,8 @@ const Joi = require('joi');
 const bcrypt = require('bcryptjs');
 const { executeStoredProcedure } = require('../config/db');
 const { requireModule, requirePermission } = require('../middleware/authorize');
+const { writeAuditLog } = require('../services/auditService');
+const { generateAndAssignPosPin } = require('../services/posPinService');
 
 const router = express.Router();
 
@@ -36,6 +38,46 @@ router.get(
     try {
       const result = await executeStoredProcedure('sp_User_GetAll', {});
       return res.json({ success: true, data: result.recordset || [] });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+router.post(
+  '/:id/regenerate-pos-pin',
+  requireModule('command_unit'),
+  requirePermission('command_unit.users.edit'),
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (!id) return res.status(400).json({ success: false, message: 'Invalid user id' });
+
+      const existing = await executeStoredProcedure('sp_User_GetById', {
+        user_id: { type: sql.Int, value: id }
+      });
+      if (!existing.recordset || !existing.recordset[0]) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      const posPin = await generateAndAssignPosPin(id);
+      try {
+        await writeAuditLog({
+          userId: req.user && req.user.user_id != null ? Number(req.user.user_id) : null,
+          action: 'USER_POS_PIN_REGENERATED',
+          module: 'command_unit',
+          entityType: 'user',
+          entityId: id,
+          ipAddress: req.ip || null
+        });
+      } catch (_a) {
+        /* non-fatal */
+      }
+
+      return res.json({
+        success: true,
+        data: { user_id: id, pos_pin: posPin, has_pos_pin: true }
+      });
     } catch (err) {
       return next(err);
     }
@@ -87,7 +129,35 @@ router.post(
         is_active: { type: sql.Bit,          value: value.is_active !== false }
       });
 
-      return res.status(201).json({ success: true, data: result.recordset && result.recordset[0] });
+      const row = result.recordset && result.recordset[0];
+      let posPin = null;
+      if (row && row.user_id != null) {
+        try {
+          posPin = await generateAndAssignPosPin(Number(row.user_id));
+          try {
+            await writeAuditLog({
+              userId: req.user && req.user.user_id != null ? Number(req.user.user_id) : null,
+              action: 'USER_POS_PIN_GENERATED',
+              module: 'command_unit',
+              entityType: 'user',
+              entityId: Number(row.user_id),
+              ipAddress: req.ip || null
+            });
+          } catch (_a) {
+            /* non-fatal */
+          }
+        } catch (pinErr) {
+          return res.status(500).json({
+            success: false,
+            message: `User created but POS PIN could not be assigned: ${pinErr.message}`
+          });
+        }
+      }
+
+      return res.status(201).json({
+        success: true,
+        data: row ? { ...row, pos_pin: posPin, has_pos_pin: posPin != null } : row
+      });
     } catch (err) {
       return next(err);
     }
