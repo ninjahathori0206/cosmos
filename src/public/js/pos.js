@@ -190,9 +190,122 @@
       },
       body: JSON.stringify({ pin: pin })
     })
-    const body = await res.json()
-    if (!res.ok || !body.success) throw new Error(body.message || 'Request failed')
+    var body = {}
+    try {
+      body = await res.json()
+    } catch (_e) {
+      body = {}
+    }
+    if (!res.ok || !body.success) {
+      if (res.status === 401 && shouldInvalidateTabletOnStaffLogin401(body.message)) {
+        invalidateTabletSessionAndShowTabletUnlock(body.message || 'Tablet session ended.')
+        var invErr = new Error(body.message || 'Tablet session ended')
+        invErr.tabletSessionInvalidated = true
+        throw invErr
+      }
+      throw new Error(body.message || 'Request failed')
+    }
     return body
+  }
+
+  function shouldInvalidateTabletOnStaffLogin401(message) {
+    var m = String(message || '')
+    if (m === 'Invalid PIN.') return false
+    if (m.indexOf('No active staff') !== -1) return false
+    return true
+  }
+
+  async function fetchTabletSessionOk() {
+    await ensureCosmosApiKeyFromBootstrap()
+    const tabletTok = getPosTabletToken()
+    if (!tabletTok) {
+      var e = new Error('Tablet session required.')
+      e.status = 401
+      throw e
+    }
+    const res = await fetch('/api/pos/tablet-session', {
+      headers: {
+        'X-API-Key': getApiKey(),
+        'X-Tablet-Token': tabletTok
+      }
+    })
+    var body = {}
+    try {
+      body = await res.json()
+    } catch (_e) {
+      body = {}
+    }
+    if (!res.ok || !body.success) {
+      var err = new Error(body.message || 'Tablet session invalid')
+      err.status = res.status
+      throw err
+    }
+    return body.data
+  }
+
+  function closePosStaffLoginModal() {
+    var o = document.getElementById('overlay-pos-staff-login')
+    if (!o) return
+    o.classList.remove('open')
+    try {
+      document.documentElement.removeAttribute('data-pos-staff-modal')
+    } catch (_e) { /* ignore */ }
+    clearPinError()
+  }
+
+  function openPosStaffLoginModal() {
+    var o = document.getElementById('overlay-pos-staff-login')
+    if (!o) return
+    syncStaffLoginStoreLine()
+    resetPin(false)
+    pinDigits = []
+    o.classList.add('open')
+    try {
+      document.documentElement.setAttribute('data-pos-staff-modal', '1')
+    } catch (_e) { /* ignore */ }
+  }
+
+  function renderLockedCataloguePlaceholder() {
+    if (!catalogueResults) return
+    catalogueResults.innerHTML =
+      '<div class="pos-catalogue-locked-empty">' +
+      '<h3>Store OS is locked</h3>' +
+      '<p>Enter your staff PIN in the dialog to load the catalogue.</p>' +
+      '</div>'
+  }
+
+  async function showLockedCatalogueWithStaffModal() {
+    document.body.classList.add('pos-catalogue-locked')
+    if (catalogueMeta) catalogueMeta.textContent = ''
+    renderLockedCataloguePlaceholder()
+    showScreen('screen-pos-catalogue')
+    await loadStores()
+    syncStaffLoginStoreLine()
+    openPosStaffLoginModal()
+  }
+
+  function invalidateTabletSessionAndShowTabletUnlock(message) {
+    clearPosTabletToken()
+    clearPosSession()
+    try {
+      document.body.classList.remove('pos-catalogue-locked')
+    } catch (_e) { /* ignore */ }
+    closePosStaffLoginModal()
+    if (catalogueResults) catalogueResults.innerHTML = ''
+    if (catalogueMeta) catalogueMeta.textContent = ''
+    lastLoadedProducts = []
+    try {
+      if (window.history && window.history.replaceState) {
+        history.replaceState({}, '', POS_ROUTES.LOGIN)
+      }
+    } catch (_e) { /* ignore */ }
+    showScreen('screen-login-tablet')
+    resetPin(false)
+    pinDigits = []
+    resetTabletPin(false)
+    if (posTabletIdInput) posTabletIdInput.value = ''
+    loadStores()
+    if (message && typeof cosmosToastError === 'function') cosmosToastError(message)
   }
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
@@ -249,13 +362,13 @@
   // ── Screen navigation (internal — callers use navigate()) ───────────────
   function showScreen(id) {
     closeAllPosLensOverlays()
-    if (id !== 'screen-login-tablet' && id !== 'screen-login-staff') {
+    if (id !== 'screen-login-tablet') {
       document.documentElement.removeAttribute('data-pos-login-step')
     }
     document.querySelectorAll('.pos-screen').forEach(function (el) { el.classList.remove('active') })
     var target = document.getElementById(id)
     if (target) target.classList.add('active')
-    document.body.classList.toggle('pos-store-login-shell', id === 'screen-login-tablet' || id === 'screen-login-staff')
+    document.body.classList.toggle('pos-store-login-shell', id === 'screen-login-tablet')
     var lkFlowScreens = {
       'screen-pos-catalogue': true,
       'screen-pos-product': true,
@@ -349,7 +462,23 @@
     }
 
     if (path === POS_ROUTES.CATALOGUE) {
-      if (!valid) { navigate(POS_ROUTES.LOGIN); return }
+      if (!valid) {
+        if (getTabletJwtStoreId() != null) {
+          void (async function posCatalogueLockedGate() {
+            try {
+              await fetchTabletSessionOk()
+              history.replaceState({}, '', POS_ROUTES.CATALOGUE)
+              await showLockedCatalogueWithStaffModal()
+            } catch (err) {
+              invalidateTabletSessionAndShowTabletUnlock(err && err.message ? err.message : '')
+            }
+          })()
+          return
+        }
+        navigate(POS_ROUTES.LOGIN); return
+      }
+      document.body.classList.remove('pos-catalogue-locked')
+      closePosStaffLoginModal()
       void showCatalogueScreen(session)
       return
     }
@@ -440,14 +569,15 @@
         resolve(POS_ROUTES.LOGIN)
         return
       }
-      showScreen('screen-login-staff')
-      resetPin(false)
-      tabletPinDigits = []
-      pinDigits = []
-      resetTabletPin(false)
-      loadStores().then(function () {
-        syncStaffLoginStoreLine()
-      })
+      void (async function posStaffAliasToLockedCatalogue() {
+        try {
+          await fetchTabletSessionOk()
+          history.replaceState({}, '', POS_ROUTES.CATALOGUE)
+          await showLockedCatalogueWithStaffModal()
+        } catch (err) {
+          invalidateTabletSessionAndShowTabletUnlock(err && err.message ? err.message : '')
+        }
+      })()
       return
     }
 
@@ -457,8 +587,16 @@
     if (session) clearPosSession()
     showScreen('screen-login-tablet')
     if (getTabletJwtStoreId() != null) {
-      history.replaceState({}, '', POS_ROUTES.LOGIN_STAFF)
-      resolve(POS_ROUTES.LOGIN_STAFF)
+      void (async function posLoginMaybeLockedCatalogue() {
+        try {
+          await fetchTabletSessionOk()
+          history.replaceState({}, '', POS_ROUTES.CATALOGUE)
+          await showLockedCatalogueWithStaffModal()
+        } catch (err) {
+          invalidateTabletSessionAndShowTabletUnlock(err && err.message ? err.message : '')
+        }
+      })()
+      loadStores()
       return
     }
     loadStores()
@@ -491,6 +629,10 @@
   let cachedPosStores   = []
   const PIN_LENGTH      = 4
   let activeCatalogueScope = 'store'
+  let activeCatalogueCategories = []
+  let activeCatalogueBrands = []
+  /** Tabs from GET /api/pos/catalogue-product-types (types that exist in catalogue for current scope). */
+  let catalogueProductTypeTabs = []
   let selectedProductId = null
   let searchDebounceTimer = null
   let pendingOrderSelection = null
@@ -1007,20 +1149,21 @@
   const storeSelectorBtn  = document.getElementById('store-selector-btn')
   const storeSelectorName = document.getElementById('store-selector-name')
   const storeDropdown     = document.getElementById('store-dropdown')
-  const pinDots           = document.querySelectorAll('#pos-staff-pin-block .pos-pin-dot')
-  const pinError          = document.getElementById('pin-error-staff')
+  const pinDots           = document.querySelectorAll('#pos-staff-pin-block-modal .pos-pin-dot')
+  const pinError          = document.getElementById('pin-error-staff-modal')
   const tabletPinDots     = document.querySelectorAll('#pos-tablet-pin-dots .pos-pin-dot')
   const tabletPinError    = document.getElementById('pos-tablet-pin-error')
   const posTabletIdInput  = document.getElementById('pos-tablet-id-input')
   const btnUnlockTablet   = document.getElementById('btn-unlock-tablet')
   const numpadTablet      = document.getElementById('pos-numpad-tablet')
-  const numpadStaff       = document.getElementById('pos-numpad-staff')
-  const btnUnlock         = document.getElementById('btn-unlock-pos')
+  const numpadStaff       = document.getElementById('pos-numpad-staff-modal')
+  const btnUnlock         = document.getElementById('btn-unlock-pos-modal')
   const catalogueStaff    = document.getElementById('pos-catalogue-staff')
   const catalogueStore    = document.getElementById('pos-catalogue-store')
   const btnScopeStore     = document.getElementById('btn-scope-store')
   const btnScopeGlobal    = document.getElementById('btn-scope-global')
-  const brandSelect       = document.getElementById('pos-catalogue-brand')
+  const categoryTabsEl    = document.getElementById('pos-catalogue-category-tabs')
+  const brandTabsEl       = document.getElementById('pos-catalogue-brand-tabs')
   const searchInput       = document.getElementById('pos-search-code')
   const btnSearch         = document.getElementById('btn-pos-search')
   const btnCatalogueScan    = document.getElementById('btn-pos-catalogue-scan')
@@ -1070,6 +1213,141 @@
   const rxPlanoOd         = document.getElementById('rx-plano-od')
   const rxPlanoOs         = document.getElementById('rx-plano-os')
   const rxPd              = document.getElementById('rx-pd')
+
+  function catalogueCategoryTabsSource() {
+    if (Array.isArray(catalogueProductTypeTabs) && catalogueProductTypeTabs.length) {
+      return catalogueProductTypeTabs.slice()
+    }
+    return []
+  }
+
+  function catalogueCategoryLabelForKey(key) {
+    var k = String(key || '')
+    var tabs = catalogueCategoryTabsSource()
+    for (var i = 0; i < tabs.length; i++) {
+      if (String(tabs[i].key || '') === k) return String(tabs[i].label || k)
+    }
+    return k
+  }
+
+  function renderCatalogueCategoryTabs() {
+    if (!categoryTabsEl) return
+    var tabs = catalogueCategoryTabsSource()
+    categoryTabsEl.innerHTML = ''
+    var selected = {}
+    for (var s = 0; s < activeCatalogueCategories.length; s++) {
+      selected[String(activeCatalogueCategories[s] || '').trim()] = true
+    }
+    for (var i = 0; i < tabs.length; i++) {
+      var tab = tabs[i]
+      var tabKey = String(tab.key || '').trim()
+      if (!tabKey) continue
+      var label = String(tab.label || tabKey)
+      var isOn = Boolean(selected[tabKey])
+      var btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'pos-catalogue-pill' + (isOn ? ' pos-catalogue-pill--active' : '')
+      btn.setAttribute('role', 'button')
+      btn.setAttribute('aria-pressed', isOn ? 'true' : 'false')
+      btn.setAttribute('data-category', tabKey)
+      btn.textContent = label
+      btn.addEventListener('click', function (ev) {
+        var key = String(ev.currentTarget.getAttribute('data-category') || '').trim()
+        if (!key) return
+        var next = []
+        var found = false
+        for (var t = 0; t < activeCatalogueCategories.length; t++) {
+          if (String(activeCatalogueCategories[t] || '').trim() === key) {
+            found = true
+            continue
+          }
+          next.push(activeCatalogueCategories[t])
+        }
+        if (!found) next.push(key)
+        activeCatalogueCategories = next
+        selectedProductId = null
+        renderCatalogueCategoryTabs()
+        triggerCatalogueSearch()
+      })
+      categoryTabsEl.appendChild(btn)
+    }
+  }
+
+  async function loadCatalogueProductTypeTabs() {
+    if (!categoryTabsEl) return
+    var session = getPosSession()
+    if (!session || !session.token) return
+    categoryTabsEl.setAttribute('aria-busy', 'true')
+    try {
+      var rows = await apiGet('/api/pos/catalogue-product-types?scope=' + encodeURIComponent(activeCatalogueScope), session.token)
+      catalogueProductTypeTabs = []
+      if (Array.isArray(rows)) {
+        for (var i = 0; i < rows.length; i++) {
+          var k = String(rows[i].key != null ? rows[i].key : '').trim()
+          if (!k) continue
+          var lb = String(rows[i].label != null ? rows[i].label : k).trim() || k
+          catalogueProductTypeTabs.push({ key: k, label: lb })
+        }
+      }
+      var valid = {}
+      for (var j = 0; j < catalogueProductTypeTabs.length; j++) {
+        valid[catalogueProductTypeTabs[j].key] = true
+      }
+      activeCatalogueCategories = activeCatalogueCategories.filter(function (key) {
+        return valid[String(key || '').trim()]
+      })
+      renderCatalogueCategoryTabs()
+    } catch (err) {
+      catalogueProductTypeTabs = []
+      activeCatalogueCategories = []
+      renderCatalogueCategoryTabs()
+      if (typeof cosmosToastError === 'function') cosmosToastError('Product types failed: ' + (err && err.message ? err.message : 'Error'))
+    } finally {
+      categoryTabsEl.removeAttribute('aria-busy')
+    }
+  }
+
+  function renderBrandPillsFromList(nameList) {
+    if (!brandTabsEl) return
+    var list = Array.isArray(nameList) ? nameList : []
+    brandTabsEl.innerHTML = ''
+    var selected = {}
+    for (var s = 0; s < activeCatalogueBrands.length; s++) {
+      var bn = String(activeCatalogueBrands[s] || '').trim()
+      if (bn) selected[bn] = true
+    }
+    for (var j = 0; j < list.length; j++) {
+      var n = String(list[j] || '').trim()
+      if (!n) continue
+      var isOn = Boolean(selected[n])
+      var btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'pos-catalogue-pill' + (isOn ? ' pos-catalogue-pill--active' : '')
+      btn.setAttribute('role', 'button')
+      btn.setAttribute('aria-pressed', isOn ? 'true' : 'false')
+      btn.setAttribute('data-brand', n)
+      btn.textContent = n
+      btn.addEventListener('click', function (ev) {
+        var name = String(ev.currentTarget.getAttribute('data-brand') || '').trim()
+        if (!name) return
+        var next = []
+        var found = false
+        for (var t = 0; t < activeCatalogueBrands.length; t++) {
+          if (String(activeCatalogueBrands[t] || '').trim() === name) {
+            found = true
+            continue
+          }
+          next.push(activeCatalogueBrands[t])
+        }
+        if (!found) next.push(name)
+        activeCatalogueBrands = next
+        selectedProductId = null
+        renderBrandPillsFromList(list)
+        triggerCatalogueSearch()
+      })
+      brandTabsEl.appendChild(btn)
+    }
+  }
 
   // ── POS config (from API) ────────────────────────────────────────────────
   async function loadPosBootstrap(session) {
@@ -1264,7 +1542,7 @@
   }
 
   function syncStaffLoginStoreLine() {
-    var line = document.getElementById('pos-staff-store-line')
+    var line = document.getElementById('pos-staff-store-line-modal')
     var jwtSid = getTabletJwtStoreId()
     if (!line) return
     if (jwtSid == null) {
@@ -1412,9 +1690,13 @@
     return Boolean(el && el.classList.contains('active'))
   }
 
+  function staffPinEntryActive() {
+    var o = document.getElementById('overlay-pos-staff-login')
+    return Boolean(o && o.classList.contains('open'))
+  }
+
   function loginStaffScreenActive() {
-    var el = document.getElementById('screen-login-staff')
-    return Boolean(el && el.classList.contains('active'))
+    return staffPinEntryActive()
   }
 
   function addDigit(digit) {
@@ -1469,7 +1751,7 @@
   }
 
   bindPosNumpad(numpadTablet, 'btn-backspace-tablet')
-  bindPosNumpad(numpadStaff, 'btn-backspace-staff')
+  bindPosNumpad(numpadStaff, 'btn-backspace-staff-modal')
 
   // Physical keyboard (dev / bluetooth keyboard): route digits to whichever login screen is active
   document.addEventListener('keydown', function posLoginKeyboard(e) {
@@ -1518,9 +1800,9 @@
       if (btnUnlockTablet && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btnUnlockTablet)
       else if (btnUnlockTablet && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnUnlockTablet)
       if (typeof cosmosToastSuccess === 'function') {
-        cosmosToastSuccess('Tablet unlocked — continue on the staff sign-in screen.')
+        cosmosToastSuccess('Tablet unlocked — enter your staff PIN to continue.')
       }
-      navigate(POS_ROUTES.LOGIN_STAFF)
+      navigate(POS_ROUTES.CATALOGUE)
     } catch (err) {
       if (btnUnlockTablet && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnUnlockTablet)
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
@@ -1590,9 +1872,12 @@
       try {
         sessionStorage.setItem(POS_CATALOGUE_WELCOME_ONCE, '1')
       } catch (_e) { /* storage unavailable */ }
+      document.body.classList.remove('pos-catalogue-locked')
+      closePosStaffLoginModal()
       navigate(POS_ROUTES.CATALOGUE)
     } catch (err) {
       if (btnUnlock && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnUnlock)
+      if (err && err.tabletSessionInvalidated) return
       showPinError(err.message || 'Invalid PIN — try again')
       resetPin(true)
     }
@@ -1639,14 +1924,35 @@
     return '₹' + Number(price).toLocaleString('en-IN')
   }
 
-  function formatPdpCollectionModelLine(product) {
+  /** Primary product identity for cards and PDP: Brand · Collection · Model (omit empty segments). */
+  function formatProductBrandCollectionModel(product) {
     if (!product) return ''
+    const b = String(product.brand_name || '').trim()
     const c = String(product.collection_name || '').trim()
     const m = String(product.model_number || '').trim()
-    if (c && m) return c + ' · ' + m
-    if (c) return c
-    if (m) return m
+    const parts = [b, c, m].filter(Boolean)
+    if (parts.length) return parts.join(' · ')
     return String(product.product_name || '').trim()
+  }
+
+  /** Unify catalogue separators (· • hyphen) for duplicate subtitle detection. */
+  function catalogCompareKey(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s*[\u00b7\u2022\-\u2013\u2014]\s*/g, '|')
+      .replace(/\s+/g, '')
+  }
+
+  function catalogProductSubtitle(product, primaryLine) {
+    const p = String(product && product.product_name || '').trim()
+    if (!p || !primaryLine) return ''
+    if (normalizeText(p) === normalizeText(primaryLine)) return ''
+    const c = String(product && product.collection_name || '').trim()
+    const m = String(product && product.model_number || '').trim()
+    const collModel = [c, m].filter(Boolean).join(' · ')
+    if (collModel && catalogCompareKey(p) === catalogCompareKey(collModel)) return ''
+    return p
   }
 
   function getSelectedSku(products) {
@@ -1766,12 +2072,12 @@
       card.className = 'pos-lk-cat-card' + (isSelected ? ' active' : '')
       card.id = 'pos-sku-card-' + product.product_id
       card.setAttribute('role', 'button')
-      const titleLine = formatPdpCollectionModelLine(product)
-      const brandLine = String(product.brand_name || '').trim()
+      const titleLine = formatProductBrandCollectionModel(product)
+      const subtitleLine = catalogProductSubtitle(product, titleLine)
       const colourCountBit = product.colours.length > 1
         ? (product.colours.length + ' colours')
         : ''
-      card.setAttribute('aria-label', [titleLine, brandLine, colourCountBit].filter(Boolean).join(' — '))
+      card.setAttribute('aria-label', [titleLine, subtitleLine, colourCountBit].filter(Boolean).join(' — '))
       card.setAttribute('tabindex', '0')
       card.dataset.productId = String(product.product_id)
 
@@ -1790,8 +2096,8 @@
         ? `<span class="pos-lk-cat-variant-badge" aria-hidden="true">${product.colours.length} colours</span>`
         : ''
 
-      const brandInner = brandLine
-        ? `<span class="pos-lk-cat-brand">${escapeHtml(brandLine)}</span>`
+      const subtitleInner = subtitleLine
+        ? `<span class="pos-lk-cat-brand pos-lk-cat-product-subtitle">${escapeHtml(subtitleLine)}</span>`
         : '<span class="pos-lk-cat-brand pos-lk-cat-brand--empty" aria-hidden="true">\u00a0</span>'
 
       card.innerHTML = `
@@ -1800,8 +2106,8 @@
           ${variantBadge}
         </div>
         <div class="pos-lk-cat-detail">
-          <div class="pos-lk-cat-title">${escapeHtml(titleLine)}</div>
-          <div class="pos-lk-cat-brand-slot">${brandInner}</div>
+          <div class="pos-lk-cat-title pos-lk-cat-title--truncate" title="${escapeHtml(titleLine)}">${escapeHtml(titleLine)}</div>
+          <div class="pos-lk-cat-brand-slot">${subtitleInner}</div>
           <div class="pos-lk-cat-swatches-slot">${swatchRow}</div>
           <div class="pos-lk-cat-footer">
             <div class="pos-lk-cat-price-line">${inrFormat(displayColour.sale_price)}${lensCopy ? ' ' + escapeHtml(lensCopy) : ''}</div>
@@ -1854,12 +2160,32 @@
     })
   }
 
-  /** Ensures grid matches selected brand even if API/SP ignores ?brand= (case-insensitive). */
-  function filterPosCatalogueByBrand(products, brand) {
-    if (!brand || !String(brand).trim()) return products
-    const w = String(brand).trim().toLowerCase()
+  /** Ensures grid matches selected brands even if API/SP ignores ?brand= (case-insensitive OR). */
+  function filterPosCatalogueByBrands(products, brandNames) {
+    if (!brandNames || !brandNames.length) return products
+    var set = {}
+    for (var i = 0; i < brandNames.length; i++) {
+      var w = String(brandNames[i] || '').trim().toLowerCase()
+      if (w) set[w] = true
+    }
+    if (!Object.keys(set).length) return products
     return products.filter(function (p) {
-      return String(p.brand_name || '').trim().toLowerCase() === w
+      return Boolean(set[String(p.brand_name || '').trim().toLowerCase()])
+    })
+  }
+
+  /** Mirrors server: OR of selected Purchase product_type keys (empty selection = no filter). */
+  function filterPosCatalogueByProductTypes(products, typeKeys) {
+    if (!typeKeys || !typeKeys.length) return products
+    var set = {}
+    for (var i = 0; i < typeKeys.length; i++) {
+      var u = String(typeKeys[i] || '').trim().toUpperCase()
+      if (u) set[u] = true
+    }
+    if (!Object.keys(set).length) return products
+    return products.filter(function (p) {
+      var t = String(p.product_type || '').trim().toUpperCase()
+      return Boolean(set[t])
     })
   }
 
@@ -1867,44 +2193,58 @@
     const scopeLabel = activeCatalogueScope === 'store' ? 'Store catalogue' : 'Global catalogue'
     const totalVariants = products.reduce((acc, p) => acc + p.colours.length, 0)
     const hasQuery = Boolean(normalizeText(query))
-    const brandSel = brandSelect && brandSelect.value ? brandSelect.value.trim() : ''
-    const brandBit = brandSel ? ' · Brand: ' + brandSel : ''
+    var brandBit = ''
+    if (activeCatalogueBrands && activeCatalogueBrands.length) {
+      var bp = []
+      for (var b = 0; b < activeCatalogueBrands.length; b++) {
+        var bn = String(activeCatalogueBrands[b] || '').trim()
+        if (bn) bp.push(bn)
+      }
+      if (bp.length) brandBit = ' · Brand: ' + bp.join(', ')
+    }
+    var catBit = ''
+    if (activeCatalogueCategories && activeCatalogueCategories.length) {
+      var parts = []
+      for (var c = 0; c < activeCatalogueCategories.length; c++) {
+        var ck = String(activeCatalogueCategories[c] || '').trim()
+        if (!ck) continue
+        parts.push(catalogueCategoryLabelForKey(ck))
+      }
+      if (parts.length) catBit = ' · Product type: ' + parts.join(', ')
+    }
     if (!hasQuery) {
-      catalogueMeta.textContent = scopeLabel + brandBit + ': ' + products.length + ' models · ' + totalVariants + ' variants'
+      catalogueMeta.textContent = scopeLabel + catBit + brandBit + ': ' + products.length + ' models · ' + totalVariants + ' variants'
       return
     }
-    catalogueMeta.textContent = scopeLabel + brandBit + ': ' + products.length + ' results for "' + query.trim() + '"'
+    catalogueMeta.textContent = scopeLabel + catBit + brandBit + ': ' + products.length + ' results for "' + query.trim() + '"'
   }
 
   async function loadCatalogueBrands() {
-    if (!brandSelect) return
+    if (!brandTabsEl) return
     const session = getPosSession()
     if (!session || !session.token) return
-    const prev = brandSelect.value
-    brandSelect.disabled = true
+    const prev = activeCatalogueBrands.slice()
+    brandTabsEl.setAttribute('aria-busy', 'true')
     try {
       const names = await apiGet('/api/pos/catalogue-brands?scope=' + encodeURIComponent(activeCatalogueScope), session.token)
-      brandSelect.innerHTML = '<option value="">All brands</option>'
-      if (Array.isArray(names)) {
-        names.forEach(function (name) {
-          const n = String(name || '').trim()
-          if (!n) return
-          const opt = document.createElement('option')
-          opt.value = n
-          opt.textContent = n
-          brandSelect.appendChild(opt)
-        })
+      const nameList = Array.isArray(names) ? names : []
+      var valid = {}
+      for (var i = 0; i < nameList.length; i++) {
+        var nm = String(nameList[i] || '').trim()
+        if (nm) valid[nm] = true
       }
-      if (prev && Array.prototype.some.call(brandSelect.options, function (o) { return o.value === prev })) {
-        brandSelect.value = prev
-      } else {
-        brandSelect.value = ''
+      activeCatalogueBrands = []
+      for (var p = 0; p < prev.length; p++) {
+        var pv = String(prev[p] || '').trim()
+        if (pv && valid[pv]) activeCatalogueBrands.push(pv)
       }
+      renderBrandPillsFromList(nameList)
     } catch (err) {
-      brandSelect.innerHTML = '<option value="">All brands</option>'
+      activeCatalogueBrands = []
+      renderBrandPillsFromList([])
       if (typeof cosmosToastError === 'function') cosmosToastError('Brands list failed: ' + err.message)
     } finally {
-      brandSelect.disabled = false
+      brandTabsEl.removeAttribute('aria-busy')
     }
   }
 
@@ -1917,19 +2257,27 @@
   }
 
   async function triggerCatalogueSearch(useButton) {
+    if (document.body.classList.contains('pos-catalogue-locked')) return
     const query = searchInput.value || ''
     if (useButton) cosmosBtnLoading(btnSearch)
     showCatalogueSkeleton()
 
     const session = getPosSession()
     const q = query.trim()
-    const brandQ = (brandSelect && brandSelect.value) ? String(brandSelect.value).trim() : ''
+    const brandList = (activeCatalogueBrands || [])
+      .map(function (b) { return String(b || '').trim() })
+      .filter(Boolean)
+    const catKeys = (activeCatalogueCategories || [])
+      .map(function (k) { return String(k || '').trim().toUpperCase() })
+      .filter(Boolean)
     let url = '/api/pos/catalogue?scope=' + activeCatalogueScope + (q ? '&q=' + encodeURIComponent(q) : '')
-    if (brandQ) url += '&brand=' + encodeURIComponent(brandQ)
+    if (brandList.length) url += '&brand=' + encodeURIComponent(brandList.join(','))
+    if (catKeys.length) url += '&product_type=' + encodeURIComponent(catKeys.join(','))
 
     try {
       let products = await apiGet(url, session && session.token)
-      products = filterPosCatalogueByBrand(products, brandQ)
+      products = filterPosCatalogueByBrands(products, brandList)
+      products = filterPosCatalogueByProductTypes(products, catKeys)
       lastLoadedProducts = products
       renderCatalogueMeta(products, query)
       renderCatalogueCards(products, query)
@@ -2171,8 +2519,10 @@
     activeCatalogueScope = scope
     selectedProductId = null
     updateScopeButtons()
-    if (brandSelect) brandSelect.value = ''
-    loadCatalogueBrands().then(function () { triggerCatalogueSearch() })
+    activeCatalogueBrands = []
+    Promise.all([loadCatalogueProductTypeTabs(), loadCatalogueBrands()]).then(function () {
+      triggerCatalogueSearch()
+    })
   }
 
   function bindCatalogueEvents() {
@@ -2208,23 +2558,20 @@
         openPosCustomerPickerModal()
       })
     }
-    if (brandSelect) {
-      brandSelect.addEventListener('change', function () {
-        selectedProductId = null
-        triggerCatalogueSearch()
-      })
-    }
   }
 
   async function showCatalogueScreen(session) {
+    document.body.classList.remove('pos-catalogue-locked')
+    closePosStaffLoginModal()
+    activeCatalogueCategories = []
+    activeCatalogueBrands = []
     await loadPosBootstrap(session)
     lastPaymentReceipt = null
     if (catalogueStaff) catalogueStaff.textContent = session.name + ' • ' + formatRole(session.role)
     if (catalogueStore) catalogueStore.textContent = session.store_name
     updateScopeButtons()
     searchInput.value = ''
-    if (brandSelect) brandSelect.value = ''
-    loadCatalogueBrands().then(function () {
+    Promise.all([loadCatalogueProductTypeTabs(), loadCatalogueBrands()]).then(function () {
       triggerCatalogueSearch()
     })
     showScreen('screen-pos-catalogue')
@@ -2256,12 +2603,18 @@
     }
     const colour = selection.colour
     const product = selection.product
-    if (pdpProductTitle) pdpProductTitle.textContent = formatPdpCollectionModelLine(product)
-    if (pdpBrand) pdpBrand.textContent = product.brand_name || ''
+    const pdpPrimary = formatProductBrandCollectionModel(product)
+    const pdpSub = catalogProductSubtitle(product, pdpPrimary)
+    if (pdpProductTitle) {
+      pdpProductTitle.textContent = pdpPrimary
+      pdpProductTitle.setAttribute('title', pdpPrimary)
+    }
+    if (pdpBrand) {
+      pdpBrand.textContent = pdpSub
+      pdpBrand.style.display = pdpSub ? '' : 'none'
+    }
     if (pdpName) {
-      const titleLine = formatPdpCollectionModelLine(product)
-      const brandLine = String(product.brand_name || '').trim()
-      pdpName.textContent = [titleLine, brandLine].filter(Boolean).join(' — ')
+      pdpName.textContent = [pdpPrimary, pdpSub].filter(Boolean).join(' — ')
     }
     if (pdpPrice) pdpPrice.textContent = inrFormat(colour.sale_price || 0)
     if (pdpStrike) {
@@ -4578,7 +4931,7 @@
     }
   }
 
-  /** Ends staff POS session only — tablet JWT stays until Tablet Management deactivates the tablet or resets its PIN. */
+  /** Ends staff POS session only — tablet JWT stays until Tablet Management invalidates it. */
   async function performPosStaffLogout() {
     var sess = getPosSession()
     if (sess && sess.token) {
@@ -4614,10 +4967,23 @@
     resetTabletPin(false)
     pinDigits = []
     obRenderCart()
-    var nextRoute = getTabletJwtStoreId() != null ? POS_ROUTES.LOGIN_STAFF : POS_ROUTES.LOGIN
-    if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Staff signed out. This tablet is still signed in — use staff PIN when ready.')
-    history.replaceState({}, '', nextRoute)
-    resolve(nextRoute)
+    document.body.classList.remove('pos-catalogue-locked')
+    closePosStaffLoginModal()
+    try {
+      if (getTabletJwtStoreId() != null) {
+        await fetchTabletSessionOk()
+        history.replaceState({}, '', POS_ROUTES.CATALOGUE)
+        if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Staff signed out. Enter your PIN to continue on this tablet.')
+        await showLockedCatalogueWithStaffModal()
+      } else {
+        history.replaceState({}, '', POS_ROUTES.LOGIN)
+        showScreen('screen-login-tablet')
+        if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Staff signed out.')
+        loadStores()
+      }
+    } catch (err) {
+      invalidateTabletSessionAndShowTabletUnlock(err && err.message ? err.message : '')
+    }
   }
 
   async function handleProceedToPayment() {

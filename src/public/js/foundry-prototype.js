@@ -1951,7 +1951,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       const titleEl = document.getElementById('pv-title');
       const subEl   = document.getElementById('pv-subtitle');
       if (titleEl) titleEl.textContent = `Purchase #${h.header_id} — ${h.supplier_name || ''}`;
-      if (subEl)   subEl.innerHTML     = `${stageBadge(h.pipeline_status)} &nbsp;·&nbsp; ${items.length} item${items.length !== 1 ? 's' : ''} · ${fmtDate(h.purchase_date)}`;
+      if (subEl) {
+        const chNum = h.challan_number || h.bill_ref;
+        const chPart = chNum
+          ? ` &nbsp;·&nbsp; Challan <span class="mono fw6">${_mcEsc(String(chNum))}</span>`
+          : '';
+        subEl.innerHTML = `${stageBadge(h.pipeline_status)} &nbsp;·&nbsp; ${items.length} item${items.length !== 1 ? 's' : ''} · ${fmtDate(h.purchase_date)}${chPart}`;
+      }
 
       // Populate each stage panel
       _pvRenderStage1(h, items);
@@ -2011,7 +2017,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div class="cb">
             <div class="fg3 mb4">
               <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-              <div><div class="xs td2">Invoice No.</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
+              <div><div class="xs td2">Challan No.</div><div class="fw6 mono">${h.challan_number || h.bill_ref || '—'}</div></div>
+              <div><div class="xs td2">Challan date</div><div class="fw6">${h.challan_date ? fmtDate(h.challan_date) : '—'}</div></div>
               <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>
               <div><div class="xs td2">Registered</div><div class="fw6">${fmtDateTime(h.created_at)}</div></div>
             </div>
@@ -2264,7 +2271,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         badge.textContent = 'Pending Bill Verification';
         document.getElementById('bv-meta').innerHTML = `
         <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-        <div><div class="xs td2">Invoice No.</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
+        <div><div class="xs td2">Challan No.</div><div class="fw6 mono">${h.challan_number || h.bill_ref || '—'}</div></div>
+        <div><div class="xs td2">Challan date</div><div class="fw6">${h.challan_date ? fmtDate(h.challan_date) : '—'}</div></div>
         <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>`;
         if (formCard) formCard.style.display = '';
         if (verifyBtn) verifyBtn.style.display = '';
@@ -2276,7 +2284,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const discNote = h.discrepancy_note ? _mcEsc(String(h.discrepancy_note)) : '';
         document.getElementById('bv-meta').innerHTML = `
         <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-        <div><div class="xs td2">Invoice No. (ref)</div><div class="fw6 mono">${h.bill_ref || '—'}</div></div>
+        <div><div class="xs td2">Challan No.</div><div class="fw6 mono">${h.challan_number || h.bill_ref || '—'}</div></div>
+        <div><div class="xs td2">Challan date</div><div class="fw6">${h.challan_date ? fmtDate(h.challan_date) : '—'}</div></div>
         <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>
         <div><div class="xs td2">Entered bill amount</div><div class="fw6 mono">${inrD(h.actual_bill_amt)}</div></div>
         <div><div class="xs td2">Bill number</div><div class="fw6 mono">${_mcEsc(h.bill_number || '—')}</div></div>
@@ -2417,7 +2426,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       document.getElementById('branding-meta').innerHTML = `
         <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
-        <div><div class="xs td2">Invoice No.</div><div class="mono xs">${h.bill_ref || h.bill_number || '—'}</div></div>
+        <div><div class="xs td2">Challan No.</div><div class="mono xs fw6">${h.challan_number || h.bill_ref || '—'}</div></div>
+        <div><div class="xs td2">Challan date</div><div class="fw6">${h.challan_date ? fmtDate(h.challan_date) : '—'}</div></div>
         <div><div class="xs td2">Purchase Date</div><div class="fw6">${fmtDate(h.purchase_date)}</div></div>`;
 
       // Build all-items colour table
@@ -2866,7 +2876,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div style="text-align:right;font-size:13px">
           <div><strong>Purchase #${h.header_id}</strong></div>
           <div>Supplier: ${h.supplier_name || '—'}</div>
-          <div>Invoice No.: ${h.bill_ref || h.bill_number || '—'}</div>
+          <div>Challan No.: ${h.challan_number || h.bill_ref || '—'}</div>
+          <div>Challan date: ${h.challan_date ? fmtDate(h.challan_date) : '—'}</div>
           <div>Purchase Date: ${fmtDate(h.purchase_date)}</div>
         </div>
       </div>
@@ -2959,6 +2970,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         summaryBar.innerHTML = `
           <div><div class="xs td2">Purchase</div><div class="fw6">#${h.header_id}</div></div>
           <div><div class="xs td2">Supplier</div><div class="fw6">${h.supplier_name || '—'}</div></div>
+          <div><div class="xs td2">Challan No.</div><div class="fw6 mono">${h.challan_number || h.bill_ref || '—'}</div></div>
+          <div><div class="xs td2">Challan date</div><div class="fw6">${h.challan_date ? fmtDate(h.challan_date) : '—'}</div></div>
           <div><div class="xs td2">Items</div><div class="fw6">${items.length}</div></div>
           <div><div class="xs td2">SKUs Generated</div><div class="fw6" style="color:${doneColours===totalColours?'var(--green)':'var(--gold)'}">${doneColours} / ${totalColours}</div></div>
           <div><div class="xs td2">Pending Colours</div><div class="fw6" style="color:${pendingColours ? 'var(--red)' : 'var(--green)'}">${pendingColours}</div></div>
@@ -3687,7 +3700,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const items = Array.isArray(data && data.items) ? data.items : [];
     const brandingItems = items.filter((it) => !!it.branding_required);
     const totalQty = brandingItems.reduce((sum, it) => sum + Number(it.quantity || 0), 0);
-    const missingBrand = brandingItems.filter((it) => !(it.brand_name || '').trim()).length;
+    const missingBrand = brandingItems.filter((it) => !Number(it.home_brand_id || it.locked_home_brand_id || 0)).length;
     const missingCollection = brandingItems.filter((it) => !(it.ew_collection || '').trim()).length;
 
     const itemRows = brandingItems.length
@@ -3897,7 +3910,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (tb) tb.innerHTML = rows.map((r) => `<tr>
         <td class="mono xs fw6">#${r.header_id}</td>
         <td class="fw6">${r.supplier_name || '—'}</td>
-        <td class="mono xs td2">${r.bill_ref || r.bill_number || '—'}</td>
+        <td class="mono xs td2">${r.challan_number || r.bill_ref || r.bill_number || '—'}</td>
         <td class="tc">${r.item_count || 0}</td>
         <td class="tc">${r.total_qty || 0}</td>
         <td class="xs td2">${fmtDate(r.created_at)}</td>

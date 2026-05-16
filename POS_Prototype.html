@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
 <link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260608b">
 <script src="/js/cosmos-ui-polish.js" defer></script>
-<script src="/js/pos.js?v=storeos-20260608b" defer></script>
+<script src="/js/pos.js?v=storeos-20260515-catalogue-brands-multi" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -157,7 +157,7 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
      SCREEN 1b — Staff PIN (requires tablet JWT; does not unlock device)
      ═══════════════════════════════════════════════════════════════════ -->
-<div id="screen-login-staff" class="pos-screen">
+<div id="screen-login-staff" class="pos-screen" hidden aria-hidden="true">
   <div class="pos-login-card pos-login-card-staff">
 
     <div class="pos-branding">
@@ -260,6 +260,100 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
+     Staff PIN modal — shown on locked catalogue after tablet unlock (Step 2)
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div id="overlay-pos-staff-login" class="overlay" role="dialog" aria-modal="true" aria-labelledby="pos-staff-modal-title">
+  <div class="modal pos-staff-login-modal">
+    <div class="pos-staff-login-modal-head">
+      <div class="pos-branding pos-staff-login-modal-brand">
+        <div class="pos-logo-row">
+          <div class="pos-logo-icon">✦</div>
+          <span class="pos-app-name">Cosmos ERP</span>
+        </div>
+        <span class="pos-module-badge pos-login-step-badge">Step 2 · Staff</span>
+      </div>
+      <h2 id="pos-staff-modal-title" class="pos-staff-modal-title">Enter staff PIN</h2>
+      <p class="pos-login-tagline" style="margin:0">Unlock Store OS for this shift. The catalogue stays in the background until you sign in.</p>
+    </div>
+    <div class="pos-divider"></div>
+    <div class="pos-staff-login-store-banner">
+      <div class="pos-field-label">STORE</div>
+      <div id="pos-staff-store-line-modal" class="pos-staff-store-line" aria-live="polite"></div>
+    </div>
+    <div class="pos-divider"></div>
+    <div id="pos-staff-pin-block-modal" class="pos-pin-section">
+      <span class="pos-pin-label">Enter staff PIN</span>
+      <div class="pos-pin-dots" role="img" aria-label="PIN input progress">
+        <div class="pos-pin-dot" data-idx-m="0"></div>
+        <div class="pos-pin-dot" data-idx-m="1"></div>
+        <div class="pos-pin-dot" data-idx-m="2"></div>
+        <div class="pos-pin-dot" data-idx-m="3"></div>
+      </div>
+      <div id="pin-error-staff-modal" class="pos-pin-error" role="alert" aria-live="polite"></div>
+    </div>
+    <div class="pos-numpad" id="pos-numpad-staff-modal">
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn" data-digit="1" aria-label="1" tabindex="0">
+          <span class="pos-numpad-num">1</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="2" aria-label="2 ABC" tabindex="0">
+          <span class="pos-numpad-num">2</span>
+          <span class="pos-numpad-sub">ABC</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="3" aria-label="3 DEF" tabindex="0">
+          <span class="pos-numpad-num">3</span>
+          <span class="pos-numpad-sub">DEF</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn" data-digit="4" aria-label="4 GHI" tabindex="0">
+          <span class="pos-numpad-num">4</span>
+          <span class="pos-numpad-sub">GHI</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="5" aria-label="5 JKL" tabindex="0">
+          <span class="pos-numpad-num">5</span>
+          <span class="pos-numpad-sub">JKL</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="6" aria-label="6 MNO" tabindex="0">
+          <span class="pos-numpad-num">6</span>
+          <span class="pos-numpad-sub">MNO</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn" data-digit="7" aria-label="7 PQRS" tabindex="0">
+          <span class="pos-numpad-num">7</span>
+          <span class="pos-numpad-sub">PQRS</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="8" aria-label="8 TUV" tabindex="0">
+          <span class="pos-numpad-num">8</span>
+          <span class="pos-numpad-sub">TUV</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" data-digit="9" aria-label="9 WXYZ" tabindex="0">
+          <span class="pos-numpad-num">9</span>
+          <span class="pos-numpad-sub">WXYZ</span>
+        </button>
+      </div>
+      <div class="pos-numpad-row">
+        <button type="button" class="pos-numpad-btn ghost" aria-hidden="true" tabindex="-1"></button>
+        <button type="button" class="pos-numpad-btn" data-digit="0" aria-label="0" tabindex="0">
+          <span class="pos-numpad-num">0</span>
+        </button>
+        <button type="button" class="pos-numpad-btn" id="btn-backspace-staff-modal" aria-label="Delete" tabindex="0">
+          <span class="pos-numpad-num" style="font-size:20px">⌫</span>
+        </button>
+      </div>
+    </div>
+    <div class="pos-divider"></div>
+    <div class="pos-staff-login-modal-foot">
+      <button type="button" id="btn-unlock-pos-modal" class="pos-login-btn" aria-label="Unlock Store OS with staff PIN" tabindex="0">
+        Unlock POS
+      </button>
+      <span class="pos-hint-text">Sidebar sign-out ends only your staff session. The tablet stays authorised until Tablet Management removes or resets it.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
      PRODUCT CATALOGUE
      Pencil: pencil-new.pen (repo root). PNG reference: pencil-exports/00-catalogue.png
      Routes: /storeos/catalogue (canonical); aliases include /pos/dashboard→dashboard→catalogue, /pos/catelogue, /pos/catalog
@@ -288,21 +382,26 @@
       </div>
     </div>
     <nav class="pos-catalogue-filters" aria-label="Catalogue filters">
-      <span class="pos-catalogue-filters-label">Catalogue scope</span>
-      <div class="pos-catalogue-toggle" role="group" aria-label="Catalogue view">
-        <button id="btn-scope-store" class="pos-scope-btn active" data-scope="store" aria-pressed="true" tabindex="0">
-          Store Catalogue
-        </button>
-        <button id="btn-scope-global" class="pos-scope-btn" data-scope="global" aria-pressed="false" tabindex="0">
-          Global Catalogue
-        </button>
+      <div class="pos-catalogue-filters-row pos-catalogue-filters-row--scope">
+        <span class="pos-catalogue-filters-label">Catalogue scope</span>
+        <div class="pos-catalogue-toggle" role="group" aria-label="Catalogue view">
+          <button id="btn-scope-store" class="pos-scope-btn active" data-scope="store" aria-pressed="true" tabindex="0">
+            Store Catalogue
+          </button>
+          <button id="btn-scope-global" class="pos-scope-btn" data-scope="global" aria-pressed="false" tabindex="0">
+            Global Catalogue
+          </button>
+        </div>
       </div>
-      <span class="pos-catalogue-filters-label pos-catalogue-filters-label--brand" id="pos-catalogue-brand-label">Brand</span>
-      <div class="pos-catalogue-brand-wrap">
-        <label class="pos-visually-hidden" for="pos-catalogue-brand">Filter catalogue by brand</label>
-        <select id="pos-catalogue-brand" class="pos-catalogue-brand-select" aria-labelledby="pos-catalogue-brand-label" tabindex="0">
-          <option value="">All brands</option>
-        </select>
+      <div class="pos-catalogue-filters-row pos-catalogue-filters-row--pills">
+        <div class="pos-catalogue-filter-strip">
+          <span class="pos-catalogue-filters-label" id="pos-catalogue-category-label">Product type</span>
+          <div id="pos-catalogue-category-tabs" class="pos-catalogue-pill-scroll" role="group" aria-labelledby="pos-catalogue-category-label"></div>
+        </div>
+        <div class="pos-catalogue-filter-strip">
+          <span class="pos-catalogue-filters-label" id="pos-catalogue-brand-label">Brand</span>
+          <div id="pos-catalogue-brand-tabs" class="pos-catalogue-pill-scroll" role="group" aria-labelledby="pos-catalogue-brand-label"></div>
+        </div>
       </div>
     </nav>
     <div class="pos-visually-hidden">
@@ -343,7 +442,7 @@
       </section>
       <section class="pos-pdp-detail">
         <div class="pos-pdp-detail-body">
-          <div id="pos-pdp-product-title" class="pos-pdp-product-title">Collection · Model</div>
+          <div id="pos-pdp-product-title" class="pos-pdp-product-title">Brand · Collection · Model</div>
           <div id="pos-pdp-brand" class="pos-pdp-brand">Brand</div>
           <div id="pos-pdp-price" class="pos-pdp-price">₹0</div>
           <div id="pos-pdp-strike" class="pos-pdp-strike">₹0</div>

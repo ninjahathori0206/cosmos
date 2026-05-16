@@ -87,13 +87,19 @@ router.get(
           SELECT s.sku_id, s.sku_code, s.pid, s.quantity, s.cost_price, s.sale_price, s.status,
                  DATEDIFF(DAY, s.created_at, DATEADD(MINUTE, 330, SYSUTCDATETIME())) AS product_age_days,
                  pm.product_name, pm.product_type, pm.ew_collection, pm.style_model,
-                 hb.brand_name,
+                 LTRIM(RTRIM(COALESCE(
+                   NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+                   NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+                   NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+                   ''
+                 ))) AS brand_name,
                  pc.colour_name, pc.colour_code,
                  ph.header_id, ph.created_at AS purchase_date,
                  sup.vendor_name AS supplier_name
           FROM   dbo.skus s
           JOIN   dbo.product_master pm          ON s.product_master_id = pm.product_id
           LEFT JOIN dbo.home_brands hb          ON pm.home_brand_id    = hb.brand_id
+          LEFT JOIN dbo.maker_master mm         ON pm.maker_master_id  = mm.maker_id
           LEFT JOIN dbo.purchase_item_colours pc ON s.item_colour_id   = pc.colour_id
           LEFT JOIN dbo.purchase_headers ph      ON s.header_id        = ph.header_id
           LEFT JOIN dbo.suppliers sup            ON ph.supplier_id      = sup.supplier_id

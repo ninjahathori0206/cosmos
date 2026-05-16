@@ -138,7 +138,12 @@ AS BEGIN
 
     SELECT pi.*, pm.ew_collection, pm.style_model, pm.source_type, pm.branding_required,
            pm.source_brand, pm.source_collection, pm.home_brand_id,
-           hb.brand_name, mk.maker_name
+           LTRIM(RTRIM(COALESCE(
+             NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+             NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+             NULLIF(LTRIM(RTRIM(ISNULL(mk.maker_name, ''))), ''),
+             ''
+           ))) AS brand_name, mk.maker_name
     FROM dbo.purchase_items pi
     LEFT JOIN dbo.product_master pm ON pi.product_master_id = pm.product_id
     LEFT JOIN dbo.home_brands hb    ON pm.home_brand_id = hb.brand_id
@@ -212,7 +217,12 @@ AS BEGIN
   SELECT pi.*, pm.ew_collection, pm.style_model, pm.source_type, pm.branding_required,
          pm.source_brand, pm.source_collection, pm.home_brand_id,
          pm.description, pm.frame_width, pm.lens_height, pm.temple_length, pm.frame_material,
-         hb.brand_name, mk.maker_name,
+         LTRIM(RTRIM(COALESCE(
+           NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+           NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+           NULLIF(LTRIM(RTRIM(ISNULL(mk.maker_name, ''))), ''),
+           ''
+         ))) AS brand_name, mk.maker_name,
          CASE
            WHEN EXISTS (
              SELECT 1
@@ -444,7 +454,12 @@ AS BEGIN
 
     SELECT pi.*, pm.ew_collection, pm.style_model, pm.source_type, pm.branding_required,
            pm.source_brand, pm.source_collection, pm.home_brand_id,
-           hb.brand_name, mk.maker_name
+           LTRIM(RTRIM(COALESCE(
+             NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+             NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+             NULLIF(LTRIM(RTRIM(ISNULL(mk.maker_name, ''))), ''),
+             ''
+           ))) AS brand_name, mk.maker_name
     FROM dbo.purchase_items pi
     LEFT JOIN dbo.product_master pm ON pi.product_master_id = pm.product_id
     LEFT JOIN dbo.home_brands hb    ON pm.home_brand_id = hb.brand_id
@@ -808,7 +823,12 @@ AS BEGIN
         pm.lens_height,
         pm.temple_length,
         pm.frame_material,
-        hb.brand_name,
+        LTRIM(RTRIM(COALESCE(
+          NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+          NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+          NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+          ''
+        ))) AS brand_name,
         pic.colour_name,
         pic.colour_code,
         pi.item_id,
@@ -820,6 +840,7 @@ AS BEGIN
       JOIN dbo.skus sk ON sk.sku_id = pic.linked_sku_id
       JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
       LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
+      LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
       WHERE pic.colour_id = @item_colour_id
         AND pi.item_id = @item_id
         AND pi.header_id = @header_id;
@@ -850,7 +871,12 @@ AS BEGIN
       @quantity = pic.quantity,
       @ew_collection = pm.ew_collection,
       @colour_code = pic.colour_code,
-      @brand_name = hb.brand_name,
+      @brand_name = LTRIM(RTRIM(COALESCE(
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+        ''
+      ))),
       @source_model_number = pm.source_model_number,
       @style_model = pm.style_model,
       @colour_image_url = pic.image_url,
@@ -859,6 +885,7 @@ AS BEGIN
     JOIN dbo.purchase_item_colours pic ON pic.colour_id = @item_colour_id AND pic.item_id = @item_id
     JOIN dbo.product_master pm ON pm.product_id = pi.product_master_id
     LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
+    LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
     WHERE pi.item_id = @item_id
       AND pi.header_id = @header_id;
 
@@ -941,7 +968,12 @@ AS BEGIN
         pm.lens_height,
         pm.temple_length,
         pm.frame_material,
-        hb.brand_name,
+        LTRIM(RTRIM(COALESCE(
+          NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+          NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+          NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+          ''
+        ))) AS brand_name,
         pic.colour_name,
         pic.colour_code,
         pi.item_id,
@@ -953,6 +985,7 @@ AS BEGIN
       JOIN dbo.skus sk ON sk.sku_id = pic.linked_sku_id
       JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
       LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
+      LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
       WHERE pic.colour_id = @item_colour_id
         AND pi.item_id = @item_id
         AND pi.header_id = @header_id;
@@ -987,7 +1020,12 @@ AS BEGIN
         pm.lens_height,
         pm.temple_length,
         pm.frame_material,
-        hb.brand_name,
+        LTRIM(RTRIM(COALESCE(
+          NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+          NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+          NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+          ''
+        ))) AS brand_name,
         pic.colour_name,
         pic.colour_code,
         sk.item_id,
@@ -997,6 +1035,7 @@ AS BEGIN
       FROM dbo.skus sk
       JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
       LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
+      LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
       LEFT JOIN dbo.purchase_item_colours pic ON pic.colour_id = sk.item_colour_id
       WHERE sk.header_id = @header_id
         AND sk.item_id = @item_id
@@ -1056,7 +1095,12 @@ AS BEGIN
       pm.lens_height,
       pm.temple_length,
       pm.frame_material,
-      hb.brand_name,
+      LTRIM(RTRIM(COALESCE(
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+        ''
+      ))) AS brand_name,
       pic.colour_name,
       pic.colour_code,
       sk.item_id,
@@ -1066,6 +1110,7 @@ AS BEGIN
     FROM dbo.skus sk
     JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
     LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
+    LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
     LEFT JOIN dbo.purchase_item_colours pic ON pic.colour_id = sk.item_colour_id
     WHERE sk.sku_id = SCOPE_IDENTITY();
   END TRY

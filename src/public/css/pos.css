@@ -545,15 +545,86 @@ html {
 /* Catalogue only: filters below header (Store OS) */
 #screen-pos-catalogue .pos-catalogue-filters {
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 20px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
   margin: 0 0 12px;
   padding: 10px 14px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 14px;
+}
+
+#screen-pos-catalogue .pos-catalogue-filters-row--scope {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+
+#screen-pos-catalogue .pos-catalogue-filters-row--pills {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#screen-pos-catalogue .pos-catalogue-filter-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+#screen-pos-catalogue .pos-catalogue-pill-scroll {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 6px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+#screen-pos-catalogue .pos-catalogue-pill {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text1);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#screen-pos-catalogue .pos-catalogue-pill:hover {
+  border-color: var(--acc);
+  color: var(--acc2);
+  background: var(--accL);
+}
+
+#screen-pos-catalogue .pos-catalogue-pill:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+#screen-pos-catalogue .pos-catalogue-pill--active {
+  background: var(--accL);
+  color: var(--acc2);
+  border-color: var(--acc);
+}
+
+#screen-pos-catalogue .pos-catalogue-pill-scroll[aria-busy='true'] {
+  opacity: 0.65;
+  pointer-events: none;
 }
 
 #screen-pos-catalogue .pos-catalogue-filters-label {
@@ -568,29 +639,6 @@ html {
 #screen-pos-catalogue .pos-catalogue-filters .pos-catalogue-toggle {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-#screen-pos-catalogue .pos-catalogue-brand-wrap {
-  flex: 0 1 280px;
-  min-width: 160px;
-}
-
-#screen-pos-catalogue .pos-catalogue-brand-select {
-  width: 100%;
-  min-height: 44px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text1);
-  font-size: 14px;
-  font-weight: 600;
-  padding: 0 12px;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-#screen-pos-catalogue .pos-catalogue-filters-label--brand {
-  margin-left: 8px;
 }
 
 #screen-pos-catalogue .pos-lk-header--catalogue {
@@ -2465,4 +2513,92 @@ body.pos-store-login-shell .pos-tablet-pin-column {
 }
 body.pos-store-login-shell .pos-login-btn--tablet-split {
   box-shadow: 0 12px 32px rgba(37, 99, 235, 0.35);
+}
+
+/* ── Locked catalogue + staff PIN modal ───────────────────────────────────── */
+body.pos-catalogue-locked #screen-pos-catalogue.active .pos-lk-page {
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.42;
+  filter: grayscale(0.06);
+}
+
+#overlay-pos-staff-login.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  background: rgba(15, 30, 53, 0.55);
+  backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+}
+
+#overlay-pos-staff-login.overlay.open {
+  display: flex;
+}
+
+#overlay-pos-staff-login .modal.pos-staff-login-modal {
+  background: var(--card);
+  border-radius: 14px;
+  width: min(440px, 96vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border);
+}
+
+.pos-staff-login-modal-head {
+  padding: 18px 20px 0;
+}
+
+.pos-staff-login-modal-brand .pos-login-tagline {
+  display: none;
+}
+
+.pos-staff-modal-title {
+  margin: 12px 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text1);
+}
+
+.pos-staff-login-modal .pos-staff-login-store-banner {
+  padding: 0 20px;
+}
+
+.pos-staff-login-modal .pos-pin-section {
+  padding: 0 20px;
+}
+
+.pos-staff-login-modal .pos-numpad {
+  padding: 0 20px 8px;
+}
+
+.pos-staff-login-modal-foot {
+  padding: 0 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pos-catalogue-locked-empty {
+  padding: 32px 20px;
+  text-align: center;
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+.pos-catalogue-locked-empty h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text1);
+}
+
+.pos-catalogue-locked-empty p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text2);
+  line-height: 1.45;
 }

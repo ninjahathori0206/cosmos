@@ -5877,6 +5877,12 @@
               "width": 280,
               "layout": "vertical",
               "gap": 14,
+              "padding": [
+                40,
+                0,
+                0,
+                0
+              ],
               "children": [
                 {
                   "type": "frame",
@@ -6096,209 +6102,14 @@
               "gap": 14,
               "children": [
                 {
-                  "type": "frame",
-                  "id": "meaa99ceb41",
-                  "name": "deliveryCard",
-                  "width": "fill_container",
-                  "fill": "#FFFFFF",
-                  "cornerRadius": 12,
-                  "stroke": {
-                    "align": "inside",
-                    "thickness": 1,
-                    "fill": "#E2E8F0"
-                  },
-                  "layout": "vertical",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "m4517457ca9",
-                      "name": "delRow1",
-                      "width": "fill_container",
-                      "gap": 10,
-                      "padding": [
-                        16,
-                        14
-                      ],
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "m2011b64a52",
-                          "name": "delRadio1",
-                          "width": 18,
-                          "height": 18,
-                          "cornerRadius": 999,
-                          "stroke": {
-                            "align": "inside",
-                            "thickness": 2,
-                            "fill": "#CBD5E1"
-                          }
-                        },
-                        {
-                          "type": "frame",
-                          "id": "sj8l4",
-                          "name": "del1Copy",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 3,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "Y8Gjik",
-                              "name": "d1a",
-                              "fill": "#0F172A",
-                              "content": "Deliver to customer",
-                              "fontFamily": "Inter",
-                              "fontSize": 13,
-                              "fontWeight": "700"
-                            },
-                            {
-                              "type": "text",
-                              "id": "J8F5S",
-                              "name": "d1b",
-                              "fill": "#64748B",
-                              "content": "Customer address on file",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "500"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "mb22284e37b",
-                      "name": "divD",
-                      "width": "fill_container",
-                      "height": 1,
-                      "fill": "#E2E8F0"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "m406e11d43e",
-                      "name": "delRow2",
-                      "width": "fill_container",
-                      "fill": "#EFF6FF",
-                      "layout": "vertical",
-                      "gap": 6,
-                      "padding": 14,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "m5a56259e06",
-                          "name": "delTopRow",
-                          "width": "fill_container",
-                          "gap": 10,
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "m159085f531",
-                              "name": "delRadio2",
-                              "width": 18,
-                              "height": 18,
-                              "fill": "#0B1437",
-                              "cornerRadius": 999,
-                              "justifyContent": "center",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "m8b0d8acab7",
-                                  "name": "delDot2",
-                                  "width": 8,
-                                  "height": 8,
-                                  "fill": "#FFFFFF",
-                                  "cornerRadius": 999
-                                }
-                              ]
-                            },
-                            {
-                              "type": "text",
-                              "id": "m3b50ace14c",
-                              "name": "delTxt2",
-                              "fill": "#0F172A",
-                              "content": "Deliver to Store",
-                              "fontFamily": "Inter",
-                              "fontSize": 13,
-                              "fontWeight": "600"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "text",
-                          "id": "m77840b342c",
-                          "name": "delSub2",
-                          "fill": "#64748B",
-                          "content": "Eyewoot Ganesh Park · GIDC, Ankleshwar",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "JlI1a",
-                  "name": "secureCard",
-                  "width": "fill_container",
-                  "fill": "#FFFFFF",
-                  "cornerRadius": 12,
-                  "stroke": {
-                    "align": "inside",
-                    "thickness": 1,
-                    "fill": "#E2E8F0"
-                  },
-                  "gap": 12,
-                  "padding": [
-                    14,
-                    16
-                  ],
-                  "justifyContent": "space_between",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "xYS1U",
-                      "name": "secL",
-                      "width": "fill_container",
-                      "layout": "vertical",
-                      "gap": 3,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "rUIsk",
-                          "name": "secTt",
-                          "fill": "#0F172A",
-                          "content": "4Q Secure",
-                          "fontFamily": "Inter",
-                          "fontSize": 14,
-                          "fontWeight": "700"
-                        },
-                        {
-                          "type": "text",
-                          "id": "HO7mG",
-                          "name": "secSub",
-                          "fill": "#64748B",
-                          "content": "Tap to view your benefits",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "500"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "ujFd4",
-                      "name": "secChev",
-                      "fill": "#94A3B8",
-                      "content": "›",
-                      "fontFamily": "Inter",
-                      "fontSize": 18,
-                      "fontWeight": "600"
-                    }
-                  ]
+                  "type": "text",
+                  "id": "M5SYHk",
+                  "name": "billDetailsHeading",
+                  "fill": "#0F172A",
+                  "content": "Bill Details",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "700"
                 },
                 {
                   "type": "frame",
@@ -6448,6 +6259,201 @@
                 },
                 {
                   "type": "frame",
+                  "id": "vLZFC",
+                  "name": "applyCouponRow",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 12,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#E2E8F0"
+                  },
+                  "gap": 12,
+                  "padding": [
+                    14,
+                    16
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "D5Lzl4",
+                      "name": "applyCouponCopy",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "LhlCc",
+                          "fill": "#0F172A",
+                          "content": "Apply Coupon",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "oDSvY",
+                          "fill": "#64748B",
+                          "content": "Check available offers",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Y18z9w",
+                      "name": "applyCouponArrow",
+                      "width": 20,
+                      "height": 20,
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#94A3B8"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "zoGSG",
+                          "fill": "#64748B",
+                          "content": ">",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Cb7KP",
+                  "name": "appliedOfferCard",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 12,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#E2E8F0"
+                  },
+                  "gap": 12,
+                  "padding": [
+                    14,
+                    16
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "CMhcx",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "KqfIX",
+                          "fill": "#0F172A",
+                          "content": "GET60 applied",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Q7rLn1",
+                          "fill": "#64748B",
+                          "content": "You are saving ₹1140",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "fxzrQ",
+                      "fill": "#0F172A",
+                      "content": "REMOVE",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "JlI1a",
+                  "name": "secureCard",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 12,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#E2E8F0"
+                  },
+                  "gap": 12,
+                  "padding": [
+                    14,
+                    16
+                  ],
+                  "justifyContent": "space_between",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "xYS1U",
+                      "name": "secL",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rUIsk",
+                          "name": "secTt",
+                          "fill": "#0F172A",
+                          "content": "4Q Secure",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "HO7mG",
+                          "name": "secSub",
+                          "fill": "#64748B",
+                          "content": "Tap to view your benefits",
+                          "fontFamily": "Inter",
+                          "fontSize": 11,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "ujFd4",
+                      "name": "secChev",
+                      "fill": "#94A3B8",
+                      "content": "›",
+                      "fontFamily": "Inter",
+                      "fontSize": 18,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
                   "id": "m962dfe5145",
                   "name": "ctaBtn",
                   "width": "fill_container",
@@ -6528,6 +6534,150 @@
                       "fontFamily": "Inter",
                       "fontSize": 15,
                       "fontWeight": "800"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "Q5qw3",
+                  "name": "billDetailsHeading",
+                  "fill": "#0F172A",
+                  "content": "Bill Details",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "frame",
+                  "id": "wWVgb",
+                  "name": "applyCouponRow",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 12,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#E2E8F0"
+                  },
+                  "gap": 12,
+                  "padding": [
+                    14,
+                    16
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "z5ORM",
+                      "name": "applyCouponCopy",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "nE74k",
+                          "fill": "#0F172A",
+                          "content": "Apply Coupon",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "r4ldI",
+                          "fill": "#64748B",
+                          "content": "Check available offers",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Eotsa",
+                      "name": "applyCouponArrow",
+                      "width": 20,
+                      "height": 20,
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#94A3B8"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "JoF9D",
+                          "fill": "#64748B",
+                          "content": ">",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "YjvU5",
+                  "name": "appliedOfferCard",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 12,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#E2E8F0"
+                  },
+                  "gap": 12,
+                  "padding": [
+                    14,
+                    16
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "pguTI",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rO9oD",
+                          "fill": "#0F172A",
+                          "content": "GET60 applied",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "RBISo",
+                          "fill": "#64748B",
+                          "content": "You are saving ₹1140",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "i2wvF5",
+                      "fill": "#0F172A",
+                      "content": "REMOVE",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "700"
                     }
                   ]
                 }
@@ -10168,10 +10318,10 @@
                       "id": "m47b9370aaa",
                       "name": "t1",
                       "fill": "#0F172A",
-                      "content": "Vincent Chase",
+                      "content": "Lenskart · John Jacobs · JJ E10235",
                       "fontFamily": "Inter",
-                      "fontSize": 16,
-                      "fontWeight": "700"
+                      "fontSize": 15,
+                      "fontWeight": "600"
                     },
                     {
                       "type": "text",
@@ -10262,10 +10412,10 @@
                       "id": "mff877c8c0d",
                       "name": "t2",
                       "fill": "#0F172A",
-                      "content": "Hustlr Z",
+                      "content": "Ray-Ban · Icons · RB3025",
                       "fontFamily": "Inter",
-                      "fontSize": 16,
-                      "fontWeight": "700"
+                      "fontSize": 15,
+                      "fontWeight": "600"
                     },
                     {
                       "type": "text",
@@ -12770,7 +12920,7 @@
                       "id": "o4Nap",
                       "name": "pt1",
                       "fill": "#0F172A",
-                      "content": "Product tile",
+                      "content": "Lenskart · John Jacobs · JJ E10235",
                       "fontFamily": "Inter",
                       "fontSize": 13,
                       "fontWeight": "600"
@@ -12807,7 +12957,7 @@
                       "id": "GwIDC",
                       "name": "pt2",
                       "fill": "#0F172A",
-                      "content": "Product tile",
+                      "content": "Ray-Ban · Icons · RB3025",
                       "fontFamily": "Inter",
                       "fontSize": 13,
                       "fontWeight": "600"
@@ -12844,7 +12994,7 @@
                       "id": "tJw4e",
                       "name": "pt3",
                       "fill": "#0F172A",
-                      "content": "Product tile",
+                      "content": "Vincent Chase · Air Essentials · VC-5518",
                       "fontFamily": "Inter",
                       "fontSize": 13,
                       "fontWeight": "600"
@@ -14359,6 +14509,476 @@
               "fontFamily": "Inter",
               "fontSize": 11,
               "fontWeight": "normal"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "NGSGe",
+      "x": -14740,
+      "y": 738,
+      "name": "Order Creation - Coupons · /storeos/cart",
+      "clip": true,
+      "width": 430,
+      "height": 768,
+      "fill": "#F1F5F9",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "wesYz",
+          "name": "couponSheet",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "gap": 16,
+          "padding": [
+            18,
+            16
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "j9yutk",
+              "name": "couponTop",
+              "width": "fill_container",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "WBeY0",
+                  "fill": "#94A3B8",
+                  "content": "‹",
+                  "fontFamily": "Inter",
+                  "fontSize": 20,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "nvpxQ",
+                  "fill": "#0B1437",
+                  "content": "Coupons for you",
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "pg3Pr",
+                  "fill": "#94A3B8",
+                  "content": " ",
+                  "fontFamily": "Inter",
+                  "fontSize": 20,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "UcBpj",
+              "name": "couponFilterRow",
+              "width": "fill_container",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Pzl0I",
+                  "name": "searchShell",
+                  "width": "fill_container",
+                  "height": 40,
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#94A3B8"
+                  },
+                  "padding": [
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "x3exkN",
+                      "fill": "#94A3B8",
+                      "content": "Search offers",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "JeRKA",
+                  "name": "applyBtn",
+                  "width": 74,
+                  "height": 40,
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#0B1437"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "l8Rqt2",
+                      "fill": "#0B1437",
+                      "content": "Apply",
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "O3Cxf7",
+              "name": "couponDivider",
+              "width": "fill_container",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ZCDuQ",
+                  "width": "fill_container",
+                  "height": 1,
+                  "fill": "#CBD5E1"
+                },
+                {
+                  "type": "text",
+                  "id": "SXyLc",
+                  "fill": "#64748B",
+                  "content": "Best offers for you",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "HSBRJ",
+                  "width": "fill_container",
+                  "height": 1,
+                  "fill": "#CBD5E1"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "K4MEO",
+              "name": "couponOfferCard",
+              "width": "fill_container",
+              "fill": "#FFFFFF",
+              "cornerRadius": 10,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#E2E8F0"
+              },
+              "layout": "vertical",
+              "gap": 6,
+              "padding": 14,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "W55sF",
+                  "name": "offerTop",
+                  "width": "fill_container",
+                  "justifyContent": "space_between",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "e7x8Z",
+                      "fill": "#0F172A",
+                      "content": "GET60",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "BWgC0",
+                      "fill": "#0B1437",
+                      "content": "Apply Coupon",
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "dmvZ2",
+                  "fill": "#0F172A",
+                  "content": "Extra 60% Off on 3rd Product",
+                  "fontFamily": "Inter",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "miyM4",
+                  "fill": "#64748B",
+                  "content": "Use coupon GET60",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "cTXy0",
+                  "fill": "#0B1437",
+                  "content": "Terms & Conditions",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "700"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "O8619k",
+      "x": -14740,
+      "y": 738,
+      "name": "Order Creation - Coupons · /storeos/cart",
+      "clip": true,
+      "width": 430,
+      "height": 768,
+      "fill": "#F1F5F9",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "WFQDz",
+          "name": "couponSheet",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "gap": 16,
+          "padding": [
+            18,
+            16
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "u59CB",
+              "name": "couponTop",
+              "width": "fill_container",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Folkh",
+                  "fill": "#94A3B8",
+                  "content": "‹",
+                  "fontFamily": "Inter",
+                  "fontSize": 20,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "J59sH",
+                  "fill": "#0B1437",
+                  "content": "Coupons for you",
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "Zf8Id",
+                  "fill": "#94A3B8",
+                  "content": " ",
+                  "fontFamily": "Inter",
+                  "fontSize": 20,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "zSJrH",
+              "name": "couponFilterRow",
+              "width": "fill_container",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "yiROS",
+                  "name": "searchShell",
+                  "width": "fill_container",
+                  "height": 40,
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#94A3B8"
+                  },
+                  "padding": [
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "dFPvD",
+                      "fill": "#94A3B8",
+                      "content": "Search offers",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "B4Ham",
+                  "name": "applyBtn",
+                  "width": 74,
+                  "height": 40,
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#0B1437"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "AOjy7",
+                      "fill": "#0B1437",
+                      "content": "Apply",
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "q6z88Y",
+              "name": "couponDivider",
+              "width": "fill_container",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "aMR5c",
+                  "width": "fill_container",
+                  "height": 1,
+                  "fill": "#CBD5E1"
+                },
+                {
+                  "type": "text",
+                  "id": "S8TR9",
+                  "fill": "#64748B",
+                  "content": "Best offers for you",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "ztkv9",
+                  "width": "fill_container",
+                  "height": 1,
+                  "fill": "#CBD5E1"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Tv7XV",
+              "name": "couponOfferCard",
+              "width": "fill_container",
+              "fill": "#FFFFFF",
+              "cornerRadius": 10,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#E2E8F0"
+              },
+              "layout": "vertical",
+              "gap": 6,
+              "padding": 14,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Xoq7f",
+                  "name": "offerTop",
+                  "width": "fill_container",
+                  "justifyContent": "space_between",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "H5cSVx",
+                      "fill": "#0F172A",
+                      "content": "GET60",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "lpuQj",
+                      "fill": "#0B1437",
+                      "content": "Apply Coupon",
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "wvQUC",
+                  "fill": "#0F172A",
+                  "content": "Extra 60% Off on 3rd Product",
+                  "fontFamily": "Inter",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "TmUVM",
+                  "fill": "#64748B",
+                  "content": "Use coupon GET60",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "rw92V",
+                  "fill": "#0B1437",
+                  "content": "Terms & Conditions",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "700"
+                }
+              ]
             }
           ]
         }

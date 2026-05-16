@@ -22,7 +22,12 @@ BEGIN
   SELECT
     sk.sku_id,
     sk.sku_code,
-    ISNULL(hb.brand_name, mm.maker_name)           AS brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    )))                                              AS brand_name,
     ISNULL(pm.ew_collection,'') + ' · ' + ISNULL(pm.style_model,'') AS product_name,
     pm.product_type,
     ISNULL(pic.colour_name, '')                    AS colour_name,
@@ -52,7 +57,12 @@ BEGIN
       OR ISNULL(pic.colour_name, '')          LIKE @search
     )
   ORDER BY
-    ISNULL(hb.brand_name, mm.maker_name),
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))),
     pm.product_type,
     sk.sku_code;
 END;

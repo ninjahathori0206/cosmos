@@ -60,10 +60,12 @@ GO
 -- ─── sp_POS_StoreCatalogue ───────────────────────────────────────────────────
 -- Returns live SKUs that have stock qty > 0 at the given store.
 -- Used for Store Catalogue scope on POS tablet.
+-- brand_name: home brand when set; else source_brand (bypass / pre-branded); else maker.
 CREATE OR ALTER PROCEDURE dbo.sp_POS_StoreCatalogue
   @store_id INT,
   @q        NVARCHAR(200) = NULL,
-  @brand    NVARCHAR(200) = NULL
+  @brand    NVARCHAR(2000) = NULL,
+  @product_type NVARCHAR(400) = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -72,16 +74,25 @@ BEGIN
     CASE WHEN ISNULL(LTRIM(RTRIM(@q)), '') = '' THEN NULL
          ELSE '%' + LTRIM(RTRIM(@q)) + '%' END;
 
-  DECLARE @brand_filter NVARCHAR(200) =
+  DECLARE @brand_csv NVARCHAR(2000) =
     CASE WHEN ISNULL(LTRIM(RTRIM(@brand)), '') = '' THEN NULL
-         ELSE LOWER(LTRIM(RTRIM(@brand))) END;
+         ELSE LTRIM(RTRIM(@brand)) END;
+
+  DECLARE @pt_csv NVARCHAR(400) =
+    CASE WHEN ISNULL(LTRIM(RTRIM(@product_type)), '') = '' THEN NULL
+         ELSE LTRIM(RTRIM(@product_type)) END;
 
   SELECT
     pm.product_id,
     sk.sku_id,
     sk.sku_code,
     ISNULL(sk.barcode, '')                                          AS barcode,
-    ISNULL(hb.brand_name, ISNULL(mm.maker_name, ''))               AS brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    )))                                                            AS brand_name,
     ISNULL(pm.ew_collection, '')                                   AS collection_name,
     ISNULL(pm.style_model, '')                                     AS model_number,
     ISNULL(pm.ew_collection, '') + ' · ' + ISNULL(pm.style_model, '') AS product_name,
@@ -104,8 +115,27 @@ BEGIN
     AND sb.location_id   = @store_id
     AND sb.qty           > 0
     AND (
-      @brand_filter IS NULL
-      OR LOWER(LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, ''))))) = @brand_filter
+      @brand_csv IS NULL
+      OR EXISTS (
+        SELECT 1
+        FROM STRING_SPLIT(@brand_csv, N',') AS seg
+        WHERE LTRIM(RTRIM(seg.value)) <> N''
+          AND LOWER(LTRIM(RTRIM(seg.value))) = LOWER(LTRIM(RTRIM(COALESCE(
+            NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+            NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+            NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+            ''
+          ))))
+      )
+    )
+    AND (
+      @pt_csv IS NULL
+      OR EXISTS (
+        SELECT 1
+        FROM STRING_SPLIT(LOWER(@pt_csv), N',') AS seg
+        WHERE LTRIM(RTRIM(seg.value)) <> N''
+          AND LTRIM(RTRIM(seg.value)) = LOWER(LTRIM(RTRIM(ISNULL(pm.product_type, N''))))
+      )
     )
     AND (
       @search IS NULL
@@ -126,14 +156,12 @@ BEGIN
 END;
 GO
 
--- ─── sp_POS_GlobalCatalogue ──────────────────────────────────────────────────
--- Returns ALL live SKUs regardless of store stock.
--- Includes store_qty from @store_id (0 if not stocked at that store).
--- Used for Global Catalogue scope — enables lab orders for non-stocked items.
+-- Global catalogue: all live SKUs; optional @product_type filter (same as store scope).
 CREATE OR ALTER PROCEDURE dbo.sp_POS_GlobalCatalogue
   @store_id INT,
   @q        NVARCHAR(200) = NULL,
-  @brand    NVARCHAR(200) = NULL
+  @brand    NVARCHAR(2000) = NULL,
+  @product_type NVARCHAR(400) = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -142,16 +170,25 @@ BEGIN
     CASE WHEN ISNULL(LTRIM(RTRIM(@q)), '') = '' THEN NULL
          ELSE '%' + LTRIM(RTRIM(@q)) + '%' END;
 
-  DECLARE @brand_filter NVARCHAR(200) =
+  DECLARE @brand_csv NVARCHAR(2000) =
     CASE WHEN ISNULL(LTRIM(RTRIM(@brand)), '') = '' THEN NULL
-         ELSE LOWER(LTRIM(RTRIM(@brand))) END;
+         ELSE LTRIM(RTRIM(@brand)) END;
+
+  DECLARE @pt_csv NVARCHAR(400) =
+    CASE WHEN ISNULL(LTRIM(RTRIM(@product_type)), '') = '' THEN NULL
+         ELSE LTRIM(RTRIM(@product_type)) END;
 
   SELECT
     pm.product_id,
     sk.sku_id,
     sk.sku_code,
     ISNULL(sk.barcode, '')                                          AS barcode,
-    ISNULL(hb.brand_name, ISNULL(mm.maker_name, ''))               AS brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    )))                                                            AS brand_name,
     ISNULL(pm.ew_collection, '')                                   AS collection_name,
     ISNULL(pm.style_model, '')                                     AS model_number,
     ISNULL(pm.ew_collection, '') + ' · ' + ISNULL(pm.style_model, '') AS product_name,
@@ -174,8 +211,27 @@ BEGIN
         AND sb_store.location_id   = @store_id
   WHERE sk.status IN ('LIVE', 'ACTIVE')
     AND (
-      @brand_filter IS NULL
-      OR LOWER(LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, ''))))) = @brand_filter
+      @brand_csv IS NULL
+      OR EXISTS (
+        SELECT 1
+        FROM STRING_SPLIT(@brand_csv, N',') AS seg
+        WHERE LTRIM(RTRIM(seg.value)) <> N''
+          AND LOWER(LTRIM(RTRIM(seg.value))) = LOWER(LTRIM(RTRIM(COALESCE(
+            NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+            NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+            NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+            ''
+          ))))
+      )
+    )
+    AND (
+      @pt_csv IS NULL
+      OR EXISTS (
+        SELECT 1
+        FROM STRING_SPLIT(LOWER(@pt_csv), N',') AS seg
+        WHERE LTRIM(RTRIM(seg.value)) <> N''
+          AND LTRIM(RTRIM(seg.value)) = LOWER(LTRIM(RTRIM(ISNULL(pm.product_type, N''))))
+      )
     )
     AND (
       @search IS NULL
@@ -198,6 +254,7 @@ GO
 
 -- ─── sp_POS_CatalogueBrands ────────────────────────────────────────────────────
 -- Distinct display brand names for POS filter (store = in-stock at store; global = all live SKUs).
+-- Same resolution as catalogue rows: home brand → source_brand → maker.
 CREATE OR ALTER PROCEDURE dbo.sp_POS_CatalogueBrands
   @store_id INT,
   @scope    NVARCHAR(20) = N'store'
@@ -207,18 +264,33 @@ BEGIN
 
   IF LOWER(LTRIM(RTRIM(@scope))) = N'global'
   BEGIN
-    SELECT DISTINCT LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, '')))) AS brand_name
+    SELECT DISTINCT LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name
     FROM dbo.skus sk
     JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
     LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
     LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
     WHERE sk.status IN (N'LIVE', N'ACTIVE')
-      AND LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, '')))) <> N''
+      AND LTRIM(RTRIM(COALESCE(
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+        ''
+      ))) <> N''
     ORDER BY brand_name;
   END
   ELSE
   BEGIN
-    SELECT DISTINCT LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, '')))) AS brand_name
+    SELECT DISTINCT LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name
     FROM dbo.stock_balances sb
     JOIN dbo.skus sk ON sk.sku_id = sb.sku_id AND sk.status IN (N'LIVE', N'ACTIVE')
     JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
@@ -227,14 +299,75 @@ BEGIN
     WHERE sb.location_type = N'STORE'
       AND sb.location_id = @store_id
       AND sb.qty > 0
-      AND LTRIM(RTRIM(ISNULL(hb.brand_name, ISNULL(mm.maker_name, '')))) <> N''
+      AND LTRIM(RTRIM(COALESCE(
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+        ''
+      ))) <> N''
     ORDER BY brand_name;
   END
 END;
 GO
 
+-- ─── sp_POS_CatalogueProductTypes ─────────────────────────────────────────────
+-- Product types that actually appear in the POS catalogue for this scope (store stock vs all live SKUs).
+-- Labels from foundry_lookup_values (Purchase product types) when the key matches; else raw pm.product_type.
+CREATE OR ALTER PROCEDURE dbo.sp_POS_CatalogueProductTypes
+  @store_id INT,
+  @scope    NVARCHAR(20) = N'store'
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF LOWER(LTRIM(RTRIM(@scope))) = N'global'
+  BEGIN
+    ;WITH types AS (
+      SELECT DISTINCT LTRIM(RTRIM(pm.product_type)) AS pt
+      FROM dbo.skus sk
+      JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
+      WHERE sk.status IN (N'LIVE', N'ACTIVE')
+        AND LTRIM(RTRIM(ISNULL(pm.product_type, N''))) <> N''
+    )
+    SELECT
+      LTRIM(RTRIM(t.pt)) AS lookup_key,
+      ISNULL(LTRIM(RTRIM(lv.lookup_label)), LTRIM(RTRIM(t.pt))) AS lookup_label,
+      ISNULL(lv.display_order, 999) AS display_order
+    FROM types t
+    LEFT JOIN dbo.foundry_lookup_values lv
+      ON lv.lookup_type = N'product_type'
+      AND lv.is_active = 1
+      AND LOWER(LTRIM(RTRIM(lv.lookup_key))) = LOWER(LTRIM(RTRIM(t.pt)))
+    ORDER BY display_order, lookup_label, lookup_key;
+  END
+  ELSE
+  BEGIN
+    ;WITH types AS (
+      SELECT DISTINCT LTRIM(RTRIM(pm.product_type)) AS pt
+      FROM dbo.stock_balances sb
+      JOIN dbo.skus sk ON sk.sku_id = sb.sku_id AND sk.status IN (N'LIVE', N'ACTIVE')
+      JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
+      WHERE sb.location_type = N'STORE'
+        AND sb.location_id = @store_id
+        AND sb.qty > 0
+        AND LTRIM(RTRIM(ISNULL(pm.product_type, N''))) <> N''
+    )
+    SELECT
+      LTRIM(RTRIM(t.pt)) AS lookup_key,
+      ISNULL(LTRIM(RTRIM(lv.lookup_label)), LTRIM(RTRIM(t.pt))) AS lookup_label,
+      ISNULL(lv.display_order, 999) AS display_order
+    FROM types t
+    LEFT JOIN dbo.foundry_lookup_values lv
+      ON lv.lookup_type = N'product_type'
+      AND lv.is_active = 1
+      AND LOWER(LTRIM(RTRIM(lv.lookup_key))) = LOWER(LTRIM(RTRIM(t.pt)))
+    ORDER BY display_order, lookup_label, lookup_key;
+  END
+END;
+GO
+
 -- ─── sp_POS_GetStartupConfig ─────────────────────────────────────────────────
--- Returns three result sets: product type rules, POS lookup rows, lab transitions.
+-- Returns three result sets: product type rules (POS wizard), POS lookup rows, lab transitions.
 -- Consumed by GET /api/pos/startup-config (POS tablet boot).
 CREATE OR ALTER PROCEDURE dbo.sp_POS_GetStartupConfig
 AS

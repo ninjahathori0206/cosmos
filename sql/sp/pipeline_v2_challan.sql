@@ -110,7 +110,12 @@ AS BEGIN
 
     SELECT pi.*, pm.ew_collection, pm.style_model, pm.source_type, pm.branding_required,
            pm.source_brand, pm.source_collection, pm.home_brand_id,
-           hb.brand_name, mk.maker_name
+           LTRIM(RTRIM(COALESCE(
+             NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+             NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+             NULLIF(LTRIM(RTRIM(ISNULL(mk.maker_name, ''))), ''),
+             ''
+           ))) AS brand_name, mk.maker_name
     FROM dbo.purchase_items pi
     LEFT JOIN dbo.product_master pm ON pi.product_master_id = pm.product_id
     LEFT JOIN dbo.home_brands hb ON pm.home_brand_id = hb.brand_id
@@ -317,7 +322,13 @@ AS BEGIN
     SELECT h.*, s.vendor_name AS supplier_name FROM dbo.purchase_headers h
     LEFT JOIN dbo.suppliers s ON h.supplier_id = s.supplier_id WHERE h.header_id = @header_id;
     SELECT pi.*, pm.ew_collection, pm.style_model, pm.source_type, pm.branding_required,
-           pm.source_brand, pm.source_collection, pm.home_brand_id, hb.brand_name, mk.maker_name
+           pm.source_brand, pm.source_collection, pm.home_brand_id,
+           LTRIM(RTRIM(COALESCE(
+             NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+             NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+             NULLIF(LTRIM(RTRIM(ISNULL(mk.maker_name, ''))), ''),
+             ''
+           ))) AS brand_name, mk.maker_name
     FROM dbo.purchase_items pi
     LEFT JOIN dbo.product_master pm ON pi.product_master_id = pm.product_id
     LEFT JOIN dbo.home_brands hb ON pm.home_brand_id = hb.brand_id

@@ -23,7 +23,12 @@ BEGIN
     pm.ew_collection,
     pm.style_model,
     pm.product_type,
-    ISNULL(hb.brand_name, mm.maker_name) AS brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name,
     ISNULL(pic.colour_name,'') AS colour_name,
     ISNULL(pic.colour_code,'') AS colour_code,
     sk.sale_price,
@@ -73,7 +78,12 @@ BEGIN
     pm.ew_collection,
     pm.style_model,
     pm.product_type,
-    ISNULL(hb.brand_name, mm.maker_name) AS brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name,
     ISNULL(pic.colour_name,'') AS colour_name,
     ISNULL(pic.colour_code,'') AS colour_code,
     sk.sale_price,

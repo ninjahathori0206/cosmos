@@ -10269,6 +10269,194 @@
             },
             {
               "type": "frame",
+              "id": "CCos8",
+              "name": "Filter tabs · /pos/catalogue",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "aJcdh",
+                  "name": "lc2",
+                  "fill": "#64748B",
+                  "content": "Category",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "HWsVU",
+                  "name": "ct2",
+                  "width": "fill_container",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "lqTKJ",
+                      "name": "cpillA",
+                      "fill": "#EEF2FF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 2,
+                        "fill": "#4F46E5"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Gj3i2",
+                          "fill": "#4F46E5",
+                          "content": "All",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "M0Yzbq",
+                      "name": "cpillE",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "wnzjT",
+                          "fill": "#475569",
+                          "content": "Eyeglasses",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "L5p1mp",
+                      "name": "cpillS",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "V4Kbi",
+                          "fill": "#475569",
+                          "content": "Sunglasses",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "T0pkbB",
+                  "name": "lb2",
+                  "fill": "#64748B",
+                  "content": "Brand",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "skgZJ",
+                  "name": "bt2",
+                  "width": "fill_container",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "R98qzA",
+                      "name": "bpillAll",
+                      "fill": "#EEF2FF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 2,
+                        "fill": "#4F46E5"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "sutJP",
+                          "fill": "#4F46E5",
+                          "content": "All brands",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "FKMLe",
+                      "name": "bpillB",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "FLBIL",
+                          "fill": "#475569",
+                          "content": "BLNK",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
               "id": "mb32e4b10cb",
               "name": "grid",
               "width": "fill_container",
@@ -10318,10 +10506,10 @@
                       "id": "m47b9370aaa",
                       "name": "t1",
                       "fill": "#0F172A",
-                      "content": "Vincent Chase",
+                      "content": "Lenskart · John Jacobs · JJ E10235",
                       "fontFamily": "Inter",
-                      "fontSize": 16,
-                      "fontWeight": "700"
+                      "fontSize": 15,
+                      "fontWeight": "600"
                     },
                     {
                       "type": "text",
@@ -10412,10 +10600,10 @@
                       "id": "mff877c8c0d",
                       "name": "t2",
                       "fill": "#0F172A",
-                      "content": "Hustlr Z",
+                      "content": "Ray-Ban · Icons · RB3025",
                       "fontFamily": "Inter",
-                      "fontSize": 16,
-                      "fontWeight": "700"
+                      "fontSize": 15,
+                      "fontWeight": "600"
                     },
                     {
                       "type": "text",
@@ -12826,58 +13014,248 @@
           "children": [
             {
               "type": "frame",
-              "id": "sjMBa",
-              "name": "chips",
-              "gap": 8,
+              "id": "aB24k",
+              "name": "Filter tabs (Category + Brand)",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 10,
               "children": [
                 {
+                  "type": "text",
+                  "id": "iQXuA",
+                  "name": "Category label",
+                  "fill": "#64748B",
+                  "content": "Category",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "600",
+                  "letterSpacing": 0.4
+                },
+                {
                   "type": "frame",
-                  "id": "O9gn9A",
-                  "name": "ch1",
-                  "fill": "#EDE9FE",
-                  "cornerRadius": 999,
-                  "padding": [
-                    8,
-                    14
-                  ],
+                  "id": "X55xp",
+                  "name": "Category tabs",
+                  "width": "fill_container",
+                  "gap": 8,
+                  "alignItems": "center",
                   "children": [
                     {
-                      "type": "text",
-                      "id": "g6BIv",
-                      "name": "cht1",
-                      "fill": "#5B21B6",
-                      "content": "All",
-                      "fontFamily": "Inter",
-                      "fontSize": 12,
-                      "fontWeight": "600"
+                      "type": "frame",
+                      "id": "O5T9n",
+                      "name": "cat — All",
+                      "fill": "#EEF2FF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 2,
+                        "fill": "#4F46E5"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "tY2Bn",
+                          "fill": "#4F46E5",
+                          "content": "All",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "qom3A",
+                      "name": "cat — Eyeglasses",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "b1DhWE",
+                          "fill": "#475569",
+                          "content": "Eyeglasses",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "WwVkW",
+                      "name": "cat — Sunglasses",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "E6dXg",
+                          "fill": "#475569",
+                          "content": "Sunglasses",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "mceDV",
+                      "name": "cat — Accessories",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "dbF73",
+                          "fill": "#475569",
+                          "content": "Accessories",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
                     }
                   ]
                 },
                 {
+                  "type": "text",
+                  "id": "icOSY",
+                  "name": "Brand label",
+                  "fill": "#64748B",
+                  "content": "Brand",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "600",
+                  "letterSpacing": 0.4
+                },
+                {
                   "type": "frame",
-                  "id": "hMGCt",
-                  "name": "ch2",
-                  "fill": "#F1F5F9",
-                  "cornerRadius": 999,
-                  "stroke": {
-                    "align": "inside",
-                    "thickness": 1,
-                    "fill": "#E2E8F0"
-                  },
-                  "padding": [
-                    8,
-                    14
-                  ],
+                  "id": "pM67X",
+                  "name": "Brand tabs",
+                  "width": "fill_container",
+                  "gap": 8,
+                  "alignItems": "center",
                   "children": [
                     {
-                      "type": "text",
-                      "id": "mBmad",
-                      "name": "cht2",
-                      "fill": "#475569",
-                      "content": "Sunglasses",
-                      "fontFamily": "Inter",
-                      "fontSize": 12,
-                      "fontWeight": "500"
+                      "type": "frame",
+                      "id": "cqSu5",
+                      "name": "brand — All",
+                      "fill": "#EEF2FF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 2,
+                        "fill": "#4F46E5"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "r0RovN",
+                          "fill": "#4F46E5",
+                          "content": "All brands",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "t7ESC0",
+                      "name": "brand — BLNK",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "XUYsw",
+                          "fill": "#475569",
+                          "content": "BLNK",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "GTFJ9",
+                      "name": "brand — sample",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "awSRx",
+                          "fill": "#475569",
+                          "content": "Vincent Chase",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
                     }
                   ]
                 }
@@ -12920,7 +13298,7 @@
                       "id": "o4Nap",
                       "name": "pt1",
                       "fill": "#0F172A",
-                      "content": "Product tile",
+                      "content": "Lenskart · John Jacobs · JJ E10235",
                       "fontFamily": "Inter",
                       "fontSize": 13,
                       "fontWeight": "600"
@@ -12957,7 +13335,7 @@
                       "id": "GwIDC",
                       "name": "pt2",
                       "fill": "#0F172A",
-                      "content": "Product tile",
+                      "content": "Ray-Ban · Icons · RB3025",
                       "fontFamily": "Inter",
                       "fontSize": 13,
                       "fontWeight": "600"
@@ -12994,7 +13372,7 @@
                       "id": "tJw4e",
                       "name": "pt3",
                       "fill": "#0F172A",
-                      "content": "Product tile",
+                      "content": "Vincent Chase · Air Essentials · VC-5518",
                       "fontFamily": "Inter",
                       "fontSize": 13,
                       "fontWeight": "600"

@@ -29,7 +29,12 @@ AS BEGIN
     pm.style_model,
     pm.product_type,
     hb.brand_id,
-    hb.brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name,
     pic.colour_name,
     pic.colour_code,
     ISNULL(sb.qty, 0) AS warehouse_qty,
@@ -59,7 +64,7 @@ AS BEGIN
       OR ISNULL(pm.source_model_number,'') LIKE '%'+@q+'%'
       OR ISNULL(pic.colour_name,'') LIKE '%'+@q+'%'
     )
-  ORDER BY hb.brand_name, pm.ew_collection, pic.colour_name;
+  ORDER BY brand_name, pm.ew_collection, pic.colour_name;
 END;
 GO
 
@@ -87,7 +92,12 @@ AS BEGIN
     pm.ew_collection,
     pm.style_model,
     pm.product_type,
-    hb.brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name,
     pic.colour_name,
     pic.colour_code,
     ISNULL(sb.qty, 0) AS warehouse_qty,
@@ -96,6 +106,7 @@ AS BEGIN
   FROM dbo.skus sk
   JOIN dbo.product_master pm         ON sk.product_master_id  = pm.product_id
   LEFT JOIN dbo.home_brands hb       ON pm.home_brand_id      = hb.brand_id
+  LEFT JOIN dbo.maker_master mm      ON pm.maker_master_id    = mm.maker_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
   LEFT JOIN dbo.stock_balances sb
     ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = @wh
@@ -243,7 +254,12 @@ AS BEGIN
     sm.sku_id,
     sk.sku_code,
     ISNULL(pm.ew_collection,'') + ' · ' + ISNULL(pm.style_model,'') AS product_name,
-    hb.brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name,
     pic.colour_name,
     sm.qty,
     sm.to_location_id  AS to_store_id,
@@ -256,6 +272,7 @@ AS BEGIN
   JOIN dbo.skus sk                        ON sm.sku_id = sk.sku_id
   JOIN dbo.product_master pm              ON sk.product_master_id = pm.product_id
   LEFT JOIN dbo.home_brands hb            ON pm.home_brand_id = hb.brand_id
+  LEFT JOIN dbo.maker_master mm           ON pm.maker_master_id = mm.maker_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
   LEFT JOIN dbo.stores st                 ON sm.to_location_id = st.store_id
   LEFT JOIN dbo.users u                   ON sm.created_by = u.user_id

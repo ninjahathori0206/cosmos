@@ -84,39 +84,154 @@ function groupCatalogueRows(rows) {
   return Array.from(map.values())
 }
 
-/** True when DB is missing @brand / sp_POS_CatalogueBrands or procs not redeployed. */
-function isLikelyMissingBrandSupportError(err) {
+/** True when DB procs are missing @brand / @product_type or not redeployed. */
+function isLikelyMissingCatalogueFilterSupportError(err) {
   const m = String((err && err.message) || (err && err.originalError && err.originalError.message) || err || '').toLowerCase()
   return (
     m.includes('too many arguments') ||
     m.includes('could not find stored procedure') ||
     m.includes('invalid object name') ||
     m.includes('cataloguebrands') ||
-    (m.includes('parameter') && (m.includes('brand') || m.includes('@brand')))
+    m.includes('catalogueproducttypes') ||
+    (m.includes('parameter') && (
+      m.includes('brand') ||
+      m.includes('@brand') ||
+      m.includes('product_type') ||
+      m.includes('@product_type')
+    ))
   )
 }
 
-async function fetchCatalogueRowsWithBrand(procName, store_id, q, brandParam) {
+async function fetchCatalogueRowsWithFilters(procName, store_id, q, brandParam, productTypeParam) {
   const base = {
     store_id: { type: sql.Int, value: store_id },
     q: { type: sql.NVarChar(200), value: q }
   }
-  if (!brandParam) {
+  const extra = {}
+  if (brandParam) {
+    extra.brand = { type: sql.NVarChar(2000), value: brandParam }
+  }
+  if (productTypeParam) {
+    extra.product_type = { type: sql.NVarChar(400), value: productTypeParam }
+  }
+  const hasFilter = Boolean(brandParam || productTypeParam)
+  if (!hasFilter) {
     const result = await executeStoredProcedure(procName, base)
     return result.recordset || []
   }
   try {
-    const result = await executeStoredProcedure(procName, Object.assign({}, base, {
-      brand: { type: sql.NVarChar(200), value: brandParam }
-    }))
+    const result = await executeStoredProcedure(procName, Object.assign({}, base, extra))
     return result.recordset || []
   } catch (err) {
-    if (!isLikelyMissingBrandSupportError(err)) throw err
+    if (!isLikelyMissingCatalogueFilterSupportError(err)) throw err
     const result = await executeStoredProcedure(procName, base)
-    const rows = result.recordset || []
-    const want = String(brandParam).trim().toLowerCase()
-    return rows.filter((r) => String(r.brand_name || '').trim().toLowerCase() === want)
+    let rows = result.recordset || []
+    if (brandParam) {
+      const set = new Set(String(brandParam).split(',').map((s) => String(s || '').trim().toLowerCase()).filter(Boolean))
+      rows = rows.filter((r) => set.has(String(r.brand_name || '').trim().toLowerCase()))
+    }
+    if (productTypeParam) {
+      const set = new Set(String(productTypeParam).split(',').map((s) => String(s || '').trim().toLowerCase()).filter(Boolean))
+      rows = rows.filter((r) => set.has(String(r.product_type || '').trim().toLowerCase()))
+    }
+    return rows
   }
+}
+
+function mapCatalogueProductTypeRows(recordset) {
+  return (recordset || []).map((r) => ({
+    key: String(r.lookup_key || '').trim().toUpperCase(),
+    label: String(r.lookup_label || '').trim() || String(r.lookup_key || '').trim()
+  })).filter((r) => r.key)
+}
+
+async function fetchCatalogueProductTypesRecordset(store_id, scopeKey) {
+  const result = await executeStoredProcedure('sp_POS_CatalogueProductTypes', {
+    store_id: { type: sql.Int, value: store_id },
+    scope: { type: sql.NVarChar(20), value: scopeKey }
+  })
+  return result.recordset || []
+}
+
+async function getCatalogueProductTypesForScope(store_id, scopeKey) {
+  const recordset = await fetchCatalogueProductTypesRecordset(store_id, scopeKey)
+  return mapCatalogueProductTypeRows(recordset)
+}
+
+async function getCatalogueProductTypeKeySet(store_id, scopeKey) {
+  const rows = await getCatalogueProductTypesForScope(store_id, scopeKey)
+  return new Set(rows.map((r) => r.key))
+}
+
+/** Normalize ?product_type= (comma-separated and/or repeated) to unique uppercase keys. */
+function parseCatalogueProductTypeQuery(query) {
+  const raw = query.product_type
+  if (raw == null || raw === '') return []
+  const segments = Array.isArray(raw) ? raw : [raw]
+  const out = []
+  const seen = new Set()
+  for (const seg of segments) {
+    const parts = String(seg || '').split(',')
+    for (const p of parts) {
+      const u = String(p || '').trim().toUpperCase()
+      if (!u || seen.has(u)) continue
+      seen.add(u)
+      out.push(u)
+    }
+  }
+  return out
+}
+
+/** Normalize ?brand= (comma-separated and/or repeated) to unique trimmed display names (casing preserved per segment). */
+function parseCatalogueBrandQuery(query) {
+  const raw = query.brand
+  if (raw == null || raw === '') return []
+  const segments = Array.isArray(raw) ? raw : [raw]
+  const out = []
+  const seen = new Set()
+  for (const seg of segments) {
+    for (const part of String(seg || '').split(',')) {
+      const t = String(part || '').trim()
+      if (!t) continue
+      const k = t.toLowerCase()
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(t)
+    }
+  }
+  return out
+}
+
+const MAX_CATALOGUE_BRAND_CSV = 2000
+
+/**
+ * Resolve requested brand filters to canonical CSV for SP (each name must appear in catalogue-brands for scope).
+ * @returns {{ csv: string|null }} or {{ error: string }}
+ */
+async function resolveCatalogueBrandCsv(storeId, scopeNorm, query) {
+  const list = parseCatalogueBrandQuery(query)
+  if (!list.length) return { csv: null }
+  const names = await fetchCatalogueBrandNames(storeId, scopeNorm)
+  const canonByLower = new Map()
+  for (const n of names) {
+    const nm = String(n || '').trim()
+    if (!nm) continue
+    const k = nm.toLowerCase()
+    if (!canonByLower.has(k)) canonByLower.set(k, nm)
+  }
+  const resolved = []
+  const seen = new Set()
+  for (const raw of list) {
+    const k = String(raw || '').trim().toLowerCase()
+    if (!k || seen.has(k)) continue
+    const c = canonByLower.get(k)
+    if (!c) return { error: 'Invalid brand filter' }
+    seen.add(k)
+    resolved.push(c)
+  }
+  const csv = resolved.join(',')
+  if (csv.length > MAX_CATALOGUE_BRAND_CSV) return { error: 'Brand filter too long' }
+  return { csv }
 }
 
 async function fetchCatalogueBrandNames(store_id, scope) {
@@ -129,7 +244,7 @@ async function fetchCatalogueBrandNames(store_id, scope) {
       .map((r) => String(r.brand_name || '').trim())
       .filter(Boolean)
   } catch (err) {
-    if (!isLikelyMissingBrandSupportError(err)) throw err
+    if (!isLikelyMissingCatalogueFilterSupportError(err)) throw err
     const procName = scope === 'global' ? 'sp_POS_GlobalCatalogue' : 'sp_POS_StoreCatalogue'
     const result = await executeStoredProcedure(procName, {
       store_id: { type: sql.Int, value: store_id },
@@ -486,6 +601,19 @@ router.post('/tablet-login', apiKeyAuth, async (req, res, next) => {
   }
 })
 
+// ── GET /api/pos/tablet-session ────────────────────────────────────────────────
+// API key + tablet JWT. Lightweight ping — same tablet validity as staff-login.
+router.get('/tablet-session', apiKeyAuth, requireTabletSession, (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      tablet_id: req.tablet.tablet_id,
+      store_id: req.tablet.store_id,
+      device_name: req.tablet.device_name || ''
+    }
+  })
+})
+
 // ── POST /api/pos/staff-login ─────────────────────────────────────────────────
 // API key + tablet session. Staff PIN; starts pos_order_sessions row; returns staff JWT.
 router.post('/staff-login', apiKeyAuth, requireTabletSession, async (req, res, next) => {
@@ -734,20 +862,36 @@ router.get('/stores', async (req, res, next) => {
 // Query params:
 //   scope  = "store" (default) | "global"
 //   q      = optional free-text search string
-//   brand  = optional exact display brand (from GET /api/pos/catalogue-brands)
+//   brand         = optional, multi: comma-separated and/or repeated display names (each must be in GET /catalogue-brands)
+//   product_type  = optional, multi: comma-separated and/or repeated; each key must be in GET /catalogue-product-types
 router.get('/catalogue', ...posCatalogue, async (req, res, next) => {
   try {
     const scope    = (req.query.scope || 'store').toLowerCase()
-    const q        = (req.query.q || '').trim() || null
-    const brandRaw = (req.query.brand || '').trim()
-    const brand    = brandRaw.length > 200 ? brandRaw.slice(0, 200) : brandRaw
-    const brandParam = brand ? brand : null
     const store_id = posJwtStoreIdOr400(req, res)
     if (store_id == null) return
 
+    const q        = (req.query.q || '').trim() || null
+    const ptList = parseCatalogueProductTypeQuery(req.query)
+    const scopeNorm = scope === 'global' ? 'global' : 'store'
+    const brandResolved = await resolveCatalogueBrandCsv(store_id, scopeNorm, req.query)
+    if (brandResolved.error) {
+      return res.status(400).json({ success: false, message: brandResolved.error })
+    }
+    const brandParam = brandResolved.csv
+    let productTypeParam = null
+    if (ptList.length) {
+      const allow = await getCatalogueProductTypeKeySet(store_id, scopeNorm)
+      for (let i = 0; i < ptList.length; i++) {
+        if (!allow.has(ptList[i])) {
+          return res.status(400).json({ success: false, message: 'Invalid product_type filter' })
+        }
+      }
+      productTypeParam = ptList.join(',')
+    }
+
     const procName = scope === 'global' ? 'sp_POS_GlobalCatalogue' : 'sp_POS_StoreCatalogue'
 
-    const rows = await fetchCatalogueRowsWithBrand(procName, store_id, q, brandParam)
+    const rows = await fetchCatalogueRowsWithFilters(procName, store_id, q, brandParam, productTypeParam)
     const grouped = groupCatalogueRows(rows)
 
     return res.json({ success: true, data: grouped })
@@ -767,6 +911,21 @@ router.get('/catalogue-brands', ...posCatalogue, async (req, res, next) => {
     const names = await fetchCatalogueBrandNames(store_id, scope)
 
     return res.json({ success: true, data: names })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── GET /api/pos/catalogue-product-types ──────────────────────────────────────
+// Product types that exist in the catalogue for this store + scope (labels from Purchase lookups when matched).
+router.get('/catalogue-product-types', ...posCatalogue, async (req, res, next) => {
+  try {
+    const scope    = (req.query.scope || 'store').toLowerCase() === 'global' ? 'global' : 'store'
+    const store_id = posJwtStoreIdOr400(req, res)
+    if (store_id == null) return
+
+    const rows = await getCatalogueProductTypesForScope(store_id, scope)
+    return res.json({ success: true, data: rows })
   } catch (err) {
     return next(err)
   }

@@ -44,7 +44,12 @@ BEGIN
       pm.catalogue_status, pm.created_at,
       s.vendor_name AS maker_name,
       mm.maker_name AS maker_master_name,
-      hb.brand_name
+      LTRIM(RTRIM(COALESCE(
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+        ''
+      ))) AS brand_name
     FROM dbo.product_master pm
     LEFT JOIN dbo.suppliers s ON pm.maker_id = s.supplier_id
     LEFT JOIN dbo.maker_master mm ON pm.maker_master_id = mm.maker_id
@@ -104,7 +109,12 @@ BEGIN
       pm.catalogue_status, pm.updated_at,
       s.vendor_name AS maker_name,
       mm.maker_name AS maker_master_name,
-      hb.brand_name
+      LTRIM(RTRIM(COALESCE(
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+        ''
+      ))) AS brand_name
     FROM dbo.product_master pm
     LEFT JOIN dbo.suppliers s ON pm.maker_id = s.supplier_id
     LEFT JOIN dbo.maker_master mm ON pm.maker_master_id = mm.maker_id
@@ -129,10 +139,16 @@ BEGIN
 
   SELECT
     pm.*,
-    hb.brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name,
     s.vendor_name AS maker_name
   FROM dbo.product_master pm
   LEFT JOIN dbo.home_brands hb ON pm.home_brand_id = hb.brand_id
+  LEFT JOIN dbo.maker_master mm ON pm.maker_master_id = mm.maker_id
   LEFT JOIN dbo.suppliers s ON pm.maker_id = s.supplier_id
   WHERE pm.product_id = @product_id;
 END;
@@ -173,7 +189,12 @@ BEGIN
     pm.created_at,
     pm.updated_at,
     s.vendor_name AS supplier_name,
-    hb.brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name,
     mm.maker_name AS maker_master_name,
     COALESCE(mm.maker_name, s.vendor_name) AS manufacturer_name,
     ISNULL(pc.purchase_count, 0) AS purchase_count,
@@ -255,7 +276,12 @@ BEGIN
     pm.source_collection,
     pm.branding_required,
     s.vendor_name AS maker_name,
-    hb.brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name,
     (
       SELECT TOP 1 purchase_rate
       FROM dbo.purchases
@@ -282,6 +308,7 @@ BEGIN
   FROM dbo.product_master pm
   LEFT JOIN dbo.suppliers s ON pm.maker_id = s.supplier_id
   LEFT JOIN dbo.home_brands hb ON pm.home_brand_id = hb.brand_id
+  LEFT JOIN dbo.maker_master mm ON pm.maker_master_id = mm.maker_id
   WHERE (
       @source_brand IS NOT NULL
       AND @source_model_number IS NOT NULL

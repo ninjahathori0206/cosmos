@@ -133,7 +133,12 @@ BEGIN
     pm.ew_collection,
     pm.style_model,
     pm.product_type,
-    ISNULL(hb.brand_name,'')        AS brand_name,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    )))                            AS brand_name,
     ISNULL(pic.colour_name,'')      AS colour_name,
     ISNULL(pic.colour_code,'')      AS colour_code,
     ISNULL(sb.qty, 0)               AS warehouse_qty,
@@ -146,6 +151,7 @@ BEGIN
   JOIN dbo.skus sk                        ON sk.sku_id             = l.sku_id
   JOIN dbo.product_master pm              ON sk.product_master_id  = pm.product_id
   LEFT JOIN dbo.home_brands hb            ON pm.home_brand_id      = hb.brand_id
+  LEFT JOIN dbo.maker_master mm           ON pm.maker_master_id    = mm.maker_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id     = pic.colour_id
   LEFT JOIN dbo.stock_balances sb         ON sb.sku_id = l.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = dbo.fn_Foundry_PrimaryWarehouseLocationId()
   WHERE l.request_id = @request_id
