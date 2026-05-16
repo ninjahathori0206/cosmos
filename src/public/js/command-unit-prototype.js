@@ -806,6 +806,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           actions =
             `<div class="cu-tablet-actions">` +
             `<button type="button" class="topbar-btn primary cu-tablet-act cu-tablet-edit-btn" data-tablet-id="${tid}" data-store-id="${sid}" data-device-name-enc="${nameEnc}">Edit</button>` +
+            `<button type="button" class="topbar-btn cu-tablet-act cu-tablet-act--secondary cu-tablet-invalidate-btn" data-tablet-id="${tid}" title="Sign out Store OS on devices; PIN unchanged">End device sessions</button>` +
             `<button type="button" class="topbar-btn cu-tablet-act cu-tablet-act--secondary cu-tablet-reset-btn" data-tablet-id="${tid}">Reset PIN</button>` +
             `<button type="button" class="topbar-btn cu-tablet-act cu-tablet-act--secondary cu-tablet-deact-btn" data-tablet-id="${tid}">Deactivate</button>` +
             `</div>`;
@@ -829,6 +830,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         btn.addEventListener('click', () => {
           const id = Number(btn.getAttribute('data-tablet-id'));
           openCuTabletResetModal(id);
+        });
+      });
+      tbody.querySelectorAll('.cu-tablet-invalidate-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = Number(btn.getAttribute('data-tablet-id'));
+          openCuTabletInvalidateSessionModal(id);
         });
       });
       tbody.querySelectorAll('.cu-tablet-deact-btn').forEach((btn) => {
@@ -3481,6 +3488,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ─── Store OS tablets (Command Unit) ─────────────────────────────────────
   let cuTabletsDeactivateId = null;
+  let cuTabletsInvalidateId = null;
 
   async function loadTablets() {
     const tbody = document.getElementById('cu-tablets-tbody');
@@ -3528,6 +3536,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const actions = canEdit
           ? `<div class="cu-tablet-actions">` +
             `<button type="button" class="topbar-btn primary cu-tablet-act cu-tablet-edit-btn" data-tablet-id="${tid}" data-store-id="${sid}" data-device-name-enc="${nameEnc}">Edit</button>` +
+            `<button type="button" class="topbar-btn cu-tablet-act cu-tablet-act--secondary cu-tablet-invalidate-btn" data-tablet-id="${tid}" title="Sign out Store OS on devices; PIN unchanged">End device sessions</button>` +
             `<button type="button" class="topbar-btn cu-tablet-act cu-tablet-act--secondary cu-tablet-reset-btn" data-tablet-id="${tid}">Reset PIN</button>` +
             `<button type="button" class="topbar-btn cu-tablet-act cu-tablet-act--secondary cu-tablet-deact-btn" data-tablet-id="${tid}">Deactivate</button>` +
             `</div>`
@@ -3552,6 +3561,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         btn.addEventListener('click', () => {
           const id = Number(btn.getAttribute('data-tablet-id'));
           openCuTabletResetModal(id);
+        });
+      });
+      tbody.querySelectorAll('.cu-tablet-invalidate-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = Number(btn.getAttribute('data-tablet-id'));
+          openCuTabletInvalidateSessionModal(id);
         });
       });
       tbody.querySelectorAll('.cu-tablet-deact-btn').forEach((btn) => {
@@ -3639,6 +3654,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sub = document.getElementById('cu-tablet-deact-sub');
     if (sub) sub.textContent = `Tablet ID ${tabletId} will be deactivated and can no longer sign in to Store OS.`;
     cuOpenModal('modal-cu-tablet-deactivate');
+  }
+
+  function openCuTabletInvalidateSessionModal(tabletId) {
+    cuTabletsInvalidateId = tabletId;
+    const sub = document.getElementById('cu-tablet-invalidate-sub');
+    if (sub) {
+      sub.textContent =
+        `Tablet ID ${tabletId}: device sign-in on Store OS will end on all browsers that had unlocked this tablet. ` +
+        'The tablet stays active and the PIN does not change. Each device will need Tablet ID + PIN again, then staff PIN.';
+    }
+    cuOpenModal('modal-cu-tablet-invalidate-session');
   }
 
   async function handleCuCreateTablet() {
@@ -3758,6 +3784,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  async function handleCuTabletInvalidateSessionConfirm() {
+    const btn = document.getElementById('cu-tablet-invalidate-confirm-btn');
+    const id = cuTabletsInvalidateId;
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (typeof window.cosmosBtnLoading === 'function' && btn) window.cosmosBtnLoading(btn);
+    try {
+      await apiPost(`/api/tablets/${id}/invalidate-session`, {});
+      cuCloseModal('modal-cu-tablet-invalidate-session');
+      cuTabletsInvalidateId = null;
+      await refreshCuTabletUIs();
+      if (typeof window.cosmosBtnSuccess === 'function' && btn) window.cosmosBtnSuccess(btn);
+      else if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastSuccess === 'function') {
+        window.cosmosToastSuccess('Device sessions ended. Staff must unlock Store OS again on each tablet.');
+      }
+    } catch (err) {
+      if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message);
+    }
+  }
+
   const cuTabletsFilterEl = document.getElementById('cu-tablets-store-filter');
   if (cuTabletsFilterEl) {
     cuTabletsFilterEl.addEventListener('change', () => {
@@ -3780,6 +3827,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (cuTabletDeactConfirm) {
     cuTabletDeactConfirm.addEventListener('click', () => {
       void handleCuTabletDeactivateConfirm();
+    });
+  }
+  const cuTabletInvalidateConfirm = document.getElementById('cu-tablet-invalidate-confirm-btn');
+  if (cuTabletInvalidateConfirm) {
+    cuTabletInvalidateConfirm.addEventListener('click', () => {
+      void handleCuTabletInvalidateSessionConfirm();
     });
   }
 

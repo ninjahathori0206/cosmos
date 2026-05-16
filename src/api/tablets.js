@@ -176,6 +176,46 @@ router.put(
   }
 );
 
+/** End Store OS device session (invalidate X-Tablet-Token on browsers). Tablet and PIN stay as-is. */
+router.post(
+  '/:tablet_id/invalidate-session',
+  requireModule('command_unit'),
+  requirePermission('command_unit.tablets.edit'),
+  async (req, res, next) => {
+    try {
+      const tabletId = Number(req.params.tablet_id);
+      if (!Number.isFinite(tabletId) || tabletId <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid tablet id.' });
+      }
+      const result = await executeStoredProcedure('sp_POS_InvalidateTabletDeviceSessions', {
+        tablet_id: { type: sql.Int, value: tabletId }
+      });
+      const rows = Number((result.recordset && result.recordset[0] && result.recordset[0].rows_updated) || 0);
+      if (!rows) {
+        return res.status(404).json({ success: false, message: 'Tablet not found or inactive.' });
+      }
+      try {
+        await writeAuditLog({
+          userId: req.user && req.user.user_id != null ? Number(req.user.user_id) : null,
+          action: 'TABLET_DEVICE_SESSION_ENDED',
+          module: 'command_unit',
+          entityType: 'tablet',
+          entityId: tabletId,
+          ipAddress: clientIp(req)
+        });
+      } catch (_a) {
+        /* non-fatal */
+      }
+      return res.json({
+        success: true,
+        message: 'Tablet device sessions ended. Unlock Store OS again on each device with Tablet ID and PIN.'
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
 router.delete(
   '/:tablet_id',
   requireModule('command_unit'),

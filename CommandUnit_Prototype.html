@@ -1045,6 +1045,23 @@
   </div>
 </div>
 
+<!-- Store OS tablet — end device sessions (invalidate JWT; PIN unchanged) -->
+<div class="modal-overlay" id="modal-cu-tablet-invalidate-session">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">End tablet device sessions</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-tablet-invalidate-session')">×</div>
+    </div>
+    <div class="modal-body">
+      <p id="cu-tablet-invalidate-sub" class="td-muted" style="font-size:14px;line-height:1.5;color:var(--text2)"></p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-tablet-invalidate-session')">Cancel</button>
+      <button type="button" class="topbar-btn primary" id="cu-tablet-invalidate-confirm-btn">End sessions</button>
+    </div>
+  </div>
+</div>
+
 <!-- Store OS tablet — deactivate confirm -->
 <div class="modal-overlay" id="modal-cu-tablet-deactivate">
   <div class="modal">

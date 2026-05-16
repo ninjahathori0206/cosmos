@@ -426,7 +426,7 @@ function buildLensCatalogPayload(result, productTypeKey) {
 }
 
 // ── POST /api/pos/tablet-login ────────────────────────────────────────────────
-// Public + API key. Unlocks a physical tablet; returns short-lived tablet JWT (X-Tablet-Token).
+// Public + API key. Unlocks a physical tablet; returns tablet JWT (X-Tablet-Token), persisted on device.
 router.post('/tablet-login', apiKeyAuth, async (req, res, next) => {
   try {
     const { error, value } = tabletLoginSchema.validate(req.body)
@@ -455,16 +455,20 @@ router.post('/tablet-login', apiKeyAuth, async (req, res, next) => {
       tablet_id: { type: sql.Int, value: tab.tablet_id }
     })
 
+    const tabSessionVer = Math.max(0, Math.floor(Number(tab.tablet_session_version)) || 0)
+    const tabletJwtExpires = String(process.env.POS_TABLET_JWT_EXPIRES || '365d').trim() || '365d'
+
     const token = jwt.sign(
       {
         tablet_session: true,
         tablet_id: tab.tablet_id,
         store_id: tab.store_id,
         device_name: String(tab.device_name || ''),
+        tablet_session_version: tabSessionVer,
         token_issued_at: nowUnixSec()
       },
       process.env.JWT_SECRET,
-      { expiresIn: '12h' }
+      { expiresIn: tabletJwtExpires }
     )
 
     return res.json({
@@ -473,7 +477,8 @@ router.post('/tablet-login', apiKeyAuth, async (req, res, next) => {
         token,
         tablet_id: tab.tablet_id,
         store_id: tab.store_id,
-        device_name: tab.device_name
+        device_name: tab.device_name,
+        tablet_session_version: tabSessionVer
       }
     })
   } catch (err) {

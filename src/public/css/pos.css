@@ -2466,13 +2466,3 @@ body.pos-store-login-shell .pos-tablet-pin-column {
 body.pos-store-login-shell .pos-login-btn--tablet-split {
   box-shadow: 0 12px 32px rgba(37, 99, 235, 0.35);
 }
-
-/* Set PIN screen */
-#screen-pos-set-pin {
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(165deg, var(--bg) 0%, #eef2f7 45%, #e8ecf4 100%);
-}
-.pos-setpin-card {
-  max-width: 440px;
-}

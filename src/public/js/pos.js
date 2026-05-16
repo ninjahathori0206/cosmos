@@ -36,6 +36,14 @@
   const POS_CATALOGUE_WELCOME_ONCE = 'pos_catalogue_welcome_once'
   const POS_CART_KEY    = 'pos_cart'
   const POS_TABLET_TOKEN_KEY = 'pos_tablet_token'
+  /** One-time: move tablet JWT from sessionStorage to localStorage so the device stays unlocked across browser restarts. */
+  try {
+    var _mOldTok = sessionStorage.getItem(POS_TABLET_TOKEN_KEY)
+    if (_mOldTok && !localStorage.getItem(POS_TABLET_TOKEN_KEY)) {
+      localStorage.setItem(POS_TABLET_TOKEN_KEY, _mOldTok)
+    }
+    if (_mOldTok) sessionStorage.removeItem(POS_TABLET_TOKEN_KEY)
+  } catch (_mig) { /* ignore */ }
 
   function getPosSession() {
     try { return JSON.parse(sessionStorage.getItem(POS_SESSION_KEY) || 'null') } catch { return null }
@@ -103,7 +111,11 @@
   }
 
   function getPosTabletToken() {
-    return sessionStorage.getItem(POS_TABLET_TOKEN_KEY) || ''
+    try {
+      return localStorage.getItem(POS_TABLET_TOKEN_KEY) || ''
+    } catch (_e) {
+      return ''
+    }
   }
 
   function isTabletJwtPayloadValid(p) {
@@ -129,6 +141,7 @@
 
   function clearPosTabletToken() {
     try {
+      localStorage.removeItem(POS_TABLET_TOKEN_KEY)
       sessionStorage.removeItem(POS_TABLET_TOKEN_KEY)
     } catch (_e) { /* ignore */ }
   }
@@ -199,8 +212,7 @@
     'screen-pos-lens':          'new-order',
     'screen-pos-payment':       'new-order',
     'screen-pos-confirm':       'new-order',
-    'screen-pos-orders':        'orders',
-    'screen-pos-set-pin':       'set-pin'
+    'screen-pos-orders':        'orders'
   }
 
   /** Show/hide the sidebar and set the active nav item. */
@@ -277,8 +289,7 @@
     LENS:      '/storeos/lens-config',
     PAYMENT:   '/storeos/payment',
     CONFIRM:   '/storeos/confirm',
-    ORDERS:    '/storeos/orders',
-    SET_PIN:   '/storeos/set-pin'
+    ORDERS:    '/storeos/orders'
   }
 
   function productRoute(productId, skuId) {
@@ -302,8 +313,8 @@
     '/storeos/catelogue': POS_ROUTES.CATALOGUE,
     '/storeos/catalog': POS_ROUTES.CATALOGUE,
     '/storeos/order': POS_ROUTES.ORDER,
-    '/pos/set-pin': POS_ROUTES.SET_PIN,
-    '/storeos/set-pin': POS_ROUTES.SET_PIN
+    '/pos/set-pin': POS_ROUTES.CATALOGUE,
+    '/storeos/set-pin': POS_ROUTES.CATALOGUE
   }
 
   function normalizePosPath(rawPath) {
@@ -334,13 +345,6 @@
     // Alias dashboard deep links to the live catalogue screen.
     if (path === POS_ROUTES.DASHBOARD) {
       navigate(POS_ROUTES.CATALOGUE)
-      return
-    }
-
-    if (path === POS_ROUTES.SET_PIN) {
-      if (!valid) { navigate(POS_ROUTES.LOGIN); return }
-      resetPosSetPinScreen()
-      showScreen('screen-pos-set-pin')
       return
     }
 
@@ -485,9 +489,6 @@
   let tabletPinDigits   = []
   /** Stores list cache for staff-login store label — filled in loadStores. */
   let cachedPosStores   = []
-  let posSetPinNew      = []
-  let posSetPinConfirm  = []
-  let posSetPinPhase    = 'new'
   const PIN_LENGTH      = 4
   let activeCatalogueScope = 'store'
   let selectedProductId = null
@@ -1012,7 +1013,6 @@
   const tabletPinError    = document.getElementById('pos-tablet-pin-error')
   const posTabletIdInput  = document.getElementById('pos-tablet-id-input')
   const btnUnlockTablet   = document.getElementById('btn-unlock-tablet')
-  const btnPosSignOutTablet = document.getElementById('btn-pos-sign-out-tablet')
   const numpadTablet      = document.getElementById('pos-numpad-tablet')
   const numpadStaff       = document.getElementById('pos-numpad-staff')
   const btnUnlock         = document.getElementById('btn-unlock-pos')
@@ -1279,114 +1279,6 @@
     line.textContent = name ? name : ('Store #' + jwtSid)
   }
 
-  function resetPosSetPinScreen() {
-    posSetPinNew = []
-    posSetPinConfirm = []
-    posSetPinPhase = 'new'
-    var stepEl = document.getElementById('pos-setpin-step-label')
-    if (stepEl) stepEl.textContent = 'New PIN (4 digits)'
-    var errEl = document.getElementById('pos-setpin-error')
-    if (errEl) errEl.textContent = ''
-    document.querySelectorAll('#pos-setpin-dots .pos-pin-dot').forEach(function (d) {
-      d.classList.remove('filled', 'error')
-    })
-  }
-
-  function renderPosSetPinDots() {
-    var dots = document.querySelectorAll('#pos-setpin-dots .pos-pin-dot')
-    var src = posSetPinPhase === 'new' ? posSetPinNew : posSetPinConfirm
-    dots.forEach(function (dot, i) {
-      dot.classList.toggle('filled', i < src.length)
-      dot.classList.remove('error')
-    })
-  }
-
-  function clearPosSetPinErr() {
-    var errEl = document.getElementById('pos-setpin-error')
-    if (errEl) errEl.textContent = ''
-  }
-
-  function posSetPinAddDigit(digit) {
-    var d = String(digit || '').replace(/\D/g, '').slice(-1)
-    if (!d) return
-    if (posSetPinPhase === 'new') {
-      if (posSetPinNew.length >= PIN_LENGTH) return
-      posSetPinNew.push(d)
-      renderPosSetPinDots()
-      clearPosSetPinErr()
-      if (posSetPinNew.length === PIN_LENGTH) {
-        posSetPinPhase = 'confirm'
-        var stepEl = document.getElementById('pos-setpin-step-label')
-        if (stepEl) stepEl.textContent = 'Confirm PIN (4 digits)'
-        renderPosSetPinDots()
-      }
-      return
-    }
-    if (posSetPinConfirm.length >= PIN_LENGTH) return
-    posSetPinConfirm.push(d)
-    renderPosSetPinDots()
-    clearPosSetPinErr()
-  }
-
-  function posSetPinRemoveDigit() {
-    if (posSetPinConfirm.length) {
-      posSetPinConfirm.pop()
-    } else if (posSetPinPhase === 'confirm') {
-      posSetPinPhase = 'new'
-      var stepEl = document.getElementById('pos-setpin-step-label')
-      if (stepEl) stepEl.textContent = 'New PIN (4 digits)'
-      posSetPinNew = []
-    } else if (posSetPinNew.length) {
-      posSetPinNew.pop()
-    }
-    renderPosSetPinDots()
-    clearPosSetPinErr()
-  }
-
-  async function handlePosSetPinSave() {
-    var errEl = document.getElementById('pos-setpin-error')
-    var btn = document.getElementById('btn-setpin-save')
-    if (posSetPinNew.length !== PIN_LENGTH || posSetPinConfirm.length !== PIN_LENGTH) {
-      if (errEl) errEl.textContent = 'Enter and confirm a 4-digit PIN.'
-      return
-    }
-    var a = posSetPinNew.join('')
-    var b = posSetPinConfirm.join('')
-    if (a !== b) {
-      document.querySelectorAll('#pos-setpin-dots .pos-pin-dot').forEach(function (dot) { dot.classList.add('error') })
-      if (errEl) errEl.textContent = 'PINs do not match. Start again.'
-      posSetPinPhase = 'new'
-      posSetPinNew = []
-      posSetPinConfirm = []
-      var stepEl = document.getElementById('pos-setpin-step-label')
-      if (stepEl) stepEl.textContent = 'New PIN (4 digits)'
-      setTimeout(function () {
-        document.querySelectorAll('#pos-setpin-dots .pos-pin-dot').forEach(function (dot) { dot.classList.remove('error') })
-        renderPosSetPinDots()
-      }, 450)
-      return
-    }
-    var session = getPosSession()
-    if (!session || !session.token) {
-      navigate(POS_ROUTES.LOGIN)
-      return
-    }
-    if (typeof cosmosBtnLoading === 'function' && btn) cosmosBtnLoading(btn)
-    try {
-      await apiPut('/api/pos/set-pin', { pin: a }, session.token)
-      if (typeof cosmosBtnSuccess === 'function' && btn) cosmosBtnSuccess(btn)
-      else if (typeof cosmosBtnDone === 'function' && btn) cosmosBtnDone(btn)
-      if (typeof cosmosToastSuccess === 'function') {
-        cosmosToastSuccess('PIN updated. Use this on any Eyewoot store tablet.')
-      }
-      navigate(POS_ROUTES.CATALOGUE)
-    } catch (err) {
-      if (typeof cosmosBtnDone === 'function' && btn) cosmosBtnDone(btn)
-      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
-      if (errEl) errEl.textContent = err.message || 'Could not update PIN.'
-    }
-  }
-
   // ── Load stores ──────────────────────────────────────────────────────────
   async function loadStores() {
     storeSelectorName.textContent = 'Fetching stores'
@@ -1588,15 +1480,6 @@
     if (e.key === 'Backspace') removeDigit()
   })
 
-  document.addEventListener('keydown', function (e) {
-    var sp = document.getElementById('screen-pos-set-pin')
-    if (!sp || !sp.classList.contains('active')) return
-    var tag = e.target && e.target.tagName
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-    if (e.key >= '0' && e.key <= '9') posSetPinAddDigit(e.key)
-    if (e.key === 'Backspace') posSetPinRemoveDigit()
-  })
-
   async function handleTabletUnlock() {
     var tidRaw = posTabletIdInput ? String(posTabletIdInput.value || '').trim() : ''
     var tabletId = parseInt(tidRaw, 10)
@@ -1616,7 +1499,7 @@
       var tok = body.data && body.data.token
       if (!tok) throw new Error('Tablet login failed.')
       try {
-        sessionStorage.setItem(POS_TABLET_TOKEN_KEY, tok)
+        localStorage.setItem(POS_TABLET_TOKEN_KEY, tok)
       } catch (_e) { /* ignore */ }
       var respStoreId = body.data && body.data.store_id != null ? Number(body.data.store_id) : NaN
       if (!Number.isFinite(respStoreId) || respStoreId <= 0) {
@@ -1717,18 +1600,6 @@
 
   if (btnUnlockTablet) {
     btnUnlockTablet.addEventListener('click', function () { void handleTabletUnlock() })
-  }
-  if (btnPosSignOutTablet) {
-    btnPosSignOutTablet.addEventListener('click', function () {
-      clearPosTabletToken()
-      resetPin(false)
-      tabletPinDigits = []
-      resetTabletPin(false)
-      if (typeof cosmosToastInfo === 'function') {
-        cosmosToastInfo('Tablet session cleared. Unlock this tablet again.')
-      }
-      navigate(POS_ROUTES.LOGIN)
-    })
   }
   if (posTabletIdInput && typeof cosmosFieldClear === 'function') {
     posTabletIdInput.addEventListener('input', function () { cosmosFieldClear(posTabletIdInput) })
@@ -4707,7 +4578,7 @@
     }
   }
 
-  /** Ends staff POS session only — tablet JWT is kept until "Sign out this tablet". */
+  /** Ends staff POS session only — tablet JWT stays until Tablet Management deactivates the tablet or resets its PIN. */
   async function performPosStaffLogout() {
     var sess = getPosSession()
     if (sess && sess.token) {
@@ -4744,7 +4615,7 @@
     pinDigits = []
     obRenderCart()
     var nextRoute = getTabletJwtStoreId() != null ? POS_ROUTES.LOGIN_STAFF : POS_ROUTES.LOGIN
-    if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Staff signed out. Tablet stays unlocked.')
+    if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Staff signed out. This tablet is still signed in — use staff PIN when ready.')
     history.replaceState({}, '', nextRoute)
     resolve(nextRoute)
   }
@@ -6088,32 +5959,8 @@
       var key = btn.getAttribute('data-pos-sb-nav')
       if (key === 'catalogue')  navigate(POS_ROUTES.CATALOGUE)
       if (key === 'new-order')  navigate(POS_ROUTES.CATALOGUE)
-      if (key === 'set-pin')    navigate(POS_ROUTES.SET_PIN)
       if (key === 'orders')     navigate(POS_ROUTES.ORDERS)
     })
-
-    var setpinNumpad = document.getElementById('pos-setpin-numpad')
-    if (setpinNumpad) {
-      setpinNumpad.addEventListener('click', function (e) {
-        var btn = e.target.closest('.pos-numpad-btn')
-        if (!btn || btn.classList.contains('ghost')) return
-        if (btn.id === 'btn-setpin-backspace') {
-          posSetPinRemoveDigit()
-          return
-        }
-        var dig = btn.getAttribute('data-sp-digit')
-        if (dig != null) posSetPinAddDigit(dig)
-      })
-      setpinNumpad.addEventListener('keydown', function (e) {
-        if (e.key !== 'Enter' && e.key !== ' ') return
-        var btn = e.target.closest('.pos-numpad-btn')
-        if (btn) btn.click()
-      })
-    }
-    var btnSetPinSave = document.getElementById('btn-setpin-save')
-    if (btnSetPinSave) btnSetPinSave.addEventListener('click', function () { void handlePosSetPinSave() })
-    var btnSetPinBack = document.getElementById('btn-setpin-back')
-    if (btnSetPinBack) btnSetPinBack.addEventListener('click', function () { navigate(POS_ROUTES.CATALOGUE) })
 
     bindRxPlanoHandlers()
     bindCatalogueEvents()

@@ -429,10 +429,31 @@ CREATE OR ALTER PROCEDURE dbo.sp_POS_ValidateTabletPin
 AS
 BEGIN
   SET NOCOUNT ON;
-  SELECT tablet_id, store_id, device_name, pin_hash, is_active
+  SELECT tablet_id, store_id, device_name, pin_hash, is_active, tablet_session_version
   FROM dbo.tablets
   WHERE tablet_id = @tablet_id
     AND is_active = 1;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_POS_ValidateTabletSession
+  @tablet_id       INT,
+  @store_id        INT,
+  @session_version INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  DECLARE @ok BIT = 0;
+  IF EXISTS (
+    SELECT 1
+    FROM dbo.tablets t
+    WHERE t.tablet_id = @tablet_id
+      AND t.store_id = @store_id
+      AND t.is_active = 1
+      AND t.tablet_session_version = @session_version
+  )
+    SET @ok = 1;
+  SELECT @ok AS is_valid;
 END;
 GO
 
@@ -584,6 +605,7 @@ BEGIN
   SET NOCOUNT ON;
   UPDATE dbo.tablets
   SET pin_hash = @pin_hash,
+      tablet_session_version = tablet_session_version + 1,
       updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
   WHERE tablet_id = @tablet_id
     AND is_active = 1;
@@ -599,8 +621,25 @@ BEGIN
   SET NOCOUNT ON;
   UPDATE dbo.tablets
   SET is_active = 0,
+      tablet_session_version = tablet_session_version + 1,
       updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
   WHERE tablet_id = @tablet_id;
+
+  SELECT @@ROWCOUNT AS rows_updated;
+END;
+GO
+
+/** Ends signed-in browser sessions only (bumps JWT version). Tablet stays active; PIN unchanged. */
+CREATE OR ALTER PROCEDURE dbo.sp_POS_InvalidateTabletDeviceSessions
+  @tablet_id INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  UPDATE dbo.tablets
+  SET tablet_session_version = tablet_session_version + 1,
+      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+  WHERE tablet_id = @tablet_id
+    AND is_active = 1;
 
   SELECT @@ROWCOUNT AS rows_updated;
 END;

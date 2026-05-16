@@ -66,6 +66,11 @@ async function run() {
   await runBatches(pool, path.join('sql', 'alter', '30_store_os_access.sql'), 'alter/30_store_os_access')
   await runBatches(
     pool,
+    path.join('sql', 'alter', '38_tablet_session_version.sql'),
+    'alter/38_tablet_session_version'
+  )
+  await runBatches(
+    pool,
     path.join('sql', 'migrations', 'lens_config_display_fields.sql'),
     'migrations/lens_config_display_fields'
   )
