@@ -90,7 +90,7 @@ html {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 40px 40px 32px;
+  padding: 20px 40px 16px;
 }
 
 .pos-logo-row {
@@ -294,10 +294,10 @@ html {
 }
 
 .pos-pin-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text2);
-  letter-spacing: 0.5px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text1);
+  letter-spacing: 0.2px;
 }
 
 .pos-pin-dots {
@@ -359,7 +359,7 @@ html {
 
 .pos-numpad-btn {
   flex: 1;
-  height: 72px;
+  height: 64px;
   border-radius: 14px;
   background: var(--card);
   border: 1px solid var(--border);
@@ -1498,7 +1498,7 @@ html {
 
 /* ── Small tablet portrait (≤480px) ───────────────────────────────────────── */
 @media (max-width: 480px) {
-  .pos-branding       { padding: 28px 24px 20px; }
+  .pos-branding       { padding: 16px 24px 12px; }
   .pos-store-section  { padding: 18px 24px; }
   .pos-pin-section    { padding: 18px 24px 8px; }
   .pos-numpad         { padding: 8px 24px 8px; }
@@ -2541,15 +2541,23 @@ body.pos-catalogue-locked #screen-pos-catalogue.active .pos-lk-page {
 #overlay-pos-staff-login .modal.pos-staff-login-modal {
   background: var(--card);
   border-radius: 14px;
-  width: min(440px, 96vw);
-  max-height: 90vh;
-  overflow-y: auto;
+  width: min(400px, 96vw);
+  max-height: min(560px, 96dvh);
+  overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
   border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
 }
 
 .pos-staff-login-modal-head {
-  padding: 18px 20px 0;
+  padding: 16px 20px 0;
+  flex-shrink: 0;
+}
+
+.pos-staff-login-modal-brand {
+  padding: 0;
+  gap: 0;
 }
 
 .pos-staff-login-modal-brand .pos-login-tagline {
@@ -2557,8 +2565,8 @@ body.pos-catalogue-locked #screen-pos-catalogue.active .pos-lk-page {
 }
 
 .pos-staff-modal-title {
-  margin: 12px 0 4px;
-  font-size: 18px;
+  margin: 10px 0 0;
+  font-size: 17px;
   font-weight: 700;
   color: var(--text1);
 }
@@ -2568,18 +2576,41 @@ body.pos-catalogue-locked #screen-pos-catalogue.active .pos-lk-page {
 }
 
 .pos-staff-login-modal .pos-pin-section {
-  padding: 0 20px;
+  padding: 12px 20px 4px;
+  flex-shrink: 0;
 }
 
 .pos-staff-login-modal .pos-numpad {
-  padding: 0 20px 8px;
+  padding: 4px 16px 6px;
+  flex: 1;
+  min-height: 0;
+}
+
+.pos-staff-login-modal .pos-numpad-btn {
+  height: clamp(50px, 8dvh, 64px);
 }
 
 .pos-staff-login-modal-foot {
-  padding: 0 20px 20px;
+  padding: 8px 16px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex-shrink: 0;
+}
+
+/* Tighten further on very short screens (e.g. landscape phones) */
+@media (max-height: 600px) {
+  #overlay-pos-staff-login .modal.pos-staff-login-modal {
+    max-height: 98dvh;
+  }
+  .pos-staff-login-modal-head { padding: 10px 16px 0; }
+  .pos-staff-modal-title { margin: 6px 0 0; font-size: 15px; }
+  .pos-staff-login-modal .pos-pin-section { padding: 8px 16px 2px; gap: 10px; }
+  .pos-staff-login-modal .pos-numpad { padding: 2px 12px 4px; gap: 6px; }
+  .pos-staff-login-modal .pos-numpad-row { gap: 6px; }
+  .pos-staff-login-modal .pos-numpad-btn { height: clamp(44px, 7dvh, 54px); border-radius: 10px; }
+  .pos-staff-login-modal-foot { padding: 6px 16px 12px; }
+  .pos-staff-login-modal .pos-login-btn { height: 46px; font-size: 14px; }
 }
 
 .pos-catalogue-locked-empty {
