@@ -888,6 +888,33 @@ body.pos-lk-flow #screen-pos-catalogue .pos-scope-btn {
   background: var(--lk-page-bg);
 }
 
+body.pos-lk-flow #screen-pos-catalogue .pos-catalogue-toggle--icons {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  width: 100%;
+}
+
+body.pos-lk-flow #screen-pos-catalogue .pos-scope-btn--icon {
+  flex: 1 1 0;
+  max-width: none;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;
+  line-height: 0;
+}
+
+body.pos-lk-flow #screen-pos-catalogue .pos-scope-btn--icon .pos-scope-btn-svg {
+  color: var(--lk-text-muted);
+}
+
+body.pos-lk-flow #screen-pos-catalogue .pos-scope-btn--icon.active .pos-scope-btn-svg {
+  color: currentColor;
+}
+
 body.pos-lk-flow #screen-pos-catalogue .pos-catalogue-topbar {
   display: grid;
   grid-template-columns: minmax(200px, 1fr) auto;
@@ -3837,7 +3864,7 @@ body.pos-target-tablet-landscape.pos-lk-flow .pos-lk-page {
   }
 
   body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-results.pos-catalogue-results {
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -5416,5 +5443,396 @@ body.pos-lk-flow #screen-pos-order-builder.active #btn-ob-add-more.pos-ob-add-mo
   .pos-invoice-preview-overlay .pos-invoice-preview-frame {
     min-height: 100vh;
     border: none;
+  }
+}
+
+/* ═══ Catalogue — compact fixed filter rail (tablet landscape / PWA) ═══ */
+/* position:fixed pulls the screen OUT of document flow entirely —
+   html/body have zero content to scroll regardless of their height. */
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue.active,
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product.active {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  min-height: 0 !important;
+  box-sizing: border-box;
+  overscroll-behavior: none;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue.active {
+  --pos-catalogue-rail-width: min(212px, 30vw);
+  /* Mirror .pos-sidebar: push content below system status bar */
+  padding-top: env(safe-area-inset-top, 0px);
+  box-sizing: border-box;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue.active .pos-catalogue-page {
+  --pos-lk-flow-shell-padding-top: 0;
+  display: flex;
+  flex-direction: column;
+  /* Kill .pos-lk-page { min-height: 100vh } — this is the second scroll source */
+  min-height: 0 !important;
+  height: 100%;
+  max-height: 100%;
+  max-width: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding-top: 6px;
+  padding-right: calc(var(--pos-catalogue-rail-width, 212px) + max(8px, env(safe-area-inset-right, 0px)));
+  padding-bottom: calc(max(8px, env(safe-area-inset-bottom, 0px)) + 6px);
+  padding-left: 0;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-topbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 100%;
+  margin: 0 0 8px;
+  position: relative;
+  z-index: 2;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-topbar-search {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-topbar-cart {
+  flex: 0 0 auto;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--topbar {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  min-height: 40px;
+  border-radius: 10px;
+  width: 100%;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--topbar .pos-search-input {
+  min-height: 38px;
+  font-size: 13px;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-topbar-cart .pos-lk-header-cart-btn {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+}
+
+body.pos-has-sidebar.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue.active .pos-catalogue-page {
+  padding-left: calc(var(--pos-sb-collapsed) + 6px);
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-layout {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-x pan-y;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-shell {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0 !important;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-results-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Right filter rail — mirror .pos-sidebar exactly, applied on the right edge */
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-rail {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  right: env(safe-area-inset-right, 0px);
+  bottom: env(safe-area-inset-bottom, 0px);
+  left: auto;
+  width: var(--pos-catalogue-rail-width, 212px);
+  max-width: var(--pos-catalogue-rail-width, 212px);
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--lk-card);
+  border: 1px solid var(--lk-border);
+  border-radius: 10px 0 0 10px;
+  box-shadow: -2px 0 12px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  box-sizing: border-box;
+  z-index: 150;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-rail-head {
+  display: none;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  gap: 6px;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-filters-row--scope {
+  flex-shrink: 0;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-filters-row--pills {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-filter-strip {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-pill-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: flex-start;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-filters-row--scope {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-filters-row--scope .pos-catalogue-filters-label {
+  display: none;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-toggle--icons {
+  flex-direction: row;
+  gap: 6px;
+  width: 100%;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-scope-btn--icon {
+  flex: 1 1 0;
+  min-height: 40px;
+  width: auto;
+  max-width: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 0;
+  line-height: 0;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-scope-btn--icon .pos-scope-btn-svg {
+  display: block;
+  flex-shrink: 0;
+  color: var(--lk-text-muted);
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-scope-btn--icon.active .pos-scope-btn-svg {
+  color: currentColor;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-filters-row--pills {
+  gap: 4px;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-filter-strip {
+  gap: 3px;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-filters-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-pill-scroll {
+  gap: 6px;
+  padding: 0 0 2px;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-filters--rail .pos-catalogue-pill {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--rail {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  min-height: 36px;
+  border-radius: 8px;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--rail .pos-search-input {
+  min-height: 34px;
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--rail .pos-search-btn {
+  min-height: 34px;
+  min-width: 34px;
+  padding: 0 8px;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-meta {
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogue-results.pos-catalogue-results {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* Product page — fit viewport; scroll inside panels only */
+body.pos-has-sidebar.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product.active .pos-pdp-page {
+  padding-left: calc(var(--pos-sb-collapsed) + 6px);
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product.active .pos-pdp-page {
+  --pos-lk-flow-shell-padding-top: env(safe-area-inset-top, 0px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  max-width: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding-top: calc(max(12px, env(safe-area-inset-top, 0px)) + 6px);
+  padding-right: max(8px, env(safe-area-inset-right, 0px));
+  padding-bottom: calc(max(8px, env(safe-area-inset-bottom, 0px)) + 6px);
+  padding-left: 0;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product .pos-pdp-toolbar {
+  flex-shrink: 0;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product .pos-pdp-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0 !important;
+  padding: 0;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product .pos-pdp-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product .pos-pdp-media {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product .pos-pdp-hero {
+  height: auto;
+  min-height: 140px;
+  max-height: min(42vh, 280px);
+  flex-shrink: 0;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product .pos-pdp-detail {
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product .pos-pdp-detail-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 767px), (orientation: portrait) {
+  body.pos-lk-flow #screen-pos-catalogue .pos-catalogue-page {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    padding-right: max(8px, env(safe-area-inset-right, 0px));
+  }
+
+  body.pos-lk-flow #screen-pos-catalogue .pos-catalogue-layout {
+    flex-direction: column;
+  }
+
+  body.pos-lk-flow #screen-pos-catalogue .pos-catalogue-rail {
+    position: static;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    flex: 0 0 auto;
+    max-height: min(42vh, 360px);
+    border-radius: 10px;
+    box-shadow: var(--lk-shadow);
+    z-index: auto;
   }
 }

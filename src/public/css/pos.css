@@ -1935,14 +1935,16 @@ body.pos-target-tablet-landscape .pos-login-card {
 :root {
   --pos-sb-width: 200px;
   --pos-sb-collapsed: 52px;
+  --pos-catalogue-rail-width: 212px;
 }
 
 /* Sidebar container — collapsed by default, expands on hover */
 .pos-sidebar {
   position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
+  top: env(safe-area-inset-top, 0px);
+  left: env(safe-area-inset-left, 0px);
+  bottom: env(safe-area-inset-bottom, 0px);
+  height: auto;
   width: var(--pos-sb-collapsed);
   background: var(--card);
   border-right: 1px solid var(--border);

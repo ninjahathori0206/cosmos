@@ -401,6 +401,17 @@ app.get('/go-sw.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'src', 'public', 'go-sw.js'));
 });
 
+// Store OS PWA manifest + service worker
+app.get('/storeos-sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(__dirname, 'src', 'public', 'storeos-sw.js'));
+});
+app.get('/storeos-manifest.json', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'src', 'public', 'storeos-manifest.json'));
+});
+
 // Auth/public routes that do not use grouped protected router.
 app.use('/api/auth', apiKeyAuth, authRouter);
 // POS router: no apiKeyAuth — tablet boots before any session exists.

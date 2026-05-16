@@ -10238,7 +10238,7 @@
       "id": "mcd9034577e",
       "x": -12553,
       "y": 738,
-      "name": "Step 0 - Catalogue · /pos/catalogue",
+      "name": "Step 0 - Catalogue · /storeos/catalogue · aliases /pos/catalogue",
       "clip": true,
       "width": 1024,
       "height": 768,
@@ -10251,191 +10251,583 @@
           "x": 0,
           "y": 0,
           "name": "catalogueBody",
+          "clip": true,
           "width": 1024,
           "height": 768,
+          "fill": "#F1F5F9",
           "layout": "vertical",
-          "gap": 14,
-          "padding": 24,
           "children": [
             {
-              "type": "text",
-              "id": "m8f9bf8e3e0",
-              "name": "hint",
-              "fill": "#0D9F7B",
-              "content": "Step 0: click a product card to open Product Page (Step 1)",
-              "fontFamily": "Inter",
-              "fontSize": 13,
-              "fontWeight": "600"
+              "type": "frame",
+              "id": "Qi0nk",
+              "name": "Safe area · status bar inset",
+              "width": "fill_container",
+              "height": 28,
+              "fill": "#F1F5F9",
+              "padding": [
+                0,
+                20
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "C5aPJ",
+                  "name": "time",
+                  "fill": "#64748B",
+                  "content": "7:31 PM Sat 16 May",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "WctYY",
+                  "name": "sysIcons",
+                  "fill": "#64748B",
+                  "content": "Wi‑Fi  ·  1%",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "500"
+                }
+              ]
             },
             {
               "type": "frame",
-              "id": "mb32e4b10cb",
-              "name": "grid",
+              "id": "ccumj",
+              "name": "App shell",
               "width": "fill_container",
-              "gap": 14,
+              "height": "fill_container",
               "children": [
                 {
                   "type": "frame",
-                  "id": "m6e11d139a2",
-                  "name": "productCardClickTarget",
-                  "width": "fill_container",
+                  "id": "Byb46",
+                  "name": "POS sidebar · collapsed",
+                  "width": 52,
+                  "height": "fill_container",
                   "fill": "#FFFFFF",
-                  "cornerRadius": 12,
                   "stroke": {
                     "align": "inside",
-                    "thickness": 2,
-                    "fill": "#2563EB"
+                    "thickness": {
+                      "right": 1
+                    },
+                    "fill": "#E2E8F0"
                   },
                   "layout": "vertical",
-                  "gap": 10,
-                  "padding": 12,
+                  "gap": 12,
+                  "padding": [
+                    12,
+                    8
+                  ],
+                  "alignItems": "center",
                   "children": [
                     {
                       "type": "frame",
-                      "id": "m9ed7b40314",
-                      "name": "img",
-                      "width": "fill_container",
-                      "height": 180,
-                      "fill": "#EEF2FF",
-                      "cornerRadius": 10,
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon_font",
-                          "id": "mbd32babf67",
-                          "name": "img1Ic",
-                          "width": 30,
-                          "height": 30,
-                          "iconFontName": "image",
-                          "iconFontFamily": "feather",
-                          "fill": "#94A3B8"
-                        }
-                      ]
+                      "id": "R4qLPQ",
+                      "name": "logo",
+                      "width": 30,
+                      "height": 30,
+                      "fill": {
+                        "type": "gradient",
+                        "gradientType": "linear",
+                        "enabled": true,
+                        "rotation": 135,
+                        "size": {
+                          "height": 1
+                        },
+                        "colors": [
+                          {
+                            "color": "#6366F1",
+                            "position": 0
+                          },
+                          {
+                            "color": "#4F46E5",
+                            "position": 1
+                          }
+                        ]
+                      },
+                      "cornerRadius": 8
                     },
                     {
                       "type": "text",
-                      "id": "m47b9370aaa",
-                      "name": "t1",
-                      "fill": "#0F172A",
-                      "content": "Lenskart · John Jacobs · JJ E10235",
+                      "id": "l8ZYeU",
+                      "fill": "#FFFFFF",
+                      "content": "✦",
                       "fontFamily": "Inter",
-                      "fontSize": 15,
-                      "fontWeight": "600"
-                    },
-                    {
-                      "type": "text",
-                      "id": "mb72346f5e2",
-                      "name": "p1",
-                      "fill": "#0F172A",
-                      "content": "₹1400 with Free Anti-Glare lenses",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "600"
-                    },
-                    {
-                      "type": "text",
-                      "id": "m0f4876205d",
-                      "name": "meta1",
-                      "fill": "#0D9F7B",
-                      "content": "Delivery by 6, May",
-                      "fontFamily": "Inter",
-                      "fontSize": 12,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "m7264ff345f",
-                      "name": "cta",
-                      "width": "fill_container",
-                      "height": 40,
-                      "fill": "#0B1437",
-                      "cornerRadius": 10,
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "m59ff37c41e",
-                          "name": "cta1Txt",
-                          "fill": "#FFFFFF",
-                          "content": "Open Product Page",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "700"
-                        }
-                      ]
+                      "fontSize": 14,
+                      "fontWeight": "700"
                     }
                   ]
                 },
                 {
                   "type": "frame",
-                  "id": "mfcc5574fea",
-                  "name": "productCard",
+                  "id": "Ez7ln",
+                  "name": "Catalogue split",
                   "width": "fill_container",
-                  "fill": "#FFFFFF",
-                  "cornerRadius": 12,
-                  "stroke": {
-                    "align": "inside",
-                    "thickness": 1,
-                    "fill": "#E2E8F0"
-                  },
-                  "layout": "vertical",
-                  "gap": 10,
-                  "padding": 12,
+                  "height": "fill_container",
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    12,
+                    12,
+                    0
+                  ],
                   "children": [
                     {
                       "type": "frame",
-                      "id": "m584e551785",
-                      "name": "img",
+                      "id": "kvPH9",
+                      "name": "Results · scroll",
+                      "clip": true,
                       "width": "fill_container",
-                      "height": 180,
-                      "fill": "#F8FAFC",
-                      "cornerRadius": 10,
-                      "justifyContent": "center",
-                      "alignItems": "center",
+                      "height": "fill_container",
+                      "layout": "vertical",
+                      "gap": 10,
                       "children": [
                         {
-                          "type": "icon_font",
-                          "id": "m7296ede1a3",
-                          "name": "img2Ic",
-                          "width": 30,
-                          "height": 30,
-                          "iconFontName": "image",
-                          "iconFontFamily": "feather",
-                          "fill": "#CBD5E1"
+                          "type": "text",
+                          "id": "b19B0f",
+                          "name": "meta",
+                          "fill": "#64748B",
+                          "content": "Store catalogue: 4 models · 4 variants",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "srBEH",
+                          "name": "Product grid · scroll",
+                          "clip": true,
+                          "width": "fill_container",
+                          "height": "fill_container",
+                          "layout": "vertical",
+                          "gap": 10,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "g9xeyU",
+                              "name": "SKU card",
+                              "width": "fill_container",
+                              "height": 120,
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 12,
+                              "stroke": {
+                                "align": "inside",
+                                "thickness": 1,
+                                "fill": "#E2E8F0"
+                              },
+                              "gap": 12,
+                              "padding": 12,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "gXIwa",
+                                  "name": "text",
+                                  "width": "fill_container",
+                                  "height": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 4,
+                                  "justifyContent": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "LuVTN",
+                                      "fill": "#0F172A",
+                                      "content": "BLNK - OLD - E1200",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 14,
+                                      "fontWeight": "700"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "xgBP9",
+                                      "fill": "#0F172A",
+                                      "content": "₹1,200",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 13,
+                                      "fontWeight": "600"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "FU5fu",
+                                      "fill": "#0D9F7B",
+                                      "content": "Delivery by 6, May",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "500"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "ctn2N",
+                                  "name": "thumb",
+                                  "width": 96,
+                                  "height": 72,
+                                  "fill": "#EEF2FF",
+                                  "cornerRadius": 10
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "IhKFm",
+                              "name": "SKU card 2",
+                              "width": "fill_container",
+                              "height": 120,
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 12,
+                              "stroke": {
+                                "align": "inside",
+                                "thickness": 1,
+                                "fill": "#E2E8F0"
+                              },
+                              "gap": 12,
+                              "padding": 12,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "mQB3h",
+                                  "name": "t2",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 4,
+                                  "justifyContent": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "csoEp",
+                                      "fill": "#0F172A",
+                                      "content": "BLNK - E1201",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 14,
+                                      "fontWeight": "700"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "h0pWaO",
+                                      "fill": "#0F172A",
+                                      "content": "₹1,450",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 13,
+                                      "fontWeight": "600"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "LRn2E",
+                                  "width": 96,
+                                  "height": 72,
+                                  "fill": "#EEF2FF",
+                                  "cornerRadius": 10
+                                }
+                              ]
+                            }
+                          ]
                         }
                       ]
                     },
                     {
-                      "type": "text",
-                      "id": "mff877c8c0d",
-                      "name": "t2",
-                      "fill": "#0F172A",
-                      "content": "Ray-Ban · Icons · RB3025",
-                      "fontFamily": "Inter",
-                      "fontSize": 15,
-                      "fontWeight": "600"
-                    },
-                    {
-                      "type": "text",
-                      "id": "m269ebef125",
-                      "name": "p2",
-                      "fill": "#0F172A",
-                      "content": "₹1900 with Premium lenses",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "600"
-                    },
-                    {
-                      "type": "text",
-                      "id": "m145f60e435",
-                      "name": "meta2",
-                      "fill": "#94A3B8",
-                      "content": "Click disabled in this state",
-                      "fontFamily": "Inter",
-                      "fontSize": 12,
-                      "fontWeight": "normal"
+                      "type": "frame",
+                      "id": "C3fvAX",
+                      "name": "Filter rail · fixed",
+                      "width": 212,
+                      "height": "fill_container",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 12,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "layout": "vertical",
+                      "gap": 6,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "mntTQ",
+                          "name": "Search",
+                          "width": "fill_container",
+                          "height": 36,
+                          "fill": "#F8FAFC",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "align": "inside",
+                            "thickness": 1,
+                            "fill": "#E2E8F0"
+                          },
+                          "gap": 8,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "XqtqR",
+                              "fill": "#94A3B8",
+                              "content": "SKU / Barcode / Code",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "s5pGw",
+                          "name": "Catalogue scope",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 4,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "VhptI",
+                              "fill": "#64748B",
+                              "content": "CATALOGUE SCOPE",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "700",
+                              "letterSpacing": 0.6
+                            },
+                            {
+                              "type": "frame",
+                              "id": "nUQUN",
+                              "name": "scopeTog",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 4,
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "uwvhX",
+                                  "width": "fill_container",
+                                  "height": 44,
+                                  "fill": "#EEF2FF",
+                                  "cornerRadius": 10,
+                                  "stroke": {
+                                    "align": "inside",
+                                    "thickness": 2,
+                                    "fill": "#2563EB"
+                                  },
+                                  "justifyContent": "center",
+                                  "alignItems": "center"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "PKZdr",
+                                  "fill": "#2563EB",
+                                  "content": "Store Catalogue",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "700"
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "b4Z2dw",
+                                  "width": "fill_container",
+                                  "height": 44,
+                                  "fill": "#F8FAFC",
+                                  "cornerRadius": 10,
+                                  "stroke": {
+                                    "align": "inside",
+                                    "thickness": 1,
+                                    "fill": "#E2E8F0"
+                                  },
+                                  "justifyContent": "center",
+                                  "alignItems": "center"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "uokLQ",
+                                  "fill": "#475569",
+                                  "content": "Global Catalogue",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "wtwYt",
+                          "name": "Filters · internal scroll",
+                          "clip": true,
+                          "width": "fill_container",
+                          "height": "fill_container",
+                          "layout": "vertical",
+                          "gap": 8,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "roK7m",
+                              "name": "Product type",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "pNGqx",
+                                  "fill": "#64748B",
+                                  "content": "PRODUCT TYPE",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "700",
+                                  "letterSpacing": 0.6
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "h2L4G",
+                                  "width": "fill_container",
+                                  "height": "fit_content(0)",
+                                  "gap": 8
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "LFLRD",
+                                  "width": "fit_content(0)",
+                                  "height": 40,
+                                  "fill": "#EEF2FF",
+                                  "cornerRadius": 999,
+                                  "stroke": {
+                                    "align": "inside",
+                                    "thickness": 2,
+                                    "fill": "#2563EB"
+                                  },
+                                  "padding": [
+                                    0,
+                                    14
+                                  ],
+                                  "alignItems": "center"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "yLY6Z",
+                                  "fill": "#2563EB",
+                                  "content": "EYEGLASSES",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "700"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "oauLP",
+                              "name": "Brand",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "TRTMW",
+                                  "fill": "#64748B",
+                                  "content": "BRAND",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "700",
+                                  "letterSpacing": 0.6
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "BdHEd",
+                                  "width": "fit_content(0)",
+                                  "height": 40,
+                                  "fill": "#EEF2FF",
+                                  "cornerRadius": 999,
+                                  "stroke": {
+                                    "align": "inside",
+                                    "thickness": 2,
+                                    "fill": "#2563EB"
+                                  },
+                                  "padding": [
+                                    0,
+                                    14
+                                  ],
+                                  "alignItems": "center"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "IVT21",
+                                  "fill": "#2563EB",
+                                  "content": "BLNK",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "700"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "W1HoHa",
+                          "name": "Rail actions",
+                          "width": "fill_container",
+                          "height": 48,
+                          "gap": 10,
+                          "justifyContent": "end",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "ukaL6",
+                              "width": 44,
+                              "height": 44,
+                              "fill": "#F8FAFC",
+                              "cornerRadius": 10,
+                              "stroke": {
+                                "align": "inside",
+                                "thickness": 1,
+                                "fill": "#E2E8F0"
+                              }
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Rdn4i",
+                              "width": 44,
+                              "height": 44,
+                              "fill": "#F8FAFC",
+                              "cornerRadius": 10,
+                              "stroke": {
+                                "align": "inside",
+                                "thickness": 1,
+                                "fill": "#E2E8F0"
+                              }
+                            },
+                            {
+                              "type": "frame",
+                              "id": "CyeFb",
+                              "width": 44,
+                              "height": 44,
+                              "fill": "#2563EB",
+                              "cornerRadius": 10,
+                              "justifyContent": "center",
+                              "alignItems": "center"
+                            },
+                            {
+                              "type": "text",
+                              "id": "BYEaU",
+                              "fill": "#FFFFFF",
+                              "content": "0",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 }
@@ -11942,9 +12334,9 @@
                   "layout": "vertical",
                   "gap": 8,
                   "padding": [
+                    20,
                     40,
-                    40,
-                    32,
+                    16,
                     40
                   ],
                   "alignItems": "center",
@@ -11991,35 +12383,6 @@
                           "letterSpacing": 0.2
                         }
                       ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "X9xZi",
-                      "name": "Module Badge",
-                      "fill": "#EFF6FF",
-                      "cornerRadius": 20,
-                      "stroke": {
-                        "align": "inside",
-                        "thickness": 1,
-                        "fill": "#BFDBFE"
-                      },
-                      "padding": [
-                        4,
-                        12
-                      ],
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "W5KW0O",
-                          "name": "moduleTxt",
-                          "fill": "#2563EB",
-                          "content": "Step 2 · Staff",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "600",
-                          "letterSpacing": 1.5
-                        }
-                      ]
                     }
                   ]
                 },
@@ -12048,7 +12411,7 @@
                       "id": "SrIjn",
                       "name": "storeLbl",
                       "fill": "#64748B",
-                      "content": "ACTIVE STORE",
+                      "content": "STORE",
                       "fontFamily": "Inter",
                       "fontSize": 10,
                       "fontWeight": "700",
@@ -12115,16 +12478,6 @@
                               "fontWeight": "600"
                             }
                           ]
-                        },
-                        {
-                          "type": "text",
-                          "id": "WPmt9",
-                          "name": "chevron",
-                          "fill": "#64748B",
-                          "content": "⌄",
-                          "fontFamily": "Inter",
-                          "fontSize": 18,
-                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -12147,14 +12500,6 @@
               ],
               "children": [
                 {
-                  "type": "rectangle",
-                  "id": "YF4UZ",
-                  "name": "Divider2",
-                  "fill": "#E2E8F0",
-                  "width": "fill_container",
-                  "height": 1
-                },
-                {
                   "type": "frame",
                   "id": "t8dBJ",
                   "name": "PIN Section",
@@ -12173,12 +12518,12 @@
                       "type": "text",
                       "id": "GnKW1",
                       "name": "pinLbl",
-                      "fill": "#64748B",
-                      "content": "Enter your staff PIN",
+                      "fill": "#0F172A",
+                      "content": "Enter your PIN",
                       "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "600",
-                      "letterSpacing": 0.5
+                      "fontSize": 15,
+                      "fontWeight": "700",
+                      "letterSpacing": 0.2
                     },
                     {
                       "type": "frame",
@@ -12271,7 +12616,7 @@
                           "id": "H6yqw5",
                           "name": "Btn 1",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12301,7 +12646,7 @@
                           "id": "U2Mq1G",
                           "name": "Btn 2",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12323,17 +12668,6 @@
                               "fontFamily": "Inter",
                               "fontSize": 24,
                               "fontWeight": "300"
-                            },
-                            {
-                              "type": "text",
-                              "id": "vbUGt",
-                              "name": "b2sub",
-                              "fill": "#475569",
-                              "content": "ABC",
-                              "fontFamily": "Inter",
-                              "fontSize": 9,
-                              "fontWeight": "500",
-                              "letterSpacing": 1.5
                             }
                           ]
                         },
@@ -12342,7 +12676,7 @@
                           "id": "N4aHZ",
                           "name": "Btn 3",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12364,17 +12698,6 @@
                               "fontFamily": "Inter",
                               "fontSize": 24,
                               "fontWeight": "300"
-                            },
-                            {
-                              "type": "text",
-                              "id": "t3CyoP",
-                              "name": "b3sub",
-                              "fill": "#475569",
-                              "content": "DEF",
-                              "fontFamily": "Inter",
-                              "fontSize": 9,
-                              "fontWeight": "500",
-                              "letterSpacing": 1.5
                             }
                           ]
                         }
@@ -12392,7 +12715,7 @@
                           "id": "w0caV",
                           "name": "Btn 4",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12414,17 +12737,6 @@
                               "fontFamily": "Inter",
                               "fontSize": 24,
                               "fontWeight": "300"
-                            },
-                            {
-                              "type": "text",
-                              "id": "J9wvw",
-                              "name": "b4sub",
-                              "fill": "#475569",
-                              "content": "GHI",
-                              "fontFamily": "Inter",
-                              "fontSize": 9,
-                              "fontWeight": "500",
-                              "letterSpacing": 1.5
                             }
                           ]
                         },
@@ -12433,7 +12745,7 @@
                           "id": "yikOR",
                           "name": "Btn 5",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12455,17 +12767,6 @@
                               "fontFamily": "Inter",
                               "fontSize": 24,
                               "fontWeight": "300"
-                            },
-                            {
-                              "type": "text",
-                              "id": "JcnMs",
-                              "name": "b5sub",
-                              "fill": "#475569",
-                              "content": "JKL",
-                              "fontFamily": "Inter",
-                              "fontSize": 9,
-                              "fontWeight": "500",
-                              "letterSpacing": 1.5
                             }
                           ]
                         },
@@ -12474,7 +12775,7 @@
                           "id": "WpYIl",
                           "name": "Btn 6",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12496,17 +12797,6 @@
                               "fontFamily": "Inter",
                               "fontSize": 24,
                               "fontWeight": "300"
-                            },
-                            {
-                              "type": "text",
-                              "id": "OEI9z",
-                              "name": "b6sub",
-                              "fill": "#475569",
-                              "content": "MNO",
-                              "fontFamily": "Inter",
-                              "fontSize": 9,
-                              "fontWeight": "500",
-                              "letterSpacing": 1.5
                             }
                           ]
                         }
@@ -12524,7 +12814,7 @@
                           "id": "yP2Lb",
                           "name": "Btn 7",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12546,17 +12836,6 @@
                               "fontFamily": "Inter",
                               "fontSize": 24,
                               "fontWeight": "300"
-                            },
-                            {
-                              "type": "text",
-                              "id": "iQfHx",
-                              "name": "b7sub",
-                              "fill": "#475569",
-                              "content": "PQRS",
-                              "fontFamily": "Inter",
-                              "fontSize": 9,
-                              "fontWeight": "500",
-                              "letterSpacing": 1.5
                             }
                           ]
                         },
@@ -12565,7 +12844,7 @@
                           "id": "zDd9y",
                           "name": "Btn 8",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12587,17 +12866,6 @@
                               "fontFamily": "Inter",
                               "fontSize": 24,
                               "fontWeight": "300"
-                            },
-                            {
-                              "type": "text",
-                              "id": "Y3mpD",
-                              "name": "b8sub",
-                              "fill": "#475569",
-                              "content": "TUV",
-                              "fontFamily": "Inter",
-                              "fontSize": 9,
-                              "fontWeight": "500",
-                              "letterSpacing": 1.5
                             }
                           ]
                         },
@@ -12606,7 +12874,7 @@
                           "id": "WQnZS",
                           "name": "Btn 9",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12628,17 +12896,6 @@
                               "fontFamily": "Inter",
                               "fontSize": 24,
                               "fontWeight": "300"
-                            },
-                            {
-                              "type": "text",
-                              "id": "j4oT6w",
-                              "name": "b9sub",
-                              "fill": "#475569",
-                              "content": "WXYZ",
-                              "fontFamily": "Inter",
-                              "fontSize": 9,
-                              "fontWeight": "500",
-                              "letterSpacing": 1.5
                             }
                           ]
                         }
@@ -12656,7 +12913,7 @@
                           "id": "GchbL",
                           "name": "Btn Empty",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#F8FAFC",
                           "cornerRadius": 14,
                           "layout": "vertical"
@@ -12666,7 +12923,7 @@
                           "id": "G1rxcY",
                           "name": "Btn 0",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12695,7 +12952,7 @@
                           "id": "dWobd",
                           "name": "Btn Delete",
                           "width": "fill_container",
-                          "height": 72,
+                          "height": 64,
                           "fill": "#FFFFFF",
                           "cornerRadius": 14,
                           "stroke": {
@@ -12724,14 +12981,6 @@
                   ]
                 },
                 {
-                  "type": "rectangle",
-                  "id": "k25Wmg",
-                  "name": "Divider3",
-                  "fill": "#E2E8F0",
-                  "width": "fill_container",
-                  "height": 1
-                },
-                {
                   "type": "frame",
                   "id": "R2SJO2",
                   "name": "Footer",
@@ -12752,7 +13001,7 @@
                       "name": "Login Button",
                       "width": "fill_container",
                       "height": 56,
-                      "fill": "#0B1437",
+                      "fill": "#2563EB",
                       "cornerRadius": 14,
                       "effect": {
                         "type": "shadow",
@@ -12773,26 +13022,13 @@
                           "id": "W1Wm97",
                           "name": "loginBtnTxt",
                           "fill": "#ffffff",
-                          "content": "Continue to catalogue",
+                          "content": "Unlock POS",
                           "fontFamily": "Inter",
                           "fontSize": 16,
                           "fontWeight": "600",
                           "letterSpacing": 0.3
                         }
                       ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "bPaNn",
-                      "name": "hintTxt",
-                      "fill": "#64748B",
-                      "textGrowth": "fixed-width",
-                      "width": "fill_container",
-                      "content": "PIN is per staff member. Tablet stays on this store.",
-                      "textAlign": "center",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
                     }
                   ]
                 }
@@ -12807,7 +13043,7 @@
       "id": "GSbEU",
       "x": -11275,
       "y": -600,
-      "name": "02 Catalogue · /storeos/catalogue · aliases /storeos/catalog /storeos/catelogue",
+      "name": "02 Catalogue · /storeos/catalogue · aliases /storeos/catalog /storeos/catelogue · tablet landscape",
       "clip": true,
       "width": 1024,
       "height": 768,
@@ -12816,188 +13052,589 @@
       "children": [
         {
           "type": "frame",
-          "id": "CTEgn",
-          "name": "body",
+          "id": "O28s7",
+          "name": "catalogueBody",
+          "clip": true,
           "width": "fill_container",
           "height": "fill_container",
+          "fill": "#F1F5F9",
           "layout": "vertical",
-          "gap": 14,
-          "padding": 20,
           "children": [
             {
               "type": "frame",
-              "id": "sjMBa",
-              "name": "chips",
-              "gap": 8,
+              "id": "U0DZW",
+              "name": "Safe area · status bar inset",
+              "width": "fill_container",
+              "height": 28,
+              "fill": "#F1F5F9",
+              "padding": [
+                0,
+                20
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
               "children": [
                 {
-                  "type": "frame",
-                  "id": "O9gn9A",
-                  "name": "ch1",
-                  "fill": "#EDE9FE",
-                  "cornerRadius": 999,
-                  "padding": [
-                    8,
-                    14
-                  ],
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "g6BIv",
-                      "name": "cht1",
-                      "fill": "#5B21B6",
-                      "content": "All",
-                      "fontFamily": "Inter",
-                      "fontSize": 12,
-                      "fontWeight": "600"
-                    }
-                  ]
+                  "type": "text",
+                  "id": "PTmcE",
+                  "name": "time",
+                  "fill": "#64748B",
+                  "content": "7:31 PM Sat 16 May",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "500"
                 },
                 {
-                  "type": "frame",
-                  "id": "hMGCt",
-                  "name": "ch2",
-                  "fill": "#F1F5F9",
-                  "cornerRadius": 999,
-                  "stroke": {
-                    "align": "inside",
-                    "thickness": 1,
-                    "fill": "#E2E8F0"
-                  },
-                  "padding": [
-                    8,
-                    14
-                  ],
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "mBmad",
-                      "name": "cht2",
-                      "fill": "#475569",
-                      "content": "Sunglasses",
-                      "fontFamily": "Inter",
-                      "fontSize": 12,
-                      "fontWeight": "500"
-                    }
-                  ]
+                  "type": "text",
+                  "id": "RpnRl",
+                  "name": "sysIcons",
+                  "fill": "#64748B",
+                  "content": "Wi‑Fi  ·  1%",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "500"
                 }
               ]
             },
             {
               "type": "frame",
-              "id": "X22Dit",
-              "name": "gRow",
+              "id": "UVW3i",
+              "name": "App shell",
               "width": "fill_container",
-              "gap": 14,
+              "height": "fill_container",
               "children": [
                 {
                   "type": "frame",
-                  "id": "vQwZu",
-                  "name": "pc1",
-                  "width": "fill_container",
+                  "id": "F4zpKv",
+                  "name": "POS sidebar · collapsed",
+                  "width": 52,
+                  "height": "fill_container",
                   "fill": "#FFFFFF",
-                  "cornerRadius": 14,
                   "stroke": {
                     "align": "inside",
-                    "thickness": 1,
+                    "thickness": {
+                      "right": 1
+                    },
                     "fill": "#E2E8F0"
                   },
                   "layout": "vertical",
-                  "gap": 8,
-                  "padding": 12,
+                  "gap": 12,
+                  "padding": [
+                    12,
+                    8
+                  ],
+                  "alignItems": "center",
                   "children": [
                     {
-                      "type": "rectangle",
-                      "cornerRadius": 10,
-                      "id": "iS5Nq",
-                      "name": "ph1",
-                      "fill": "#EEF2FF",
-                      "width": "fill_container",
-                      "height": 100
+                      "type": "frame",
+                      "id": "G2qq1",
+                      "name": "logo",
+                      "width": 30,
+                      "height": 30,
+                      "fill": {
+                        "type": "gradient",
+                        "gradientType": "linear",
+                        "enabled": true,
+                        "rotation": 135,
+                        "size": {
+                          "height": 1
+                        },
+                        "colors": [
+                          {
+                            "color": "#6366F1",
+                            "position": 0
+                          },
+                          {
+                            "color": "#4F46E5",
+                            "position": 1
+                          }
+                        ]
+                      },
+                      "cornerRadius": 8
                     },
                     {
                       "type": "text",
-                      "id": "o4Nap",
-                      "name": "pt1",
-                      "fill": "#0F172A",
-                      "content": "Lenskart · John Jacobs · JJ E10235",
+                      "id": "IijWT",
+                      "fill": "#FFFFFF",
+                      "content": "✦",
                       "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "600"
+                      "fontSize": 14,
+                      "fontWeight": "700"
                     }
                   ]
                 },
                 {
                   "type": "frame",
-                  "id": "CUlq7",
-                  "name": "pc2",
+                  "id": "tjuUg",
+                  "name": "Catalogue split",
                   "width": "fill_container",
-                  "fill": "#FFFFFF",
-                  "cornerRadius": 14,
-                  "stroke": {
-                    "align": "inside",
-                    "thickness": 1,
-                    "fill": "#E2E8F0"
-                  },
-                  "layout": "vertical",
-                  "gap": 8,
-                  "padding": 12,
+                  "height": "fill_container",
+                  "gap": 12,
+                  "padding": [
+                    0,
+                    16,
+                    16,
+                    0
+                  ],
                   "children": [
                     {
-                      "type": "rectangle",
-                      "cornerRadius": 10,
-                      "id": "bux8v",
-                      "name": "ph2",
-                      "fill": "#EEF2FF",
+                      "type": "frame",
+                      "id": "Gz2j0",
+                      "name": "Results · scroll",
+                      "clip": true,
                       "width": "fill_container",
-                      "height": 100
+                      "height": "fill_container",
+                      "layout": "vertical",
+                      "gap": 10,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "d0t9ox",
+                          "name": "meta",
+                          "fill": "#64748B",
+                          "content": "Store catalogue: 4 models · 4 variants",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ur7tb",
+                          "name": "Product grid · scroll",
+                          "clip": true,
+                          "width": "fill_container",
+                          "height": "fill_container",
+                          "layout": "vertical",
+                          "gap": 10,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "t0yIV",
+                              "name": "SKU card",
+                              "width": "fill_container",
+                              "height": 120,
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 12,
+                              "stroke": {
+                                "align": "inside",
+                                "thickness": 1,
+                                "fill": "#E2E8F0"
+                              },
+                              "gap": 12,
+                              "padding": 12,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "pvEcW",
+                                  "name": "text",
+                                  "width": "fill_container",
+                                  "height": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 4,
+                                  "justifyContent": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "dO6T2",
+                                      "fill": "#0F172A",
+                                      "content": "BLNK - OLD - E1200",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 14,
+                                      "fontWeight": "700"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "h6SwTV",
+                                      "fill": "#0F172A",
+                                      "content": "₹1,200",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 13,
+                                      "fontWeight": "600"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "jR6JM",
+                                      "fill": "#0D9F7B",
+                                      "content": "Delivery by 6, May",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "500"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "BGPkX",
+                                  "name": "thumb",
+                                  "width": 96,
+                                  "height": 72,
+                                  "fill": "#EEF2FF",
+                                  "cornerRadius": 10
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "fZNg1",
+                              "name": "SKU card 2",
+                              "width": "fill_container",
+                              "height": 120,
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 12,
+                              "stroke": {
+                                "align": "inside",
+                                "thickness": 1,
+                                "fill": "#E2E8F0"
+                              },
+                              "gap": 12,
+                              "padding": 12,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "qTzWv",
+                                  "name": "t2",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 4,
+                                  "justifyContent": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "pDHV4",
+                                      "fill": "#0F172A",
+                                      "content": "BLNK - E1201",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 14,
+                                      "fontWeight": "700"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "q7ODf",
+                                      "fill": "#0F172A",
+                                      "content": "₹1,450",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 13,
+                                      "fontWeight": "600"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "vd6Ox",
+                                  "width": 96,
+                                  "height": 72,
+                                  "fill": "#EEF2FF",
+                                  "cornerRadius": 10
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
                     },
                     {
-                      "type": "text",
-                      "id": "GwIDC",
-                      "name": "pt2",
-                      "fill": "#0F172A",
-                      "content": "Ray-Ban · Icons · RB3025",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "600"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "TDu3N",
-                  "name": "pc3",
-                  "width": "fill_container",
-                  "fill": "#FFFFFF",
-                  "cornerRadius": 14,
-                  "stroke": {
-                    "align": "inside",
-                    "thickness": 1,
-                    "fill": "#E2E8F0"
-                  },
-                  "layout": "vertical",
-                  "gap": 8,
-                  "padding": 12,
-                  "children": [
-                    {
-                      "type": "rectangle",
-                      "cornerRadius": 10,
-                      "id": "jHYjZ",
-                      "name": "ph3",
-                      "fill": "#EEF2FF",
-                      "width": "fill_container",
-                      "height": 100
-                    },
-                    {
-                      "type": "text",
-                      "id": "tJw4e",
-                      "name": "pt3",
-                      "fill": "#0F172A",
-                      "content": "Vincent Chase · Air Essentials · VC-5518",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "600"
+                      "type": "frame",
+                      "id": "ZTeAG",
+                      "name": "Filter rail · fixed",
+                      "width": 300,
+                      "height": "fill_container",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 12,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E2E8F0"
+                      },
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": [
+                        14,
+                        14,
+                        12,
+                        14
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "O75G2",
+                          "name": "Search",
+                          "width": "fill_container",
+                          "height": 44,
+                          "fill": "#F8FAFC",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "align": "inside",
+                            "thickness": 1,
+                            "fill": "#E2E8F0"
+                          },
+                          "gap": 8,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "m5aSpi",
+                              "fill": "#94A3B8",
+                              "content": "SKU / Barcode / Code",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "CmOpF",
+                          "name": "Catalogue scope",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 8,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "MJNDN",
+                              "fill": "#64748B",
+                              "content": "CATALOGUE SCOPE",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "700",
+                              "letterSpacing": 0.6
+                            },
+                            {
+                              "type": "frame",
+                              "id": "D7wb61",
+                              "name": "scopeTog",
+                              "width": "fill_container",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "Ji5wF",
+                                  "width": "fill_container",
+                                  "height": 44,
+                                  "fill": "#EEF2FF",
+                                  "cornerRadius": 10,
+                                  "stroke": {
+                                    "align": "inside",
+                                    "thickness": 2,
+                                    "fill": "#2563EB"
+                                  },
+                                  "justifyContent": "center",
+                                  "alignItems": "center"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "xFhPn",
+                                  "fill": "#2563EB",
+                                  "content": "Store Catalogue",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "700"
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "SMcDe",
+                                  "width": "fill_container",
+                                  "height": 44,
+                                  "fill": "#F8FAFC",
+                                  "cornerRadius": 10,
+                                  "stroke": {
+                                    "align": "inside",
+                                    "thickness": 1,
+                                    "fill": "#E2E8F0"
+                                  },
+                                  "justifyContent": "center",
+                                  "alignItems": "center"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "j7gWor",
+                                  "fill": "#475569",
+                                  "content": "Global Catalogue",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "hW010",
+                          "name": "Filters · internal scroll",
+                          "clip": true,
+                          "width": "fill_container",
+                          "height": "fill_container",
+                          "layout": "vertical",
+                          "gap": 14,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "GVBzd",
+                              "name": "Product type",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "TP8kD",
+                                  "fill": "#64748B",
+                                  "content": "PRODUCT TYPE",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "700",
+                                  "letterSpacing": 0.6
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "BAtOt",
+                                  "width": "fill_container",
+                                  "height": "fit_content(0)",
+                                  "gap": 8
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "U1RybK",
+                                  "width": "fit_content(0)",
+                                  "height": 40,
+                                  "fill": "#EEF2FF",
+                                  "cornerRadius": 999,
+                                  "stroke": {
+                                    "align": "inside",
+                                    "thickness": 2,
+                                    "fill": "#2563EB"
+                                  },
+                                  "padding": [
+                                    0,
+                                    14
+                                  ],
+                                  "alignItems": "center"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "u8GHs",
+                                  "fill": "#2563EB",
+                                  "content": "EYEGLASSES",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "700"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "AxE1T",
+                              "name": "Brand",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "Rd2jK",
+                                  "fill": "#64748B",
+                                  "content": "BRAND",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "700",
+                                  "letterSpacing": 0.6
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "T8zXX",
+                                  "width": "fit_content(0)",
+                                  "height": 40,
+                                  "fill": "#EEF2FF",
+                                  "cornerRadius": 999,
+                                  "stroke": {
+                                    "align": "inside",
+                                    "thickness": 2,
+                                    "fill": "#2563EB"
+                                  },
+                                  "padding": [
+                                    0,
+                                    14
+                                  ],
+                                  "alignItems": "center"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "AYqa8",
+                                  "fill": "#2563EB",
+                                  "content": "BLNK",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "700"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "WyAch",
+                          "name": "Rail actions",
+                          "width": "fill_container",
+                          "height": 48,
+                          "gap": 10,
+                          "justifyContent": "end",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "jA1Mr",
+                              "width": 44,
+                              "height": 44,
+                              "fill": "#F8FAFC",
+                              "cornerRadius": 10,
+                              "stroke": {
+                                "align": "inside",
+                                "thickness": 1,
+                                "fill": "#E2E8F0"
+                              }
+                            },
+                            {
+                              "type": "frame",
+                              "id": "yQ6jj",
+                              "width": 44,
+                              "height": 44,
+                              "fill": "#F8FAFC",
+                              "cornerRadius": 10,
+                              "stroke": {
+                                "align": "inside",
+                                "thickness": 1,
+                                "fill": "#E2E8F0"
+                              }
+                            },
+                            {
+                              "type": "frame",
+                              "id": "pBsv8",
+                              "width": 44,
+                              "height": 44,
+                              "fill": "#2563EB",
+                              "cornerRadius": 10,
+                              "justifyContent": "center",
+                              "alignItems": "center"
+                            },
+                            {
+                              "type": "text",
+                              "id": "qW6z1",
+                              "fill": "#FFFFFF",
+                              "content": "0",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 }
