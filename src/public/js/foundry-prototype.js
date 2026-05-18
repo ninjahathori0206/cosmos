@@ -5682,6 +5682,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // TSC P210 USB vendor/product IDs (TSC Auto ID)
   const TSC_VENDOR_ID = 0x0EB8;
+  /** localStorage key prefix — horizontal TSPL calibration per USB identity */
+  const BC_CALIB_STORAGE_PREFIX = 'cosmos.foundry.bcAlign.v1';
+  /** Full modal layout (margins, gaps, label grid, QR/TSPL fields, USB mm offset) */
+  const BC_LAYOUT_STORAGE_KEY = 'cosmos.foundry.bcLayout.v1';
+  const BC_LAYOUT_INPUT_IDS = [
+    'bc-margin-top',
+    'bc-margin-bottom',
+    'bc-margin-left',
+    'bc-margin-right',
+    'bc-gap-row',
+    'bc-gap-col',
+    'bc-label-width',
+    'bc-label-height',
+    'bc-labels-per-row',
+    'bc-dots-per-mm',
+    'bc-qr-cell-size',
+    'bc-qr-visual-size-mm',
+    'bc-qr-top-ratio',
+    'bc-text-top-ratio',
+    'bc-text-x-mul',
+    'bc-text-y-mul',
+    'bc-text-font-id',
+    'bc-text-font-pt',
+    'bc-tspl-offset-x-mm',
+  ];
+  let _bcCalibSaveTimer = null;
   let _jsBarcodeLoader = null;
   let _html5QrLoader = null;
 
@@ -5762,8 +5788,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     _bcSkus = skus;
-    _bcUsbDevice = null;
-    _bcUpdatePrinterStatus(null);
 
     // Build SKU list rows — each row has its own qty input defaulting to unit quantity
     const listEl = document.getElementById('bc-sku-list');
@@ -5802,14 +5826,99 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (copiesEl) copiesEl.value = '';
     const typeEl = document.getElementById('bc-type');
     if (typeEl) typeEl.value = opts.defaultType || 'QR';
-    const lockEl = document.getElementById('bc-lock-preset');
-    // TSPL preset controls are hidden in the QR modal; keep lock off by default
-    // so it doesn't disable margins/gaps while editing.
-    if (lockEl && typeof lockEl.checked === 'boolean') lockEl.checked = false;
-    if (typeof window.bcHandlePresetLockChange === 'function') window.bcHandlePresetLockChange();
+
+    _bcEnsureCalibrationListeners();
+    try {
+      await _bcTryReconnectUsbPrinter();
+    } catch (e) {
+      /* ignore */
+    }
+    if (_bcUsbDevice && _bcUsbDevice.opened) {
+      _bcUpdatePrinterStatus('connected', _bcUsbDevice.productName || 'USB printer');
+      _bcUpdateCalibrationHint(
+        'Horizontal calibration is remembered for this printer on this browser. Adjust below if a new roll still looks shifted.'
+      );
+    } else {
+      _bcUsbDevice = null;
+      _bcUpdatePrinterStatus(null);
+      _bcUpdateCalibrationHint(
+        'Connect USB once — saved horizontal calibration loads automatically for that printer.'
+      );
+    }
 
     openM('modal-barcode-print');
+
+    _bcApplySavedPrintConfigurationFromStorage();
+    if (opts.defaultType && typeEl) typeEl.value = opts.defaultType;
+    _bcSchedulePersistCalibration();
+
     setTimeout(bcRenderPreview, 100); // wait for modal to render
+  };
+
+  /** Restore inputs from localStorage. Returns true if a snapshot was applied. */
+  function _bcApplySavedPrintConfigurationFromStorage() {
+    try {
+      const raw = localStorage.getItem(BC_LAYOUT_STORAGE_KEY);
+      if (!raw) return false;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== 'object') return false;
+      BC_LAYOUT_INPUT_IDS.forEach((id) => {
+        if (obj[id] === undefined || obj[id] === null) return;
+        const el = document.getElementById(id);
+        if (el && 'value' in el) el.value = String(obj[id]);
+      });
+      const sel = document.getElementById('bc-type');
+      if (sel && obj['bc-type'] != null && String(obj['bc-type']).trim() !== '') {
+        sel.value = String(obj['bc-type']);
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  window.bcSavePrintConfiguration = function() {
+    try {
+      const payload = { v: 1, savedAt: new Date().toISOString() };
+      BC_LAYOUT_INPUT_IDS.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && 'value' in el) payload[id] = el.value;
+      });
+      const sel = document.getElementById('bc-type');
+      if (sel) payload['bc-type'] = sel.value;
+      localStorage.setItem(BC_LAYOUT_STORAGE_KEY, JSON.stringify(payload));
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess(
+          'Print configuration saved on this browser — sheet geometry (including left/right inset margins), gaps, label grid, QR/TSPL fields, and USB horizontal mm.'
+        );
+      }
+      bcRenderPreview();
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not save configuration.');
+      else alert(err.message || 'Could not save configuration.');
+    }
+  };
+
+  window.bcLoadPrintConfiguration = function() {
+    if (!_bcApplySavedPrintConfigurationFromStorage()) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No saved print configuration found.');
+      else alert('No saved print configuration found.');
+      return;
+    }
+    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Saved configuration loaded.');
+    _bcSchedulePersistCalibration();
+    bcRenderPreview();
+  };
+
+  window.bcClearSavedPrintConfiguration = function() {
+    try {
+      localStorage.removeItem(BC_LAYOUT_STORAGE_KEY);
+    } catch (e) {
+      /* ignore */
+    }
+    if (typeof cosmosToastSuccess === 'function') {
+      cosmosToastSuccess('Saved print configuration removed. Current fields on screen are unchanged.');
+    }
   };
 
   // Select / deselect all checkboxes
@@ -5840,60 +5949,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     bcRenderPreview();
   };
-
-  function _bcSetInputValue(id, value) {
-    const el = document.getElementById(id)
-    if (!el) return
-    el.value = String(value)
-  }
-
-  function _bcSetInputDisabled(id, disabled) {
-    const el = document.getElementById(id)
-    if (!el) return
-    el.disabled = !!disabled
-  }
-
-  window.bcApply7030Preset = function() {
-    // 15mm label with 70% QR block + 30% text block.
-    _bcSetInputValue('bc-qr-cell-size', 3)
-    _bcSetInputValue('bc-qr-visual-size-mm', 10.5)
-    _bcSetInputValue('bc-qr-top-ratio', 0)
-    _bcSetInputValue('bc-text-top-ratio', 0.70)
-    _bcSetInputValue('bc-text-font-pt', 5)
-    _bcSetInputValue('bc-text-x-mul', 2)
-    _bcSetInputValue('bc-text-y-mul', 2)
-    _bcSetInputValue('bc-text-font-id', 2)
-    _bcSetInputValue('bc-label-width', 15)
-    _bcSetInputValue('bc-label-height', 15)
-    _bcSetInputValue('bc-labels-per-row', 6)
-    _bcSetInputValue('bc-margin-left', 2)
-    _bcSetInputValue('bc-margin-right', 2)
-    _bcSetInputValue('bc-gap-col', 3)
-    _bcSetInputValue('bc-gap-row', 3)
-    bcRenderPreview()
-  }
-
-  window.bcHandlePresetLockChange = function() {
-    const lock = document.getElementById('bc-lock-preset')?.checked === true
-    const lockIds = [
-      'bc-label-width',
-      'bc-label-height',
-      'bc-labels-per-row',
-      'bc-margin-left',
-      'bc-margin-right',
-      'bc-gap-col',
-      'bc-gap-row',
-      'bc-qr-cell-size',
-      'bc-qr-visual-size-mm',
-      'bc-qr-top-ratio',
-      'bc-text-top-ratio',
-      'bc-text-x-mul',
-      'bc-text-y-mul',
-      'bc-text-font-id'
-    ]
-
-    lockIds.forEach((id) => _bcSetInputDisabled(id, lock))
-  }
 
   // Build list of {code (pid for QR), label (sku_code for text), copies}
   function _bcSelectedItems() {
@@ -5958,8 +6013,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     return { textTopRatio, textFontPt, textXMul, textYMul, textFontId }
   }
 
+  /** Fills #bc-live-summary from current modal inputs (no fixed printer presets). */
+  function _bcUpdateBarcodeLiveSummary() {
+    const box = document.getElementById('bc-live-summary');
+    if (!box) return;
+
+    const mm = _bcReadMarginsMm();
+    const gp = _bcReadGapMm();
+    const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrCellSize, qrVisualSizeMm, qrTopRatio } = _bcReadQrConfig();
+    const { textTopRatio, textFontPt, textXMul, textYMul, textFontId } = _bcReadTextConfig();
+    const type = document.getElementById('bc-type')?.value || 'QR';
+    const calib = _bcReadTsplOffsetXMM();
+
+    const sheetW = mm.left + cols * labelW + Math.max(0, cols - 1) * gp.colGap + mm.right;
+    const wDots = Math.round(sheetW * dotsPerMm);
+    const hDots = Math.round(labelH * dotsPerMm);
+
+    const lines = [];
+    lines.push(
+      `${type === 'QR' ? 'QR code' : 'Code 128'} · TSPL2 row SIZE ${sheetW.toFixed(2)} × ${labelH.toFixed(
+        2
+      )} mm (~${wDots} × ${hDots} dots at ${dotsPerMm} dots/mm)`
+    );
+    lines.push(
+      `SIZE width = left ${mm.left} + right ${mm.right} + (${cols} × ${labelW}) + (${Math.max(
+        0,
+        cols - 1
+      )} × ${gp.colGap}) = ${sheetW.toFixed(2)} mm`
+    );
+    lines.push(
+      `Feed gap (row) ${gp.rowGap} mm · Column gap ${gp.colGap} mm · Cell inset margins top/right/bottom/left ${mm.top} / ${mm.right} / ${mm.bottom} / ${mm.left} mm`
+    );
+
+    if (type === 'QR') {
+      lines.push(
+        `QR preview ${qrVisualSizeMm} mm · TSPL QRCODE cell ${qrCellSize} · QR top ratio ${qrTopRatio} · Text top ratio ${textTopRatio} · Preview font ${textFontPt} pt · TSPL TEXT scale ${textXMul}×${textYMul} · TSPL font id ${textFontId}`
+      );
+    } else {
+      lines.push(
+        `Barcode row · Text top ratio ${textTopRatio} · Preview font ${textFontPt} pt · TSPL TEXT scale ${textXMul}×${textYMul} · TSPL font id ${textFontId}`
+      );
+    }
+
+    if (calib !== 0) {
+      lines.push(`USB horizontal calibration ${calib > 0 ? '+' : ''}${calib} mm`);
+    }
+
+    box.innerHTML = lines.map((line) => _bcEsc(line)).join('<br>');
+  }
+
   // Render the visual preview of labels in the modal
   window.bcRenderPreview = function() {
+    _bcUpdateBarcodeLiveSummary();
+
     const previewEl = document.getElementById('bc-preview-rows');
     const summaryEl = document.getElementById('bc-summary');
     if (!previewEl) return;
@@ -6052,6 +6160,126 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
+  function _bcCalibrationStorageKey(device) {
+    if (!device || typeof device.vendorId !== 'number') return '';
+    const sn = typeof device.serialNumber === 'string' ? device.serialNumber.trim() : '';
+    const safeSn = (sn ? sn.replace(/[^\w.-]/g, '_') : 'no-serial').slice(0, 96);
+    return `${BC_CALIB_STORAGE_PREFIX}:${device.vendorId}:${device.productId}:${safeSn}`;
+  }
+
+  function _bcUpdateCalibrationHint(msg) {
+    const el = document.getElementById('bc-calibration-hint');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  /** Load persisted TSPL X offset (mm) into the control for this USB device. */
+  function _bcApplyCalibrationFromStorage(device) {
+    const input = document.getElementById('bc-tspl-offset-x-mm');
+    if (!input || !device) return;
+    const key = _bcCalibrationStorageKey(device);
+    if (!key) return;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj.tsplOffsetXMM !== 'number' || !Number.isFinite(obj.tsplOffsetXMM)) return;
+      const clamped = Math.max(-20, Math.min(20, obj.tsplOffsetXMM));
+      input.value = String(clamped);
+    } catch (e) {
+      /* ignore corrupt storage */
+    }
+  }
+
+  function _bcPersistCalibrationNow(device) {
+    const input = document.getElementById('bc-tspl-offset-x-mm');
+    if (!input || !device) return;
+    const key = _bcCalibrationStorageKey(device);
+    if (!key) return;
+    const raw = parseFloat(input.value ?? '0');
+    const tsplOffsetXMM = Number.isFinite(raw) ? Math.max(-20, Math.min(20, raw)) : 0;
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          tsplOffsetXMM,
+          savedAt: new Date().toISOString(),
+        })
+      );
+    } catch (e) {
+      /* quota / private mode */
+    }
+  }
+
+  function _bcSchedulePersistCalibration() {
+    if (!_bcUsbDevice || !_bcUsbDevice.opened) return;
+    clearTimeout(_bcCalibSaveTimer);
+    _bcCalibSaveTimer = setTimeout(() => _bcPersistCalibrationNow(_bcUsbDevice), 450);
+  }
+
+  function _bcEnsureCalibrationListeners() {
+    const input = document.getElementById('bc-tspl-offset-x-mm');
+    if (!input || input.dataset.calibListen === '1') return;
+    input.dataset.calibListen = '1';
+    input.addEventListener('input', _bcSchedulePersistCalibration);
+    input.addEventListener('change', () => {
+      if (_bcUsbDevice && _bcUsbDevice.opened) _bcPersistCalibrationNow(_bcUsbDevice);
+    });
+  }
+
+  /** Re-open an already-authorised USB label printer (no picker). */
+  async function _bcTryReconnectUsbPrinter() {
+    if (!navigator.usb) return;
+    if (_bcUsbDevice && _bcUsbDevice.opened) return;
+
+    if (_bcUsbDevice && !_bcUsbDevice.opened) _bcUsbDevice = null;
+
+    let devices = [];
+    try {
+      devices = await navigator.usb.getDevices();
+    } catch (e) {
+      return;
+    }
+
+    const match = devices.find(
+      (d) => d.vendorId === TSC_VENDOR_ID || d.vendorId === 0x0519 || d.vendorId === 0x154f
+    );
+    if (!match) return;
+
+    try {
+      if (!match.opened) {
+        await match.open();
+        if (match.configuration === null) await match.selectConfiguration(1);
+        await match.claimInterface(0);
+      }
+      _bcUsbDevice = match;
+      _bcApplyCalibrationFromStorage(match);
+    } catch (e) {
+      _bcUsbDevice = null;
+    }
+  }
+
+  window.bcForgetPrinterCalibration = function() {
+    if (!_bcUsbDevice) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Connect the printer first.');
+      else alert('Connect the printer first.');
+      return;
+    }
+    const key = _bcCalibrationStorageKey(_bcUsbDevice);
+    if (key) {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    const input = document.getElementById('bc-tspl-offset-x-mm');
+    if (input) input.value = '0';
+    _bcUpdateCalibrationHint('Saved calibration cleared. Adjust again if needed.');
+    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Forgot calibration for this printer.');
+  };
+
   // ── WebUSB: Connect to TSC P210 ────────────────────────────────────────
   window.bcConnectPrinter = async function() {
     if (!navigator.usb) {
@@ -6059,6 +6287,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     try {
+      _bcEnsureCalibrationListeners();
       _bcUpdatePrinterStatus('connecting');
       const device = await navigator.usb.requestDevice({
         filters: [
@@ -6071,6 +6300,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (device.configuration === null) await device.selectConfiguration(1);
       await device.claimInterface(0);
       _bcUsbDevice = device;
+      _bcApplyCalibrationFromStorage(device);
+      _bcUpdateCalibrationHint(
+        'Calibration for this printer loads automatically next time. Changes save as you type.'
+      );
       _bcUpdatePrinterStatus('connected', device.productName || 'TSC P210');
     } catch (err) {
       _bcUsbDevice = null;
@@ -6095,7 +6328,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── TSPL2 Command Generator ────────────────────────────────────────────
   function _bcReadMarginsMm() {
-    const clip = (v) => Math.max(0, Math.min(20, v));
+    const clip = (v) => Math.max(0, Math.min(60, v));
     const g = (id) => clip(parseFloat(document.getElementById(id)?.value || '0') || 0);
     return {
       top: g('bc-margin-top'),
@@ -6109,21 +6342,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   function _bcReadGapMm() {
     const elRow = document.getElementById('bc-gap-row');
     const elCol = document.getElementById('bc-gap-col');
-    const rowRaw = parseFloat(elRow?.value ?? '3');
-    const colRaw = parseFloat(elCol?.value ?? '3');
-    const rowGap = Math.max(0, Math.min(10, Number.isFinite(rowRaw) ? rowRaw : 2));
-    const colGap = Math.max(0, Math.min(5, Number.isFinite(colRaw) ? colRaw : 0));
+    const rowRaw = parseFloat(elRow?.value ?? '0');
+    const colRaw = parseFloat(elCol?.value ?? '0');
+    const rowGap = Math.max(0, Math.min(30, Number.isFinite(rowRaw) ? rowRaw : 2));
+    const colGap = Math.max(0, Math.min(30, Number.isFinite(colRaw) ? colRaw : 0));
     return { rowGap, colGap };
   }
 
-  function _bcMarginsToDots(dotsPerMm) {
-    const m = _bcReadMarginsMm();
-    return {
-      top: Math.round(m.top * dotsPerMm),
-      bottom: Math.round(m.bottom * dotsPerMm),
-      left: Math.round(m.left * dotsPerMm),
-      right: Math.round(m.right * dotsPerMm),
-    };
+  /** Extra horizontal shift for WebUSB TSPL only (mm). Negative moves QR/barcode/text left. */
+  function _bcReadTsplOffsetXMM() {
+    const el = document.getElementById('bc-tspl-offset-x-mm');
+    if (!el) return 0;
+    const raw = parseFloat(el.value ?? '0');
+    if (!Number.isFinite(raw)) return 0;
+    return Math.max(-20, Math.min(20, raw));
   }
 
   function _bcTsplQuote(s) {
@@ -6178,8 +6410,8 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
     const dotsPerMm = _bcReadDotsPerMm();
     const marginsMm = _bcReadMarginsMm();
-    const d = _bcMarginsToDots(dotsPerMm);
     const { rowGap, colGap } = _bcReadGapMm();
+    const tsplOffsetXMM = _bcReadTsplOffsetXMM();
 
     const mmToDot = (mm) => Math.round(mm * dotsPerMm);
     const sheetWidthMm = marginsMm.left + (cols * labelW) + ((cols - 1) * colGap) + marginsMm.right;
@@ -6187,6 +6419,11 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
 
     const { qrCellSize, qrVisualSizeMm, qrTopRatio } = _bcReadQrConfig();
     const { textTopRatio, textXMul, textYMul, textFontId } = _bcReadTextConfig();
+
+    const qrLeftInsetMm =
+      labelType === 'QR'
+        ? Math.max(0, (labelW - qrVisualSizeMm) / 2)
+        : 0;
 
     const contentH = Math.max(0, labelH - marginsMm.top - marginsMm.bottom);
     const qrTopMm = marginsMm.top + qrTopRatio * contentH;
@@ -6196,7 +6433,6 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const textTopDots = mmToDot(textTopMm);
     const textLineGapDots = Math.max(8, Math.round(2.2 * dotsPerMm * Math.max(1, textYMul)));
 
-    const qrLeftInsetDots = mmToDot(qrLeftInsetMm);
     let cmds = '';
 
     labelBatches.forEach((row) => {
@@ -6209,7 +6445,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
         if (!item) return;
 
         const cellLeftXmm = marginsMm.left + (col * (labelW + colGap));
-        let x = mmToDot(cellLeftXmm) + qrLeftInsetDots;
+        let x = mmToDot(cellLeftXmm + qrLeftInsetMm + tsplOffsetXMM);
         x = Math.max(0, Math.min(x, maxXDots));
 
         const code = _bcTsplQuote(item.code);
@@ -6282,6 +6518,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
 
       const data = _bcGenerateTSPL2(batches, type);
       await _bcUsbDevice.transferOut(endpointNumber, data);
+      _bcPersistCalibrationNow(_bcUsbDevice);
 
       if (printBtn) { printBtn.disabled = false; printBtn.textContent = '🖨️ Print Labels'; }
       alert(`✅ Sent ${expanded.length} label${expanded.length !== 1 ? 's' : ''} to printer successfully.`);
