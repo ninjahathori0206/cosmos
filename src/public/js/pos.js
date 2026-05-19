@@ -2346,6 +2346,8 @@
   var posCatalogueScanCtx = null
   var posCatalogueScanLastJsQrMs = 0
   var posCatalogueScanOverlayWired = false
+  /** When set, next 7-digit scan from cart binds to this line index (not add-new-line). */
+  var posCartBindUnitLineIdx = null
 
   function ensureJsQrLoaded() {
     if (window.jsQR) return Promise.resolve()
@@ -2386,6 +2388,7 @@
       video.srcObject = null
     }
     posCatalogueScanDetector = null
+    posCartBindUnitLineIdx = null
   }
 
   function bindPosCatalogueScanOverlay() {
@@ -2473,7 +2476,18 @@
   async function applyCatalogueScanResult(raw) {
     var code = String(raw || '').trim()
     if (!code) return
+    var pendingCartBindIdx = posCartBindUnitLineIdx
     stopPosCatalogueScan()
+    if (pendingCartBindIdx != null && Number.isFinite(pendingCartBindIdx)) {
+      if (!isSevenDigitUnitCode(code)) {
+        if (typeof cosmosToastWarn === 'function') {
+          cosmosToastWarn('Scan a 7-digit unit barcode for this cart line.')
+        }
+        return
+      }
+      await bindUnitBarcodeToCartLine(pendingCartBindIdx, code)
+      return
+    }
     if (isSevenDigitUnitCode(code)) {
       const session = getPosSession()
       if (session && session.token) {
@@ -4593,6 +4607,34 @@
     syncCartAppliedOfferCard()
   }
 
+  function formatCartProductTypeTag(line) {
+    const rule = getTypeRule(line.product_type)
+    let raw = ''
+    if (rule) raw = String(rule.label || rule.display_name || rule.key || '').trim()
+    if (!raw) raw = String(line.product_type || '').trim()
+    if (!raw) return ''
+    return raw.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase() })
+  }
+
+  // Cart unit barcode row — inline SVGs (no Tabler dependency)
+  var POS_CART_UNIT_SVG_SCAN =
+    '<svg class="pos-lk-unit-svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M5 3h2v2H5V3zm4 0h2v2H9V3zm4 0h2v2h-2V3zm4 0h2v2h-2V3zM4 9V7H2v2h2zm18 0V7h-2v2h2zM5 21h2v-2H5v2zm4 0h2v-2H9v2zm4 0h2v-2h-2v2zm4 0h2v-2h-2v2zM4 15v-2H2v2h2zm18 0v-2h-2v2h2zM8 11h8v2H8v-2z"/></svg>'
+  var POS_CART_UNIT_SVG_LINK =
+    '<svg class="pos-lk-unit-svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M10 13a5 5 0 007.5.5l1.5-1.5a5 5 0 00-7.07-7.07L11 6M14 11a5 5 0 00-7.5-.5l-1.5 1.5a5 5 0 007.07 7.07L13 18"/></svg>'
+  var POS_CART_UNIT_SVG_BARCODE =
+    '<svg class="pos-lk-unit-svg pos-lk-unit-svg--pill" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 5h1.5v14H4V5zm3 3H8v8H7V8zm2.5-2H11v14H9.5V6zM13 9h1.5v6H13V9zm2.5-4H17v14h-1.5V5zm3 2H20v10h-1.5V7z"/></svg>'
+
+  function syncCartBindUnitSubmitDisabled() {
+    if (!obCart_el) return
+    obCart_el.querySelectorAll('[data-bind-unit-idx]').forEach(function (inp) {
+      const idx = inp.getAttribute('data-bind-unit-idx')
+      if (idx == null) return
+      const digits = String(inp.value || '').replace(/\D/g, '').slice(0, 7)
+      const btn = obCart_el.querySelector('[data-action="bind-unit-submit"][data-idx="' + idx + '"]')
+      if (btn) btn.disabled = digits.length !== 7
+    })
+  }
+
   function cartLineRetailCardHtml(line, idx) {
     const rule = getTypeRule(line.product_type)
     const du = computeLineDisplayUnit(line)
@@ -4623,8 +4665,41 @@
       ? '<span class="pos-lk-cart-colour-chip">' + escapeHtml(colourName) + '</span>'
       : ''
 
-    // Lens row — LAB complete: "PackageName · Category | ₹price", LAB pending: muted placeholder
-    let lensRowHtml = ''
+    const typeTagLabel = formatCartProductTypeTag(line)
+    const needUnit = lineRequiresUnitBarcode(line) && !(line.unit_id != null && Number(line.unit_id) > 0)
+    const linkedUnit = lineRequiresUnitBarcode(line) && (line.unit_id != null && Number(line.unit_id) > 0)
+    const kindRaw = String(line.product_type || '').trim().replace(/_/g, ' ')
+    const kindTagUpper = kindRaw ? kindRaw.toUpperCase() : ''
+    const tagNorm = function (s) {
+      return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim()
+    }
+    const showKindTag = Boolean(kindTagUpper && tagNorm(kindRaw) !== tagNorm(typeTagLabel))
+
+    let tagsHtml = ''
+    if (typeTagLabel || needUnit || linkedUnit || showKindTag) {
+      tagsHtml = '<div class="pos-lk-cart-tags">'
+      if (typeTagLabel) {
+        tagsHtml += '<span class="pos-lk-cart-tag pos-lk-cart-tag--type">' + escapeHtml(typeTagLabel) + '</span>'
+      }
+      if (linkedUnit && lineRequiresUnitBarcode(line)) {
+        tagsHtml +=
+          '<span class="pos-lk-cart-unit-pill pos-lk-cart-unit-pill--inline" role="status">' +
+          '<span class="pos-lk-cart-unit-pill-ic" aria-hidden="true">' + POS_CART_UNIT_SVG_BARCODE + '</span>' +
+          '<span class="mono">' + escapeHtml(String(line.unit_barcode || '')) + '</span>' +
+          '<button type="button" class="pos-lk-cart-unit-pill-clear" data-action="bind-unit-clear" data-idx="' + idx + '" aria-label="Remove unit barcode">×</button>' +
+          '</span>'
+      }
+      if (showKindTag) {
+        tagsHtml += '<span class="pos-lk-cart-tag pos-lk-cart-tag--kind">' + escapeHtml(kindTagUpper) + '</span>'
+      }
+      if (needUnit) {
+        tagsHtml += '<span class="pos-lk-cart-tag pos-lk-cart-tag--warn">Barcode needed</span>'
+      }
+      tagsHtml += '</div>'
+    }
+
+    let lensDescHtml = ''
+    let lensPackageHtml = ''
     if (line.fulfillment === 'LAB' && line.lab_status === 'complete' && line.lens_bundle) {
       const b = line.lens_bundle
       const lensP = Number(b.package_price) || 0
@@ -4636,16 +4711,16 @@
       const catName = String(b.category_name || '').trim()
       const addonNote = addonTotal > 0.005 ? ' + add-ons' : ''
       const parts = [pkgName, catName].filter(function (s, i, a) { return s && a.indexOf(s) === i })
-      // Match Pencil: use middots; API often returns "EW - UV · Single Vision" style segments
       const lensLabelRaw = (parts.join(' · ') || 'Configured lens') + addonNote
       const lensLabel = lensLabelRaw.replace(/\s*[–—\-]\s*/g, ' · ')
-      lensRowHtml =
-        '<div class="pos-lk-cart-lens-row">' +
-        '<span class="pos-lk-cart-lens-lbl">' + escapeHtml(lensLabel) + '</span>' +
-        '<span class="pos-lk-cart-lens-price">' + formatRupees(lensUnitTotal) + '</span>' +
+      lensDescHtml = '<div class="pos-lk-cart-lens-desc">' + escapeHtml(lensLabel) + '</div>'
+      lensPackageHtml =
+        '<div class="pos-lk-cart-lens-package-row">' +
+        '<span class="pos-lk-cart-lens-package-lbl">Lens package</span>' +
+        '<span class="pos-lk-cart-lens-package-val">' + formatRupees(lensUnitTotal) + '</span>' +
         '</div>'
     } else if (line.fulfillment === 'LAB') {
-      lensRowHtml =
+      lensDescHtml =
         '<div class="pos-lk-cart-lens-row pos-lk-cart-lens-row--pending">' +
         '<span class="pos-lk-cart-lens-lbl">Lens · pending setup</span>' +
         '<span class="pos-lk-cart-lens-price">—</span>' +
@@ -4679,25 +4754,20 @@
       ? '<div class="pos-lk-cart-v2-meta">' + fulfillToggle + configureBtn + '</div>'
       : ''
 
-    let unitBindHtml = ''
-    if (lineRequiresUnitBarcode(line)) {
-      if (line.unit_id) {
-        unitBindHtml =
-          '<div class="pos-lk-cart-unit-bind pos-lk-cart-unit-bind--ok">' +
-          '<span class="pos-lk-cart-unit-bind-lbl">Unit</span>' +
-          '<span class="mono">' + escapeHtml(String(line.unit_barcode || '')) + '</span></div>'
-      } else {
-        unitBindHtml =
-          '<div class="pos-lk-cart-unit-bind pos-lk-cart-unit-bind--pending">' +
-          '<div style="font-size:12px;font-weight:600;color:var(--text1);margin-bottom:6px">Unit barcode required</div>' +
-          '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Scan or enter the 7-digit code on the label before checkout.</div>' +
-          '<div style="display:flex;gap:8px;align-items:center">' +
-          '<input type="text" class="pos-lk-cart-unit-input mono" data-bind-unit-idx="' + idx + '" ' +
-          'autocomplete="off" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="e.g. 0001711" ' +
-          'aria-label="Unit barcode for line ' + (idx + 1) + '">' +
-          '<button type="button" class="btn primary btn-sm" data-action="bind-unit-submit" data-idx="' + idx + '">Link unit</button>' +
-          '</div></div>'
-      }
+    let unitInlineHtml = ''
+    if (lineRequiresUnitBarcode(line) && !linkedUnit) {
+      unitInlineHtml =
+        '<div class="pos-lk-unit-row">' +
+        '<input type="text" class="pos-lk-unit-input mono" data-action="bind-unit-input" data-bind-unit-idx="' + idx + '" data-idx="' + idx + '" ' +
+        'autocomplete="off" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="7-digit code" ' +
+        'aria-label="Unit barcode for line ' + (idx + 1) + '">' +
+        '<button type="button" class="pos-lk-unit-scan-btn" data-action="bind-unit-scan" data-idx="' + idx + '" aria-label="Scan unit barcode">' +
+        POS_CART_UNIT_SVG_SCAN +
+        '</button>' +
+        '<button type="button" class="pos-lk-unit-link-btn" data-action="bind-unit-submit" data-idx="' + idx + '" disabled aria-label="Link unit barcode">' +
+        POS_CART_UNIT_SVG_LINK +
+        '</button>' +
+        '</div>'
     }
 
     return (
@@ -4719,8 +4789,10 @@
             '<span class="pos-lk-cart-product-name">' + escapeHtml(productTitle) + '</span>' +
             colourChip +
           '</div>' +
-          // Row 3: lens info (LAB) or nothing (instant)
-          lensRowHtml +
+          tagsHtml +
+          unitInlineHtml +
+          lensDescHtml +
+          lensPackageHtml +
           // Divider
           '<div class="pos-lk-cart-rule-dash" aria-hidden="true"></div>' +
           // Bottom: [−] [↻]  ·  Total ₹X
@@ -4737,7 +4809,6 @@
           '</div>' +
         '</div>' +
       '</div>' +
-      unitBindHtml +
       footerMeta +
       rxFoot +
       '</div>'
@@ -4781,6 +4852,7 @@
     }
 
     obCart_el.innerHTML = createLinesHTML(instantLines, 'Instant pickup') + createLinesHTML(labLines)
+    syncCartBindUnitSubmitDisabled()
     obRecalcTotals()
     syncRxSectionVisibility()
   }
@@ -4794,10 +4866,27 @@
       return
     }
     const idx = Number(btn.dataset.idx)
-    if (action === 'bind-unit-input') return
+    if (action === 'bind-unit-input') {
+      // Input uses data-action so delegated handlers can distinguish controls — ignore clicks so we don’t re-render and wipe focus.
+      return
+    }
     if (action === 'bind-unit-submit') {
       const inp = obCart_el.querySelector('[data-bind-unit-idx="' + idx + '"]')
       void bindUnitBarcodeToCartLine(idx, inp ? inp.value : '')
+      return
+    }
+    if (action === 'bind-unit-scan') {
+      if (!Number.isFinite(idx) || !obCart[idx]) return
+      posCartBindUnitLineIdx = idx
+      void openPosCatalogueScanner(btn)
+      return
+    }
+    if (action === 'bind-unit-clear') {
+      if (!Number.isFinite(idx) || !obCart[idx]) return
+      delete obCart[idx].unit_id
+      delete obCart[idx].unit_barcode
+      saveCart()
+      obRenderCart()
       return
     }
     if (action === 'inc') {
@@ -4937,6 +5026,7 @@
       if (!inp) return
       const digits = String(inp.value || '').replace(/\D/g, '').slice(0, 7)
       if (inp.value !== digits) inp.value = digits
+      syncCartBindUnitSubmitDisabled()
     })
     obCart_el.addEventListener('keydown', function (e) {
       const inp = e.target.closest('[data-bind-unit-idx]')
