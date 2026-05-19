@@ -53,6 +53,33 @@ function posJwtStoreIdOr400(req, res) {
   return sid
 }
 
+/** Align with orderService unit guard: sell only AT_STORE at this store. */
+function assessPosUnitSellability(row, storeId) {
+  const status = String(row.status || '').toUpperCase()
+  const locType = String(row.location_type || '').toUpperCase()
+  const locId = row.location_id != null ? Number(row.location_id) : null
+  const sid = Number(storeId)
+  if (status === 'AT_STORE' && locType === 'STORE' && locId === sid) {
+    return { ok: true }
+  }
+  if (status === 'IN_TRANSIT' && locId === sid) {
+    return {
+      ok: false,
+      message: 'This unit is on an incoming transfer. Complete Verify & Stock in Incoming Goods before selling.'
+    }
+  }
+  if (status === 'AVAILABLE') {
+    return {
+      ok: false,
+      message: 'This unit is still at the warehouse. Transfer and stock-in at this store before selling.'
+    }
+  }
+  return {
+    ok: false,
+    message: 'This unit is not available for sale at this store.'
+  }
+}
+
 function groupCatalogueRows(rows) {
   const map = new Map()
   for (const row of rows) {
@@ -962,8 +989,9 @@ router.get('/unit-lookup', ...posCatalogue, async (req, res, next) => {
     if (!row) {
       return res.status(404).json({ success: false, message: 'Unit barcode not found' })
     }
-    if (String(row.status || '').toUpperCase() !== 'AVAILABLE') {
-      return res.status(409).json({ success: false, message: 'This unit is not available for sale.' })
+    const sell = assessPosUnitSellability(row, storeId)
+    if (!sell.ok) {
+      return res.status(409).json({ success: false, message: sell.message })
     }
     return res.json({ success: true, data: row })
   } catch (err) {

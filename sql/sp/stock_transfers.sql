@@ -90,6 +90,32 @@ AS BEGIN
   IF LEN(@trim) <= 7 AND @unit_code LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
      AND EXISTS (SELECT 1 FROM dbo.sku_units u WHERE u.unit_barcode = @unit_code)
   BEGIN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM dbo.sku_units u
+      WHERE u.unit_barcode = @unit_code
+        AND u.status = N'AVAILABLE'
+        AND u.location_type = N'WAREHOUSE'
+        AND u.location_id = @wh
+    )
+    BEGIN
+      RAISERROR('Unit is not available at the primary warehouse (already transferred, sold, or at another location).', 16, 1);
+      RETURN;
+    END;
+
+    IF EXISTS (
+      SELECT 1
+      FROM dbo.sku_units u
+      INNER JOIN dbo.stock_transfer_doc_units du ON du.unit_id = u.unit_id
+      INNER JOIN dbo.stock_transfer_docs d ON d.doc_id = du.doc_id
+      WHERE u.unit_barcode = @unit_code
+        AND d.status IN (N'DISPATCHED', N'ACCEPTED')
+    )
+    BEGIN
+      RAISERROR('Unit is already on an open transfer document.', 16, 1);
+      RETURN;
+    END;
+
     SELECT TOP 1
       sk.sku_id,
       sk.sku_code,
@@ -98,10 +124,13 @@ AS BEGIN
       u.unit_no,
       u.unit_barcode,
       u.status AS unit_status,
+      u.location_type AS unit_location_type,
+      u.location_id AS unit_location_id,
       ISNULL(pm.ew_collection,'') + ' · ' + ISNULL(pm.style_model,'') AS product_name,
       pm.ew_collection,
       pm.style_model,
       pm.product_type,
+      CAST(ISNULL(ptc.requires_unit_barcode, 1) AS BIT) AS requires_unit_barcode,
       LTRIM(RTRIM(COALESCE(
         NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
         NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
@@ -116,11 +145,12 @@ AS BEGIN
     FROM dbo.sku_units u
     JOIN dbo.skus sk ON sk.sku_id = u.sku_id
     JOIN dbo.product_master pm ON sk.product_master_id = pm.product_id
+    LEFT JOIN dbo.pos_product_type_config ptc ON ptc.product_type_key = pm.product_type
     LEFT JOIN dbo.home_brands hb ON pm.home_brand_id = hb.brand_id
     LEFT JOIN dbo.maker_master mm ON pm.maker_master_id = mm.maker_id
     LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
     LEFT JOIN dbo.stock_balances sb
-      ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = @wh
+      ON sk.sku_id = sb.sku_id AND sb.location_type = N'WAREHOUSE' AND sb.location_id = @wh
     WHERE u.unit_barcode = @unit_code;
     RETURN;
   END;
@@ -133,10 +163,13 @@ AS BEGIN
     CAST(NULL AS INT) AS unit_no,
     CAST(NULL AS CHAR(7)) AS unit_barcode,
     CAST(NULL AS VARCHAR(20)) AS unit_status,
+    CAST(NULL AS VARCHAR(20)) AS unit_location_type,
+    CAST(NULL AS INT) AS unit_location_id,
     ISNULL(pm.ew_collection,'') + ' · ' + ISNULL(pm.style_model,'') AS product_name,
     pm.ew_collection,
     pm.style_model,
     pm.product_type,
+    CAST(ISNULL(ptc.requires_unit_barcode, 1) AS BIT) AS requires_unit_barcode,
     LTRIM(RTRIM(COALESCE(
       NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
       NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
@@ -150,11 +183,12 @@ AS BEGIN
     sk.status
   FROM dbo.skus sk
   JOIN dbo.product_master pm         ON sk.product_master_id  = pm.product_id
+  LEFT JOIN dbo.pos_product_type_config ptc ON ptc.product_type_key = pm.product_type
   LEFT JOIN dbo.home_brands hb       ON pm.home_brand_id      = hb.brand_id
   LEFT JOIN dbo.maker_master mm      ON pm.maker_master_id    = mm.maker_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
   LEFT JOIN dbo.stock_balances sb
-    ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = @wh
+    ON sk.sku_id = sb.sku_id AND sb.location_type = N'WAREHOUSE' AND sb.location_id = @wh
   WHERE sk.sku_code = @trim OR sk.barcode = @trim;
 END;
 GO

@@ -1,0 +1,66 @@
+---
+description: >-
+  Always research and present a plan for user approval before implementing
+  non-trivial changes. Apply code only after explicit approval.
+alwaysApply: true
+---
+
+# Plan first, then implement
+
+For **non-trivial** work in this repo, **research → plan → user approval → implement**. Do not skip the plan step unless an exception below applies.
+
+## When this rule applies
+
+Use this workflow when the task:
+
+- Touches **multiple files**, APIs, SQL/SPs, RBAC, or config catalogs
+- Adds or changes **behaviour** (not just copy inside existing UI)
+- Needs **design or architecture** choices
+- Has **unclear scope** or could be done several ways
+
+## Required workflow
+
+1. **Research (read-only)** — Read relevant files, patterns, and existing rules. Do not assume; confirm in the codebase.
+2. **Present a plan** — Short markdown with:
+   - **Goal** and approach
+   - **Files / areas** to change
+   - **DB/API** impact if any
+   - **Risks** and how you will verify
+   - Ordered **implementation steps**
+3. **Wait for explicit approval** — User must approve the plan (e.g. “approved”, “execute”, “go ahead”) before you edit production code.
+4. **Implement** — After approval, apply changes in Agent mode in a focused pass. Finish the task; do not leave half-done work.
+
+For multi-step tasks, use **Plan mode** or present a structured plan in chat before editing.
+
+## Hard stop (same turn as first plan)
+
+In the **same turn** where you first present a plan, do **not**:
+
+- Edit app source, prototypes, SQL migrations, or stored procedures
+- Run migrations or deploy scripts
+- Create commits or PRs
+
+unless the user **already approved** that plan earlier in the **same thread**.
+
+## UI / UX coordination
+
+Plan approval does **not** replace visual design workflow. After plan approval, any **UI/UX** change still follows:
+
+- [`ui-ux-pen-first-workflow.mdc`](ui-ux-pen-first-workflow.mdc) — Pencil first, then code after design approval
+- [`component-build-md-pencil-then-db.mdc`](component-build-md-pencil-then-db.mdc) — `.md` spec → Pencil → approve → code → DB
+
+Order: **feature plan approved** → (if UI) **Pencil/design approved** → **implementation**.
+
+## Exceptions (narrow)
+
+Skip the plan step only when:
+
+- The user explicitly says **skip plan**, **just do it**, **code only**, or **execute without plan**
+- A **single obvious one-line** fix (typo, missing import, one clear bug with one clear fix)
+- User states an **emergency hotfix** and wants immediate code
+
+When using an exception, say briefly **why** you skipped the plan.
+
+## After approval
+
+When the user approves, implement fully: match existing conventions, follow [`ui-polish-rules.mdc`](ui-polish-rules.mdc) for frontend, [`rbac-catalogue-new-features.mdc`](rbac-catalogue-new-features.mdc) for new capabilities, and [`No-Hardcode-Rules.mdc`](No-Hardcode-Rules.mdc) for config-driven behaviour.

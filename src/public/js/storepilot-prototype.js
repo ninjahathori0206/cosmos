@@ -1695,8 +1695,127 @@ function loadReports() {
 // ── Incoming Transfers ─────────────────────────────────────────────────────────
 
 let _incFilter = '';
+/** @type {Record<number, { units: Record<number, boolean>, lines: Record<number, boolean> }>} */
 let _incQrVerificationByDoc = {};
 let _incDocLinesByDoc = {};
+
+function spNormUnitBarcode(bc) {
+  const s = String(bc || '').trim();
+  if (/^\d+$/.test(s)) return s.padStart(7, '0');
+  return s;
+}
+
+function spLineRequiresUnitScans(line) {
+  if (!line) return false;
+  const units = Array.isArray(line.units) ? line.units : [];
+  return units.length > 0;
+}
+
+function spFindUnitOnDocLines(lines, scanned) {
+  const norm = spNormUnitBarcode(scanned);
+  const scanRaw = String(scanned || '').trim();
+  for (const line of lines) {
+    for (const u of (line.units || [])) {
+      const bc = spNormUnitBarcode(u.unit_barcode);
+      if (bc === norm || String(u.unit_id) === scanRaw) return { line, unit: u };
+    }
+  }
+  return null;
+}
+
+function spNormalizeIncScan(raw) {
+  let s = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      const qSku = u.searchParams.get('sku') || u.searchParams.get('code') || u.searchParams.get('unit');
+      if (qSku) return qSku.trim();
+      const parts = u.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+      if (parts.length) return decodeURIComponent(parts[parts.length - 1]);
+    } catch (_) { /* ignore */ }
+  }
+  if (s.startsWith('{') && s.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(s);
+      const unitBc = parsed.unit_barcode || parsed.unit || parsed.barcode;
+      if (unitBc) return String(unitBc).trim();
+      return String(parsed.sku_code || parsed.sku || parsed.code || '').trim() || s;
+    } catch (_) { /* ignore */ }
+  }
+  if (/^\d{1,7}$/.test(s)) return s.padStart(7, '0');
+  return s;
+}
+
+function spFreshIncVerification() {
+  return { units: {}, lines: {} };
+}
+
+function spIsLineQrVerified(docId, line) {
+  const v = _incQrVerificationByDoc[docId] || spFreshIncVerification();
+  if (spLineRequiresUnitScans(line)) {
+    const units = line.units || [];
+    return units.length > 0 && units.every((u) => v.units[Number(u.unit_id)]);
+  }
+  return !!v.lines[Number(line.line_id)];
+}
+
+function spIsDocQrVerified(docId, lines) {
+  if (!lines.length) return true;
+  return lines.every((line) => spIsLineQrVerified(docId, line));
+}
+
+function spUpdateIncStockBtn(docId, lines) {
+  const stockBtn = document.getElementById('sp-inc-stock-btn');
+  if (stockBtn) stockBtn.disabled = !spIsDocQrVerified(docId, lines);
+}
+
+function spIncVerifiedUnitCount(docId, line) {
+  const v = _incQrVerificationByDoc[docId] || spFreshIncVerification();
+  return (line.units || []).filter((u) => v.units[Number(u.unit_id)]).length;
+}
+
+function spLineUsesSkuScanOnly(line) {
+  if (!line) return true;
+  const units = Array.isArray(line.units) ? line.units : [];
+  return units.length === 0;
+}
+
+function spIncRefreshLineUi(docId, line) {
+  const lineId = line.line_id;
+  const verified = spIsLineQrVerified(docId, line);
+  const badgeEl = document.getElementById('sp-qr-v-' + lineId);
+  if (badgeEl) {
+    if (spLineRequiresUnitScans(line)) {
+      const n = spIncVerifiedUnitCount(docId, line);
+      const total = (line.units || []).length;
+      badgeEl.className = 'b ' + (verified ? 'b-green' : 'b-gray');
+      badgeEl.textContent = n + '/' + total + ' units';
+    } else {
+      badgeEl.className = 'b ' + (verified ? 'b-green' : 'b-gray');
+      badgeEl.textContent = verified ? 'QR Verified' : 'Pending QR';
+    }
+  }
+  (line.units || []).forEach((u) => {
+    const rowEl = document.getElementById('sp-qr-u-' + u.unit_id);
+    if (!rowEl) return;
+    const uv = !!((_incQrVerificationByDoc[docId] || spFreshIncVerification()).units[Number(u.unit_id)]);
+    const badge = rowEl.querySelector('.sp-unit-v-badge');
+    if (badge) {
+      badge.className = 'b sp-unit-v-badge ' + (uv ? 'b-green' : 'b-gray');
+      badge.textContent = uv ? 'Verified' : 'Pending';
+    }
+  });
+  const recvEl = document.getElementById('sp-recv-' + lineId);
+  if (recvEl && spLineRequiresUnitScans(line)) {
+    recvEl.value = String(spIncVerifiedUnitCount(docId, line));
+    recvEl.readOnly = true;
+  }
+}
+
+function spIncDocHasUnitScanLines(lines) {
+  return (lines || []).some((l) => spLineRequiresUnitScans(l));
+}
 let _incCameraStream = null;
 let _incCameraRafId = null;
 let _incCameraDocId = null;
@@ -1755,7 +1874,8 @@ window.loadIncomingTransfers = async function () {
   const listEl = document.getElementById('sp-inc-list');
   const badge  = document.getElementById('sp-inc-badge');
   showErr('sp-inc-err', '');
-  if (listEl) listEl.innerHTML = '<div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>';
+  if (listEl && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('sp-inc-list', 6);
+  else if (listEl) listEl.innerHTML = '';
 
   try {
     const qs = new URLSearchParams({ top_n: 100 });
@@ -1801,7 +1921,8 @@ window.expandIncTransfer = async function (docId) {
   stopIncQrCamera();
 
   detailEl.style.display = '';
-  bodyEl.innerHTML = '<div style="padding:20px;color:var(--text3)">Loading…</div>';
+  if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('sp-inc-detail-body', 4);
+  else bodyEl.innerHTML = '';
 
   // If mobile sidebar overlay is left open, it can hide the hamburger/topbar.
   // Also, Chrome mobile can mis-handle sticky headers when auto-scrolling.
@@ -1825,24 +1946,53 @@ window.expandIncTransfer = async function (docId) {
     const isDispatched = doc.status === 'DISPATCHED';
     const isAccepted   = doc.status === 'ACCEPTED';
     _incDocLinesByDoc[docId] = lines;
-    const verifiedLines = _incQrVerificationByDoc[docId] || {};
+    if (!_incQrVerificationByDoc[docId] || typeof _incQrVerificationByDoc[docId].units !== 'object') {
+      _incQrVerificationByDoc[docId] = spFreshIncVerification();
+    }
     const lineIds = lines.map((l) => l.line_id);
-    const allQrVerified = isAccepted ? lineIds.every((lineId) => verifiedLines[lineId]) : true;
+    const allQrVerified = isAccepted ? spIsDocQrVerified(docId, lines) : true;
+    const hasUnitLines = spIncDocHasUnitScanLines(lines);
 
-    const lineRows = lines.map((l) => `
+    const lineRows = lines.map((l) => {
+      const unitMode = spLineRequiresUnitScans(l);
+      const verified = spIsLineQrVerified(docId, l);
+      const v = _incQrVerificationByDoc[docId];
+      const unitRowsFinal = unitMode && isAccepted
+        ? (l.units || []).map((u) => {
+          const uv = !!v.units[Number(u.unit_id)];
+          return '<div id="sp-qr-u-' + u.unit_id + '" style="display:flex;align-items:center;gap:8px;font-size:11px;margin-top:4px;color:var(--text2)">' +
+            '<span class="mono">' + escHtml(u.unit_barcode || String(u.unit_id)) + '</span>' +
+            '<span class="b sp-unit-v-badge ' + (uv ? 'b-green' : 'b-gray') + '" style="font-size:10px">' + (uv ? 'Verified' : 'Pending') + '</span>' +
+            '</div>';
+        }).join('')
+        : '';
+      const lineBadge = isAccepted
+        ? '<span id="sp-qr-v-' + l.line_id + '" class="b ' + (verified ? 'b-green' : 'b-gray') + '" style="white-space:nowrap">' +
+          (unitMode
+            ? (spIncVerifiedUnitCount(docId, l) + '/' + (l.units || []).length + ' units')
+            : (verified ? 'QR Verified' : 'Pending QR')) +
+          '</span>'
+        : '';
+      const recvVal = unitMode
+        ? spIncVerifiedUnitCount(docId, l)
+        : (l.qty_received != null ? l.qty_received : l.qty_sent);
+      const recvInput = isAccepted
+        ? '<input type="number" id="sp-recv-' + l.line_id + '" class="qty-input" min="0" max="' + l.qty_sent + '"' +
+          ' value="' + recvVal + '" style="width:72px" placeholder="Rcvd"' +
+          (unitMode ? ' readonly title="Set by verified unit scans"' : '') + '>'
+        : (l.qty_received != null ? '<span class="b b-green" style="white-space:nowrap">Rcvd: ' + l.qty_received + '</span>' : '');
+      return `
       <div class="inc-verify-line">
         <div style="flex:1;min-width:0">
           <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--acc)">${escHtml(l.sku_code)}</div>
           <div style="font-size:12px;color:var(--text2)">${escHtml(l.product_name)}${l.colour_name ? ' — ' + escHtml(l.colour_name) : ''}</div>
+          ${unitRowsFinal}
         </div>
         <span style="font-size:12px;color:var(--text3);white-space:nowrap">Sent: <strong>${l.qty_sent}</strong></span>
-        ${isAccepted ? `<span id="sp-qr-v-${l.line_id}" class="b ${verifiedLines[l.line_id] ? 'b-green' : 'b-gray'}" style="white-space:nowrap">${verifiedLines[l.line_id] ? 'QR Verified' : 'Pending QR'}</span>` : ''}
-        ${isAccepted ? `
-          <input type="number" id="sp-recv-${l.line_id}" class="qty-input" min="0" max="${l.qty_sent}"
-            value="${l.qty_received != null ? l.qty_received : l.qty_sent}"
-            style="width:72px" placeholder="Rcvd">
-        ` : (l.qty_received != null ? `<span class="b b-green" style="white-space:nowrap">Rcvd: ${l.qty_received}</span>` : '')}
-      </div>`).join('');
+        ${lineBadge}
+        ${recvInput}
+      </div>`;
+    }).join('');
 
     bodyEl.innerHTML = `
       <div style="padding:16px 20px">
@@ -1855,7 +2005,7 @@ window.expandIncTransfer = async function (docId) {
         <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">Items (${lines.length})</div>
         <div>${lineRows}</div>
         ${isAccepted ? `
-          <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:10px;background:#F8FAFC">
+          <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg)">
             <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Stock Verification via Scan QR</div>
             <div id="sp-inc-camera-hint" style="display:none;font-size:11px;color:var(--gold);margin-bottom:8px"></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -1864,7 +2014,7 @@ window.expandIncTransfer = async function (docId) {
                 type="text"
                 class="qty-input"
                 style="width:280px;text-align:left"
-                placeholder="Scan/paste SKU QR payload or SKU code"
+                placeholder="Scan 7-digit unit barcode or SKU code"
                 onkeydown="if(event.key==='Enter'){ incVerifyQr(${doc.doc_id}) }"
               >
               <button class="btn sm" onclick="incVerifyQr(${doc.doc_id})">Verify Scan</button>
@@ -1874,10 +2024,10 @@ window.expandIncTransfer = async function (docId) {
             </div>
             <div id="sp-inc-camera-wrap" style="display:none;margin-top:10px">
               <video id="sp-inc-camera-video" autoplay playsinline muted style="width:100%;max-width:420px;border:1px solid var(--border);border-radius:8px;background:#000"></video>
-              <div style="font-size:11px;color:var(--text3);margin-top:6px">Point camera at item QR code to auto-verify line.</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:6px">Point camera at unit barcode or SKU QR to auto-verify.</div>
             </div>
             <div style="font-size:11px;color:var(--text3);margin-top:6px">
-              Scan each item QR once. Stocking is enabled after all lines show <strong>QR Verified</strong>.
+              ${hasUnitLines ? 'Scan each <strong>7-digit unit barcode</strong> on this shipment once. Bulk lines: scan SKU code once.' : 'Scan each item QR once.'} Stocking is enabled when every line is fully verified.
             </div>
           </div>
         ` : ''}
@@ -1929,7 +2079,7 @@ window.incAccept = async function (docId) {
 
   try {
     await apiPut(`/api/stock-transfer-docs/${docId}/accept`, {});
-    _incQrVerificationByDoc[docId] = {};
+    _incQrVerificationByDoc[docId] = spFreshIncVerification();
     if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Accepted. Enter received quantities and click Verify & Stock.'; }
     await expandIncTransfer(docId);
     loadIncomingTransfers();
@@ -1939,7 +2089,7 @@ window.incAccept = async function (docId) {
   }
 };
 
-window.incVerifyQr = function (docId) {
+window.incVerifyQr = async function (docId) {
   const msgEl = document.getElementById('sp-inc-action-msg');
   const inputEl = document.getElementById('sp-inc-qr-input');
   const rawValue = inputEl ? String(inputEl.value || '').trim() : '';
@@ -1947,55 +2097,91 @@ window.incVerifyQr = function (docId) {
     if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Scan or enter a QR/SKU value first.'; }
     return;
   }
-  const isVerified = _incProcessScannedQr(docId, rawValue);
+  const isVerified = await _incProcessScannedQr(docId, rawValue);
   if (isVerified && inputEl) inputEl.value = '';
 };
 
-function _incProcessScannedQr(docId, rawValue) {
+async function _incEnsureIncDocLines(docId) {
+  let lines = _incDocLinesByDoc[docId] || [];
+  const hasUnits = lines.some((l) => (l.units || []).length > 0);
+  if (lines.length && hasUnits) return lines;
+  try {
+    const data = await apiGet('/api/stock-transfer-docs/' + docId);
+    lines = data.data?.lines || lines;
+    _incDocLinesByDoc[docId] = lines;
+    if (lines.some((l) => (l.units || []).length > 0)) {
+      await expandIncTransfer(docId);
+    }
+  } catch (_) { /* keep cached lines */ }
+  return lines;
+}
+
+async function _incProcessScannedQr(docId, rawValue) {
   const msgEl = document.getElementById('sp-inc-action-msg');
-  const lines = _incDocLinesByDoc[docId] || [];
+  let lines = await _incEnsureIncDocLines(docId);
   if (!lines.length) {
     if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Document lines are not loaded yet.'; }
     return false;
   }
 
-  let scannedSkuCode = String(rawValue || '').trim();
-  if (!scannedSkuCode) return false;
+  const scanned = spNormalizeIncScan(rawValue);
+  if (!scanned) return false;
 
-  if (scannedSkuCode.startsWith('{') && scannedSkuCode.endsWith('}')) {
-    try {
-      const parsed = JSON.parse(scannedSkuCode);
-      scannedSkuCode = String(parsed.sku_code || parsed.sku || parsed.code || '').trim() || scannedSkuCode;
-    } catch (_) {}
+  _incQrVerificationByDoc[docId] = _incQrVerificationByDoc[docId] || spFreshIncVerification();
+  const v = _incQrVerificationByDoc[docId];
+  const scanUpper = scanned.toUpperCase();
+
+  const unitHit = spFindUnitOnDocLines(lines, scanned);
+  if (unitHit) {
+    const { line, unit: matchUnit } = unitHit;
+    const uid = Number(matchUnit.unit_id);
+    if (v.units[uid]) {
+      if (msgEl) {
+        msgEl.style.color = 'var(--gold)';
+        msgEl.textContent = 'Unit ' + (matchUnit.unit_barcode || uid) + ' is already verified.';
+      }
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Unit already verified');
+      return false;
+    }
+    v.units[uid] = true;
+    spIncRefreshLineUi(docId, line);
+    spUpdateIncStockBtn(docId, lines);
+    const allDone = spIsDocQrVerified(docId, lines);
+    if (msgEl) {
+      msgEl.style.color = 'var(--green)';
+      msgEl.textContent = allDone
+        ? '✓ All units verified. You can now Verify & Stock.'
+        : '✓ Unit ' + (matchUnit.unit_barcode || uid) + ' verified. Scan remaining units.';
+    }
+    return true;
   }
 
-  const normalizedScannedCode = scannedSkuCode.toUpperCase();
-  const matchedLine = lines.find((line) => String(line.sku_code || '').trim().toUpperCase() === normalizedScannedCode);
+  const matchedLine = lines.find((line) => {
+    if (!spLineUsesSkuScanOnly(line)) return false;
+    return String(line.sku_code || '').trim().toUpperCase() === scanUpper;
+  });
   if (!matchedLine) {
-    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = `Scanned code ${scannedSkuCode} is not part of this transfer.`; }
+    if (msgEl) {
+      msgEl.style.color = 'var(--red)';
+      msgEl.textContent = 'Scanned code ' + scanned + ' is not part of this transfer.';
+    }
     return false;
   }
 
-  const lineId = matchedLine.line_id;
-  _incQrVerificationByDoc[docId] = _incQrVerificationByDoc[docId] || {};
-  _incQrVerificationByDoc[docId][lineId] = true;
-
-  const badgeEl = document.getElementById(`sp-qr-v-${lineId}`);
-  if (badgeEl) {
-    badgeEl.className = 'b b-green';
-    badgeEl.textContent = 'QR Verified';
+  const lineId = Number(matchedLine.line_id);
+  if (v.lines[lineId]) {
+    if (msgEl) { msgEl.style.color = 'var(--gold)'; msgEl.textContent = 'Line already verified.'; }
+    return false;
   }
-
-  const stockBtn = document.getElementById('sp-inc-stock-btn');
-  const lineIds = lines.map((line) => line.line_id);
-  const allQrVerified = lineIds.every((id) => _incQrVerificationByDoc[docId][id]);
-  if (stockBtn) stockBtn.disabled = !allQrVerified;
-
+  v.lines[lineId] = true;
+  spIncRefreshLineUi(docId, matchedLine);
+  spUpdateIncStockBtn(docId, lines);
+  const allQrVerified = spIsDocQrVerified(docId, lines);
   if (msgEl) {
     msgEl.style.color = 'var(--green)';
     msgEl.textContent = allQrVerified
-      ? '✓ All lines verified by QR. You can now Verify & Stock.'
-      : `✓ ${scannedSkuCode} verified. Continue scanning remaining SKUs.`;
+      ? '✓ All lines verified. You can now Verify & Stock.'
+      : '✓ ' + matchedLine.sku_code + ' verified. Continue scanning remaining items.';
   }
   return true;
 }
@@ -2061,7 +2247,7 @@ window.startIncQrCamera = async function (docId) {
           }
         }
         if (scannedValue) {
-          const isVerified = _incProcessScannedQr(docId, scannedValue);
+          const isVerified = await _incProcessScannedQr(docId, scannedValue);
           if (isVerified) {
             const inputEl = document.getElementById('sp-inc-qr-input');
             if (inputEl) inputEl.value = '';
@@ -2132,27 +2318,27 @@ window.stopIncQrCamera = function () {
 };
 
 window.incResetQrVerification = function (docId) {
-  _incQrVerificationByDoc[docId] = {};
+  _incQrVerificationByDoc[docId] = spFreshIncVerification();
   const lines = _incDocLinesByDoc[docId] || [];
   lines.forEach((line) => {
-    const badgeEl = document.getElementById(`sp-qr-v-${line.line_id}`);
-    if (!badgeEl) return;
-    badgeEl.className = 'b b-gray';
-    badgeEl.textContent = 'Pending QR';
+    spIncRefreshLineUi(docId, line);
+    if (spLineRequiresUnitScans(line)) {
+      const recvEl = document.getElementById('sp-recv-' + line.line_id);
+      if (recvEl) { recvEl.value = '0'; recvEl.readOnly = true; }
+    }
   });
-  const stockBtn = document.getElementById('sp-inc-stock-btn');
-  if (stockBtn) stockBtn.disabled = true;
+  spUpdateIncStockBtn(docId, lines);
   const msgEl = document.getElementById('sp-inc-action-msg');
-  if (msgEl) { msgEl.style.color = 'var(--text2)'; msgEl.textContent = 'QR verification reset. Scan all items again.'; }
+  if (msgEl) { msgEl.style.color = 'var(--text2)'; msgEl.textContent = 'Verification reset. Scan all units or SKUs again.'; }
 };
 
 window.incStock = async function (docId, lineIds) {
   const msgEl = document.getElementById('sp-inc-action-msg');
   if (msgEl) msgEl.textContent = '';
-  const verifiedLines = _incQrVerificationByDoc[docId] || {};
-  const allQrVerified = lineIds.every((lineId) => verifiedLines[lineId]);
-  if (!allQrVerified) {
-    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Please verify all lines by scanning QR before stocking.'; }
+  const linesMeta = _incDocLinesByDoc[docId] || [];
+  if (!spIsDocQrVerified(docId, linesMeta)) {
+    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Please verify all units (or SKUs for bulk lines) before stocking.'; }
+    if (typeof cosmosToastError === 'function') cosmosToastError('Complete unit/SKU verification first');
     return;
   }
 

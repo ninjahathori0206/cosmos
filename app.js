@@ -54,10 +54,13 @@ const {
 } = require('./src/middleware/authorize');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 
+const { filterStoresRetailDestinations, warmStoreTypesCache } = require('./src/config/storeTypesCatalog');
+
 async function handleDestinationStores(req, res, next) {
   try {
     const result = await executeStoredProcedure('sp_Store_GetAll', {});
-    return res.json({ success: true, data: result.recordset || [] });
+    const rows = await filterStoresRetailDestinations(result.recordset || []);
+    return res.json({ success: true, data: rows });
   } catch (err) {
     return next(err);
   }
@@ -490,5 +493,10 @@ assertAuthEnv();
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Cosmos ERP server listening on port ${PORT}`);
+  const { warmStoreTypesCache } = require('./src/config/storeTypesCatalog');
+  warmStoreTypesCache().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn('[store-types] cache warm failed:', err.message || err);
+  });
 });
 

@@ -96,7 +96,8 @@ function maskAvailableStockRows(rows) {
 
 const transferLineSchema = Joi.object({
   sku_id: Joi.number().integer().min(1).required(),
-  qty:    Joi.number().integer().min(1).required()
+  qty:    Joi.number().integer().min(1).required(),
+  unit_ids: Joi.array().items(Joi.number().integer().min(1)).optional()
 });
 
 const transferSchema = Joi.object({
@@ -250,7 +251,11 @@ router.post('/', ...foundryStockCreate, async (req, res, next) => {
     }
 
     const userId    = req.user && req.user.user_id ? Number(req.user.user_id) : null;
-    const linesJson = JSON.stringify(value.lines.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
+    const linesJson = JSON.stringify(value.lines.map((l) => {
+      const row = { sku_id: l.sku_id, qty: l.qty };
+      if (Array.isArray(l.unit_ids) && l.unit_ids.length) row.unit_ids = l.unit_ids;
+      return row;
+    }));
 
     // Creates a Transfer Document: WAREHOUSE balance decrements immediately.
     // Store must Accept then Stock the document to credit their balance.

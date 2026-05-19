@@ -44,7 +44,8 @@ router.post(
         lines: Joi.array().items(
           Joi.object({
             sku_id: Joi.number().integer().min(1).required(),
-            qty:    Joi.number().integer().min(1).required()
+            qty:    Joi.number().integer().min(1).required(),
+            unit_ids: Joi.array().items(Joi.number().integer().min(1)).optional()
           })
         ).min(1).required(),
         notes: Joi.string().max(500).allow('', null).optional()
@@ -54,7 +55,11 @@ router.post(
         return res.status(400).json({ success: false, message: error.details.map(d => d.message).join('; ') });
       }
 
-      const linesJson = JSON.stringify(value.lines.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
+      const linesJson = JSON.stringify(value.lines.map((l) => {
+        const row = { sku_id: l.sku_id, qty: l.qty };
+        if (Array.isArray(l.unit_ids) && l.unit_ids.length) row.unit_ids = l.unit_ids;
+        return row;
+      }));
 
       const result = await executeStoredProcedure('sp_StockTransferDoc_Dispatch', {
         lines_json:        { type: sql.NVarChar(sql.MAX), value: linesJson },
@@ -124,7 +129,24 @@ router.get('/:id', ...docListAccess, async (req, res, next) => {
     }
 
     const lines = result.recordsets?.[1] || [];
-    return res.json({ success: true, data: { ...header, lines } });
+    const unitRows = result.recordsets?.[2] || [];
+    const unitsByLine = {};
+    for (const u of unitRows) {
+      const lid = Number(u.line_id);
+      if (!unitsByLine[lid]) unitsByLine[lid] = [];
+      unitsByLine[lid].push({
+        unit_id: u.unit_id,
+        unit_no: u.unit_no,
+        unit_barcode: u.unit_barcode,
+        unit_status: u.unit_status
+      });
+    }
+    const enrichedLines = lines.map((l) => ({
+      ...l,
+      requires_unit_barcode: l.requires_unit_barcode !== false && l.requires_unit_barcode !== 0,
+      units: unitsByLine[Number(l.line_id)] || []
+    }));
+    return res.json({ success: true, data: { ...header, lines: enrichedLines } });
   } catch (err) {
     return next(err);
   }

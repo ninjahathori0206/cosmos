@@ -4572,9 +4572,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const stockEl = document.getElementById(`skupg-${productId}-stock`);
     if (priceEl) priceEl.textContent = inrD(sku.sale_price);
     if (stockEl) {
-      const cls = sku.stock_qty > 10 ? 'b-green' : sku.stock_qty > 0 ? 'b-gold' : 'b-red';
+      const _wh = Number(sku.warehouse_qty ?? sku.stock_qty) || 0;
+      const cls = _wh > 10 ? 'b-green' : _wh > 0 ? 'b-gold' : 'b-red';
       stockEl.className = `b ${cls} xs`;
-      stockEl.textContent = `${sku.stock_qty} units`;
+      stockEl.textContent = `${_wh} units`;
     }
 
     // Update SKU code
@@ -4640,7 +4641,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div><div class="label-sm td2">Sale Price</div><div class="mono fw6" style="color:var(--primary)">${inrD(r.sale_price)}</div></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-            <div><div class="label-sm td2">Warehouse Stock</div><div class="fw6" style="font-size:16px;color:${r.stock_qty > 0 ? 'var(--green)' : 'var(--red)'}">${r.stock_qty} units</div></div>
+            <div><div class="label-sm td2">Warehouse Stock</div><div class="fw6" style="font-size:16px;color:${(Number(r.warehouse_qty ?? r.stock_qty) || 0) > 0 ? 'var(--green)' : 'var(--red)'}">${Number(r.warehouse_qty ?? r.stock_qty) || 0} units</div></div>
             <div><div class="label-sm td2">Total Purchased</div><div class="fw6">${r.total_qty || '—'}</div></div>
           </div>
           ${specs ? `<hr style="border:none;border-top:1px solid #eee;margin:8px 0"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${specs}</div>` : ''}
@@ -6805,8 +6806,6 @@ ${initScript}
           if (seen.has(sid)) continue;
           const status = String(s.status || '').trim().toUpperCase();
           if (status !== 'ACTIVE') continue;
-          const stype = String(s.store_type || '').trim().toUpperCase();
-          if (stype === 'HQ') continue;
           seen.add(sid);
           list.push(s);
         }
@@ -6833,7 +6832,7 @@ ${initScript}
 
         if (!list.length) {
           stToast(
-            'No destination stores available. Ensure at least one active non-HQ store exists in Command Unit.',
+            'No destination stores available. Add an active retail store (non–warehouse hub format) in Command Unit.',
             '#e53e3e'
           );
         }
@@ -6848,34 +6847,117 @@ ${initScript}
     }
 
     // ── Cart management ───────────────────────────────────────────────────────
+    function stPrimaryWarehouseQty(sku) {
+      return Math.max(0, Number(sku && (sku.warehouse_qty ?? sku.stock_qty)) || 0);
+    }
+
+    function stSkuRequiresUnitBarcode(sku) {
+      return sku && (sku.requires_unit_barcode === true || sku.requires_unit_barcode === 1);
+    }
+
+    function stCartUnitIds() {
+      const ids = [];
+      _cart.forEach((r) => {
+        (r.units || []).forEach((u) => { if (u.unit_id) ids.push(Number(u.unit_id)); });
+      });
+      return ids;
+    }
+
+    function stCartHasInsufficientStock() {
+      return _cart.some((r) => {
+        const wh = Number(r.warehouse_qty) || 0;
+        if (stSkuRequiresUnitBarcode(r)) {
+          const n = (r.units || []).length;
+          return n > wh || n < 1;
+        }
+        return r.qty > wh;
+      });
+    }
+
     function stAddToCart(sku) {
-      const existing = _cart.find((r) => r.sku_id === sku.sku_id);
-      if (existing) {
-        if (existing.qty < existing.warehouse_qty) {
-          existing.qty += 1;
-          stToast(`+1 · ${sku.sku_code}`, '#1A5FA8');
+      const whQty = stPrimaryWarehouseQty(sku);
+      if (whQty <= 0) {
+        if (typeof cosmosToastError === 'function') {
+          cosmosToastError('No stock at ' + primaryWarehouseLabel() + ' for this SKU.');
         } else {
+          stToast('No stock at primary warehouse for this SKU', '#e53e3e');
+        }
+        return;
+      }
+      const needsUnit = stSkuRequiresUnitBarcode(sku);
+      const unitId = sku.unit_id != null ? Number(sku.unit_id) : null;
+
+      if (needsUnit) {
+        if (!unitId) {
+          const msg = 'Scan the 7-digit unit barcode for each piece (product type requires unit tracking).';
+          if (typeof cosmosToastError === 'function') cosmosToastError(msg);
+          else stToast(msg, '#e53e3e');
+          return;
+        }
+        if (stCartUnitIds().includes(unitId)) {
+          const dupMsg = 'Unit ' + (sku.unit_barcode || unitId) + ' is already in the cart.';
+          if (typeof cosmosToastWarn === 'function') cosmosToastWarn(dupMsg);
+          else stToast(dupMsg, '#e53e3e');
+          return;
+        }
+        let row = _cart.find((r) => r.sku_id === sku.sku_id);
+        if (!row) {
+          row = {
+            sku_id: sku.sku_id,
+            sku_code: sku.sku_code,
+            product_name: sku.product_name,
+            brand_name: sku.brand_name || '—',
+            colour_name: sku.colour_name || '—',
+            warehouse_qty: whQty,
+            requires_unit_barcode: true,
+            units: [],
+            qty: 0
+          };
+          _cart.push(row);
+        }
+        if ((row.units || []).length >= row.warehouse_qty) {
           stToast('Max warehouse stock reached', '#e53e3e');
           return;
         }
-      } else {
-        _cart.push({
-          sku_id:        sku.sku_id,
-          sku_code:      sku.sku_code,
-          product_name:  sku.product_name,
-          brand_name:    sku.brand_name  || '—',
-          colour_name:   sku.colour_name || '—',
-          warehouse_qty: Number(sku.warehouse_qty) || 0,
-          qty:           1
+        row.units = row.units || [];
+        row.units.push({
+          unit_id: unitId,
+          unit_barcode: sku.unit_barcode || '',
+          unit_no: sku.unit_no
         });
-        stToast(`Added · ${sku.sku_code}`, '#16a34a');
+        row.qty = row.units.length;
+        stToast('Added unit ' + (sku.unit_barcode || unitId) + ' · ' + sku.sku_code, '#16a34a');
+      } else {
+        const existing = _cart.find((r) => r.sku_id === sku.sku_id);
+        if (existing) {
+          if (existing.qty < existing.warehouse_qty) {
+            existing.qty += 1;
+            stToast(`+1 · ${sku.sku_code}`, '#1A5FA8');
+          } else {
+            stToast('Max warehouse stock reached', '#e53e3e');
+            return;
+          }
+        } else {
+          _cart.push({
+            sku_id: sku.sku_id,
+            sku_code: sku.sku_code,
+            product_name: sku.product_name,
+            brand_name: sku.brand_name || '—',
+            colour_name: sku.colour_name || '—',
+            warehouse_qty: whQty,
+            requires_unit_barcode: false,
+            units: [],
+            qty: 1
+          });
+          stToast(`Added · ${sku.sku_code}`, '#16a34a');
+        }
       }
       stRenderCart();
     }
 
     window.stChangeQty = function stChangeQty(skuId, delta) {
       const item = _cart.find((r) => r.sku_id === skuId);
-      if (!item) return;
+      if (!item || stSkuRequiresUnitBarcode(item)) return;
       const next = item.qty + delta;
       if (next <= 0) {
         _cart = _cart.filter((r) => r.sku_id !== skuId);
@@ -6885,6 +6967,15 @@ ${initScript}
       } else {
         item.qty = next;
       }
+      stRenderCart();
+    };
+
+    window.stRemoveUnitFromCart = function stRemoveUnitFromCart(skuId, unitId) {
+      const item = _cart.find((r) => r.sku_id === skuId);
+      if (!item || !item.units) return;
+      item.units = item.units.filter((u) => Number(u.unit_id) !== Number(unitId));
+      item.qty = item.units.length;
+      if (!item.qty) _cart = _cart.filter((r) => r.sku_id !== skuId);
       stRenderCart();
     };
 
@@ -6908,25 +6999,40 @@ ${initScript}
       if (countEl) countEl.textContent = _cart.length + ' item' + (_cart.length !== 1 ? 's' : '') + ' · ' + total + ' units';
       if (submitR) submitR.style.display = _cart.length ? '' : 'none';
       if (clearB)  clearB.style.display  = _cart.length ? '' : 'none';
+      const submitBtn = document.querySelector('#st-submit-row button');
+      if (submitBtn) submitBtn.disabled = _cart.length > 0 && stCartHasInsufficientStock();
       if (_cart.length === 0) {
         body.innerHTML = `<div class="st-empty-cart"><div style="font-size:36px;margin-bottom:8px">🛒</div><div>No items added yet — scan or search SKUs to start</div></div>`;
         return;
       }
-      body.innerHTML = _cart.map((r) => `
+      body.innerHTML = _cart.map((r) => {
+        const unitMode = stSkuRequiresUnitBarcode(r);
+        const unitList = (r.units || []).map((u) =>
+          '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:4px">' +
+          '<span class="mono">' + stEsc(u.unit_barcode || String(u.unit_id)) + '</span>' +
+          '<button type="button" class="st-remove-btn" style="padding:2px 6px;font-size:10px" onclick="stRemoveUnitFromCart(' + r.sku_id + ',' + u.unit_id + ')" title="Remove unit">✕</button>' +
+          '</div>'
+        ).join('');
+        const qtyControls = unitMode
+          ? '<span class="st-qty-val">' + r.qty + ' unit' + (r.qty !== 1 ? 's' : '') + '</span>'
+          : '<div class="st-cart-qty">' +
+            '<button class="st-qty-btn" onclick="stChangeQty(' + r.sku_id + ', -1)">−</button>' +
+            '<span class="st-qty-val">' + r.qty + '</span>' +
+            '<button class="st-qty-btn" onclick="stChangeQty(' + r.sku_id + ', 1)">+</button>' +
+            '</div>';
+        return `
         <div class="st-cart-row">
           <div style="flex:1;min-width:0">
             <div class="mono" style="font-size:12px;font-weight:700;color:var(--acc2)">${stEsc(r.sku_code)}</div>
             <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stEsc(r.product_name)}</div>
             <div style="font-size:11.5px;color:var(--text3)">${stEsc(r.brand_name)} · ${stEsc(r.colour_name)}</div>
             <div style="font-size:11px;color:var(--text3)">${primaryWarehouseLabelHtml()} stock: <strong>${r.warehouse_qty}</strong></div>
+            ${unitList}
           </div>
-          <div class="st-cart-qty">
-            <button class="st-qty-btn" onclick="stChangeQty(${r.sku_id}, -1)">−</button>
-            <span class="st-qty-val">${r.qty}</span>
-            <button class="st-qty-btn" onclick="stChangeQty(${r.sku_id}, 1)">+</button>
-          </div>
-          <button class="st-remove-btn" onclick="stRemoveFromCart(${r.sku_id})" title="Remove">✕</button>
-        </div>`).join('');
+          ${qtyControls}
+          <button class="st-remove-btn" onclick="stRemoveFromCart(${r.sku_id})" title="Remove line">✕</button>
+        </div>`;
+      }).join('');
     }
 
     // ── Camera scanner ────────────────────────────────────────────────────────
@@ -7175,12 +7281,26 @@ ${initScript}
       const notes   = (document.getElementById('st-notes').value || '').trim();
       if (!storeId) { stToast('Please select a destination store', '#e53e3e'); return; }
       if (!_cart.length) { stToast('Cart is empty', '#e53e3e'); return; }
+      if (stCartHasInsufficientStock()) {
+        if (typeof cosmosToastError === 'function') {
+          cosmosToastError('Cart quantity exceeds stock at ' + primaryWarehouseLabel() + '.');
+        } else {
+          stToast('Cart exceeds primary warehouse stock', '#e53e3e');
+        }
+        return;
+      }
       const btn = document.querySelector('#st-submit-row button');
       if (btn) { btn.disabled = true; btn.textContent = '⏳ Transferring…'; }
       try {
         const resp = await apiPost('/api/stock-transfer-docs', {
           to_store_id: Number(storeId),
-          lines: _cart.map((r) => ({ sku_id: r.sku_id, qty: r.qty })),
+          lines: _cart.map((r) => {
+            const line = { sku_id: r.sku_id, qty: r.qty };
+            if (stSkuRequiresUnitBarcode(r) && r.units && r.units.length) {
+              line.unit_ids = r.units.map((u) => u.unit_id);
+            }
+            return line;
+          }),
           notes: notes || null
         });
         const storeName = document.getElementById('st-store-sel').selectedOptions[0]?.text || 'store';

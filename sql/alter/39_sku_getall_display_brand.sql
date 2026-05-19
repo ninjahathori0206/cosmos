@@ -34,6 +34,7 @@ AS BEGIN
       ''
     ))) AS brand_name,
     pic.colour_name, pic.colour_code,
+    ISNULL(sb.qty, 0) AS warehouse_qty,
     ISNULL(sb.qty, 0) AS stock_qty
   FROM dbo.skus sk
   JOIN dbo.product_master pm ON sk.product_master_id = pm.product_id
@@ -41,7 +42,9 @@ AS BEGIN
   LEFT JOIN dbo.maker_master mm ON pm.maker_master_id = mm.maker_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
   LEFT JOIN dbo.stock_balances sb
-    ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE'
+    ON sk.sku_id = sb.sku_id
+   AND sb.location_type = N'WAREHOUSE'
+   AND sb.location_id = dbo.fn_Foundry_PrimaryWarehouseLocationId()
   WHERE (ISNULL(@status,'') = '' OR sk.status = @status)
     AND (ISNULL(@q,'') = ''
          OR sk.sku_code        LIKE '%'+@q+'%'

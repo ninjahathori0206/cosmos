@@ -179,27 +179,60 @@ router.put('/pos', ...settingsManage, async (req, res, next) => {
 });
 
 // ─── INVENTORY HUB (primary warehouse = HQ store_id for WAREHOUSE stock) ─────
+const {
+  STORE_TYPE_ROLES,
+  isStoreTypeInRole,
+  filterStoresByStoreTypeRole,
+  getStoreTypeRoleDefs
+} = require('../config/storeTypesCatalog');
+const {
+  getCatalogRows,
+  createStoreType,
+  updateStoreType,
+  deactivateStoreType,
+  countStoresUsingType
+} = require('../services/storeTypeCatalogService');
+const { getStoreTypeRoleKeys, isKnownStoreTypeRole } = require('../config/storeTypeRolesCatalog');
+
 const inventoryHubPutSchema = Joi.object({
   primary_warehouse_store_id: Joi.number().integer().positive().required()
 });
 
+function activeStoresOnly(stores) {
+  return (Array.isArray(stores) ? stores : []).filter((s) => {
+    if (!s || typeof s !== 'object') return false;
+    return (
+      s.is_active
+      && String(s.status || 'ACTIVE').trim().toUpperCase() === 'ACTIVE'
+    );
+  });
+}
+
 router.get('/inventory-hub', ...settingsView, async (req, res, next) => {
   try {
     const pool = await getPool();
-    const q = await pool.request().query(`
-      SELECT
-        dbo.fn_Foundry_PrimaryWarehouseLocationId() AS primary_warehouse_store_id,
-        CAST(dbo.fn_Foundry_WarehouseDisplayName() AS NVARCHAR(200)) AS warehouse_display_name
-    `);
-    const row = (q.recordset && q.recordset[0]) || {};
+    const [hubQ, storesResult] = await Promise.all([
+      pool.request().query(`
+        SELECT
+          dbo.fn_Foundry_PrimaryWarehouseLocationId() AS primary_warehouse_store_id,
+          CAST(dbo.fn_Foundry_WarehouseDisplayName() AS NVARCHAR(200)) AS warehouse_display_name
+      `),
+      executeStoredProcedure('sp_Store_GetAll', {})
+    ]);
+    const row = (hubQ.recordset && hubQ.recordset[0]) || {};
     const sid = row.primary_warehouse_store_id;
+    const eligibleStores = await filterStoresByStoreTypeRole(
+      activeStoresOnly(storesResult.recordset || []),
+      STORE_TYPE_ROLES.WAREHOUSE_HUB
+    );
     if (sid == null || Number.isNaN(Number(sid))) {
       return res.json({
         success: true,
         data: {
           primary_warehouse_store_id: null,
           warehouse_display_name: null,
-          configured: false
+          configured: false,
+          eligible_stores: eligibleStores
         }
       });
     }
@@ -208,7 +241,8 @@ router.get('/inventory-hub', ...settingsView, async (req, res, next) => {
       data: {
         primary_warehouse_store_id: Number(sid),
         warehouse_display_name: row.warehouse_display_name || 'Warehouse',
-        configured: true
+        configured: true,
+        eligible_stores: eligibleStores
       }
     });
   } catch (err) {
@@ -246,10 +280,11 @@ router.put('/inventory-hub', ...settingsManage, async (req, res, next) => {
     if (!st) {
       return res.status(422).json({ success: false, message: 'Store not found.' });
     }
-    if (String(st.store_type || '').toUpperCase() !== 'HQ') {
+    if (!(await isStoreTypeInRole(st.store_type, STORE_TYPE_ROLES.WAREHOUSE_HUB))) {
       return res.status(422).json({
         success: false,
-        message: 'Primary warehouse must be a store with store_type HQ.'
+        message:
+          'Primary warehouse must be a store whose format is configured as a warehouse hub (see store type catalog).'
       });
     }
     if (!st.is_active || String(st.status || '').toUpperCase() !== 'ACTIVE') {
@@ -439,6 +474,133 @@ router.delete('/membership-tiers/:id', ...settingsManage, async (req, res, next)
     });
     return res.json({ success: true, data: result.recordset && result.recordset[0] });
   } catch (err) { return next(err); }
+});
+
+// ─── STORE TYPE CATALOG (Command Unit — store formats) ───────────────────────
+
+const storeTypeKeySchema = Joi.string()
+  .max(50)
+  .pattern(/^[A-Za-z][A-Za-z0-9_]*$/)
+  .required()
+  .messages({
+    'string.pattern.base':
+      'type_key must start with a letter and use only letters, numbers, and underscores.'
+  });
+
+const storeTypeCreateSchema = Joi.object({
+  type_key: storeTypeKeySchema,
+  label: Joi.string().max(200).required(),
+  description: Joi.string().max(500).allow('', null),
+  sort_order: Joi.number().integer().min(0).max(9999).optional(),
+  roles: Joi.array()
+    .items(Joi.string().valid(...getStoreTypeRoleKeys()))
+    .default([]),
+  is_active: Joi.boolean().optional()
+});
+
+const storeTypeUpdateSchema = Joi.object({
+  label: Joi.string().max(200).optional(),
+  description: Joi.string().max(500).allow('', null),
+  sort_order: Joi.number().integer().min(0).max(9999).optional(),
+  roles: Joi.array().items(Joi.string().valid(...getStoreTypeRoleKeys())).optional(),
+  is_active: Joi.boolean().optional()
+}).min(1);
+
+router.get('/store-type-catalog', ...settingsView, async (req, res, next) => {
+  try {
+    const rows = await getCatalogRows({ activeOnly: false });
+    const withCounts = await Promise.all(
+      rows.map(async (row) => ({
+        ...row,
+        store_count: await countStoresUsingType(row.key)
+      }))
+    );
+    return res.json({
+      success: true,
+      data: {
+        store_types: withCounts,
+        store_type_role_defs: getStoreTypeRoleDefs()
+      }
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/store-type-catalog', ...settingsManage, async (req, res, next) => {
+  try {
+    const { error, value } = storeTypeCreateSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      });
+    }
+    const row = await createStoreType({
+      type_key: value.type_key,
+      label: value.label,
+      description: value.description || null,
+      sort_order: value.sort_order,
+      roles: value.roles,
+      is_active: value.is_active !== false
+    });
+    return res.status(201).json({ success: true, data: row });
+  } catch (err) {
+    if (err.statusCode === 400) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    if (/duplicate key|UNIQUE|PK_store_type_catalog/i.test(String(err.message || ''))) {
+      return res.status(409).json({ success: false, message: 'A store type with this key already exists.' });
+    }
+    return next(err);
+  }
+});
+
+router.put('/store-type-catalog/:typeKey', ...settingsManage, async (req, res, next) => {
+  try {
+    const typeKey = String(req.params.typeKey || '').trim();
+    const { error, value } = storeTypeUpdateSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      });
+    }
+    const row = await updateStoreType(typeKey, {
+      label: value.label,
+      description: value.description,
+      sort_order: value.sort_order,
+      roles: value.roles,
+      is_active: value.is_active
+    });
+    return res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ success: false, message: err.message });
+    }
+    if (err.statusCode === 400) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    return next(err);
+  }
+});
+
+router.delete('/store-type-catalog/:typeKey', ...settingsManage, async (req, res, next) => {
+  try {
+    const typeKey = String(req.params.typeKey || '').trim();
+    const row = await deactivateStoreType(typeKey);
+    return res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ success: false, message: err.message });
+    }
+    if (err.statusCode === 422) {
+      return res.status(422).json({ success: false, message: err.message });
+    }
+    return next(err);
+  }
 });
 
 // ─── LEAVE TYPES ─────────────────────────────────────────────────────────────
@@ -870,6 +1032,106 @@ router.get('/pos-product-types', ...promotionsView, async (req, res, next) => {
       .filter((r) => r.key);
     return res.json({ success: true, data: types });
   } catch (err) { return next(err); }
+});
+
+const posProductTypeConfigPutSchema = Joi.object({
+  rows: Joi.array().items(
+    Joi.object({
+      product_type_key: Joi.string().max(50).required(),
+      requires_unit_barcode: Joi.boolean().required()
+    })
+  ).min(1).required()
+});
+
+/**
+ * GET /api/settings/pos-product-type-config
+ * Full POS product type rules (Foundry Settings → unit barcode per type).
+ */
+router.get('/pos-product-type-config', ...settingsView, async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const result = await pool.request().query(`
+      SELECT
+        product_type_key,
+        fulfillment_mode,
+        rx_required,
+        allow_qty_gt_1,
+        is_active,
+        CAST(requires_unit_barcode AS BIT) AS requires_unit_barcode
+      FROM dbo.pos_product_type_config
+      ORDER BY product_type_key
+    `);
+    return res.json({ success: true, data: result.recordset || [] });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * PUT /api/settings/pos-product-type-config
+ * Update requires_unit_barcode flags (bulk).
+ */
+router.put('/pos-product-type-config', ...settingsManage, async (req, res, next) => {
+  try {
+    const { error, value } = posProductTypeConfigPutSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ success: false, message: error.details[0].message });
+    }
+    const pool = await getPool();
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    try {
+      for (const row of value.rows) {
+        const reqUp = new sql.Request(transaction);
+        reqUp.input('product_type_key', sql.NVarChar(50), row.product_type_key);
+        reqUp.input('requires_unit_barcode', sql.Bit, row.requires_unit_barcode ? 1 : 0);
+        const upd = await reqUp.query(`
+          UPDATE dbo.pos_product_type_config
+          SET requires_unit_barcode = @requires_unit_barcode
+          WHERE product_type_key = @product_type_key;
+          SELECT @@ROWCOUNT AS rows_updated;
+        `);
+        const n = upd.recordset && upd.recordset[0] ? Number(upd.recordset[0].rows_updated) : 0;
+        if (n < 1) {
+          const err = new Error(`Unknown product type: ${row.product_type_key}`);
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+      await transaction.commit();
+    } catch (inner) {
+      await transaction.rollback();
+      throw inner;
+    }
+    try {
+      await writeAuditLog({
+        userId: req.user && req.user.user_id ? Number(req.user.user_id) : null,
+        action: 'POS_PRODUCT_TYPE_UNIT_BARCODE_UPDATE',
+        module: 'command_unit',
+        entityType: 'pos_product_type_config',
+        entityId: null,
+        newValue: JSON.stringify({ row_count: value.rows.length }),
+        ipAddress: req.ip || null
+      });
+    } catch (_auditErr) {
+      /* non-fatal */
+    }
+    const result = await pool.request().query(`
+      SELECT
+        product_type_key,
+        fulfillment_mode,
+        CAST(requires_unit_barcode AS BIT) AS requires_unit_barcode,
+        is_active
+      FROM dbo.pos_product_type_config
+      ORDER BY product_type_key
+    `);
+    return res.json({ success: true, data: result.recordset || [] });
+  } catch (err) {
+    if (err.statusCode === 400) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    return next(err);
+  }
 });
 
 module.exports = router;

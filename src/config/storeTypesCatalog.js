@@ -1,42 +1,135 @@
 'use strict';
 
+const { STORE_TYPE_ROLES, getStoreTypeRoleDefs, getStoreTypeRoleKeys, isKnownStoreTypeRole } = require('./storeTypeRolesCatalog');
+const {
+  getCatalogRows,
+  refreshStoreTypeCatalogCache,
+  invalidateStoreTypeCatalogCache,
+  isAllowedStoreTypeAsync
+} = require('../services/storeTypeCatalogService');
+
 /**
- * Single source of truth for dbo.stores.store_type values (keys) and Command Unit labels.
- * Server validation and GET /api/stores/store-types (and GET /api/meta/store-types) use this module.
+ * Store format catalogue — persisted in dbo.store_type_catalog (+ roles table).
+ * Configure types in Command Unit → Store Types (settings.edit).
  *
- * SQL mirror: run sql/migrations/47_store_type_catalog.sql (dbo.store_type_catalog + optional FK).
- * Keep keys and labels in sync with that MERGE seed.
- *
- * Keys are stored in SQL; keep seed/migrations aligned (e.g. HQ for primary warehouse hub).
+ * Role definitions (warehouse_hub, …): src/config/storeTypeRolesCatalog.js
  */
-const STORE_TYPES_CATALOG = Object.freeze([
-  {
-    key: 'HQ',
-    label: 'Corporate HQ (warehouse hub)',
-    description:
-      'Foundry primary warehouse hub. WAREHOUSE stock uses this store_id as stock_balances.location_id.'
-  },
-  { key: 'Owned', label: 'Eyewoot-Owned' },
-  { key: 'Franchise', label: 'Franchise' },
-  { key: 'Kiosk', label: 'Kiosk / Pop-up' },
-  { key: 'Online', label: 'Online / D2C' }
-]);
 
-function getStoreTypesCatalog() {
-  return STORE_TYPES_CATALOG;
+async function ensureCatalogLoaded() {
+  return getCatalogRows();
 }
 
-function getStoreTypeKeys() {
-  return STORE_TYPES_CATALOG.map((r) => r.key);
+async function getStoreTypesCatalog(options) {
+  return getCatalogRows(options);
 }
 
-function isAllowedStoreType(key) {
-  return getStoreTypeKeys().includes(String(key || ''));
+async function getStoreTypeKeys(options) {
+  const rows = await getCatalogRows(options);
+  return rows.map((r) => r.key);
+}
+
+function getStoreTypeKeysWithRoleFromRows(rows, roleKey) {
+  const role = String(roleKey || '');
+  return rows.filter((row) => Array.isArray(row.roles) && row.roles.includes(role)).map((row) => row.key);
+}
+
+async function getStoreTypeKeysWithRole(roleKey) {
+  const rows = await getCatalogRows({ activeOnly: true });
+  return getStoreTypeKeysWithRoleFromRows(rows, roleKey);
+}
+
+async function isStoreTypeInRole(typeKey, roleKey) {
+  const keys = await getStoreTypeKeysWithRole(roleKey);
+  return keys.includes(String(typeKey || ''));
+}
+
+async function filterStoresByStoreTypeRole(stores, roleKey) {
+  const allowed = new Set(await getStoreTypeKeysWithRole(roleKey));
+  return (Array.isArray(stores) ? stores : []).filter((s) => {
+    if (!s || typeof s !== 'object') return false;
+    return allowed.has(String(s.store_type || ''));
+  });
+}
+
+async function filterStoresRetailDestinations(stores) {
+  const hubKeys = new Set(await getStoreTypeKeysWithRole(STORE_TYPE_ROLES.WAREHOUSE_HUB));
+  return (Array.isArray(stores) ? stores : []).filter((s) => {
+    if (!s || typeof s !== 'object') return false;
+    const status = String(s.status || 'ACTIVE').trim().toUpperCase();
+    if (status !== 'ACTIVE') return false;
+    const typeKey = String(s.store_type || '');
+    return typeKey && !hubKeys.has(typeKey);
+  });
+}
+
+async function getStoreTypeMetaForApi() {
+  await refreshStoreTypeCatalogCache();
+  return {
+    store_types: await getCatalogRows({ activeOnly: true }),
+    store_type_roles: STORE_TYPE_ROLES,
+    store_type_role_defs: getStoreTypeRoleDefs()
+  };
+}
+
+/** Sync helpers use in-memory cache after first load (for hot paths). */
+let syncRows = null;
+
+async function warmStoreTypesCache() {
+  syncRows = await refreshStoreTypeCatalogCache();
+  return syncRows;
+}
+
+function getCachedRowsSync() {
+  return syncRows;
+}
+
+function getStoreTypeKeysWithRoleSync(roleKey) {
+  const rows = syncRows || [];
+  return getStoreTypeKeysWithRoleFromRows(
+    rows.filter((r) => r.is_active !== false),
+    roleKey
+  );
+}
+
+function filterStoresByStoreTypeRoleSync(stores, roleKey) {
+  const allowed = new Set(getStoreTypeKeysWithRoleSync(roleKey));
+  return (Array.isArray(stores) ? stores : []).filter((s) => {
+    if (!s || typeof s !== 'object') return false;
+    return allowed.has(String(s.store_type || ''));
+  });
+}
+
+function filterStoresRetailDestinationsSync(stores) {
+  const hubKeys = new Set(getStoreTypeKeysWithRoleSync(STORE_TYPE_ROLES.WAREHOUSE_HUB));
+  return (Array.isArray(stores) ? stores : []).filter((s) => {
+    if (!s || typeof s !== 'object') return false;
+    const status = String(s.status || 'ACTIVE').trim().toUpperCase();
+    if (status !== 'ACTIVE') return false;
+    const typeKey = String(s.store_type || '');
+    return typeKey && !hubKeys.has(typeKey);
+  });
 }
 
 module.exports = {
-  STORE_TYPES_CATALOG,
+  STORE_TYPE_ROLES,
+  ensureCatalogLoaded,
+  warmStoreTypesCache,
+  getCachedRowsSync,
   getStoreTypesCatalog,
   getStoreTypeKeys,
-  isAllowedStoreType
+  getStoreTypeRoleKeys,
+  isKnownStoreTypeRole,
+  getStoreTypeRoleDefs,
+  isAllowedStoreTypeAsync,
+  getStoreTypeKeysWithRole,
+  isStoreTypeInRole,
+  filterStoresByStoreTypeRole,
+  filterStoresRetailDestinations,
+  filterStoresByStoreTypeRoleSync,
+  filterStoresRetailDestinationsSync,
+  getStoreTypeMetaForApi,
+  invalidateStoreTypeCatalogCache: () => {
+    syncRows = null;
+    invalidateStoreTypeCatalogCache();
+  }
 };

@@ -5,6 +5,7 @@
  *   - dbo.roles
  *   - dbo.role_permissions
  *   - dbo.role_module_access
+ *   - dbo.store_type_catalog + dbo.store_type_catalog_roles (reference data)
  *
  * Keeps exactly ONE user:
  *   1) Match dbo.users.username (case-insensitive) to @KeepUsername below, OR
@@ -77,7 +78,9 @@ WHERE s.name = N'dbo'
   AND t.name NOT IN (
     N'roles',
     N'role_permissions',
-    N'role_module_access'
+    N'role_module_access',
+    N'store_type_catalog',
+    N'store_type_catalog_roles'
   )
 ORDER BY t.name;
 

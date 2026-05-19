@@ -5857,3 +5857,42 @@ body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product .pos-pdp-detail
   flex: 1;
   min-width: 0;
 }
+
+.pos-lk-cart-unit-bind--pending {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.pos-lk-cart-unit-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  background: var(--card);
+  color: var(--text1);
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.pos-lk-cart-unit-input:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 2px var(--accL);
+}
+
+.pos-lk-cart-unit-bind--ok {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--greenL);
+  color: var(--text1);
+  font-size: 12px;
+}

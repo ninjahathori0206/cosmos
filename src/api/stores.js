@@ -3,7 +3,12 @@ const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure } = require('../config/db');
 const { requireModule, requirePermission } = require('../middleware/authorize');
-const { getStoreTypeKeys, getStoreTypesCatalog } = require('../config/storeTypesCatalog');
+const {
+  getStoreTypeMetaForApi,
+  isKnownStoreTypeRole,
+  filterStoresByStoreTypeRole,
+  isAllowedStoreTypeAsync
+} = require('../config/storeTypesCatalog');
 
 const router = express.Router();
 
@@ -11,23 +16,22 @@ router.get(
   '/store-types',
   requireModule('command_unit'),
   requirePermission('command_unit.stores.view'),
-  (req, res) => {
-    res.json({
-      success: true,
-      data: {
-        store_types: getStoreTypesCatalog()
-      }
-    });
+  async (req, res, next) => {
+    try {
+      return res.json({
+        success: true,
+        data: await getStoreTypeMetaForApi()
+      });
+    } catch (err) {
+      return next(err);
+    }
   }
 );
 
-const storeSchema = Joi.object({
+const storeBodySchema = Joi.object({
   store_name: Joi.string().max(200).required(),
   store_code: Joi.string().max(20).required(),
-  store_type: Joi.string()
-    .valid(...getStoreTypeKeys())
-    .required()
-    .messages({ 'any.only': 'store_type must be a configured store type (see Command Unit catalog).' }),
+  store_type: Joi.string().max(50).required(),
   gstin: Joi.string().max(20).allow(null, ''),
   address: Joi.string().max(500).allow(null, ''),
   city: Joi.string().max(100).allow(null, ''),
@@ -36,6 +40,29 @@ const storeSchema = Joi.object({
   status: Joi.string().valid('ACTIVE', 'COMING_SOON', 'INACTIVE').optional()
 });
 
+async function validateStoreBody(body) {
+  const { error, value } = storeBodySchema.validate(body);
+  if (error) {
+    return {
+      error: {
+        status: 400,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      }
+    };
+  }
+  if (!(await isAllowedStoreTypeAsync(value.store_type))) {
+    return {
+      error: {
+        status: 400,
+        message: 'Validation error',
+        errors: ['store_type must be an active format from Command Unit → Store Types.']
+      }
+    };
+  }
+  return { value };
+}
+
 router.get(
   '/',
   requireModule('command_unit'),
@@ -43,9 +70,20 @@ router.get(
   async (req, res, next) => {
     try {
       const result = await executeStoredProcedure('sp_Store_GetAll', {});
+      let rows = result.recordset || [];
+      const roleKey = req.query.role != null ? String(req.query.role).trim() : '';
+      if (roleKey) {
+        if (!isKnownStoreTypeRole(roleKey)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Unknown store type role. Use keys from GET /api/meta/store-types (store_type_role_defs).'
+          });
+        }
+        rows = await filterStoresByStoreTypeRole(rows, roleKey);
+      }
       return res.json({
         success: true,
-        data: result.recordset || []
+        data: rows
       });
     } catch (err) {
       return next(err);
@@ -59,15 +97,15 @@ router.post(
   requirePermission('command_unit.stores.create'),
   async (req, res, next) => {
     try {
-      const { error, value } = storeSchema.validate(req.body);
-      if (error) {
-        return res.status(400).json({
+      const validated = await validateStoreBody(req.body);
+      if (validated.error) {
+        return res.status(validated.error.status).json({
           success: false,
-          message: 'Validation error',
-          errors: error.details.map((d) => d.message)
+          message: validated.error.message,
+          errors: validated.error.errors
         });
       }
-
+      const value = validated.value;
       const status = value.status || 'ACTIVE';
 
       const result = await executeStoredProcedure('sp_Store_Create', {
@@ -103,15 +141,15 @@ router.put(
         return res.status(400).json({ success: false, message: 'Invalid store id' });
       }
 
-      const { error, value } = storeSchema.validate(req.body);
-      if (error) {
-        return res.status(400).json({
+      const validated = await validateStoreBody(req.body);
+      if (validated.error) {
+        return res.status(validated.error.status).json({
           success: false,
-          message: 'Validation error',
-          errors: error.details.map((d) => d.message)
+          message: validated.error.message,
+          errors: validated.error.errors
         });
       }
-
+      const value = validated.value;
       const status = value.status || 'ACTIVE';
 
       const result = await executeStoredProcedure('sp_Store_Update', {
@@ -163,5 +201,3 @@ router.delete(
 );
 
 module.exports = router;
-
-

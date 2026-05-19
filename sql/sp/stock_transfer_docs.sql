@@ -34,19 +34,28 @@ BEGIN
   BEGIN TRANSACTION;
   BEGIN TRY
 
-    -- Validate destination store
     IF NOT EXISTS (
       SELECT 1 FROM dbo.stores WHERE store_id = @to_store_id AND status = 'ACTIVE'
     )
       RAISERROR('Destination store not found or inactive.', 16, 1);
 
-    -- Parse lines into temp table
-    CREATE TABLE #lines (sku_id INT NOT NULL, qty INT NOT NULL);
+    CREATE TABLE #lines (
+      sku_id        INT NOT NULL,
+      qty           INT NOT NULL,
+      unit_ids_json NVARCHAR(MAX) NULL
+    );
 
-    INSERT INTO #lines (sku_id, qty)
-    SELECT CAST(j.sku_id AS INT), CAST(j.qty AS INT)
+    INSERT INTO #lines (sku_id, qty, unit_ids_json)
+    SELECT
+      CAST(j.sku_id AS INT),
+      CAST(j.qty AS INT),
+      j.unit_ids
     FROM OPENJSON(@lines_json)
-      WITH (sku_id INT '$.sku_id', qty INT '$.qty') j
+      WITH (
+        sku_id   INT           '$.sku_id',
+        qty      INT           '$.qty',
+        unit_ids NVARCHAR(MAX) '$.unit_ids' AS JSON
+      ) j
     WHERE CAST(j.qty AS INT) > 0;
 
     IF NOT EXISTS (SELECT 1 FROM #lines)
@@ -54,9 +63,8 @@ BEGIN
 
     DECLARE @wh_id INT = dbo.fn_Foundry_PrimaryWarehouseLocationId();
     IF @wh_id IS NULL
-      RAISERROR('Primary warehouse is not configured. Set app_settings.foundry_primary_warehouse_location_id or add an active HQ store.', 16, 1);
+      RAISERROR('Primary warehouse is not configured. Set app_settings.foundry_primary_warehouse_location_id or add an active warehouse hub store.', 16, 1);
 
-    -- Create the document header
     INSERT INTO dbo.stock_transfer_docs
       (doc_type, source_request_id, to_store_id, status, notes, dispatched_by, dispatched_at)
     VALUES
@@ -64,36 +72,102 @@ BEGIN
 
     DECLARE @doc_id INT = SCOPE_IDENTITY();
 
-    -- Validate warehouse stock and insert lines
-    DECLARE @sku_id  INT, @qty INT, @wh_qty INT;
+    DECLARE @sku_id INT, @qty INT, @unit_ids_json NVARCHAR(MAX), @wh_qty INT, @line_id INT;
+    DECLARE @requires_unit BIT, @unit_id INT, @unit_count INT;
 
-    DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
-      SELECT sku_id, qty FROM #lines;
-    OPEN cur;
-    FETCH NEXT FROM cur INTO @sku_id, @qty;
+    DECLARE line_cur CURSOR LOCAL FAST_FORWARD FOR
+      SELECT sku_id, qty, unit_ids_json FROM #lines;
+    OPEN line_cur;
+    FETCH NEXT FROM line_cur INTO @sku_id, @qty, @unit_ids_json;
 
     WHILE @@FETCH_STATUS = 0
     BEGIN
+      SELECT @requires_unit = CAST(ISNULL(ptc.requires_unit_barcode, 1) AS BIT)
+      FROM dbo.skus sk
+      INNER JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
+      LEFT JOIN dbo.pos_product_type_config ptc ON ptc.product_type_key = pm.product_type
+      WHERE sk.sku_id = @sku_id;
+
+      IF @requires_unit = 1
+      BEGIN
+        IF @unit_ids_json IS NULL OR LTRIM(RTRIM(@unit_ids_json)) IN (N'', N'[]')
+          RAISERROR('Unit barcodes are required for this product type. Scan each piece to transfer.', 16, 1);
+      END
+
       SELECT @wh_qty = ISNULL(qty, 0)
       FROM dbo.stock_balances
-      WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE' AND location_id = @wh_id;
+      WHERE sku_id = @sku_id AND location_type = N'WAREHOUSE' AND location_id = @wh_id;
 
       IF ISNULL(@wh_qty, 0) < @qty
         RAISERROR('Insufficient warehouse stock for one or more SKUs.', 16, 1);
 
-      -- Decrement WAREHOUSE (stock physically leaving HQ)
       UPDATE dbo.stock_balances
       SET qty = qty - @qty, last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-      WHERE sku_id = @sku_id AND location_type = 'WAREHOUSE' AND location_id = @wh_id;
+      WHERE sku_id = @sku_id AND location_type = N'WAREHOUSE' AND location_id = @wh_id;
 
-      -- Insert document line
       INSERT INTO dbo.stock_transfer_doc_lines (doc_id, sku_id, qty_sent)
       VALUES (@doc_id, @sku_id, @qty);
+      SET @line_id = SCOPE_IDENTITY();
 
-      FETCH NEXT FROM cur INTO @sku_id, @qty;
+      IF @requires_unit = 1
+      BEGIN
+        SET @unit_count = 0;
+
+        DECLARE unit_cur CURSOR LOCAL FAST_FORWARD FOR
+          SELECT CAST(u.value AS INT)
+          FROM OPENJSON(@unit_ids_json) u;
+
+        OPEN unit_cur;
+        FETCH NEXT FROM unit_cur INTO @unit_id;
+
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM dbo.sku_units u
+            WHERE u.unit_id = @unit_id
+              AND u.sku_id = @sku_id
+              AND u.status = N'AVAILABLE'
+              AND u.location_type = N'WAREHOUSE'
+              AND u.location_id = @wh_id
+          )
+            RAISERROR('One or more units are not available at the primary warehouse.', 16, 1);
+
+          IF EXISTS (
+            SELECT 1
+            FROM dbo.stock_transfer_doc_units du
+            INNER JOIN dbo.stock_transfer_docs d ON d.doc_id = du.doc_id
+            WHERE du.unit_id = @unit_id
+              AND d.status IN (N'DISPATCHED', N'ACCEPTED')
+          )
+            RAISERROR('One or more units are already on an open transfer document.', 16, 1);
+
+          INSERT INTO dbo.stock_transfer_doc_units (doc_id, line_id, unit_id)
+          VALUES (@doc_id, @line_id, @unit_id);
+
+          UPDATE dbo.sku_units
+          SET
+            status        = N'IN_TRANSIT',
+            location_type = N'IN_TRANSIT',
+            location_id   = @to_store_id
+          WHERE unit_id = @unit_id;
+
+          SET @unit_count = @unit_count + 1;
+          FETCH NEXT FROM unit_cur INTO @unit_id;
+        END;
+
+        CLOSE unit_cur;
+        DEALLOCATE unit_cur;
+
+        IF @unit_count <> @qty
+          RAISERROR('Unit count does not match line quantity for a SKU.', 16, 1);
+      END
+
+      FETCH NEXT FROM line_cur INTO @sku_id, @qty, @unit_ids_json;
     END;
 
-    CLOSE cur; DEALLOCATE cur;
+    CLOSE line_cur;
+    DEALLOCATE line_cur;
     DROP TABLE #lines;
     COMMIT TRANSACTION;
 
@@ -199,25 +273,42 @@ BEGIN
 
       IF @qty_recv > 0
       BEGIN
-        -- Upsert STORE balance (stock arrives at showroom)
         IF EXISTS (
           SELECT 1 FROM dbo.stock_balances
-          WHERE sku_id = @sku_id AND location_type = 'STORE' AND location_id = @to_store_id
+          WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @to_store_id
         )
           UPDATE dbo.stock_balances
           SET qty = qty + @qty_recv, last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-          WHERE sku_id = @sku_id AND location_type = 'STORE' AND location_id = @to_store_id;
+          WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @to_store_id;
         ELSE
           INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, location_name, qty, last_updated)
-          VALUES (@sku_id, 'STORE', @to_store_id, @store_name, @qty_recv, DATEADD(MINUTE, 330, SYSUTCDATETIME()));
+          VALUES (@sku_id, N'STORE', @to_store_id, @store_name, @qty_recv, DATEADD(MINUTE, 330, SYSUTCDATETIME()));
 
-        -- Audit movement
         INSERT INTO dbo.stock_movements
           (sku_id, from_location_type, from_location_id, to_location_type, to_location_id,
            qty, movement_type, reference_id, notes, created_by)
         VALUES
-          (@sku_id, 'WAREHOUSE', @wh_id, 'STORE', @to_store_id,
-           @qty_recv, 'HQ_TO_STORE', @doc_id, NULL, @stocked_by);
+          (@sku_id, N'WAREHOUSE', @wh_id, N'STORE', @to_store_id,
+           @qty_recv, N'HQ_TO_STORE', @doc_id, NULL, @stocked_by);
+
+        ;WITH ranked AS (
+          SELECT
+            du.unit_id,
+            ROW_NUMBER() OVER (ORDER BY u.unit_no) AS rn
+          FROM dbo.stock_transfer_doc_units du
+          INNER JOIN dbo.sku_units u ON u.unit_id = du.unit_id
+          WHERE du.line_id = @line_id
+            AND du.doc_id = @doc_id
+            AND u.status = N'IN_TRANSIT'
+        )
+        UPDATE u
+        SET
+          u.status        = N'AT_STORE',
+          u.location_type = N'STORE',
+          u.location_id   = @to_store_id
+        FROM dbo.sku_units u
+        INNER JOIN ranked r ON r.unit_id = u.unit_id
+        WHERE r.rn <= @qty_recv;
       END;
 
       FETCH NEXT FROM cur INTO @line_id, @qty_recv, @sku_id;
@@ -346,14 +437,28 @@ BEGIN
     ISNULL(pic.colour_code,'') AS colour_code,
     sk.sale_price,
     l.qty_sent,
-    l.qty_received
+    l.qty_received,
+    CAST(ISNULL(ptc.requires_unit_barcode, 1) AS BIT) AS requires_unit_barcode
   FROM dbo.stock_transfer_doc_lines l
   JOIN dbo.skus sk                        ON sk.sku_id            = l.sku_id
   JOIN dbo.product_master pm              ON sk.product_master_id = pm.product_id
+  LEFT JOIN dbo.pos_product_type_config ptc ON ptc.product_type_key = pm.product_type
   LEFT JOIN dbo.home_brands hb            ON pm.home_brand_id     = hb.brand_id
   LEFT JOIN dbo.maker_master mm          ON pm.maker_master_id   = mm.maker_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id    = pic.colour_id
   WHERE l.doc_id = @doc_id
   ORDER BY l.line_id;
+
+  -- RS3: units on this document (for per-piece scan at store receipt)
+  SELECT
+    du.line_id,
+    du.unit_id,
+    u.unit_no,
+    u.unit_barcode,
+    u.status AS unit_status
+  FROM dbo.stock_transfer_doc_units du
+  INNER JOIN dbo.sku_units u ON u.unit_id = du.unit_id
+  WHERE du.doc_id = @doc_id
+  ORDER BY du.line_id, u.unit_no;
 END;
 GO

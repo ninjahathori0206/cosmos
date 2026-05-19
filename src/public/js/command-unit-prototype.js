@@ -12,6 +12,7 @@ const COMMAND_UNIT_PAGE_PATHS = {
   membership: '/command-unit/membership',
   promotion: '/command-unit/promotion',
   leavetypes: '/command-unit/leavetypes',
+  'store-types': '/command-unit/store-types',
   'foundry-settings': '/command-unit/foundry-settings',
   'cu-suppliers': '/command-unit/cu-suppliers',
   'cu-maker-master': '/command-unit/cu-maker-master',
@@ -477,11 +478,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (prev && [...sel.options].some((x) => x.value === prev)) sel.value = prev;
   }
 
+  function setStoreFormatHintFromSelect(selectId, hintId) {
+    const sel = document.getElementById(selectId);
+    const hint = document.getElementById(hintId);
+    if (!sel || !hint) return;
+    const row = (storeTypesCatalogRows || []).find((r) => r.key === sel.value);
+    hint.textContent = row && row.description ? row.description : '';
+  }
+
   function setNewStoreFormatHint() {
-    const hint = document.getElementById('new-store-format-hint');
-    if (!hint) return;
-    const hq = (storeTypesCatalogRows || []).find((r) => r.key === 'HQ');
-    hint.textContent = hq && hq.description ? hq.description : '';
+    setStoreFormatHintFromSelect('new-store-format', 'new-store-format-hint');
   }
 
   async function ensureStoreTypesCatalogLoaded() {
@@ -492,6 +498,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     applyStoreTypeOptionsToSelect(document.getElementById('new-store-format'), true, 'Select format…');
     applyStoreTypeOptionsToSelect(document.getElementById('edit-store-format'), false);
     setNewStoreFormatHint();
+    const newFmt = document.getElementById('new-store-format');
+    if (newFmt && !newFmt.dataset.cuFormatHintBound) {
+      newFmt.dataset.cuFormatHintBound = '1';
+      newFmt.addEventListener('change', setNewStoreFormatHint);
+    }
   }
 
   function statusBadge(code, text) {
@@ -2448,6 +2459,271 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // ─── STORE TYPE CATALOG (Command Unit admin) ───────────────────────────────
+
+  let cuStoreTypeRoleDefs = [];
+  let cuStoreTypeCatalogAdmin = [];
+  let cuStoreTypeEditKey = '';
+
+  function renderCuStoreTypeRoleCheckboxes(containerId, selectedRoles) {
+    const wrap = document.getElementById(containerId);
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const selected = new Set(selectedRoles || []);
+    (cuStoreTypeRoleDefs || []).forEach((def) => {
+      const label = document.createElement('label');
+      label.style.cssText =
+        'display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;cursor:pointer;font-weight:400';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = def.key;
+      cb.checked = selected.has(def.key);
+      label.appendChild(cb);
+      const span = document.createElement('span');
+      span.innerHTML =
+        '<span style="font-weight:600;color:var(--text1)">' +
+        escHtml(def.label) +
+        '</span>' +
+        (def.description
+          ? '<br><span style="color:var(--text2);font-size:11px;line-height:1.35">' +
+            escHtml(def.description) +
+            '</span>'
+          : '');
+      label.appendChild(span);
+      wrap.appendChild(label);
+    });
+    if (!cuStoreTypeRoleDefs.length) {
+      wrap.textContent = 'No roles defined in catalogue.';
+    }
+  }
+
+  function readCuStoreTypeRoleCheckboxes(containerId) {
+    const wrap = document.getElementById(containerId);
+    if (!wrap) return [];
+    return [...wrap.querySelectorAll('input[type="checkbox"]:checked')].map((cb) => cb.value);
+  }
+
+  function storeTypeRoleLabels(row) {
+    return (row.roles || [])
+      .map((r) => {
+        const def = (cuStoreTypeRoleDefs || []).find((d) => d.key === r);
+        return def ? def.label : r;
+      })
+      .join(', ');
+  }
+
+  async function loadStoreTypeCatalogAdmin() {
+    const tbody = document.getElementById('cu-store-types-tbody');
+    if (!tbody) return;
+    if (typeof window.cosmosSkeletonTable === 'function') {
+      window.cosmosSkeletonTable('cu-store-types-tbody', 7);
+    } else {
+      tbody.innerHTML = '';
+    }
+    try {
+      const data = await apiGet('/api/settings/store-type-catalog');
+      cuStoreTypeRoleDefs = data.store_type_role_defs || [];
+      cuStoreTypeCatalogAdmin = data.store_types || [];
+      storeTypesCatalogRows = null;
+      tbody.innerHTML = '';
+      if (!cuStoreTypeCatalogAdmin.length) {
+        tbody.innerHTML =
+          '<tr><td colspan="7" class="td-muted">No store types yet. Add your first format.</td></tr>';
+        return;
+      }
+      cuStoreTypeCatalogAdmin.forEach((row) => {
+        const tr = document.createElement('tr');
+        tr.dataset.typeKey = row.key;
+        const rolesText = storeTypeRoleLabels(row) || '—';
+        const statusBadge = row.is_active !== false
+          ? '<span class="badge badge-green">Active</span>'
+          : '<span class="badge badge-gray">Inactive</span>';
+        tr.innerHTML =
+          '<td class="font-mono fw-600">' +
+          escHtml(row.key) +
+          '</td>' +
+          '<td class="fw-600">' +
+          escHtml(row.label) +
+          '</td>' +
+          '<td class="td-muted text-xs">' +
+          escHtml(rolesText) +
+          '</td>' +
+          '<td>' +
+          escHtml(String(row.sort_order != null ? row.sort_order : '')) +
+          '</td>' +
+          '<td>' +
+          escHtml(String(row.store_count != null ? row.store_count : 0)) +
+          '</td>' +
+          '<td>' +
+          statusBadge +
+          '</td>' +
+          '<td><button type="button" class="topbar-btn cu-store-type-edit-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>';
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('.cu-store-type-edit-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          const key = e.target.closest('tr').dataset.typeKey;
+          openCuEditStoreTypeModal(key);
+        });
+      });
+    } catch (err) {
+      tbody.innerHTML =
+        '<tr><td colspan="7" class="td-muted">Error: ' + escHtml(err.message) + '</td></tr>';
+      if (typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError(err.message || 'Could not load store types');
+      }
+    }
+  }
+
+  function openCuNewStoreTypeModal() {
+    showError('cu-st-new-error', '');
+    const keyIn = document.getElementById('cu-st-new-key');
+    const labelIn = document.getElementById('cu-st-new-label');
+    if (keyIn) keyIn.value = '';
+    if (labelIn) labelIn.value = '';
+    const descIn = document.getElementById('cu-st-new-desc');
+    if (descIn) descIn.value = '';
+    const sortIn = document.getElementById('cu-st-new-sort');
+    if (sortIn) sortIn.value = '100';
+    renderCuStoreTypeRoleCheckboxes('cu-st-new-roles', []);
+    window.openModal && window.openModal('modal-cu-new-store-type');
+  }
+
+  function openCuEditStoreTypeModal(typeKey) {
+    const row = cuStoreTypeCatalogAdmin.find((r) => r.key === typeKey);
+    if (!row) return;
+    cuStoreTypeEditKey = row.key;
+    showError('cu-st-edit-error', '');
+    const title = document.getElementById('cu-st-edit-title');
+    if (title) title.textContent = 'Edit — ' + row.label;
+    const keyIn = document.getElementById('cu-st-edit-key');
+    if (keyIn) keyIn.value = row.key;
+    const labelIn = document.getElementById('cu-st-edit-label');
+    if (labelIn) labelIn.value = row.label || '';
+    const descIn = document.getElementById('cu-st-edit-desc');
+    if (descIn) descIn.value = row.description || '';
+    const sortIn = document.getElementById('cu-st-edit-sort');
+    if (sortIn) sortIn.value = row.sort_order != null ? String(row.sort_order) : '100';
+    const activeSel = document.getElementById('cu-st-edit-active');
+    if (activeSel) activeSel.value = row.is_active !== false ? '1' : '0';
+    renderCuStoreTypeRoleCheckboxes('cu-st-edit-roles', row.roles || []);
+    window.openModal && window.openModal('modal-cu-edit-store-type');
+  }
+
+  async function handleCuCreateStoreType() {
+    showError('cu-st-new-error', '');
+    const btn = document.getElementById('cu-st-new-save-btn');
+    const keyIn = document.getElementById('cu-st-new-key');
+    const labelIn = document.getElementById('cu-st-new-label');
+    const typeKey = val('cu-st-new-key').trim();
+    const label = val('cu-st-new-label').trim();
+    if (!typeKey) {
+      if (typeof window.cosmosFieldError === 'function' && keyIn) {
+        window.cosmosFieldError(keyIn, 'Required');
+      }
+      return;
+    }
+    if (!label) {
+      if (typeof window.cosmosFieldError === 'function' && labelIn) {
+        window.cosmosFieldError(labelIn, 'Required');
+      }
+      return;
+    }
+    if (typeof window.cosmosBtnLoading === 'function' && btn) window.cosmosBtnLoading(btn);
+    try {
+      await apiPost('/api/settings/store-type-catalog', {
+        type_key: typeKey,
+        label: label,
+        description: val('cu-st-new-desc').trim() || null,
+        sort_order: Number(val('cu-st-new-sort')) || 100,
+        roles: readCuStoreTypeRoleCheckboxes('cu-st-new-roles'),
+        is_active: true
+      });
+      window.closeModal && window.closeModal('modal-cu-new-store-type');
+      if (typeof window.cosmosToastSuccess === 'function') {
+        window.cosmosToastSuccess('Store type created.');
+      }
+      await loadStoreTypeCatalogAdmin();
+      await ensureStoreTypesCatalogLoaded();
+    } catch (err) {
+      showError('cu-st-new-error', err.message || 'Create failed');
+      if (typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError(err.message || 'Create failed');
+      }
+      if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      return;
+    }
+    if (typeof window.cosmosBtnSuccess === 'function' && btn) window.cosmosBtnSuccess(btn);
+  }
+
+  async function handleCuSaveStoreType() {
+    if (!cuStoreTypeEditKey) return;
+    showError('cu-st-edit-error', '');
+    const btn = document.getElementById('cu-st-edit-save-btn');
+    const labelIn = document.getElementById('cu-st-edit-label');
+    const label = val('cu-st-edit-label').trim();
+    if (!label) {
+      if (typeof window.cosmosFieldError === 'function' && labelIn) {
+        window.cosmosFieldError(labelIn, 'Required');
+      }
+      return;
+    }
+    if (typeof window.cosmosBtnLoading === 'function' && btn) window.cosmosBtnLoading(btn);
+    try {
+      await apiPut(
+        '/api/settings/store-type-catalog/' + encodeURIComponent(cuStoreTypeEditKey),
+        {
+          label: label,
+          description: val('cu-st-edit-desc').trim() || null,
+          sort_order: Number(val('cu-st-edit-sort')) || 100,
+          roles: readCuStoreTypeRoleCheckboxes('cu-st-edit-roles'),
+          is_active: val('cu-st-edit-active') === '1'
+        }
+      );
+      window.closeModal && window.closeModal('modal-cu-edit-store-type');
+      if (typeof window.cosmosToastSuccess === 'function') {
+        window.cosmosToastSuccess('Store type saved.');
+      }
+      await loadStoreTypeCatalogAdmin();
+      await ensureStoreTypesCatalogLoaded();
+    } catch (err) {
+      showError('cu-st-edit-error', err.message || 'Save failed');
+      if (typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError(err.message || 'Save failed');
+      }
+      if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      return;
+    }
+    if (typeof window.cosmosBtnSuccess === 'function' && btn) window.cosmosBtnSuccess(btn);
+  }
+
+  async function handleCuDeactivateStoreType() {
+    if (!cuStoreTypeEditKey) return;
+    if (!window.confirm('Deactivate this store type? It will be hidden from new store forms.')) return;
+    showError('cu-st-edit-error', '');
+    const btn = document.getElementById('cu-st-edit-deactivate-btn');
+    if (typeof window.cosmosBtnLoading === 'function' && btn) window.cosmosBtnLoading(btn);
+    try {
+      await apiDelete(
+        '/api/settings/store-type-catalog/' + encodeURIComponent(cuStoreTypeEditKey)
+      );
+      window.closeModal && window.closeModal('modal-cu-edit-store-type');
+      if (typeof window.cosmosToastSuccess === 'function') {
+        window.cosmosToastSuccess('Store type deactivated.');
+      }
+      await loadStoreTypeCatalogAdmin();
+      await ensureStoreTypesCatalogLoaded();
+    } catch (err) {
+      showError('cu-st-edit-error', err.message || 'Deactivate failed');
+      if (typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError(err.message || 'Deactivate failed');
+      }
+      if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+      return;
+    }
+    if (typeof window.cosmosBtnDone === 'function' && btn) window.cosmosBtnDone(btn);
+  }
+
   // ─── LEAVE TYPES ──────────────────────────────────────────────────────────
 
   let cachedLeaves = [];
@@ -2931,6 +3207,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Leave Types
   bind('new-leave-save-btn', handleCreateLeave);
   bind('edit-leave-save-btn', handleSaveLeaveChanges);
+  bind('cu-store-type-add-btn', openCuNewStoreTypeModal);
+  bind('cu-st-new-save-btn', handleCuCreateStoreType);
+  bind('cu-st-edit-save-btn', handleCuSaveStoreType);
+  bind('cu-st-edit-deactivate-btn', handleCuDeactivateStoreType);
   bind('edit-leave-deactivate-btn', handleDeactivateLeave);
 
   // ─── FOUNDRY SETTINGS ─────────────────────────────────────────────────────
@@ -2993,31 +3273,101 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  let _cuPosPtcRows = [];
+
+  async function loadCuPosProductTypeConfig() {
+    const tbody = document.getElementById('cu-pos-ptc-tbody');
+    const status = document.getElementById('cu-pos-ptc-status');
+    if (!tbody) return;
+    if (status) status.textContent = '';
+    if (typeof window.cosmosSkeletonTable === 'function') {
+      window.cosmosSkeletonTable('cu-pos-ptc-tbody', 3);
+    }
+    try {
+      const rows = await apiGet('/api/settings/pos-product-type-config');
+      _cuPosPtcRows = Array.isArray(rows) ? rows : [];
+      if (!_cuPosPtcRows.length) {
+        tbody.innerHTML = '<tr><td colspan="3" class="td-muted" style="text-align:center;padding:24px">No product types configured. Run POS migrations first.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = _cuPosPtcRows.map(function (r) {
+        const key = escHtml(r.product_type_key || '');
+        const ff = escHtml(r.fulfillment_mode || '—');
+        const checked = r.requires_unit_barcode !== false && r.requires_unit_barcode !== 0;
+        return '<tr data-ptc-key="' + key + '">' +
+          '<td class="mono fw-600">' + key + '</td>' +
+          '<td class="td-muted">' + ff + '</td>' +
+          '<td><label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
+          '<input type="checkbox" class="cu-ptc-unit-cb" data-key="' + key + '"' + (checked ? ' checked' : '') + '>' +
+          '<span style="font-size:13px;color:var(--text2)">Scan each unit</span></label></td>' +
+          '</tr>';
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = '<tr><td colspan="3" class="td-muted" style="text-align:center;padding:24px;color:var(--red)">' +
+        escHtml(err.message || 'Could not load') + '</td></tr>';
+      if (typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError(err.message || 'Could not load POS product type rules');
+      }
+    }
+  }
+
+  async function handleSaveCuPosProductTypeConfig() {
+    const tbody = document.getElementById('cu-pos-ptc-tbody');
+    const status = document.getElementById('cu-pos-ptc-status');
+    const btn = document.getElementById('btn-cu-save-pos-ptc');
+    if (!tbody || !btn) return;
+    const rows = [];
+    tbody.querySelectorAll('tr[data-ptc-key]').forEach(function (tr) {
+      const key = tr.getAttribute('data-ptc-key');
+      if (!key) return;
+      const cb = tr.querySelector('input.cu-ptc-unit-cb');
+      rows.push({
+        product_type_key: key,
+        requires_unit_barcode: !!(cb && cb.checked)
+      });
+    });
+    if (!rows.length) {
+      if (typeof window.cosmosToastWarn === 'function') {
+        window.cosmosToastWarn('Nothing to save.');
+      }
+      return;
+    }
+    if (status) status.textContent = '';
+    if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn);
+    try {
+      await apiPut('/api/settings/pos-product-type-config', { rows: rows });
+      if (typeof window.cosmosToastSuccess === 'function') {
+        window.cosmosToastSuccess('Unit barcode rules saved.');
+      }
+      if (status) status.textContent = 'Saved.';
+      await loadCuPosProductTypeConfig();
+    } catch (err) {
+      if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn);
+      if (typeof window.cosmosToastError === 'function') {
+        window.cosmosToastError(err.message || 'Save failed');
+      }
+      return;
+    }
+    if (typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn);
+  }
+
   async function loadInventoryHubSettings() {
     const sel = document.getElementById('cu-primary-wh-select');
     const status = document.getElementById('cu-primary-wh-status');
     if (!sel) return;
     if (status) status.textContent = '';
     try {
-      const [storeRows, hub] = await Promise.all([
-        apiGet('/api/stores'),
-        apiGet('/api/settings/inventory-hub')
-      ]);
-      const stores = Array.isArray(storeRows) ? storeRows : [];
-      const hq = stores.filter(function (s) {
-        return String(s.store_type || '').toUpperCase() === 'HQ'
-          && s.is_active
-          && String(s.status || 'ACTIVE').toUpperCase() === 'ACTIVE';
-      });
+      const hub = await apiGet('/api/settings/inventory-hub');
+      const eligible = Array.isArray(hub && hub.eligible_stores) ? hub.eligible_stores : [];
       sel.innerHTML = '<option value="">— Select —</option>'
-        + hq.map(function (s) {
+        + eligible.map(function (s) {
           return '<option value="' + Number(s.store_id) + '">' + escHtml(s.store_name) + ' (' + escHtml(s.store_code) + ')</option>';
         }).join('');
       const cur = hub && hub.primary_warehouse_store_id != null ? Number(hub.primary_warehouse_store_id) : null;
       if (cur) sel.value = String(cur);
       else sel.value = '';
       if (status && hub && hub.configured === false) {
-        status.textContent = 'Not configured — pick an HQ store and save.';
+        status.textContent = 'Not configured — pick a warehouse hub store and save.';
       }
     } catch (err) {
       sel.innerHTML = '<option value="">—</option>';
@@ -3246,6 +3596,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   })();
   document.getElementById('btn-cu-save-inventory-hub')?.addEventListener('click', function () {
     void handleSaveInventoryHub();
+  });
+  document.getElementById('btn-cu-save-pos-ptc')?.addEventListener('click', function () {
+    void handleSaveCuPosProductTypeConfig();
   });
   const _cuPrimaryWhSel = document.getElementById('cu-primary-wh-select');
   if (_cuPrimaryWhSel) {
@@ -3902,7 +4255,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (id === 'foundry-settings') {
         void loadFoundrySettings();
         void loadInventoryHubSettings();
+        void loadCuPosProductTypeConfig();
       }
+      if (id === 'store-types') void loadStoreTypeCatalogAdmin();
     };
   }
 
@@ -3924,5 +4279,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (_cuBootPage === 'foundry-settings') {
     void loadFoundrySettings();
     void loadInventoryHubSettings();
+    void loadCuPosProductTypeConfig();
   }
+  if (_cuBootPage === 'store-types') void loadStoreTypeCatalogAdmin();
 });

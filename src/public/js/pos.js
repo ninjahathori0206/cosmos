@@ -2446,9 +2446,8 @@
     const session = getPosSession()
     if (!session || !session.token) return
     try {
-      const res = await apiGet('/api/pos/unit-lookup?q=' + encodeURIComponent(code), session.token)
-      const row = res && res.data ? res.data : null
-      if (!row) {
+      const row = await apiGet('/api/pos/unit-lookup?q=' + encodeURIComponent(code), session.token)
+      if (!row || !row.unit_id) {
         if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Unit barcode not found.')
         return
       }
@@ -2479,8 +2478,8 @@
       const session = getPosSession()
       if (session && session.token) {
         try {
-          const res = await apiGet('/api/pos/unit-lookup?q=' + encodeURIComponent(code), session.token)
-          if (res && res.data && addToCartFromUnitLookup(res.data)) {
+          const row = await apiGet('/api/pos/unit-lookup?q=' + encodeURIComponent(code), session.token)
+          if (row && addToCartFromUnitLookup(row)) {
             if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Added unit ' + code)
             const onOrder = document.getElementById('screen-pos-order-builder')
             if (onOrder && onOrder.classList.contains('active')) {
@@ -4693,8 +4692,9 @@
           '<div style="font-size:12px;font-weight:600;color:var(--text1);margin-bottom:6px">Unit barcode required</div>' +
           '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Scan or enter the 7-digit code on the label before checkout.</div>' +
           '<div style="display:flex;gap:8px;align-items:center">' +
-          '<input type="text" class="pos-lk-cart-unit-input mono" data-action="bind-unit-input" data-idx="' + idx + '" ' +
-          'inputmode="numeric" maxlength="7" placeholder="0000000" aria-label="Unit barcode for line ' + (idx + 1) + '">' +
+          '<input type="text" class="pos-lk-cart-unit-input mono" data-bind-unit-idx="' + idx + '" ' +
+          'autocomplete="off" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="e.g. 0001711" ' +
+          'aria-label="Unit barcode for line ' + (idx + 1) + '">' +
           '<button type="button" class="btn primary btn-sm" data-action="bind-unit-submit" data-idx="' + idx + '">Link unit</button>' +
           '</div></div>'
       }
@@ -4794,8 +4794,9 @@
       return
     }
     const idx = Number(btn.dataset.idx)
+    if (action === 'bind-unit-input') return
     if (action === 'bind-unit-submit') {
-      const inp = obCart_el.querySelector('[data-action="bind-unit-input"][data-idx="' + idx + '"]')
+      const inp = obCart_el.querySelector('[data-bind-unit-idx="' + idx + '"]')
       void bindUnitBarcodeToCartLine(idx, inp ? inp.value : '')
       return
     }
@@ -4931,11 +4932,18 @@
     btnObAddMore.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
 
     obCart_el.addEventListener('click', obHandleCartClick)
+    obCart_el.addEventListener('input', function (e) {
+      const inp = e.target.closest('[data-bind-unit-idx]')
+      if (!inp) return
+      const digits = String(inp.value || '').replace(/\D/g, '').slice(0, 7)
+      if (inp.value !== digits) inp.value = digits
+    })
     obCart_el.addEventListener('keydown', function (e) {
-      const inp = e.target.closest('[data-action="bind-unit-input"]')
+      const inp = e.target.closest('[data-bind-unit-idx]')
       if (!inp || e.key !== 'Enter') return
       e.preventDefault()
-      const idx = Number(inp.getAttribute('data-idx'))
+      e.stopPropagation()
+      const idx = Number(inp.getAttribute('data-bind-unit-idx'))
       void bindUnitBarcodeToCartLine(idx, inp.value)
     })
 

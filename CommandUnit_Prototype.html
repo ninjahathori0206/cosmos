@@ -64,6 +64,9 @@
     <div class="nav-item" onclick="showPage('membership', this)">
       <span class="icon">🌟</span> Membership Tiers
     </div>
+    <div class="nav-item" onclick="showPage('store-types', this)">
+      <span class="icon">🏪</span> Store Types
+    </div>
     <div class="nav-item" onclick="showPage('leavetypes', this)">
       <span class="icon">📅</span> Leave Types
     </div>
@@ -736,6 +739,39 @@
     </div>
   </div>
 
+  <!-- ═══ PAGE: STORE TYPES ═══ -->
+  <div class="page" id="page-store-types">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Store Types</div>
+        <div class="page-subtitle">Formats shown when creating stores. Keys are stored in the database; labels drive dropdowns across Cosmos.</div>
+      </div>
+      <button type="button" class="topbar-btn primary ml-auto" id="cu-store-type-add-btn">+ Add Store Type</button>
+    </div>
+    <div class="alert alert-blue" style="margin-bottom:16px">
+      <span class="alert-icon">ℹ️</span>
+      <div>Deactivate a type only when no stores use it. Assign <strong>Primary warehouse hub</strong> for formats that can be the Foundry inventory hub.</div>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Label</th>
+              <th>Roles</th>
+              <th>Sort</th>
+              <th>Stores</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="cu-store-types-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══ PAGE: LEAVE TYPES ═══ -->
   <div class="page" id="page-leavetypes">
     <div class="page-header flex items-center">
@@ -774,7 +810,7 @@
     <div class="card" style="margin-bottom:16px" id="cu-inventory-hub-card">
       <div class="card-header">
         <div class="card-title">Primary warehouse (inventory hub)</div>
-        <div class="td-muted text-xs">Foundry WAREHOUSE stock uses this store’s <code>store_id</code> as <code>stock_balances.location_id</code>. Only active stores with type HQ are listed.</div>
+        <div class="td-muted text-xs">Foundry WAREHOUSE stock uses this store’s <code>store_id</code> as <code>stock_balances.location_id</code>. Only active stores with a warehouse-hub format are listed (configure under Store Types).</div>
       </div>
       <div style="padding:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
         <div style="min-width:240px">
@@ -786,7 +822,31 @@
       </div>
     </div>
 
-    <div class="alert alert-blue" style="margin-bottom:16px">
+        <div class="card" style="margin-bottom:16px" id="cu-pos-product-types-card">
+      <div class="card-header">
+        <div class="card-title">POS product types — unit barcode</div>
+        <div class="td-muted text-xs">When enabled, Foundry transfers and POS checkout require scanning each 7-digit unit QR. Bulk types (e.g. contact lenses) can use quantity only.</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Product type</th>
+              <th>Fulfillment</th>
+              <th>Requires unit scan</th>
+            </tr>
+          </thead>
+          <tbody id="cu-pos-ptc-tbody">
+            <tr><td colspan="3" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:12px 16px;display:flex;gap:10px;align-items:center">
+        <button type="button" class="topbar-btn primary" id="btn-cu-save-pos-ptc">Save unit barcode rules</button>
+        <span class="td-muted text-xs" id="cu-pos-ptc-status"></span>
+      </div>
+    </div>
+<div class="alert alert-blue" style="margin-bottom:16px">
       <span class="alert-icon">ℹ️</span>
       <div>Select a lookup type below to view, add, edit or disable its values. These values appear as dropdown options in the Foundry procurement forms.</div>
     </div>
@@ -1493,6 +1553,56 @@
   </div>
 </div>
 
+<!-- New Store Type -->
+<div class="modal-overlay" id="modal-cu-new-store-type">
+  <div class="modal" style="width:560px">
+    <div class="modal-header">
+      <div class="modal-title">Add Store Type</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-new-store-type')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Type key <span class="label-req">*</span></label><input id="cu-st-new-key" type="text" placeholder="e.g. Franchise" autocomplete="off"><div class="form-hint">Letters, numbers, underscore. Cannot change after create.</div></div>
+        <div class="form-group"><label>Display label <span class="label-req">*</span></label><input id="cu-st-new-label" type="text" placeholder="e.g. Franchise"></div>
+        <div class="form-group span2"><label>Description</label><textarea id="cu-st-new-desc" rows="2" placeholder="Shown under Store format when selected"></textarea></div>
+        <div class="form-group"><label>Sort order</label><input id="cu-st-new-sort" type="number" min="0" max="9999" value="100"></div>
+        <div class="form-group span2" id="cu-st-new-roles-wrap"><label>Roles</label><div id="cu-st-new-roles" class="td-muted text-xs"></div></div>
+      </div>
+      <div id="cu-st-new-error" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-new-store-type')">Cancel</button>
+      <button type="button" class="topbar-btn primary" id="cu-st-new-save-btn">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Store Type -->
+<div class="modal-overlay" id="modal-cu-edit-store-type">
+  <div class="modal" style="width:560px">
+    <div class="modal-header">
+      <div><div class="modal-title" id="cu-st-edit-title">Edit Store Type</div></div>
+      <div class="modal-close" onclick="closeModal('modal-cu-edit-store-type')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Type key</label><input id="cu-st-edit-key" type="text" readonly class="font-mono" style="opacity:0.85"></div>
+        <div class="form-group"><label>Display label <span class="label-req">*</span></label><input id="cu-st-edit-label" type="text"></div>
+        <div class="form-group span2"><label>Description</label><textarea id="cu-st-edit-desc" rows="2"></textarea></div>
+        <div class="form-group"><label>Sort order</label><input id="cu-st-edit-sort" type="number" min="0" max="9999"></div>
+        <div class="form-group"><label>Status</label><select id="cu-st-edit-active"><option value="1">Active</option><option value="0">Inactive</option></select></div>
+        <div class="form-group span2" id="cu-st-edit-roles-wrap"><label>Roles</label><div id="cu-st-edit-roles" class="td-muted text-xs"></div></div>
+      </div>
+      <div id="cu-st-edit-error" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-edit-store-type')">Cancel</button>
+      <button type="button" class="topbar-btn" id="cu-st-edit-deactivate-btn" style="border-color:var(--red);color:var(--red)">Deactivate</button>
+      <button type="button" class="topbar-btn primary" id="cu-st-edit-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- New Leave Type -->
 <div class="modal-overlay" id="modal-new-leave">
   <div class="modal" style="width:500px">
@@ -1827,7 +1937,7 @@ function showPage(id, el, _opts) {
     homebrands: 'Home Brand Management', locations: 'Location Type Config',
     settings: 'System Settings', 'pos-settings': 'POS Settings', membership: 'Membership Tiers',
     promotion: 'Configure Offer',
-    leavetypes: 'Leave Types', 'foundry-settings': 'Foundry Settings', audit: 'Audit Logs',
+    leavetypes: 'Leave Types', 'store-types': 'Store Types', 'foundry-settings': 'Foundry Settings', audit: 'Audit Logs',
     'cu-suppliers': 'Suppliers', 'cu-maker-master': 'Maker Master', 'cu-branding-agents': 'Branding Agents',
     tablets: 'Store OS Tablets'
   };

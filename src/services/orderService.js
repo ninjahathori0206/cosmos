@@ -873,7 +873,7 @@ async function createOrderInTransaction(transaction, {
       rUnit.input('unit_id', sql.Int, unitId)
       rUnit.input('sku_id', sql.Int, line.sku_id)
       const unitRes = await rUnit.query(`
-        SELECT unit_id, sku_id, status
+        SELECT unit_id, sku_id, status, location_type, location_id
         FROM dbo.sku_units
         WHERE unit_id = @unit_id AND sku_id = @sku_id
       `)
@@ -883,8 +883,19 @@ async function createOrderInTransaction(transaction, {
         err.statusCode = 400
         throw err
       }
-      if (String(unitRow.status || '').toUpperCase() !== 'AVAILABLE') {
-        const err = new Error('This unit has already been sold or is not available.')
+      const unitStatus = String(unitRow.status || '').toUpperCase()
+      const unitLocType = String(unitRow.location_type || '').toUpperCase()
+      const unitLocId = unitRow.location_id != null ? Number(unitRow.location_id) : null
+      const atSellingStore =
+        unitStatus === 'AT_STORE' &&
+        unitLocType === 'STORE' &&
+        unitLocId === storeId
+      if (!atSellingStore) {
+        const err = new Error(
+          unitStatus === 'AVAILABLE'
+            ? 'This unit is still at the warehouse. Transfer and stock-in at this store before selling.'
+            : 'This unit is not available for sale at this store.'
+        )
         err.statusCode = 400
         throw err
       }
@@ -948,7 +959,10 @@ async function createOrderInTransaction(transaction, {
             sold_store_id = @store_id,
             order_id = @order_id,
             order_item_id = @order_item_id
-        WHERE unit_id = @unit_id AND status = N'AVAILABLE';
+        WHERE unit_id = @unit_id
+          AND status = N'AT_STORE'
+          AND location_type = N'STORE'
+          AND location_id = @store_id;
         SELECT @@ROWCOUNT AS rows_updated;
       `)
       const updated = markRes.recordset && markRes.recordset[0]

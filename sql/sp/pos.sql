@@ -807,3 +807,54 @@ BEGIN
   WHERE config_key = @config_key;
 END;
 GO
+
+-- ─── sp_SKU_LookupUnitByBarcode ───────────────────────────────────────────────
+-- POS scan: resolve 7-digit unit barcode; returns location for store sellability.
+CREATE OR ALTER PROCEDURE dbo.sp_SKU_LookupUnitByBarcode
+  @unit_barcode VARCHAR(20),
+  @store_id     INT = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  DECLARE @code CHAR(7) = RIGHT(REPLICATE(N'0', 7) + LTRIM(RTRIM(@unit_barcode)), 7);
+  IF @code NOT LIKE N'[0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+  BEGIN
+    RAISERROR(N'Invalid unit barcode. Expected 7 digits.', 16, 1);
+    RETURN;
+  END;
+
+  SELECT TOP 1
+    u.unit_id,
+    u.sku_id,
+    u.unit_no,
+    u.unit_barcode,
+    u.status,
+    u.location_type,
+    u.location_id,
+    sk.sku_code,
+    sk.barcode AS batch_barcode,
+    sk.pid,
+    sk.sale_price,
+    pm.product_type,
+    LTRIM(RTRIM(COALESCE(
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+      NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+      ''
+    ))) AS brand_name,
+    pic.colour_name,
+    ISNULL(pm.ew_collection, '') + N' · ' + ISNULL(pm.style_model, '') AS product_name,
+    ISNULL(sb.qty, 0) AS store_qty
+  FROM dbo.sku_units u
+  JOIN dbo.skus sk ON sk.sku_id = u.sku_id
+  JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
+  LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
+  LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
+  LEFT JOIN dbo.purchase_item_colours pic ON pic.colour_id = sk.item_colour_id
+  LEFT JOIN dbo.stock_balances sb
+    ON sb.sku_id = sk.sku_id
+   AND sb.location_type = N'STORE'
+   AND sb.location_id = @store_id
+  WHERE u.unit_barcode = @code;
+END;
+GO
