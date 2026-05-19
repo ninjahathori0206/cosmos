@@ -1,4 +1,4 @@
-/* Run all stored procedure scripts then seed scripts */
+/* Run alter + stored procedure scripts (no sql/seed — auto-seed disabled) */
 
 require('dotenv').config();
 const fs = require('fs');
@@ -35,9 +35,8 @@ async function main() {
   try {
     await runDir(path.join(__dirname, '..', 'sql', 'alter'));
     await runDir(path.join(__dirname, '..', 'sql', 'sp'));
-    await runDir(path.join(__dirname, '..', 'sql', 'seed'));
     // eslint-disable-next-line no-console
-    console.log('Stored procedures and seed scripts executed successfully.');
+    console.log('Alter and stored procedure scripts executed successfully (sql/seed skipped).');
     process.exit(0);
   } catch (err) {
     // eslint-disable-next-line no-console

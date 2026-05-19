@@ -1,5 +1,5 @@
 /**
- * Deploy POS tables (05–12), Store OS access (sql/alter/30_store_os_access.sql),
+ * Deploy POS tables (05–12, DDL only — no reference data seeds), Store OS access,
  * stored procedures (sql/sp/pos.sql), then POS migrations.
  * Usage: npm run deploy:pos-sql
  */
@@ -83,6 +83,11 @@ async function run() {
     pool,
     path.join('sql', 'migrations', 'lens_wizard_dynamic.sql'),
     'migrations/lens_wizard_dynamic'
+  )
+  await runBatches(
+    pool,
+    path.join('sql', 'migrations', 'lens_package_card_fields.sql'),
+    'migrations/lens_package_card_fields'
   )
   await runBatches(pool, path.join('sql', 'sp', 'pos.sql'), 'sp/pos')
   await runBatches(pool, path.join('sql', 'sp', 'lens_config.sql'), 'sp/lens_config')

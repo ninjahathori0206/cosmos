@@ -312,7 +312,7 @@ GO
 
 -- ─── sp_POS_CatalogueProductTypes ─────────────────────────────────────────────
 -- Product types that actually appear in the POS catalogue for this scope (store stock vs all live SKUs).
--- Labels from foundry_lookup_values (Purchase product types) when the key matches; else raw pm.product_type.
+-- Labels from pos_product_type_config (SSOT); else raw pm.product_type.
 CREATE OR ALTER PROCEDURE dbo.sp_POS_CatalogueProductTypes
   @store_id INT,
   @scope    NVARCHAR(20) = N'store'
@@ -331,13 +331,12 @@ BEGIN
     )
     SELECT
       LTRIM(RTRIM(t.pt)) AS lookup_key,
-      ISNULL(LTRIM(RTRIM(lv.lookup_label)), LTRIM(RTRIM(t.pt))) AS lookup_label,
-      ISNULL(lv.display_order, 999) AS display_order
+      ISNULL(NULLIF(LTRIM(RTRIM(ptc.label)), N''), LTRIM(RTRIM(t.pt))) AS lookup_label,
+      ISNULL(ptc.display_order, 999) AS display_order
     FROM types t
-    LEFT JOIN dbo.foundry_lookup_values lv
-      ON lv.lookup_type = N'product_type'
-      AND lv.is_active = 1
-      AND LOWER(LTRIM(RTRIM(lv.lookup_key))) = LOWER(LTRIM(RTRIM(t.pt)))
+    LEFT JOIN dbo.pos_product_type_config ptc
+      ON ptc.is_active = 1
+      AND LOWER(LTRIM(RTRIM(ptc.product_type_key))) = LOWER(LTRIM(RTRIM(t.pt)))
     ORDER BY display_order, lookup_label, lookup_key;
   END
   ELSE
@@ -354,13 +353,12 @@ BEGIN
     )
     SELECT
       LTRIM(RTRIM(t.pt)) AS lookup_key,
-      ISNULL(LTRIM(RTRIM(lv.lookup_label)), LTRIM(RTRIM(t.pt))) AS lookup_label,
-      ISNULL(lv.display_order, 999) AS display_order
+      ISNULL(NULLIF(LTRIM(RTRIM(ptc.label)), N''), LTRIM(RTRIM(t.pt))) AS lookup_label,
+      ISNULL(ptc.display_order, 999) AS display_order
     FROM types t
-    LEFT JOIN dbo.foundry_lookup_values lv
-      ON lv.lookup_type = N'product_type'
-      AND lv.is_active = 1
-      AND LOWER(LTRIM(RTRIM(lv.lookup_key))) = LOWER(LTRIM(RTRIM(t.pt)))
+    LEFT JOIN dbo.pos_product_type_config ptc
+      ON ptc.is_active = 1
+      AND LOWER(LTRIM(RTRIM(ptc.product_type_key))) = LOWER(LTRIM(RTRIM(t.pt)))
     ORDER BY display_order, lookup_label, lookup_key;
   END
 END;
@@ -376,6 +374,9 @@ BEGIN
 
   SELECT
     product_type_key AS product_type_key,
+    label,
+    description,
+    display_order,
     fulfillment_mode,
     rx_required,
     allow_qty_gt_1,
@@ -383,7 +384,7 @@ BEGIN
     CAST(ISNULL(requires_unit_barcode, 1) AS BIT) AS requires_unit_barcode
   FROM dbo.pos_product_type_config
   WHERE is_active = 1
-  ORDER BY product_type_key;
+  ORDER BY display_order, product_type_key;
 
   SELECT
     lookup_type,
@@ -435,8 +436,13 @@ BEGIN
   WHERE is_active = 1
   ORDER BY sort_order, id;
 
-  -- RS1: packages
-  SELECT id, category_id, name, pos_brand, pos_name, internal_brand, internal_name, price, sort_order
+  -- RS1: packages (inc Lenses-step card fields)
+  SELECT
+    id, category_id, name, pos_brand, pos_name, internal_brand, internal_name, price, sort_order,
+    ISNULL(card_feat_line1, N'')     AS card_feat_line1,
+    ISNULL(card_feat_line2, N'')     AS card_feat_line2,
+    ISNULL(card_warranty_label, N'') AS card_warranty_label,
+    ISNULL(card_warranty_tone, 1)    AS card_warranty_tone
   FROM dbo.pos_lens_packages
   WHERE is_active = 1
   ORDER BY category_id, sort_order, id;

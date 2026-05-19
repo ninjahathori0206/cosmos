@@ -243,20 +243,23 @@
 // Order Timeline — shared modal (works in Foundry, StorePilot, POS)
 // ═══════════════════════════════════════════════════════════════════════════
 ;(function () {
-  // Full canonical workflow — used to render the progress track
+  // Full canonical workflow — used to render the progress track.
+  // DELIVERED and BALANCE_COLLECTED are a joint handover event (same counter moment).
   var TIMELINE_STEPS = [
     { key: 'ORDER_PLACED',         label: 'Placed' },
     { key: 'ADVANCE_PAID',         label: 'Accepted' },
     { key: 'SENT_TO_LAB',          label: 'Sent to Lab' },
     { key: 'LAB_FITTING',          label: 'Fitting & Edging' },
     { key: 'QC_PASS',              label: 'QC Pass' },
-    { key: 'QC_FAIL_LAB',          label: 'QC Fail' },
+    { key: 'QC_FAIL_LAB',          label: 'QC Fail (Lab)' },
     { key: 'DISPATCHED_TO_STORE',  label: 'Dispatched' },
     { key: 'RECEIVED_AT_STORE',    label: 'At Store' },
-    { key: 'STORE_QC_PASS',        label: 'Store QC' },
+    { key: 'STORE_QC_PASS',        label: 'Store QC Pass' },
+    { key: 'STORE_QC_PARTIAL',     label: 'Store QC Partial' },
+    { key: 'QC_FAIL_STORE',        label: 'Store QC Fail' },
     { key: 'READY_FOR_DELIVERY',   label: 'Ready' },
-    { key: 'DELIVERED',            label: 'Delivered' },
-    { key: 'BALANCE_COLLECTED',    label: 'Paid' },
+    { key: 'DELIVERED',            label: 'Handed Over' },
+    { key: 'BALANCE_COLLECTED',    label: 'Balance Collected' },
     { key: 'INVOICED',             label: 'Invoiced' }
   ]
 
@@ -321,15 +324,23 @@
     overlay.classList.add('open')
 
     try {
-      // Use page-specific apiGet if available, else fetch directly
       var data
       var token = (sessionStorage.getItem('cosmos_token') || localStorage.getItem('cosmos_token') || '')
       var headers = { 'Content-Type': 'application/json' }
       if (token) headers['Authorization'] = 'Bearer ' + token
-      // Attach X-API-Key from whichever global the host page set (API_KEY / SP_API_KEY)
-      var apiKey = (typeof API_KEY !== 'undefined' && API_KEY ? API_KEY : '')
-                 || (typeof SP_API_KEY !== 'undefined' && SP_API_KEY ? SP_API_KEY : '')
-      if (apiKey) headers['X-API-Key'] = apiKey
+      var apiKey = ''
+      if (typeof window.cosmosEnsureApiKey === 'function') {
+        apiKey = await window.cosmosEnsureApiKey()
+      } else {
+        apiKey = (typeof API_KEY !== 'undefined' && API_KEY ? API_KEY : '')
+          || (typeof SP_API_KEY !== 'undefined' && SP_API_KEY ? SP_API_KEY : '')
+        try {
+          var storedKey = sessionStorage.getItem('cosmos_api_key')
+          if (!apiKey && storedKey) apiKey = String(storedKey).trim()
+        } catch (_) {}
+      }
+      if (!apiKey) throw new Error('Invalid or missing API key')
+      headers['X-API-Key'] = apiKey
       var r = await fetch('/api/orders/' + orderId + '/timeline', { headers: headers })
       if (!r.ok) { var errJson = await r.json(); throw new Error(errJson.message || 'Request failed') }
       var json = await r.json()

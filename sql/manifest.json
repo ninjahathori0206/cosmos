@@ -1,5 +1,5 @@
 {
-  "description": "Canonical greenfield order for sql/tables. Run sql/create_database.sql first, then node scripts/run-sql.js (or sqlcmd each file). After tables: sql/alter/* in numeric order, sql/migrations/* per release notes, deploy sql/sp/*.sql, then sql/seed/*.sql.",
+  "description": "Canonical greenfield order for sql/tables. Run sql/create_database.sql first, then node scripts/run-sql.js (or sqlcmd each file). After tables: sql/alter/* in numeric order, sql/migrations/* per release notes, deploy sql/sp/*.sql. sql/seed is deprecated (no auto-seed); configure data in Command Unit / Foundry.",
   "tables": [
     "01_shared_core.sql",
     "02_command_unit.sql",

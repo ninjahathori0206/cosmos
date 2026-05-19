@@ -11,7 +11,7 @@ This document describes how the MSSQL schema is **organized**, **deployed**, and
 | Historical alters | `sql/alter/NN_*.sql` | Early incremental DDL (numbered); keep order when replaying greenfield. |
 | Release migrations | `sql/migrations/*.sql` | New changes ship here; often paired with Node scripts in `package.json`. |
 | Programs | `sql/sp/*.sql` | Stored procedures — **only** DB API consumed by Node (`executeStoredProcedure`). |
-| Seeds | `sql/seed/*.sql` | Minimal reference + admin bootstrap. |
+| Seeds (deprecated) | `sql/seed/*.sql` | No-op stubs; configure data in Command Unit / Foundry. |
 
 ## Bounded contexts (mental model)
 
@@ -50,7 +50,7 @@ erDiagram
 3. Run `sql/alter/*.sql` in numeric filename order (legacy baseline).
 4. Apply `sql/migrations/*.sql` per release / runbooks.
 5. Deploy `sql/sp/*.sql` (procedure dependency order maintained in ops).
-6. Run `sql/seed/*.sql` as needed.
+6. Do **not** auto-seed — configure roles, stores, lookups, and POS reference data in the app (`sql/seed/README.md`).
 
 ## Brownfield (existing database)
 

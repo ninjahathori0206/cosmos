@@ -12,7 +12,8 @@
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
 <link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260521-unit-pill-tags">
 <script src="/js/cosmos-ui-polish.js" defer></script>
-<script src="/js/pos.js?v=storeos-20260521-unit-pill-tags" defer></script>
+<script src="/js/pos-order-queue-catalog.js" defer></script>
+<script src="/js/pos.js?v=storeos-20260520-order-queues" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -641,6 +642,7 @@
       <div class="pos-lk-lens-toolbar" style="margin-bottom:8px">
         <button type="button" id="btn-pay-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Cart</button>
       </div>
+      <div id="pay-draft-banner" class="pos-lk-pay-draft-banner" hidden role="status" style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:var(--goldL);color:var(--text1);font-size:13px;line-height:1.45"></div>
 
       <!-- Delivery card -->
       <div id="pay-delivery-slot" class="pos-lk-pay-card" style="padding:12px 14px;margin-bottom:12px">
@@ -864,15 +866,15 @@
       </div>
       <div class="pos-orders-status-tabs-wrap">
         <span class="pos-search-label">Status</span>
-        <div id="pos-orders-status-tabs" class="pos-orders-status-tabs" role="tablist" aria-label="Filter orders by status">
-          <button type="button" role="tab" class="pos-order-tab active" data-pos-order-status="" aria-selected="true">Active</button>
-          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="OPEN" aria-selected="false">Open</button>
-          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="PAID" aria-selected="false">Paid</button>
-          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="DELIVERED" aria-selected="false">Delivered</button>
-          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="CANCELLED" aria-selected="false">Cancelled</button>
-          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="PROCESSING" aria-selected="false">Processing (Lab)</button>
+        <div id="pos-orders-status-tabs" class="pos-orders-status-tabs" role="tablist" aria-label="Filter orders by queue">
+          <button type="button" role="tab" class="pos-order-tab active" data-pos-order-status="ACTIVE" aria-selected="true">Active</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="TRANSIT" aria-selected="false">Transit</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="LAB_AT_HQ" aria-selected="false">LAB</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="HANDOVER" aria-selected="false">Ready for HandOver</button>
+          <button type="button" role="tab" class="pos-order-tab" data-pos-order-status="INVOICED_7" aria-selected="false">Invoiced (Last 7)</button>
         </div>
         <p class="pos-orders-hint">Press and hold a row for full details · Double-click on desktop</p>
+        <p class="pos-orders-hint" style="margin-top:4px">Search by order no, name, or phone finds orders across all stores. Tabs show this store only.</p>
       </div>
       <div style="width:100%;margin-top:10px;font-size:12px;color:var(--text2);line-height:1.45;">
         Completed sales are searchable in Cosmos CX Dashboard (completed filter). From StorePilot, open CX from the sidebar.

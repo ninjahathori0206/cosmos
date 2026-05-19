@@ -41,22 +41,7 @@ INSERT INTO dbo.foundry_lookup_values (lookup_type, lookup_key, lookup_label, de
 SELECT 'source_type','INHOUSE','In-house / Private Label','Product designed and manufactured in-house or exclusively for Eyewoot.',4
 WHERE NOT EXISTS (SELECT 1 FROM dbo.foundry_lookup_values WHERE lookup_type='source_type' AND lookup_key='INHOUSE');
 
--- product_type
-INSERT INTO dbo.foundry_lookup_values (lookup_type, lookup_key, lookup_label, description, display_order)
-SELECT 'product_type','FRAMES','Frames','Prescription optical frames.',1
-WHERE NOT EXISTS (SELECT 1 FROM dbo.foundry_lookup_values WHERE lookup_type='product_type' AND lookup_key='FRAMES');
-
-INSERT INTO dbo.foundry_lookup_values (lookup_type, lookup_key, lookup_label, description, display_order)
-SELECT 'product_type','SUNGLASSES','Sunglasses','UV-protective sunglasses.',2
-WHERE NOT EXISTS (SELECT 1 FROM dbo.foundry_lookup_values WHERE lookup_type='product_type' AND lookup_key='SUNGLASSES');
-
-INSERT INTO dbo.foundry_lookup_values (lookup_type, lookup_key, lookup_label, description, display_order)
-SELECT 'product_type','READERS','Readers','Pre-powered reading glasses.',3
-WHERE NOT EXISTS (SELECT 1 FROM dbo.foundry_lookup_values WHERE lookup_type='product_type' AND lookup_key='READERS');
-
-INSERT INTO dbo.foundry_lookup_values (lookup_type, lookup_key, lookup_label, description, display_order)
-SELECT 'product_type','ZERO_POWER','Zero Power','Non-prescription fashion frames.',4
-WHERE NOT EXISTS (SELECT 1 FROM dbo.foundry_lookup_values WHERE lookup_type='product_type' AND lookup_key='ZERO_POWER');
+-- product_type: managed in dbo.pos_product_type_config (see sql/migrations/56_product_types_ssot.sql)
 
 -- bypass_reason
 INSERT INTO dbo.foundry_lookup_values (lookup_type, lookup_key, lookup_label, description, display_order)

@@ -146,8 +146,30 @@ const pkgSaveSchema = Joi.object({
   internal_name: Joi.string().max(100).allow('', null),
   price: Joi.number().min(0).required(),
   sort_order: Joi.number().integer().min(0).default(0),
-  is_active: Joi.boolean().default(true)
+  is_active: Joi.boolean().default(true),
+  card_feat_line1: Joi.string().max(250).allow('', null),
+  card_feat_line2: Joi.string().max(250).allow('', null),
+  card_warranty_label: Joi.string().max(40).allow('', null),
+  card_warranty_tone: Joi.number().integer().min(1).max(5).allow(null)
 });
+
+function lensConfigPackageSaveParams(value) {
+  return {
+    id: { type: sql.Int, value: value.id || null },
+    category_id: { type: sql.Int, value: value.category_id },
+    pos_brand: { type: sql.NVarChar(100), value: value.pos_brand || '' },
+    pos_name: { type: sql.NVarChar(100), value: value.pos_name },
+    internal_brand: { type: sql.NVarChar(100), value: value.internal_brand || '' },
+    internal_name: { type: sql.NVarChar(100), value: value.internal_name || value.pos_name },
+    price: { type: sql.Decimal(10, 2), value: value.price },
+    sort_order: { type: sql.Int, value: value.sort_order },
+    is_active: { type: sql.Bit, value: value.is_active ? 1 : 0 },
+    card_feat_line1: { type: sql.NVarChar(250), value: value.card_feat_line1 || null },
+    card_feat_line2: { type: sql.NVarChar(250), value: value.card_feat_line2 || null },
+    card_warranty_label: { type: sql.NVarChar(40), value: value.card_warranty_label || null },
+    card_warranty_tone: { type: sql.TinyInt, value: value.card_warranty_tone || null }
+  };
+}
 
 router.post('/packages', ...lensEdit, async (req, res, next) => {
   try {
@@ -155,17 +177,7 @@ router.post('/packages', ...lensEdit, async (req, res, next) => {
     if (error) {
       return res.status(400).json({ success: false, message: error.details.map((d) => d.message).join('; ') });
     }
-    const result = await executeStoredProcedure('sp_LensConfig_Package_Save', {
-      id: { type: sql.Int, value: value.id || null },
-      category_id: { type: sql.Int, value: value.category_id },
-      pos_brand: { type: sql.NVarChar(100), value: value.pos_brand || '' },
-      pos_name: { type: sql.NVarChar(100), value: value.pos_name },
-      internal_brand: { type: sql.NVarChar(100), value: value.internal_brand || '' },
-      internal_name: { type: sql.NVarChar(100), value: value.internal_name || value.pos_name },
-      price: { type: sql.Decimal(10, 2), value: value.price },
-      sort_order: { type: sql.Int, value: value.sort_order },
-      is_active: { type: sql.Bit, value: value.is_active ? 1 : 0 }
-    });
+    const result = await executeStoredProcedure('sp_LensConfig_Package_Save', lensConfigPackageSaveParams(value));
     const row = (result.recordset || [])[0];
     return res.status(201).json({ success: true, data: { id: row && row.id } });
   } catch (err) {
@@ -186,17 +198,7 @@ router.put('/packages/:id', ...lensEdit, async (req, res, next) => {
     if (error) {
       return res.status(400).json({ success: false, message: error.details.map((d) => d.message).join('; ') });
     }
-    const result = await executeStoredProcedure('sp_LensConfig_Package_Save', {
-      id: { type: sql.Int, value: id },
-      category_id: { type: sql.Int, value: value.category_id },
-      pos_brand: { type: sql.NVarChar(100), value: value.pos_brand || '' },
-      pos_name: { type: sql.NVarChar(100), value: value.pos_name },
-      internal_brand: { type: sql.NVarChar(100), value: value.internal_brand || '' },
-      internal_name: { type: sql.NVarChar(100), value: value.internal_name || value.pos_name },
-      price: { type: sql.Decimal(10, 2), value: value.price },
-      sort_order: { type: sql.Int, value: value.sort_order },
-      is_active: { type: sql.Bit, value: value.is_active ? 1 : 0 }
-    });
+    const result = await executeStoredProcedure('sp_LensConfig_Package_Save', lensConfigPackageSaveParams({ ...value, id }));
     const row = (result.recordset || [])[0];
     return res.json({ success: true, data: { id: row && row.id } });
   } catch (err) {

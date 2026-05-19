@@ -1,6 +1,7 @@
 const sql = require('mssql')
 const { readSetting } = require('./procurementService')
 const { resolveProductTypeRule } = require('../config/posProductTypeRule')
+const { resolvePosOrderDisplayStatus } = require('../config/posOrderDisplayCatalog')
 
 const ORDERS_ENGINE_MODE_KEY = 'orders_engine_mode'
 const MONEY_EPS = 0.02
@@ -683,25 +684,347 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
   return { order, subList, payments, payment_summary, customer }
 }
 
-function mapOrderRowForApi(order) {
+/**
+ * Only the creating cashier may collect payment or advance lab workflow (unless bypass).
+ * @param {object} orderRow
+ * @param {number|null|undefined} actorUserId JWT user_id / employee_id
+ * @param {{ bypass?: boolean }} [options]
+ */
+function assertPosOrderCreatorMutation(orderRow, actorUserId, options = {}) {
+  if (options.bypass) return
+  const creator = orderRow.created_by_user_id != null ? Number(orderRow.created_by_user_id) : null
+  const actor = actorUserId != null ? Number(actorUserId) : null
+  if (creator == null || !Number.isFinite(creator)) {
+    const err = new Error('This order has no recorded creator; only an administrator may update it.')
+    err.statusCode = 403
+    throw err
+  }
+  if (actor == null || !Number.isFinite(actor) || actor !== creator) {
+    const err = new Error('Only the staff member who created this order can collect payment or update lab status.')
+    err.statusCode = 403
+    throw err
+  }
+}
+
+function mapOrderRowForApi(order, extras = {}) {
+  const paidTotal = extras.paid_total != null
+    ? roundMoney(Number(extras.paid_total))
+    : extras.payment_summary
+      ? roundMoney(Number(extras.payment_summary.paid_total) || 0)
+      : null
+  const totalAmt = Number(order.total_amount)
+  const isUnpaid = extras.is_unpaid === true
+    || (paidTotal != null && paidTotal + MONEY_EPS < totalAmt)
+  const display = resolvePosOrderDisplayStatus({
+    status: order.status,
+    is_unpaid: isUnpaid,
+    paid_total: paidTotal,
+    total_amount: totalAmt
+  })
   return {
     order_id: order.order_id,
     store_id: order.store_id,
     customer_id: order.customer_id,
+    created_by_user_id: order.created_by_user_id != null ? Number(order.created_by_user_id) : null,
     order_no: order.order_no,
     order_source: order.order_source,
     order_kind: order.order_kind,
     status: order.status,
+    is_unpaid: isUnpaid,
+    amount_paid: paidTotal,
+    amount_remaining: paidTotal != null ? Math.max(0, roundMoney(totalAmt - paidTotal)) : null,
+    display_status_key: display.display_status_key,
+    display_status_label: display.display_status_label,
+    display_status_css_class: display.display_status_css_class,
     gst_rate_snapshot: Number(order.gst_rate_snapshot),
     lab_advance_pct_snapshot: order.lab_advance_pct_snapshot != null ? Number(order.lab_advance_pct_snapshot) : null,
     procurement_mode_snapshot: order.procurement_mode_snapshot,
     subtotal_amount: Number(order.subtotal_amount),
     discount_amount: order.discount_amount != null ? Number(order.discount_amount) : 0,
     gst_amount: Number(order.gst_amount),
-    total_amount: Number(order.total_amount),
+    total_amount: totalAmt,
     created_at: order.created_at,
-    rx_snapshot: parseJsonMaybe(order.rx_snapshot)
+    rx_snapshot: parseJsonMaybe(order.rx_snapshot),
+    inventory_committed: order.inventory_committed === true || order.inventory_committed === 1
   }
+}
+
+/**
+ * Same as fetchOrderBundle but on an open transaction (no SKU enrichment / customer snapshot).
+ * @param {import('mssql').Transaction} transaction
+ */
+async function fetchOrderBundleTransaction(transaction, orderId, storeId, mode) {
+  const t = tableNames(mode)
+  const o = await new sql.Request(transaction)
+    .input('oid', sql.Int, orderId)
+    .input('sid', sql.Int, storeId)
+    .query(`SELECT * FROM ${t.orders} WHERE order_id = @oid AND store_id = @sid`)
+  if (!o.recordset.length) return null
+  const order = o.recordset[0]
+
+  const subs = await new sql.Request(transaction).input('oid', sql.Int, orderId).query(`
+      SELECT sub_order_id, order_id, fulfillment, lab_workflow_status, sort_order,
+             pair_index, handover_status
+      FROM ${t.sub_orders}
+      WHERE order_id = @oid
+      ORDER BY pair_index, fulfillment DESC, sub_order_id
+    `)
+
+  const items = await new sql.Request(transaction).input('oid', sql.Int, orderId).query(`
+      SELECT i.order_item_id, i.sub_order_id, i.sku_id, i.qty, i.unit_price, i.line_total,
+             i.product_type, i.fulfillment, i.line_key, i.lens_bundle
+      FROM ${t.order_items} i
+      INNER JOIN ${t.sub_orders} s ON s.sub_order_id = i.sub_order_id
+      WHERE s.order_id = @oid
+      ORDER BY s.sort_order, i.order_item_id
+    `)
+
+  const pays = await new sql.Request(transaction).input('oid', sql.Int, orderId).query(`
+      SELECT payment_id, order_id, stage, method, amount, tendered, change_given, external_ref, created_at
+      FROM ${t.payments}
+      WHERE order_id = @oid
+      ORDER BY payment_id
+    `)
+
+  let labSubtotal = 0
+  let instantSubtotal = 0
+  for (const it of items.recordset || []) {
+    const lt = roundMoney(it.line_total)
+    if (String(it.fulfillment) === 'LAB') labSubtotal += lt
+    else instantSubtotal += lt
+  }
+  labSubtotal = roundMoney(labSubtotal)
+  instantSubtotal = roundMoney(instantSubtotal)
+
+  const subList = (subs.recordset || []).map((s) => ({
+    sub_order_id: s.sub_order_id,
+    order_id: s.order_id,
+    fulfillment: s.fulfillment,
+    lab_workflow_status: s.lab_workflow_status,
+    sort_order: s.sort_order != null ? Number(s.sort_order) : 0,
+    pair_index: s.pair_index != null ? Number(s.pair_index) : 1,
+    handover_status: s.handover_status != null ? String(s.handover_status) : null,
+    sub_order_label: subOrderDisplayLabel(order.order_no, s.pair_index != null ? Number(s.pair_index) : 1),
+    items: []
+  }))
+  const subById = new Map(subList.map((s) => [s.sub_order_id, s]))
+  for (const it of items.recordset || []) {
+    const bucket = subById.get(it.sub_order_id)
+    if (bucket) {
+      bucket.items.push({
+        order_item_id: it.order_item_id,
+        sku_id: it.sku_id,
+        qty: it.qty,
+        unit_price: Number(it.unit_price),
+        line_total: Number(it.line_total),
+        product_type: it.product_type,
+        fulfillment: it.fulfillment,
+        line_key: it.line_key,
+        lens_bundle: parseJsonMaybe(it.lens_bundle)
+      })
+    }
+  }
+
+  const payments = (pays.recordset || []).map((p) => ({
+    payment_id: p.payment_id,
+    stage: p.stage,
+    method: p.method,
+    amount: Number(p.amount),
+    tendered: p.tendered != null ? Number(p.tendered) : null,
+    change_given: p.change_given != null ? Number(p.change_given) : null,
+    external_ref: p.external_ref,
+    created_at: p.created_at
+  }))
+
+  const payment_summary = buildPaymentSummary(order, labSubtotal, instantSubtotal, payments)
+  return { order, subList, payments, payment_summary, customer: null }
+}
+
+function preparePaymentTenderFields(body) {
+  let tendered = body.tendered
+  let changeGiven = body.change_given
+  if (roundMoney(body.amount) <= 0) {
+    tendered = null
+    changeGiven = null
+  } else if (body.method === 'CASH' && tendered != null) {
+    changeGiven = roundMoney(Number(tendered) - Number(body.amount))
+    if (changeGiven < 0) {
+      const err = new Error('Tendered amount is less than payment amount.')
+      err.statusCode = 400
+      throw err
+    }
+  }
+  return { tendered, changeGiven }
+}
+
+/**
+ * @param {import('mssql').Transaction|import('mssql').ConnectionPool} trxOrPool
+ */
+async function insertPaymentRow(trxOrPool, mode, orderId, employeeId, body, tendered, changeGiven) {
+  const t = tableNames(mode)
+  const isTrx = trxOrPool && typeof trxOrPool.commit === 'function'
+  const req = isTrx ? new sql.Request(trxOrPool) : trxOrPool.request()
+  await req
+    .input('order_id', sql.Int, orderId)
+    .input('stage', sql.NVarChar(20), body.stage)
+    .input('method', sql.NVarChar(20), body.method)
+    .input('amount', sql.Decimal(12, 2), body.amount)
+    .input('tendered', sql.Decimal(12, 2), tendered != null ? tendered : null)
+    .input('change_given', sql.Decimal(12, 2), changeGiven != null ? changeGiven : null)
+    .input('external_ref', sql.NVarChar(200), body.external_ref || null)
+    .input('created_by', sql.Int, employeeId || null)
+    .query(`
+      INSERT INTO ${t.payments} (order_id, stage, method, amount, tendered, change_given, external_ref, created_by)
+      VALUES (@order_id, @stage, @method, @amount, @tendered, @change_given, @external_ref, @created_by)
+    `)
+}
+
+async function finalizePaymentAfterInsert(pool, mode, storeId, orderId, body, employeeId) {
+  const refreshed = await fetchOrderBundle(pool, orderId, storeId, mode)
+  let invoiceNo = null
+  const fullyPaid = refreshed && Number(refreshed.payment_summary.amount_remaining || 0) <= MONEY_EPS
+  if (fullyPaid && refreshed && refreshed.order && orderRowNeedsInventoryCommit(refreshed.order)) {
+    await commitInventoryForPaidOrder(pool, mode, storeId, orderId)
+  }
+  const payStageUpper = String(body.stage || '').trim().toUpperCase()
+  if (fullyPaid && refreshed) {
+    invoiceNo = await finalizePaidOrderLedger(pool, mode, refreshed, payStageUpper, employeeId, {
+      invoice_preferences: body.invoice_preferences
+    })
+  }
+  return {
+    payment_summary: refreshed ? refreshed.payment_summary : null,
+    invoice_no: invoiceNo
+  }
+}
+
+/**
+ * Create order + first payment in one transaction; finalize ledger after commit.
+ */
+async function checkoutAndPay(pool, mode, storeId, employeeId, { createParams, paymentBody }) {
+  const transaction = new sql.Transaction(pool)
+  await transaction.begin()
+  let out
+  try {
+    out = await createOrderInTransaction(transaction, createParams)
+    const bundle = await fetchOrderBundleTransaction(transaction, out.order_id, storeId, mode)
+    if (!bundle) {
+      const err = new Error('Order not found after create.')
+      err.statusCode = 500
+      throw err
+    }
+    const payBody = { ...paymentBody, order_id: out.order_id }
+    const check = validatePaymentAgainstSummary(bundle.order, bundle.payment_summary, payBody)
+    if (!check.ok) {
+      const err = new Error(check.message)
+      err.statusCode = 400
+      throw err
+    }
+    const { tendered, changeGiven } = preparePaymentTenderFields(payBody)
+    await insertPaymentRow(transaction, mode, out.order_id, employeeId, payBody, tendered, changeGiven)
+    await transaction.commit()
+  } catch (e) {
+    await transaction.rollback()
+    throw e
+  }
+
+  const fin = await finalizePaymentAfterInsert(pool, mode, storeId, out.order_id, {
+    ...paymentBody,
+    order_id: out.order_id
+  }, employeeId)
+
+  return {
+    order_id: out.order_id,
+    order_no: out.order_no,
+    order_kind: out.order_kind,
+    subtotal_amount: out.subtotal_amount,
+    discount_amount: out.discount_amount,
+    gst_amount: out.gst_amount,
+    total_amount: out.total_amount,
+    sub_orders: out.sub_orders,
+    payment_summary: fin.payment_summary,
+    invoice_no: fin.invoice_no
+  }
+}
+
+/**
+ * Max numeric suffix already used on EW-ORD-* across POS / order-engine tables (0 if none).
+ * Heals drift when app_settings.pos_order_seq falls behind existing rows.
+ * @param {import('mssql').Transaction} transaction
+ */
+async function readMaxEwOrdNumericSuffix(transaction) {
+  const r0 = new sql.Request(transaction)
+  const chk = await r0.query(`
+    SELECT
+      CASE WHEN OBJECT_ID(N'dbo.pos_orders', N'U') IS NOT NULL THEN 1 ELSE 0 END AS has_pos,
+      CASE WHEN OBJECT_ID(N'dbo.oe_orders', N'U') IS NOT NULL THEN 1 ELSE 0 END AS has_oe
+  `)
+  const row = chk.recordset[0] || {}
+  const parts = []
+  if (row.has_pos) {
+    parts.push(
+      `SELECT TRY_CAST(SUBSTRING(order_no, 8, 50) AS INT) AS n FROM dbo.pos_orders WHERE order_no LIKE N'EW-ORD-%'`
+    )
+  }
+  if (row.has_oe) {
+    parts.push(
+      `SELECT TRY_CAST(SUBSTRING(order_no, 8, 50) AS INT) AS n FROM dbo.oe_orders WHERE order_no LIKE N'EW-ORD-%'`
+    )
+  }
+  if (!parts.length) return 0
+  const r = new sql.Request(transaction)
+  const rs = await r.query(`SELECT MAX(n) AS mx FROM (${parts.join(' UNION ALL ')}) AS u`)
+  const mx = (rs.recordset[0] || {}).mx
+  const n = Number(mx)
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * Allocates the next EW-ORD numeric suffix under UPDLOCK and persists it to app_settings.
+ * Ensures pos_order_seq row exists and never returns a suffix ≤ max(existing EW-ORD-*).
+ * @param {import('mssql').Transaction} transaction
+ * @returns {Promise<number>}
+ */
+async function allocateNextPosOrderSeq(transaction) {
+  const k = ORDER_SEQ_KEY
+  const rEns = new sql.Request(transaction)
+  rEns.input('k', sql.VarChar(100), k)
+  await rEns.query(`
+    IF NOT EXISTS (SELECT 1 FROM dbo.app_settings WITH (UPDLOCK, ROWLOCK) WHERE setting_key = @k)
+    BEGIN
+      INSERT INTO dbo.app_settings (setting_key, setting_value, setting_group, description)
+      VALUES (@k, N'1000', N'pos', N'Monotonic order sequence (integer string).');
+    END
+  `)
+
+  const rLock = new sql.Request(transaction)
+  rLock.input('k', sql.VarChar(100), k)
+  const seqLock = await rLock.query(
+    'SELECT setting_value FROM dbo.app_settings WITH (UPDLOCK, ROWLOCK) WHERE setting_key = @k'
+  )
+  let seq = parseInt((seqLock.recordset[0] || {}).setting_value, 10)
+  if (!Number.isFinite(seq)) seq = 1000
+
+  const maxUsed = await readMaxEwOrdNumericSuffix(transaction)
+  let nextSeq = seq + 1
+  if (Number.isFinite(maxUsed) && maxUsed > 0 && nextSeq <= maxUsed) {
+    nextSeq = maxUsed + 1
+  }
+
+  const rUp = new sql.Request(transaction)
+  rUp.input('k', sql.VarChar(100), k)
+  rUp.input('v', sql.VarChar(500), String(nextSeq))
+  const upd = await rUp.query(
+    'UPDATE dbo.app_settings SET setting_value = @v, updated_at = DATEADD(MINUTE,330,SYSUTCDATETIME()) WHERE setting_key = @k'
+  )
+  const affected = Array.isArray(upd.rowsAffected) ? upd.rowsAffected[0] : upd.rowsAffected
+  if (!Number.isFinite(Number(affected)) || Number(affected) < 1) {
+    const err = new Error('Could not advance POS order number sequence (app_settings).')
+    err.statusCode = 500
+    throw err
+  }
+
+  return nextSeq
 }
 
 /**
@@ -758,17 +1081,7 @@ async function createOrderInTransaction(transaction, {
   const totalAmount = taxOut.totalAmount
   const gstRateStored = taxOut.snapshotRate
 
-  const rSeq = new sql.Request(transaction)
-  rSeq.input('k', sql.VarChar(100), ORDER_SEQ_KEY)
-  const seqLock = await rSeq.query(
-    'SELECT setting_value FROM dbo.app_settings WITH (UPDLOCK, ROWLOCK) WHERE setting_key = @k'
-  )
-  let seq = parseInt((seqLock.recordset[0] || {}).setting_value, 10)
-  if (!Number.isFinite(seq)) seq = 1000
-  const nextSeq = seq + 1
-  await rSeq.input('v', sql.VarChar(500), String(nextSeq)).query(
-    'UPDATE dbo.app_settings SET setting_value = @v, updated_at = DATEADD(MINUTE,330,SYSUTCDATETIME()) WHERE setting_key = @k'
-  )
+  const nextSeq = await allocateNextPosOrderSeq(transaction)
   const orderNo = `EW-ORD-${nextSeq}`
 
   const instantLines = linesNormalized.filter((l) => l.fulfillment === 'INSTANT')
@@ -1086,13 +1399,16 @@ async function commitInventoryForPaidOrder(pool, mode, storeId, orderId) {
 /**
  * @param {import('mssql').ConnectionPool} pool
  */
-async function recordPayment(pool, mode, storeId, employeeId, body) {
+async function recordPayment(pool, mode, storeId, employeeId, body, options = {}) {
   const bundle = await fetchOrderBundle(pool, body.order_id, storeId, mode)
   if (!bundle) {
     const err = new Error('Order not found for this store.')
     err.statusCode = 404
     throw err
   }
+  assertPosOrderCreatorMutation(bundle.order, options.actorUserId, {
+    bypass: Boolean(options.allowMutationBypass)
+  })
   const orderRow = bundle.order
   const summary = bundle.payment_summary
   const check = validatePaymentAgainstSummary(orderRow, summary, body)
@@ -1102,51 +1418,13 @@ async function recordPayment(pool, mode, storeId, employeeId, body) {
     throw err
   }
 
-  let tendered = body.tendered
-  let changeGiven = body.change_given
-  if (roundMoney(body.amount) <= 0) {
-    tendered = null
-    changeGiven = null
-  } else if (body.method === 'CASH' && tendered != null) {
-    changeGiven = roundMoney(Number(tendered) - Number(body.amount))
-    if (changeGiven < 0) {
-      const err = new Error('Tendered amount is less than payment amount.')
-      err.statusCode = 400
-      throw err
-    }
-  }
-
-  const t = tableNames(mode)
-  await pool.request()
-    .input('order_id', sql.Int, body.order_id)
-    .input('stage', sql.NVarChar(20), body.stage)
-    .input('method', sql.NVarChar(20), body.method)
-    .input('amount', sql.Decimal(12, 2), body.amount)
-    .input('tendered', sql.Decimal(12, 2), tendered != null ? tendered : null)
-    .input('change_given', sql.Decimal(12, 2), changeGiven != null ? changeGiven : null)
-    .input('external_ref', sql.NVarChar(200), body.external_ref || null)
-    .input('created_by', sql.Int, employeeId || null)
-    .query(`
-      INSERT INTO ${t.payments} (order_id, stage, method, amount, tendered, change_given, external_ref, created_by)
-      VALUES (@order_id, @stage, @method, @amount, @tendered, @change_given, @external_ref, @created_by)
-    `)
-
-  const refreshed = await fetchOrderBundle(pool, body.order_id, storeId, mode)
-  let invoiceNo = null
-  const fullyPaid = refreshed && Number(refreshed.payment_summary.amount_remaining || 0) <= MONEY_EPS
-  if (fullyPaid && refreshed && refreshed.order && orderRowNeedsInventoryCommit(refreshed.order)) {
-    await commitInventoryForPaidOrder(pool, mode, storeId, body.order_id)
-  }
-  const payStageUpper = String(body.stage || '').trim().toUpperCase()
-  if (fullyPaid && refreshed) {
-    invoiceNo = await finalizePaidOrderLedger(pool, mode, refreshed, payStageUpper, employeeId, {
-      invoice_preferences: body.invoice_preferences
-    })
-  }
+  const { tendered, changeGiven } = preparePaymentTenderFields(body)
+  await insertPaymentRow(pool, mode, body.order_id, employeeId, body, tendered, changeGiven)
+  const fin = await finalizePaymentAfterInsert(pool, mode, storeId, body.order_id, body, employeeId)
   return {
     message: 'Payment recorded.',
-    payment_summary: refreshed.payment_summary,
-    invoice_no: invoiceNo
+    payment_summary: fin.payment_summary,
+    invoice_no: fin.invoice_no
   }
 }
 
@@ -1255,14 +1533,41 @@ function shouldTreatPaymentStageForFinalizeLedger(orderKind, paymentStage, force
   return st === 'BALANCE' || st === 'FULL' || st === 'ADVANCE'
 }
 
+/**
+ * Atomically advances all LAB sub-orders through the terminal handover tail:
+ *   READY_FOR_DELIVERY → DELIVERED + BALANCE_COLLECTED (joint event) → INVOICED
+ *
+ * DELIVERED and BALANCE_COLLECTED are a single counter-handover moment — the customer
+ * pays balance and takes the order simultaneously. They are written as two audit log
+ * entries within the same call for traceability, but this function is the ONLY code
+ * path that sets these statuses. They must not be reachable via the lab-status API.
+ *
+ * Guard: only proceeds if the sub-order is at READY_FOR_DELIVERY (or already
+ * DELIVERED in a retry scenario). Throws for any earlier status.
+ */
 async function advanceLabSubOrdersThroughInvoiced(pool, mode, labRows, order, employeeId) {
   const t = tableNames(mode)
+
+  // Statuses from which the handover tail is valid to proceed.
+  const HANDOVER_ALLOWED_FROM = new Set(['READY_FOR_DELIVERY', 'DELIVERED', 'BALANCE_COLLECTED'])
+
   for (const raw of labRows) {
     const sub = typeof raw.lab_workflow_status === 'undefined'
       ? raw
       : { sub_order_id: raw.sub_order_id, lab_workflow_status: raw.lab_workflow_status }
-    let fromA = String(sub.lab_workflow_status || '')
-    if (fromA !== 'DELIVERED') {
+    const fromA = String(sub.lab_workflow_status || '').trim().toUpperCase()
+
+    if (!HANDOVER_ALLOWED_FROM.has(fromA)) {
+      const err = new Error(
+        `Handover cannot complete: sub-order #${sub.sub_order_id} is at '${fromA}', ` +
+        `expected READY_FOR_DELIVERY. Complete the lab workflow first.`
+      )
+      err.statusCode = 400
+      throw err
+    }
+
+    // DELIVERED — first part of the joint handover event.
+    if (fromA !== 'DELIVERED' && fromA !== 'BALANCE_COLLECTED') {
       await pool.request().input('sid', sql.Int, sub.sub_order_id)
         .query(`UPDATE ${t.sub_orders} SET lab_workflow_status = N'DELIVERED' WHERE sub_order_id = @sid`)
       await insertStatusLog(pool, t, {
@@ -1271,20 +1576,25 @@ async function advanceLabSubOrdersThroughInvoiced(pool, mode, labRows, order, em
         fromStatus: fromA || null,
         toStatus: 'DELIVERED',
         actorUserId: employeeId || null,
-        note: 'Auto transition on final settlement.'
+        note: 'Handover: order delivered to customer.'
       })
     }
-    await pool.request().input('sid', sql.Int, sub.sub_order_id)
-      .query(`UPDATE ${t.sub_orders} SET lab_workflow_status = N'BALANCE_COLLECTED' WHERE sub_order_id = @sid`)
-    await insertStatusLog(pool, t, {
-      orderId: order.order_id,
-      subOrderId: sub.sub_order_id,
-      fromStatus: 'DELIVERED',
-      toStatus: 'BALANCE_COLLECTED',
-      actorUserId: employeeId || null,
-      note: 'Auto transition after balance collection.'
-    })
 
+    // BALANCE_COLLECTED — second part of the joint handover event (same counter action).
+    if (fromA !== 'BALANCE_COLLECTED') {
+      await pool.request().input('sid', sql.Int, sub.sub_order_id)
+        .query(`UPDATE ${t.sub_orders} SET lab_workflow_status = N'BALANCE_COLLECTED' WHERE sub_order_id = @sid`)
+      await insertStatusLog(pool, t, {
+        orderId: order.order_id,
+        subOrderId: sub.sub_order_id,
+        fromStatus: 'DELIVERED',
+        toStatus: 'BALANCE_COLLECTED',
+        actorUserId: employeeId || null,
+        note: 'Handover: balance collected from customer.'
+      })
+    }
+
+    // INVOICED — terminal status.
     await pool.request().input('sid', sql.Int, sub.sub_order_id)
       .query(`UPDATE ${t.sub_orders} SET lab_workflow_status = N'INVOICED' WHERE sub_order_id = @sid`)
     await insertStatusLog(pool, t, {
@@ -1293,7 +1603,7 @@ async function advanceLabSubOrdersThroughInvoiced(pool, mode, labRows, order, em
       fromStatus: 'BALANCE_COLLECTED',
       toStatus: 'INVOICED',
       actorUserId: employeeId || null,
-      note: 'Auto transition after invoice generation.'
+      note: 'Invoice generated.'
     })
   }
 
@@ -1602,7 +1912,7 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
     throw err
   }
 
-  const fromStatus = String(subRow.lab_workflow_status || '')
+  const fromStatus = String(subRow.lab_workflow_status || '').trim().toUpperCase()
   const toUp = String(toStatus || '').trim().toUpperCase()
 
   let blockingPeersForBypass = []
@@ -1631,14 +1941,14 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
 
   const val = await executeStoredProcedure('sp_POS_ValidateLabTransition', {
     from_status: { type: sql.VarChar(30), value: fromStatus },
-    to_status:   { type: sql.VarChar(30), value: toStatus },
+    to_status:   { type: sql.VarChar(30), value: toUp },
     actor_role:  { type: sql.VarChar(50), value: actorRole }
   })
   const vr = (val.recordset || [])[0] || {}
   const cnt = Number(vr.transition_count) || 0
   const needsNote = Number(vr.requires_note) === 1
   if (!cnt) {
-    const err = new Error('Transition not allowed for this role or status.')
+    const err = new Error(`Transition not allowed: ${fromStatus} → ${toUp} (actor: ${actorRole})`)
     err.statusCode = 400
     throw err
   }
@@ -1694,21 +2004,152 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
 }
 
 /**
+ * Append Store OS queue-tab filters (see posOrderQueueCatalog).
+ * @param {string} query
+ * @param {{ sub_orders: string, order_status_log: string }} t
+ * @param {{
+ *   labStatusIncludes?: string[],
+ *   labStatusExcludesUnion?: string[],
+ *   invoicedSinceDays?: number|null,
+ *   activeQueue?: boolean,
+ *   transitRequiresPayment?: boolean
+ * }} opts
+ * @param {string} [paramPrefix]
+ * @returns {{ query: string, labInParams: string[], labExUnionParams: string[], invoicedDaysParam: string|null }}
+ */
+function appendPosOrderQueueFilters(query, t, opts, paramPrefix = '') {
+  const pfx = paramPrefix || ''
+  const labInParams = []
+  const labExUnionParams = []
+  let invoicedDaysParam = null
+  let q = query
+
+  const includes = Array.isArray(opts.labStatusIncludes)
+    ? opts.labStatusIncludes.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean)
+    : []
+  if (includes.length > 0) {
+    const ph = []
+    for (let i = 0; i < includes.length; i += 1) {
+      const key = `${pfx}lab_in_${i}`
+      ph.push(`@${key}`)
+      labInParams.push(key)
+    }
+    q += ` AND EXISTS (
+      SELECT 1 FROM ${t.sub_orders} lsi
+      WHERE lsi.order_id = o.order_id
+        AND lsi.fulfillment = N'LAB'
+        AND lsi.lab_workflow_status IN (${ph.join(', ')})
+    ) `
+    if (opts.transitRequiresPayment) {
+      q += ` AND ISNULL(pay_agg.paid_total, 0) > 0.02 `
+    }
+  }
+
+  const exUnion = Array.isArray(opts.labStatusExcludesUnion)
+    ? opts.labStatusExcludesUnion.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean)
+    : []
+  if (exUnion.length > 0 && !opts.activeQueue) {
+    const ph = []
+    for (let i = 0; i < exUnion.length; i += 1) {
+      const key = `${pfx}lab_ex_u_${i}`
+      ph.push(`@${key}`)
+      labExUnionParams.push(key)
+    }
+    q += ` AND NOT EXISTS (
+      SELECT 1 FROM ${t.sub_orders} lxu
+      WHERE lxu.order_id = o.order_id
+        AND lxu.fulfillment = N'LAB'
+        AND lxu.lab_workflow_status IN (${ph.join(', ')})
+    ) `
+  }
+
+  if (opts.activeQueue && exUnion.length > 0) {
+    const ph = []
+    for (let i = 0; i < exUnion.length; i += 1) {
+      const key = `${pfx}lab_ex_u_${i}`
+      ph.push(`@${key}`)
+      if (!labExUnionParams.includes(key)) labExUnionParams.push(key)
+    }
+    q += ` AND (
+      (o.status = N'OPEN' AND ISNULL(pay_agg.paid_total, 0) <= 0.02)
+      OR (o.order_kind = N'INSTANT' AND o.status = N'OPEN')
+      OR (
+        EXISTS (
+          SELECT 1 FROM ${t.sub_orders} so_act
+          WHERE so_act.order_id = o.order_id AND so_act.fulfillment = N'LAB'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM ${t.sub_orders} so_blk
+          WHERE so_blk.order_id = o.order_id
+            AND so_blk.fulfillment = N'LAB'
+            AND so_blk.lab_workflow_status IN (${ph.join(', ')})
+        )
+      )
+    ) `
+  }
+
+  const invDays = opts.invoicedSinceDays != null ? Number(opts.invoicedSinceDays) : null
+  if (invDays != null && invDays > 0 && includes.includes('INVOICED')) {
+    invoicedDaysParam = `${pfx}invoiced_days`
+    q += ` AND EXISTS (
+      SELECT 1 FROM ${t.order_status_log} lg
+      WHERE lg.order_id = o.order_id
+        AND lg.to_status = N'INVOICED'
+        AND lg.created_at >= DATEADD(DAY, -@${invoicedDaysParam}, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+    ) `
+  }
+
+  return { query: q, labInParams, labExUnionParams, invoicedDaysParam }
+}
+
+function bindPosOrderQueueFilterParams(req, t, opts, bindings) {
+  const includes = Array.isArray(opts.labStatusIncludes)
+    ? opts.labStatusIncludes.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean)
+    : []
+  for (let i = 0; i < bindings.labInParams.length; i += 1) {
+    req.input(bindings.labInParams[i], sql.NVarChar(30), includes[i])
+  }
+  const exUnion = Array.isArray(opts.labStatusExcludesUnion)
+    ? opts.labStatusExcludesUnion.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean)
+    : []
+  for (let i = 0; i < bindings.labExUnionParams.length; i += 1) {
+    req.input(bindings.labExUnionParams[i], sql.NVarChar(30), exUnion[i])
+  }
+  if (bindings.invoicedDaysParam && opts.invoicedSinceDays != null) {
+    req.input(bindings.invoicedDaysParam, sql.Int, Number(opts.invoicedSinceDays))
+  }
+}
+
+/**
  * @param {import('mssql').ConnectionPool} pool
  */
 async function fetchAllOrders(pool, mode, {
   search, statusFilter, orderKind, labStatusFilter,
-  labStatusExcludes = [], limit = 100, excludeOrderStatuses = []
+  labStatusExcludes = [], limit = 100, excludeOrderStatuses = [],
+  labStatusIncludes = [],
+  labStatusExcludesUnion = [],
+  invoicedSinceDays = null,
+  activeQueue = false,
+  transitRequiresPayment = false
 }) {
   const t = tableNames(mode)
   const exStat = Array.isArray(excludeOrderStatuses)
     ? excludeOrderStatuses.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean)
     : []
   
+  const queueOpts = {
+    labStatusIncludes,
+    labStatusExcludesUnion,
+    invoicedSinceDays,
+    activeQueue,
+    transitRequiresPayment
+  }
   let query = `
     SELECT o.order_id, o.store_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at,
+           o.created_by_user_id,
            c.full_name as customer_name, c.phone as customer_phone,
            s.store_name,
+           ISNULL(pay_agg.paid_total, 0) AS paid_total,
            MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.lab_workflow_status ELSE NULL END) AS lab_workflow_status,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_received_confirmed, 0) AS INT) ELSE NULL END) AS lab_rcv_all,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_backorder_confirmed, 0) AS INT) ELSE NULL END) AS lab_bo_all,
@@ -1717,6 +2158,11 @@ async function fetchAllOrders(pool, mode, {
     LEFT JOIN dbo.pos_customers c ON o.customer_id = c.customer_id
     LEFT JOIN dbo.stores s ON o.store_id = s.store_id
     LEFT JOIN ${t.sub_orders} so ON so.order_id = o.order_id
+    LEFT JOIN (
+      SELECT order_id, SUM(amount) AS paid_total
+      FROM ${t.payments}
+      GROUP BY order_id
+    ) pay_agg ON pay_agg.order_id = o.order_id
     WHERE 1=1
   `
   
@@ -1731,7 +2177,6 @@ async function fetchAllOrders(pool, mode, {
   }
 
   if (orderKind) {
-    // Lab queue: include MIXED orders — they carry a LAB sub-order for workflow.
     if (String(orderKind).toUpperCase() === 'LAB') {
       query += ` AND EXISTS (
         SELECT 1 FROM ${t.sub_orders} so_kind_lab
@@ -1764,12 +2209,15 @@ async function fetchAllOrders(pool, mode, {
         AND lx.lab_workflow_status IN (${placeholders.join(', ')})
     ) `
   }
+
+  const queueBindings = appendPosOrderQueueFilters(query, t, queueOpts, 'all_')
+  query = queueBindings.query
   
   if (search) {
     query += ` AND (o.order_no LIKE @search OR c.full_name LIKE @search OR c.phone LIKE @search OR s.store_name LIKE @search) `
   }
   
-  query += ` GROUP BY o.order_id, o.store_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at, c.full_name, c.phone, s.store_name `
+  query += ` GROUP BY o.order_id, o.store_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at, o.created_by_user_id, c.full_name, c.phone, s.store_name, pay_agg.paid_total `
   query += ` ORDER BY o.created_at DESC OFFSET 0 ROWS FETCH NEXT @limit ROWS ONLY `
   
   const req = pool.request()
@@ -1789,6 +2237,7 @@ async function fetchAllOrders(pool, mode, {
       req.input(`lab_ex_${i}`, sql.NVarChar(30), labStatusExcludes[i])
     }
   }
+  bindPosOrderQueueFilterParams(req, t, queueOpts, queueBindings)
   if (search) {
     req.input('search', sql.NVarChar(200), '%' + search + '%')
   }
@@ -1812,19 +2261,35 @@ async function fetchAllOrders(pool, mode, {
       lab_backorder_confirmed: s.lab_backorder_confirmed === true,
       sub_order_label: subOrderDisplayLabel(row.order_no, s.pair_index)
     }))
+    const paidTotal = roundMoney(Number(row.paid_total) || 0)
+    const totalAmt = Number(row.total_amount)
+    const isUnpaid = paidTotal + MONEY_EPS < totalAmt
+    const display = resolvePosOrderDisplayStatus({
+      status: row.status,
+      is_unpaid: isUnpaid,
+      paid_total: paidTotal,
+      total_amount: totalAmt
+    })
     return {
       order_id: row.order_id,
       store_id: row.store_id,
       store_name: row.store_name || 'Unknown Store',
       order_no: row.order_no,
       status: row.status,
+      display_status_key: display.display_status_key,
+      display_status_label: display.display_status_label,
+      display_status_css_class: display.display_status_css_class,
       order_kind: row.order_kind,
+      created_by_user_id: row.created_by_user_id != null ? Number(row.created_by_user_id) : null,
+      amount_paid: paidTotal,
+      amount_remaining: Math.max(0, roundMoney(totalAmt - paidTotal)),
+      is_unpaid: isUnpaid,
       lab_workflow_status: row.lab_workflow_status || null,
       sub_order_id: row.sub_order_id || null,
       lab_sub_orders,
       lab_received_confirmed: row.lab_rcv_all != null && Number(row.lab_rcv_all) === 1,
       lab_backorder_confirmed: row.lab_bo_all != null && Number(row.lab_bo_all) === 1,
-      total_amount: Number(row.total_amount),
+      total_amount: totalAmt,
       subtotal_amount: Number(row.subtotal_amount),
       gst_amount: Number(row.gst_amount),
       created_at: row.created_at,
@@ -1839,7 +2304,14 @@ async function fetchAllOrders(pool, mode, {
  */
 async function fetchStoreOrders(pool, storeId, mode, {
   search, statusFilter, orderKind, labStatusFilter,
-  labStatusExcludes = [], limit = 50, excludeOrderStatuses = []
+  labStatusExcludes = [], limit = 50, excludeOrderStatuses = [],
+  unpaidDraftOnly = false,
+  excludeUnpaidOpen = false,
+  labStatusIncludes = [],
+  labStatusExcludesUnion = [],
+  invoicedSinceDays = null,
+  activeQueue = false,
+  transitRequiresPayment = false
 }) {
   const t = tableNames(mode)
   const exStat = Array.isArray(excludeOrderStatuses)
@@ -1848,7 +2320,9 @@ async function fetchStoreOrders(pool, storeId, mode, {
   
   let query = `
     SELECT o.order_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at,
+           o.created_by_user_id,
            c.full_name as customer_name, c.phone as customer_phone,
+           ISNULL(pay_agg.paid_total, 0) AS paid_total,
            MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.lab_workflow_status ELSE NULL END) AS lab_workflow_status,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_received_confirmed, 0) AS INT) ELSE NULL END) AS lab_rcv_all,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_backorder_confirmed, 0) AS INT) ELSE NULL END) AS lab_bo_all,
@@ -1856,12 +2330,23 @@ async function fetchStoreOrders(pool, storeId, mode, {
     FROM ${t.orders} o
     LEFT JOIN dbo.pos_customers c ON o.customer_id = c.customer_id
     LEFT JOIN ${t.sub_orders} so ON so.order_id = o.order_id
+    LEFT JOIN (
+      SELECT order_id, SUM(amount) AS paid_total
+      FROM ${t.payments}
+      GROUP BY order_id
+    ) pay_agg ON pay_agg.order_id = o.order_id
     WHERE o.store_id = @sid
   `
-  
+
+  if (unpaidDraftOnly) {
+    query += ` AND o.status = N'OPEN' AND ISNULL(pay_agg.paid_total, 0) <= 0.02 `
+  } else if (excludeUnpaidOpen) {
+    query += ` AND NOT (o.status = N'OPEN' AND ISNULL(pay_agg.paid_total, 0) < o.total_amount - 0.02) `
+  }
+
   if (statusFilter) {
     query += ` AND o.status = @status `
-  } else if (exStat.length) {
+  } else if (exStat.length && !unpaidDraftOnly) {
     const ph = []
     for (let i = 0; i < exStat.length; i += 1) {
       ph.push(`@ex_st_${i}`)
@@ -1903,12 +2388,22 @@ async function fetchStoreOrders(pool, storeId, mode, {
         AND lx.lab_workflow_status IN (${placeholders.join(', ')})
     ) `
   }
+
+  const queueOpts = {
+    labStatusIncludes,
+    labStatusExcludesUnion,
+    invoicedSinceDays,
+    activeQueue,
+    transitRequiresPayment
+  }
+  const queueBindings = appendPosOrderQueueFilters(query, t, queueOpts, '')
+  query = queueBindings.query
   
   if (search) {
     query += ` AND (o.order_no LIKE @search OR c.full_name LIKE @search OR c.phone LIKE @search) `
   }
   
-  query += ` GROUP BY o.order_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at, c.full_name, c.phone `
+  query += ` GROUP BY o.order_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at, o.created_by_user_id, c.full_name, c.phone, pay_agg.paid_total `
   query += ` ORDER BY o.created_at DESC OFFSET 0 ROWS FETCH NEXT @limit ROWS ONLY `
   
   const req = pool.request()
@@ -1929,6 +2424,7 @@ async function fetchStoreOrders(pool, storeId, mode, {
       req.input(`lab_ex_${i}`, sql.NVarChar(30), labStatusExcludes[i])
     }
   }
+  bindPosOrderQueueFilterParams(req, t, queueOpts, queueBindings)
   if (search) {
     req.input('search', sql.NVarChar(200), '%' + search + '%')
   }
@@ -1952,17 +2448,33 @@ async function fetchStoreOrders(pool, storeId, mode, {
       lab_backorder_confirmed: s.lab_backorder_confirmed === true,
       sub_order_label: subOrderDisplayLabel(row.order_no, s.pair_index)
     }))
+    const paidTotal = roundMoney(Number(row.paid_total) || 0)
+    const totalAmt = Number(row.total_amount)
+    const isUnpaid = paidTotal + MONEY_EPS < totalAmt
+    const display = resolvePosOrderDisplayStatus({
+      status: row.status,
+      is_unpaid: isUnpaid,
+      paid_total: paidTotal,
+      total_amount: totalAmt
+    })
     return {
       order_id: row.order_id,
       order_no: row.order_no,
       status: row.status,
+      display_status_key: display.display_status_key,
+      display_status_label: display.display_status_label,
+      display_status_css_class: display.display_status_css_class,
       order_kind: row.order_kind,
+      created_by_user_id: row.created_by_user_id != null ? Number(row.created_by_user_id) : null,
+      amount_paid: paidTotal,
+      amount_remaining: Math.max(0, roundMoney(totalAmt - paidTotal)),
+      is_unpaid: isUnpaid,
       lab_workflow_status: row.lab_workflow_status || null,
       sub_order_id: row.sub_order_id || null,
       lab_sub_orders,
       lab_received_confirmed: row.lab_rcv_all != null && Number(row.lab_rcv_all) === 1,
       lab_backorder_confirmed: row.lab_bo_all != null && Number(row.lab_bo_all) === 1,
-      total_amount: Number(row.total_amount),
+      total_amount: totalAmt,
       subtotal_amount: Number(row.subtotal_amount),
       gst_amount: Number(row.gst_amount),
       created_at: row.created_at,
@@ -1970,6 +2482,129 @@ async function fetchStoreOrders(pool, storeId, mode, {
       customer_phone: row.customer_phone || ''
     }
   })
+}
+
+/**
+ * Void a zero-payment OPEN orphan: CANCELLED + restore store stock and unit barcodes.
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function voidUnpaidPosOrder(pool, mode, storeId, orderId, actorUserId, options = {}) {
+  const bundle = await fetchOrderBundle(pool, orderId, storeId, mode)
+  if (!bundle) {
+    const err = new Error('Order not found for this store.')
+    err.statusCode = 404
+    throw err
+  }
+  const order = bundle.order
+  const dbStatus = String(order.status || '').trim().toUpperCase()
+  if (dbStatus === 'CANCELLED') {
+    const err = new Error('This order is already cancelled.')
+    err.statusCode = 400
+    throw err
+  }
+  if (dbStatus !== 'OPEN') {
+    const err = new Error('Only open orders with no payments can be voided.')
+    err.statusCode = 400
+    throw err
+  }
+  const paidTotal = roundMoney(Number(bundle.payment_summary && bundle.payment_summary.paid_total) || 0)
+  if (paidTotal > MONEY_EPS) {
+    const err = new Error('This order has payments recorded; void is only allowed for zero-payment bills.')
+    err.statusCode = 400
+    throw err
+  }
+  if ((bundle.payments || []).length > 0) {
+    const err = new Error('This order has payment rows; void is only allowed for zero-payment bills.')
+    err.statusCode = 400
+    throw err
+  }
+  assertPosOrderCreatorMutation(order, actorUserId, { bypass: !!options.bypass })
+
+  const t = tableNames(mode)
+  const oid = Number(orderId)
+  const inventoryCommitted = order.inventory_committed === true || order.inventory_committed === 1
+
+  const trx = new sql.Transaction(pool)
+  await trx.begin()
+  try {
+    const itemsRes = await new sql.Request(trx)
+      .input('oid', sql.Int, oid)
+      .query(`
+        SELECT i.order_item_id, i.sku_id, i.qty
+        FROM ${t.order_items} i
+        INNER JOIN ${t.sub_orders} s ON s.sub_order_id = i.sub_order_id
+        WHERE s.order_id = @oid
+      `)
+    const lineRows = itemsRes.recordset || []
+
+    if (inventoryCommitted) {
+      for (const row of lineRows) {
+        const skuId = Number(row.sku_id)
+        const qty = Number(row.qty) || 0
+        if (!Number.isFinite(skuId) || skuId <= 0 || qty <= 0) continue
+        const rStock = new sql.Request(trx)
+        rStock.input('sku_id', sql.Int, skuId)
+        rStock.input('store_id', sql.Int, storeId)
+        rStock.input('qty', sql.Int, qty)
+        const stockRes = await rStock.query(`
+          SELECT balance_id, qty FROM dbo.stock_balances
+          WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id
+        `)
+        const sb = stockRes.recordset && stockRes.recordset[0]
+        if (sb && sb.balance_id) {
+          await rStock.query(`
+            UPDATE dbo.stock_balances
+            SET qty = qty + @qty,
+                last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+            WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id
+          `)
+        } else {
+          await rStock.query(`
+            INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, qty, last_updated)
+            VALUES (@sku_id, N'STORE', @store_id, @qty, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+          `)
+        }
+      }
+    }
+
+    await new sql.Request(trx)
+      .input('oid', sql.Int, oid)
+      .input('store_id', sql.Int, storeId)
+      .query(`
+        UPDATE dbo.sku_units
+        SET status = N'AT_STORE',
+            sold_at = NULL,
+            sold_store_id = NULL,
+            order_id = NULL,
+            order_item_id = NULL
+        WHERE order_id = @oid
+          AND sold_store_id = @store_id
+          AND status = N'SOLD'
+      `)
+
+    await new sql.Request(trx)
+      .input('oid', sql.Int, oid)
+      .query(`UPDATE ${t.orders} SET status = N'CANCELLED' WHERE order_id = @oid`)
+
+    const rLog = new sql.Request(trx)
+    rLog.input('order_id', sql.Int, oid)
+    rLog.input('actor_user_id', sql.Int, actorUserId || null)
+    await rLog.query(`
+      INSERT INTO ${t.order_status_log} (order_id, sub_order_id, from_status, to_status, actor_user_id, note)
+      VALUES (@order_id, NULL, N'OPEN', N'CANCELLED', @actor_user_id, N'Void unpaid bill')
+    `)
+
+    await trx.commit()
+  } catch (e) {
+    await trx.rollback()
+    throw e
+  }
+
+  return {
+    order_id: oid,
+    order_no: order.order_no,
+    status: 'CANCELLED'
+  }
 }
 
 /**
@@ -2080,14 +2715,17 @@ module.exports = {
   validatePaymentAgainstSummary,
   fetchOrderBundle,
   mapOrderRowForApi,
+  assertPosOrderCreatorMutation,
   createOrderInTransaction,
   commitInventoryForPaidOrder,
+  checkoutAndPay,
   recordPayment,
   autoCompleteLabSettlement,
   completeInstantSettlement,
   updateLabSubOrderStatus,
   patchLabSubOrderIntake,
   fetchStoreOrders,
+  voidUnpaidPosOrder,
   fetchAllOrders,
   fetchCxSummary,
   fetchCxRevenueByStore,

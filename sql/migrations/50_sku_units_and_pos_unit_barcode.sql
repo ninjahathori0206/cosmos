@@ -81,30 +81,6 @@ SET requires_unit_barcode = CASE
 END;
 GO
 
--- Ensure common catalogue keys exist with correct flag (idempotent MERGE)
-MERGE dbo.pos_product_type_config AS tgt
-USING (
-  SELECT * FROM (VALUES
-    (N'FRAMES',            N'DUAL',    1, 1, 1),
-    (N'EYEGLASSES',        N'DUAL',    1, 1, 1),
-    (N'SUNGLASSES',        N'INSTANT', 0, 1, 1),
-    (N'ZERO_POWER',        N'INSTANT', 0, 1, 1),
-    (N'READERS',           N'INSTANT', 0, 1, 1),
-    (N'ACCESSORIES',       N'INSTANT', 0, 1, 1),
-    (N'GLASSES_CARE',      N'INSTANT', 0, 1, 1),
-    (N'CONTACT_LENS_CARE', N'INSTANT', 0, 1, 1),
-    (N'CONTACT_LENS',       N'DUAL',    0, 1, 0)
-  ) AS s(product_type_key, fulfillment_mode, rx_required, allow_qty_gt_1, requires_unit_barcode)
-) AS src
-ON tgt.product_type_key = src.product_type_key
-WHEN MATCHED THEN UPDATE SET
-  requires_unit_barcode = src.requires_unit_barcode,
-  is_active = 1
-WHEN NOT MATCHED BY TARGET THEN
-  INSERT (product_type_key, fulfillment_mode, rx_required, allow_qty_gt_1, is_active, requires_unit_barcode)
-  VALUES (src.product_type_key, src.fulfillment_mode, src.rx_required, src.allow_qty_gt_1, 1, src.requires_unit_barcode);
-GO
-
 -- Allocate N unit barcodes for a SKU (digitisation / restock)
 IF OBJECT_ID(N'dbo.sp_SKUv2_AllocateUnits', N'P') IS NOT NULL
   DROP PROCEDURE dbo.sp_SKUv2_AllocateUnits;

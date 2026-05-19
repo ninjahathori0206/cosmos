@@ -35,40 +35,7 @@ IF NOT EXISTS (
   ALTER TABLE dbo.pos_lens_categories ADD wizard_tone TINYINT NULL;
 GO
 
--- Backfill sensible defaults for existing categories (only where still NULL).
-UPDATE dbo.pos_lens_categories SET
-  show_in_pos_wizard = 1
-WHERE show_in_pos_wizard IS NULL;
-
-UPDATE dbo.pos_lens_categories SET wizard_icon = N'👁', wizard_tone = 1
-WHERE wizard_icon IS NULL AND (
-  CHARINDEX(N'single', LOWER(ISNULL(name, N''))) > 0
-  OR CHARINDEX(N'single', LOWER(ISNULL(pos_name, N''))) > 0
-);
-
-UPDATE dbo.pos_lens_categories SET wizard_icon = N'🛡', wizard_tone = 2
-WHERE wizard_icon IS NULL AND (
-  CHARINDEX(N'zero', LOWER(ISNULL(name, N''))) > 0
-  OR CHARINDEX(N'zero', LOWER(ISNULL(pos_name, N''))) > 0
-);
-
-UPDATE dbo.pos_lens_categories SET wizard_icon = N'📖', wizard_tone = 3
-WHERE wizard_icon IS NULL AND (
-  CHARINDEX(N'read', LOWER(ISNULL(name, N''))) > 0
-  OR CHARINDEX(N'read', LOWER(ISNULL(pos_name, N''))) > 0
-);
-
-UPDATE dbo.pos_lens_categories SET wizard_icon = N'🪟', wizard_tone = 4
-WHERE wizard_icon IS NULL AND (
-  CHARINDEX(N'prog', LOWER(ISNULL(name, N''))) > 0
-  OR CHARINDEX(N'bifoc', LOWER(ISNULL(name, N''))) > 0
-  OR CHARINDEX(N'prog', LOWER(ISNULL(pos_name, N''))) > 0
-  OR CHARINDEX(N'bifoc', LOWER(ISNULL(pos_name, N''))) > 0
-);
-
-UPDATE dbo.pos_lens_categories SET wizard_icon = N'📷', wizard_tone = 5
-WHERE wizard_icon IS NULL;
-GO
+-- Category wizard icon/tone: set in Foundry only (no name-pattern backfill).
 
 -- ── B. lens_wizard_policy on pos_product_type_config ─────────────────────────
 
@@ -109,31 +76,7 @@ END;
 GO
 -- No seed rows by default → all wizard-eligible categories show for any OPTIONAL type.
 
--- ── D. Ensure pos_product_type_config rows exist (RS4 / Lens wizard rules UI) ─
--- Same keys as sql/tables/05_pos_config.sql — safe if 05 already ran or table was cleared.
-MERGE dbo.pos_product_type_config AS tgt
-USING (
-  SELECT * FROM (VALUES
-    (N'FRAMES',       N'DUAL',    1, 1),
-    (N'SUNGLASSES',   N'INSTANT', 0, 1),
-    (N'ZERO_POWER',   N'INSTANT', 0, 1),
-    (N'READERS',      N'INSTANT', 0, 1),
-    (N'CONTACT_LENS', N'DUAL',    0, 1),
-    (N'ACCESSORIES',  N'INSTANT', 0, 1)
-  ) AS s(product_type_key, fulfillment_mode, rx_required, allow_qty_gt_1)
-) AS src
-ON tgt.product_type_key = src.product_type_key
-WHEN MATCHED THEN UPDATE SET
-  fulfillment_mode = src.fulfillment_mode,
-  rx_required        = src.rx_required,
-  allow_qty_gt_1     = src.allow_qty_gt_1,
-  is_active          = 1
-WHEN NOT MATCHED BY TARGET THEN
-  INSERT (product_type_key, fulfillment_mode, rx_required, allow_qty_gt_1, is_active)
-  VALUES (src.product_type_key, src.fulfillment_mode, src.rx_required, src.allow_qty_gt_1, 1);
-GO
-
--- Align wizard policy with fulfillment for rows that still default to NEVER (incl. new MERGE inserts).
+-- Align wizard policy with fulfillment for rows that still default to NEVER.
 UPDATE dbo.pos_product_type_config
 SET lens_wizard_policy = N'OPTIONAL'
 WHERE fulfillment_mode = N'DUAL'

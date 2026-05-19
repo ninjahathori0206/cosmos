@@ -748,8 +748,11 @@
     <div class="flex g3 flex-wrap" style="align-items:stretch">
       <div class="card" style="flex:0 0 280px;max-width:100%;min-width:240px">
         <div class="ch"><div class="ct">Categories</div></div>
-        <div class="cb" style="padding:0">
-          <table class="tbl w100"><tbody id="lc-cat-tbody"></tbody></table>
+        <div class="cb" style="padding:0;overflow-x:auto">
+          <table class="tbl w100">
+            <thead><tr><th>POS Brand</th><th>POS Name</th></tr></thead>
+            <tbody id="lc-cat-tbody"></tbody>
+          </table>
         </div>
       </div>
       <div class="card" style="flex:1;min-width:280px">
@@ -784,6 +787,24 @@
             <div class="fgrp"><label>Price (₹) <span class="req">*</span></label><input id="lc-pkg-price" type="number" min="0" step="0.01"></div>
             <div class="fgrp"><label>Sort</label><input id="lc-pkg-sort" type="number" min="0" step="1" value="0"></div>
             <div class="fgrp" style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="lc-pkg-active" checked> Active</label></div>
+          </div>
+          <div class="section-divider" style="border-top:1px solid var(--border);margin:12px 0 10px;padding-top:10px">
+            <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">POS checkout Â· Lenses step (card appearance)</div>
+            <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Card title uses <strong>POS Brand</strong> + <strong>POS Name</strong> above. Feature lines and warranty control the package card body on Store OS.</div>
+            <div class="fgrp mb3"><label>Feature line 1</label><input id="lc-pkg-card-feat1" type="text" maxlength="250" autocomplete="off" placeholder="e.g. • Anti-Glare   • Perfect for Outdoors"></div>
+            <div class="fgrp mb3"><label>Feature line 2</label><input id="lc-pkg-card-feat2" type="text" maxlength="250" autocomplete="off" placeholder="e.g. • Near &amp; Far Vision   • Enhanced Reading"></div>
+            <div class="fg2 mb3">
+              <div class="fgrp"><label>Warranty label (optional)</label><input id="lc-pkg-card-warranty" type="text" maxlength="40" autocomplete="off" placeholder="e.g. 1Y warranty"></div>
+              <div class="fgrp"><label>Warranty tone</label>
+                <select id="lc-pkg-card-warranty-tone">
+                  <option value="1">1 â€” Blue (default)</option>
+                  <option value="2">2 â€” Teal</option>
+                  <option value="3">3 â€” Amber</option>
+                  <option value="4">4 â€” Purple</option>
+                  <option value="5">5 â€” Orange</option>
+                </select>
+              </div>
+            </div>
           </div>
           <div class="mb3" id="lc-pkg-addons-wrap" style="display:none">
             <div class="section-lbl">Allowed add-ons (POS)</div>
@@ -853,7 +874,7 @@
       <div class="ch flex ic">
         <div>
           <div style="font-size:13px;font-weight:600;color:var(--text1)" id="lwr-allowlist-title">Lens Categories for —</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px">Empty = show all eligible categories. Checked = only these appear in step 1.</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">Empty = show all eligible categories. Checked = only these appear on POS Type step.</div>
         </div>
         <button type="button" class="btn sm primary mla" id="lwr-allowlist-save-btn" onclick="window.lwrSaveAllowList && window.lwrSaveAllowList()">Save</button>
       </div>
@@ -1046,7 +1067,8 @@
       </div>
       <div class="fgrp mb3"><label>Notes</label><textarea id="lc-cat-notes" maxlength="500" rows="2" placeholder="Internal notes"></textarea></div>
       <div class="section-divider" style="border-top:1px solid var(--border);margin:12px 0 10px;padding-top:10px">
-        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px">POS Wizard (step 1 — Power Type card)</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">POS checkout · Type step (card appearance)</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Card title uses <strong>POS Brand</strong> + <strong>POS Name</strong> above. Icon, tone, and subtitle control the card below the title.</div>
         <div class="fg2 mb3">
           <div class="fgrp"><label>Icon (emoji)</label><input id="lc-cat-wizard-icon" type="text" maxlength="20" autocomplete="off" placeholder="e.g. 👁"></div>
           <div class="fgrp"><label>Colour tone</label>
@@ -1059,7 +1081,7 @@
             </select>
           </div>
         </div>
-        <div class="fgrp mb3"><label>Subtitle (shown under title on step 1)</label><input id="lc-cat-wizard-subtitle" type="text" maxlength="250" autocomplete="off" placeholder="Short description for staff/customer"></div>
+        <div class="fgrp mb3"><label>Card subtitle</label><input id="lc-cat-wizard-subtitle" type="text" maxlength="250" autocomplete="off" placeholder="Short description under the title on Type step"></div>
         <div class="fgrp" style="display:flex;align-items:center;gap:8px;margin-top:4px">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
             <input type="checkbox" id="lc-cat-show-wizard" checked> Show this category in POS lens wizard

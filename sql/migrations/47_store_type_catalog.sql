@@ -2,7 +2,7 @@
   Migration 47 — Store type reference catalog (SQL)
 
   - dbo.store_type_catalog: canonical keys + labels for dbo.stores.store_type
-  - MERGE seeds HQ, Owned, Franchise, Kiosk, Online (keep in sync with src/config/storeTypesCatalog.js)
+  - Data rows: configure in Command Unit → Store types (no SQL MERGE)
   - Adds FK_stores_store_type_catalog only when every dbo.stores.store_type exists in the catalog
     (skipped if legacy/orphan types exist — fix data and re-run)
 
@@ -29,31 +29,6 @@ BEGIN
 END;
 ELSE
   PRINT N'Migration 47: dbo.store_type_catalog already exists — skipped create';
-GO
-
-/*
-  Keys and copy must match src/config/storeTypesCatalog.js (single logical source;
-  Node remains authoritative for API validation until you optionally read from this table).
-*/
-MERGE dbo.store_type_catalog AS tgt
-USING (
-  SELECT *
-  FROM (VALUES
-    (N'HQ', N'Corporate HQ (warehouse hub)', N'Foundry primary warehouse hub. WAREHOUSE stock uses this store_id as stock_balances.location_id.', 10),
-    (N'Owned', N'Eyewoot-Owned', CAST(NULL AS NVARCHAR(500)), 20),
-    (N'Franchise', N'Franchise', CAST(NULL AS NVARCHAR(500)), 30),
-    (N'Kiosk', N'Kiosk / Pop-up', CAST(NULL AS NVARCHAR(500)), 40),
-    (N'Online', N'Online / D2C', CAST(NULL AS NVARCHAR(500)), 50)
-  ) AS v(type_key, label, description, sort_order)
-) AS src
-ON tgt.type_key = src.type_key
-WHEN MATCHED THEN UPDATE SET
-  label = src.label,
-  description = src.description,
-  sort_order = src.sort_order,
-  updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-WHEN NOT MATCHED THEN INSERT (type_key, label, description, sort_order)
-VALUES (src.type_key, src.label, src.description, src.sort_order);
 GO
 
 DECLARE @orphan INT =

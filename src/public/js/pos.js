@@ -551,7 +551,7 @@
 
     if (path === POS_ROUTES.PAYMENT) {
       if (!valid) { navigate(POS_ROUTES.LOGIN); return }
-      if (!lastCreatedOrder) { navigate(POS_ROUTES.ORDER); return }
+      if (!pendingCheckout && !lastCreatedOrder) { navigate(POS_ROUTES.ORDER); return }
       void showPaymentScreen(session)
       return
     }
@@ -617,6 +617,100 @@
     return String(roleKey || '')
       .replace(/_/g, ' ')
       .toUpperCase()
+  }
+
+  function posSessionStaffUserId(session) {
+    if (!session) return null
+    const raw = session.user_id != null ? session.user_id : session.employee_id
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : null
+  }
+
+  function posOrderIsMine(orderRow, session) {
+    const actor = posSessionStaffUserId(session)
+    const creator = orderRow && orderRow.created_by_user_id != null ? Number(orderRow.created_by_user_id) : null
+    return actor != null && creator != null && actor === creator
+  }
+
+  function posOrderCanMutate(orderRow, session, detailFlags) {
+    if (detailFlags && detailFlags.can_mutate === true) return true
+    if (detailFlags && detailFlags.can_mutate === false) return false
+    return posOrderIsMine(orderRow, session)
+  }
+
+  function posOrderStatusLabel(orderRow) {
+    if (!orderRow) return ''
+    if (orderRow.display_status_label) return String(orderRow.display_status_label)
+    return String(orderRow.status || '')
+  }
+
+  function posOrderStatusCssClass(orderRow) {
+    if (!orderRow) return ''
+    if (orderRow.display_status_css_class) return String(orderRow.display_status_css_class)
+    return String(orderRow.status || '').toLowerCase()
+  }
+
+  function posOrderCanVoidZeroPayment(orderRow, session, detailFlags) {
+    if (!orderRow || !posOrderCanMutate(orderRow, session, detailFlags)) return false
+    const paid = orderRow.amount_paid != null ? Number(orderRow.amount_paid) : 0
+    const isUnpaid = orderRow.is_unpaid === true
+    return isUnpaid && paid < 0.02 && String(orderRow.status || '').toUpperCase() === 'OPEN'
+  }
+
+  function setPosPaymentMutateLocked(locked, reason) {
+    const btn = document.getElementById('btn-pay-submit')
+    if (btn) {
+      btn.disabled = !!locked
+      btn.setAttribute('aria-disabled', locked ? 'true' : 'false')
+      btn.dataset.posMutateLocked = locked ? '1' : '0'
+      if (reason) btn.setAttribute('data-pos-mutate-msg', reason)
+      else btn.removeAttribute('data-pos-mutate-msg')
+    }
+    const banner = document.getElementById('pay-draft-banner')
+    if (banner && locked && reason) {
+      banner.hidden = false
+      banner.textContent = reason
+    }
+  }
+
+  function buildPendingCheckoutTotals() {
+    const subtotal = obCart.reduce(function (sum, line) {
+      return sum + computeLineDisplayUnit(line) * line.qty
+    }, 0)
+    const sig = buildObCartFingerprint()
+    let offerDisc = { amount: 0, offerId: null }
+    const hasSel =
+      posSelectedOfferId != null &&
+      Number.isFinite(Number(posSelectedOfferId)) &&
+      Number(posSelectedOfferId) > 0
+    if (hasSel) {
+      if (posServerDiscountPreview && posServerDiscountPreview.cartSig === sig) {
+        offerDisc = {
+          amount: posServerDiscountPreview.amount,
+          offerId: posServerDiscountPreview.offerId
+        }
+      } else {
+        offerDisc = computeClientPreviewForSelectedOffer(subtotal)
+      }
+    }
+    const discount = Math.min(offerDisc.amount, subtotal)
+    const tax = computePosCartTotals(subtotal, discount)
+    let orderKind = 'INSTANT'
+    let hasLab = false
+    let hasInst = false
+    for (let i = 0; i < obCart.length; i++) {
+      if (obCart[i].fulfillment === 'LAB') hasLab = true
+      if (obCart[i].fulfillment === 'INSTANT') hasInst = true
+    }
+    if (hasLab && hasInst) orderKind = 'MIXED'
+    else if (hasLab) orderKind = 'LAB'
+    return {
+      subtotal_amount: subtotal,
+      discount_amount: discount,
+      gst_amount: tax.gst,
+      total_amount: tax.total,
+      order_kind: orderKind
+    }
   }
 
   // ── Format time ──────────────────────────────────────────────────────────
@@ -702,6 +796,8 @@
     return obCart.length ? obCart[0] : null
   }
   let lastCreatedOrder = null
+  /** In-memory checkout draft until first payment (no pos_orders row until Pay). */
+  let pendingCheckout = null
   let lastPaymentReceipt = null
   let paySessionSnapshot = { stage: 'FULL', amount: 0 }
   let payMinimumAdvanceAmount = 0
@@ -729,6 +825,13 @@
   function lensWizardToneClass(tone) {
     var toneMap = { 0: 'pos-lk-pt-tone0', 1: 'pos-lk-pt-tone1', 2: 'pos-lk-pt-tone2', 3: 'pos-lk-pt-tone3', 4: 'pos-lk-pt-tone4', 5: 'pos-lk-pt-tone5' }
     return toneMap[Number(tone)] || 'pos-lk-pt-tone1'
+  }
+
+  function lensPackageWarrantyPillClass(tone) {
+    var t = Number(tone) || 1
+    if (t === 2) return 'pos-lk-warranty-pill pos-lk-warranty-pill-2'
+    if (t >= 3 && t <= 5) return 'pos-lk-warranty-pill pos-lk-warranty-pill-tone' + t
+    return 'pos-lk-warranty-pill'
   }
 
   /** Strip non-digits; drop leading 91 or trunk 0 — Indian mobiles as 10 digits. */
@@ -3009,6 +3112,7 @@
     const btnPayBack = document.getElementById('btn-pay-back')
     if (btnPayBack) btnPayBack.addEventListener('click', () => {
       forceBalanceSettlement = false
+      pendingCheckout = null
       navigate(POS_ROUTES.ORDER)
     })
     const btnPaySubmit = document.getElementById('btn-pay-submit')
@@ -3304,25 +3408,29 @@
     pkgs.forEach(function (p, ix) {
       const isSel = lensWizard.pkg && lensWizard.pkg.id === p.id
       const newPrice = inrFormat(p.price)
-      const mrp = Math.round((Number(p.price) || 0) * 1.6)
-      const oldPrice = mrp > Number(p.price) ? inrFormat(mrp) : ''
       const thumbCls = (ix % 2 === 0) ? 'pos-lk-lens-thumb' : 'pos-lk-lens-thumb pos-lk-lens-thumb-2'
-      const warrCls = (ix % 2 === 0) ? 'pos-lk-warranty-pill' : 'pos-lk-warranty-pill pos-lk-warranty-pill-2'
+      const feat1 = String(p.card_feat_line1 || '').trim()
+      const feat2 = String(p.card_feat_line2 || '').trim()
+      const warrLabel = String(p.card_warranty_label || '').trim()
+      var featHtml = ''
+      if (feat1) featHtml += '<div class="pos-lk-lens-feat">' + escapeHtml(feat1) + '</div>'
+      if (feat2) featHtml += '<div class="pos-lk-lens-feat">' + escapeHtml(feat2) + '</div>'
+      var warrHtml = warrLabel
+        ? '<span class="' + lensPackageWarrantyPillClass(p.card_warranty_tone) + '">⚡ ' + escapeHtml(warrLabel) + '</span>'
+        : ''
       html.push(
         '<button type="button" class="pos-lk-lens-card' + (isSel ? ' selected' : '') + '" data-pkg-id="' + p.id + '">' +
           '<div class="pos-lk-lens-thumb-col">' +
             '<div class="' + thumbCls + '" aria-hidden="true">👓</div>' +
-            '<span class="' + warrCls + '">⚡ 1Y warranty</span>' +
+            warrHtml +
           '</div>' +
           '<div class="pos-lk-lens-info">' +
             '<div class="pos-lk-lens-title">' + escapeHtml(p.name) + '</div>' +
-            '<div class="pos-lk-lens-feat">• Premium coating   • Anti-Glare</div>' +
-            '<div class="pos-lk-lens-feat">• Scratch resistant   • UV protection</div>' +
+            featHtml +
           '</div>' +
           '<div class="pos-lk-lens-price-col">' +
             '<span class="pos-lk-lens-fp">Frame + Lens</span>' +
             '<span class="pos-lk-lens-new">' + newPrice + '</span>' +
-            (oldPrice ? '<span class="pos-lk-lens-old">' + oldPrice + '</span>' : '') +
           '</div>' +
         '</button>'
       )
@@ -3894,20 +4002,89 @@
     }
     showScreen('screen-pos-payment')
     setPosDeliveryMode(posDeliveryMode)
+    setPosPaymentMutateLocked(false)
+    const draftBanner = document.getElementById('pay-draft-banner')
+    if (draftBanner) {
+      draftBanner.hidden = !pendingCheckout
+      if (pendingCheckout) {
+        draftBanner.textContent = 'Draft checkout — the order is created when you collect payment. Going back will not leave an unpaid bill.'
+      }
+    }
     if (!session || !session.token) {
       clearPaymentOffersPanel()
+      return
+    }
+    if (pendingCheckout && !lastCreatedOrder) {
+      const pt = pendingCheckout.previewTotals || buildPendingCheckoutTotals()
+      pendingCheckout.previewTotals = pt
+      const total = Number(pt.total_amount) || 0
+      const labLike = pt.order_kind === 'LAB' || pt.order_kind === 'MIXED'
+      paySessionSnapshot = { stage: 'FULL', amount: total }
+      payMinimumAdvanceAmount = 0
+      payMinimumAdvancePct = Number(posSettings.lab_advance_pct) || 0
+      if (labLike) {
+        const subtotalForAdv = Number(pt.subtotal_amount) || total
+        payMinimumAdvanceAmount = Math.round(subtotalForAdv * (payMinimumAdvancePct / 100) * 100) / 100
+        if (payMinimumAdvanceAmount > 0.009) {
+          paySessionSnapshot = { stage: 'ADVANCE', amount: payMinimumAdvanceAmount }
+        }
+      }
+      const linesEl = document.getElementById('pay-summary-lines')
+      if (linesEl) {
+        let lh = ''
+        for (let li = 0; li < obCart.length; li++) {
+          const line = obCart[li]
+          const nm = String(line.product_name || line.brand_name || 'Item')
+          const du = computeLineDisplayUnit(line) * Math.max(1, Number(line.qty) || 1)
+          lh += '<div><span>' + escapeHtml(nm) + '</span><span>' + formatRupees(du) + '</span></div>'
+        }
+        linesEl.innerHTML = lh || '<div><span>Cart items</span><span>' + formatRupees(total) + '</span></div>'
+      }
+      const sub = document.getElementById('pay-sub')
+      const gstEl = document.getElementById('pay-gst')
+      const gstLblEl = document.getElementById('pay-gst-lbl')
+      const totEl = document.getElementById('pay-total')
+      const discRow = document.getElementById('pay-discount-row')
+      const discEl = document.getElementById('pay-discount')
+      if (sub) sub.textContent = formatRupees(Number(pt.subtotal_amount) || 0)
+      if (discRow && discEl) {
+        if (Number(pt.discount_amount) > 0.009) {
+          discRow.style.display = ''
+          discEl.textContent = '−' + formatRupees(Number(pt.discount_amount))
+        } else {
+          discRow.style.display = 'none'
+        }
+      }
+      if (gstEl) gstEl.textContent = formatRupees(Number(pt.gst_amount) || 0)
+      if (gstLblEl) gstLblEl.textContent = posGstLineLabel()
+      if (totEl) totEl.textContent = formatRupees(total)
+      const amtInput = document.getElementById('pay-amount-input')
+      const amtSpan = document.getElementById('pay-cta-amt')
+      const collectAmt = Math.max(0, Number(paySessionSnapshot.amount) || 0)
+      if (amtInput) {
+        amtInput.value = collectAmt
+        amtInput.min = payMinimumAdvanceAmount > 0 ? payMinimumAdvanceAmount : 1
+        amtInput.max = total
+      }
+      if (amtSpan) amtSpan.textContent = formatRupees(collectAmt)
+      if (el) el.innerHTML = ''
+      await loadPosOffersPanel(session, 'pos-lk-pay-offers-list', null, true)
       return
     }
     if (!el || !lastCreatedOrder) {
       clearPaymentOffersPanel()
       return
     }
+    if (draftBanner) draftBanner.hidden = true
     if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pay-summary', 4)
     paySessionSnapshot = { stage: 'FULL', amount: Number(lastCreatedOrder.total_amount) || 0 }
     payMinimumAdvanceAmount = 0
     payMinimumAdvancePct = Number(posSettings.lab_advance_pct) || 0
     try {
       const detail = await apiGet('/api/pos/orders/' + lastCreatedOrder.order_id, session.token)
+      if (detail.can_mutate === false) {
+        setPosPaymentMutateLocked(true, 'Only the cashier who created this order can collect payment.')
+      }
       const order = detail.order
       const payments = detail.payments || []
       const total = Number(order.total_amount)
@@ -4125,7 +4302,15 @@
     submitPayment._inFlight = true
     try {
     const session = getPosSession()
-    if (!session || !session.token || !lastCreatedOrder) return
+    if (!session || !session.token) return
+    if (!pendingCheckout && !lastCreatedOrder) return
+    const paySubmitLocked = document.getElementById('btn-pay-submit')
+    if (paySubmitLocked && paySubmitLocked.dataset.posMutateLocked === '1') {
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn(paySubmitLocked.getAttribute('data-pos-mutate-msg') || 'Only the cashier who created this order can collect payment.')
+      }
+      return
+    }
     const methodEl = document.getElementById('pay-method')
     const rad = document.querySelector('input[name="pos-lk-pay-method"]:checked')
     const method = rad ? rad.value : (methodEl ? methodEl.value : 'UPI')
@@ -4139,7 +4324,9 @@
     const amtInputEl = document.getElementById('pay-amount-input')
     if (amtInputEl && amtInputEl.value) paySessionSnapshot.amount = Math.max(0, Number(amtInputEl.value) || 0)
     const amt = Math.max(0, Number(paySessionSnapshot.amount) || 0)
-    const orderDue = Math.max(0, Number(lastCreatedOrder.total_amount) || 0)
+    const orderDue = pendingCheckout && !lastCreatedOrder
+      ? Math.max(0, Number((pendingCheckout.previewTotals && pendingCheckout.previewTotals.total_amount) || 0))
+      : Math.max(0, Number(lastCreatedOrder.total_amount) || 0)
     if (amt <= 0 && orderDue > 0.009) {
       if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Enter a payment amount greater than zero.')
       return
@@ -4155,20 +4342,42 @@
     }
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
-      if (lastCreatedOrder.order_kind === 'LAB' && paySessionSnapshot.stage === 'FULL' && payMinimumAdvanceAmount > 0.009) {
+      const labKind = pendingCheckout && !lastCreatedOrder
+        ? (pendingCheckout.previewTotals && pendingCheckout.previewTotals.order_kind)
+        : lastCreatedOrder.order_kind
+      if (labKind === 'LAB' && paySessionSnapshot.stage === 'FULL' && payMinimumAdvanceAmount > 0.009) {
         paySessionSnapshot.stage = 'ADVANCE'
       }
       const payBody = {
-        order_id: lastCreatedOrder.order_id,
         stage: paySessionSnapshot.stage,
         method: orderDue <= 0.009 ? 'NONE' : method,
         amount: orderDue <= 0.009 ? 0 : amt,
         tendered: orderDue <= 0.009 ? null : method === 'CASH' ? tendered : null,
         external_ref: orderDue <= 0.009 ? null : method === 'CARD' ? externalRef : null
       }
-      const payRes = await apiPost('/api/pos/payment', payBody, session.token)
+      let payRes
+      let receiptOrderId
+      let receiptOrderNo
+      let receiptCustomerPhone = ''
+      if (pendingCheckout && !lastCreatedOrder) {
+        payRes = await apiPost('/api/pos/checkout-and-pay', {
+          order: pendingCheckout.orderPayload,
+          payment: payBody
+        }, session.token)
+        const created = payRes && payRes.data ? payRes.data : payRes
+        receiptOrderId = created.order_id
+        receiptOrderNo = created.order_no
+        pendingCheckout = null
+        if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Order created and payment recorded')
+      } else {
+        payBody.order_id = lastCreatedOrder.order_id
+        payRes = await apiPost('/api/pos/payment', payBody, session.token)
+        receiptOrderId = lastCreatedOrder.order_id
+        receiptOrderNo = lastCreatedOrder.order_no
+        receiptCustomerPhone = lastCreatedOrder.customer_phone || ''
+        if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Payment recorded')
+      }
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
-      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Payment recorded')
       // For ADVANCE stage: check if full balance is now settled (amount_remaining ≈ 0).
       // If so, fall through to confirm screen. Otherwise, stay on payment for balance collection.
       if (paySessionSnapshot.stage === 'ADVANCE') {
@@ -4178,6 +4387,17 @@
           if (typeof cosmosToastInfo === 'function') {
             cosmosToastInfo('Advance saved. Balance due: ' + formatRupees(stillDue) + ' — collect when order is ready.')
           }
+          const created = payRes && payRes.data ? payRes.data : null
+          if (created && created.order_id) {
+            lastCreatedOrder = {
+              order_id: created.order_id,
+              order_no: created.order_no,
+              total_amount: created.total_amount,
+              order_kind: created.order_kind,
+              customer_phone: receiptCustomerPhone || ''
+            }
+            pendingCheckout = null
+          }
           void showPaymentScreen(session)
           return
         }
@@ -4186,14 +4406,14 @@
       const deliveryDateEl = document.getElementById('pay-delivery-date')
       const deliveryDate = deliveryDateEl ? deliveryDateEl.value : ''
       lastPaymentReceipt = {
-        order_id: lastCreatedOrder.order_id,
-        order_no: lastCreatedOrder.order_no,
+        order_id: receiptOrderId,
+        order_no: receiptOrderNo,
         amount: amt,
         method: method,
         external_ref: externalRef,
         delivery_mode: posDeliveryMode,
         delivery_date: deliveryDate,
-        customer_phone: lastCreatedOrder.customer_phone || '',
+        customer_phone: receiptCustomerPhone,
         invoice_no: (payRes && payRes.data && payRes.data.invoice_no) || (payRes && payRes.invoice_no) || null
       }
       lastCreatedOrder = null
@@ -5241,6 +5461,7 @@
       rx: { od: { sph: '', cyl: '', axis: '', plano: false }, os: { sph: '', cyl: '', axis: '', plano: false }, pd: '', doctor: '' }
     }
     lastCreatedOrder = null
+    pendingCheckout = null
     lastPaymentReceipt = null
     paySessionSnapshot = { stage: 'FULL', amount: 0 }
     resetPin(false)
@@ -5334,26 +5555,31 @@
       }
       discInfo = { amount: 0, offerId: null }
     }
-    if (btnObProceed && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btnObProceed)
-    try {
-      const res = await apiPost('/api/pos/orders', {
+    const pt = buildPendingCheckoutTotals()
+    if (discInfo.amount > 0.009) {
+      const sub = Number(pt.subtotal_amount) || 0
+      const disc = Math.min(Number(discInfo.amount) || 0, sub)
+      const tax = computePosCartTotals(sub, disc)
+      pt.discount_amount = disc
+      pt.gst_amount = tax.gst
+      pt.total_amount = tax.total
+    }
+    pendingCheckout = {
+      orderPayload: {
         customer_id: posSelectedCustomerId,
         order_source: 'POS',
         rx_snapshot: rxSnap,
         discount_amount: discInfo.amount || 0,
         applied_offer_id: discInfo.offerId || null,
-        // Commit store stock in the same DB transaction as order insert (not on final payment).
         inventory_deferred: false,
         lines: lines
-      }, session.token)
-      lastCreatedOrder = res.data
-      forceBalanceSettlement = false
-      if (btnObProceed && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnObProceed)
-      navigate(POS_ROUTES.PAYMENT)
-    } catch (err) {
-      if (btnObProceed && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnObProceed)
-      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+      },
+      previewTotals: pt
     }
+    lastCreatedOrder = null
+    forceBalanceSettlement = false
+    if (btnObProceed && typeof cosmosBtnDone === 'function') cosmosBtnDone(btnObProceed)
+    navigate(POS_ROUTES.PAYMENT)
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -5378,8 +5604,16 @@
 
   function posOrdersSelectedStatus() {
     const active = document.querySelector('#pos-orders-status-tabs [role="tab"].active')
-    if (!active) return ''
-    return active.getAttribute('data-pos-order-status') || ''
+    if (!active) return 'ACTIVE'
+    const st = active.getAttribute('data-pos-order-status')
+    return st || 'ACTIVE'
+  }
+
+  function posOrderQueueEmptyMessage(queueKey) {
+    const key = String(queueKey || 'ACTIVE').trim().toUpperCase()
+    const cat = window.posOrderQueueCatalog
+    if (cat && cat.emptyCopy && cat.emptyCopy[key]) return cat.emptyCopy[key]
+    return { title: 'No orders found', subtext: 'Try another tab or search by order number, customer name, or phone.' }
   }
 
   function posFormatIstDateTime(iso) {
@@ -5428,6 +5662,8 @@
 
   function renderPosOrderDetailView(d) {
     const order = d.order || {}
+    const session = getPosSession()
+    const canMutate = d.can_mutate === true || (d.can_mutate !== false && posOrderIsMine(order, session))
     const cust = d.customer || null
     const subOrders = Array.isArray(d.sub_orders) ? d.sub_orders : []
     const pays = Array.isArray(d.payments) ? d.payments : []
@@ -5498,13 +5734,32 @@
       summary.amount_remaining != null ? ('Due: ₹' + Number(summary.amount_remaining).toLocaleString('en-IN')) : ''
     ].filter(Boolean)
 
+    const remainingDue = summary.amount_remaining != null ? Number(summary.amount_remaining) : 0
+    const paidSoFar = summary.paid_total != null ? Number(summary.paid_total) : 0
+    const showPayBtn = String(order.status || '').toUpperCase() === 'OPEN' && remainingDue > 0.009
+    const detailFlags = { can_mutate: canMutate }
+    const canVoid = posOrderCanVoidZeroPayment(
+      { status: order.status, is_unpaid: order.is_unpaid, amount_paid: paidSoFar },
+      session,
+      detailFlags
+    )
+    const statusChipLabel = posOrderStatusLabel(order)
+    const payActionHtml = showPayBtn
+      ? (canMutate
+        ? '<div style="margin-top:16px"><button type="button" class="btn primary" onclick="resumePosOrderPayment(' + Number(order.order_id) + ')">Collect payment</button></div>'
+        : '<div style="margin-top:12px;font-size:13px;color:var(--text3)">View only — only the creating cashier can collect payment.</div>')
+      : ''
+    const voidActionHtml = canVoid
+      ? '<div style="margin-top:10px"><button type="button" class="btn" style="border-color:var(--red);color:var(--red)" onclick="voidPosUnpaidOrder(' + Number(order.order_id) + ', this)">Void bill</button></div>'
+      : ''
+
     return (
       '<div class="pos-order-detail-grid">' +
       '<section class="pos-order-detail-card">' +
       '<div class="pos-order-detail-k">Order</div>' +
       '<div class="pos-order-detail-order-no">' + escapeHtml(String(order.order_no || '')) + '</div>' +
       '<div class="pos-order-detail-meta">' +
-      '<span class="pos-order-detail-chip">' + escapeHtml(String(order.status || '')) + '</span>' +
+      '<span class="pos-order-detail-chip">' + escapeHtml(statusChipLabel) + '</span>' +
       '<span class="pos-order-detail-chip">' + escapeHtml(String(order.order_kind || '')) + '</span>' +
       '<span class="pos-order-detail-muted">' + escapeHtml(posFormatIstDateTime(order.created_at)) + '</span>' +
       '</div>' +
@@ -5525,7 +5780,9 @@
       (blocks || '<div class="pos-order-detail-muted">No products listed.</div>') +
       '<h3 class="pos-order-detail-h3">Payments</h3>' +
       (sumParts.length ? '<div class="pos-order-detail-sum">' + escapeHtml(sumParts.join(' · ')) + '</div>' : '') +
-      (payRows || '<div class="pos-order-detail-muted">No payments recorded.</div>')
+      (payRows || '<div class="pos-order-detail-muted">No payments recorded.</div>') +
+      payActionHtml +
+      voidActionHtml
     )
   }
 
@@ -5693,13 +5950,14 @@
     else if (listEl) listEl.innerHTML = ''
     
     try {
+      const trimmedSearch = String(search || '').trim()
+      const queueKey = status || 'ACTIVE'
       const qs = new URLSearchParams()
-      if (search) qs.append('q', search)
-      if (status === 'PROCESSING') {
-        qs.append('kind', 'LAB')
-        qs.append('exclude_lab_status', 'READY_FOR_DELIVERY,DELIVERED,INVOICED')
-      } else if (status) {
-        qs.append('status', status)
+      if (trimmedSearch) {
+        qs.append('q', trimmedSearch)
+        qs.append('search_scope', 'all')
+      } else {
+        qs.append('queue', queueKey)
       }
       
       const orders = await apiGet('/api/pos/orders?' + qs.toString(), session.token)
@@ -5708,8 +5966,8 @@
         listEl.innerHTML = `
           <div class="empty">
             <div class="empty-ic">📄</div>
-            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No orders found</div>
-            <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Try another filter or search term.</div>
+            <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">${escapeHtml((trimmedSearch ? { title: 'No orders found', subtext: 'No match for this order number, name, or phone across stores.' } : posOrderQueueEmptyMessage(queueKey)).title)}</div>
+            <div style="font-size:13px;color:var(--text2);margin-bottom:14px">${escapeHtml((trimmedSearch ? { title: 'No orders found', subtext: 'No match for this order number, name, or phone across stores.' } : posOrderQueueEmptyMessage(queueKey)).subtext)}</div>
             <button type="button" id="btn-pos-orders-refresh" class="btn primary" style="margin-top:4px">Refresh list</button>
           </div>
         `
@@ -5731,14 +5989,34 @@
           minute: '2-digit',
           hour12: false
         })
-        const statusLower = String(o.status).toLowerCase()
+        const statusCss = posOrderStatusCssClass(o)
+        const statusLabel = posOrderStatusLabel(o)
         const labStatus = String(o.lab_workflow_status || '')
-        const canCollectBalance = o.order_kind === 'LAB' && labStatus === 'READY_FOR_DELIVERY'
+        const canMutate = posOrderIsMine(o, session)
+        const amountRemaining = o.amount_remaining != null ? Number(o.amount_remaining) : Math.max(0, Number(o.total_amount) - Number(o.amount_paid || 0))
+        const isUnpaid = o.is_unpaid === true || (String(o.status).toUpperCase() === 'OPEN' && amountRemaining > 0.009)
+        const ownershipHtml = isUnpaid
+          ? (canMutate
+            ? '<div style="margin-top:6px;font-size:11px;font-weight:600;color:var(--green)">Yours</div>'
+            : '<div style="margin-top:6px;font-size:11px;color:var(--text3)">View only — another cashier created this bill</div>')
+          : ''
+        const canVoid = posOrderCanVoidZeroPayment(o, session)
+        const resumePayHtml = isUnpaid && canMutate && amountRemaining > 0.009
+          ? `<button type="button" class="btn primary" style="margin-top:8px;font-size:12px;padding:6px 10px" onclick="resumePosOrderPayment(${o.order_id})">Collect payment</button>`
+          : ''
+        const voidHtml = canVoid
+          ? `<button type="button" class="btn" style="margin-top:8px;font-size:12px;padding:6px 10px;border-color:var(--red);color:var(--red)" onclick="voidPosUnpaidOrder(${o.order_id}, this)">Void bill</button>`
+          : ''
+        const dueHtml = isUnpaid && amountRemaining > 0.009
+          ? `<div style="margin-top:4px;font-size:12px;color:var(--gold)">Due ${formatRupees(amountRemaining)}</div>`
+          : ''
+        const canCollectBalance = canMutate && (o.order_kind === 'LAB' || o.order_kind === 'MIXED') && labStatus === 'READY_FOR_DELIVERY'
         const collectHtml = canCollectBalance
           ? `<button style="margin-top:8px;padding:8px 10px;border:1px solid var(--acc2);background:var(--accL);color:var(--acc2);border-radius:8px;cursor:pointer" onclick="openBalanceCollection(${o.order_id})">Collect Balance</button>`
           : ''
         // Store OS advances stages 1–3 via lab-status buttons
         const labActionHtml = (() => {
+          if (!canMutate) return ''
           if (o.order_kind !== 'LAB' && o.order_kind !== 'MIXED') return ''
           if (labStatus === 'ORDER_PLACED')
             return `<button class="btn primary" type="button" style="margin-top:8px;font-size:12px;padding:6px 10px" onclick="posAdvanceLabStage(${o.order_id},${o.sub_order_id},'ADVANCE_PAID',this)">Mark Accepted</button>`
@@ -5746,6 +6024,16 @@
             return `<button class="btn primary" type="button" style="margin-top:8px;font-size:12px;padding:6px 10px" onclick="posAdvanceLabStage(${o.order_id},${o.sub_order_id},'SENT_TO_LAB',this)">Mark Sent To Lab</button>`
           return ''
         })()
+        let transitBadgeHtml = ''
+        if (window.posOrderQueueCatalog && typeof window.posOrderQueueCatalog.resolveTransitBadge === 'function') {
+          const tb = window.posOrderQueueCatalog.resolveTransitBadge(labStatus)
+          if (tb) {
+            transitBadgeHtml = '<span class="pos-order-transit-badge pos-order-transit-badge--' + tb.cssClass + '">' + escapeHtml(tb.label) + '</span>'
+          }
+        }
+        const storeHtml = trimmedSearch && o.store_name
+          ? '<div style="margin-top:4px;font-size:11px;font-weight:600;color:var(--text2)">' + escapeHtml(o.store_name) + '</div>'
+          : ''
         const labBadge = (o.order_kind === 'LAB' || o.order_kind === 'MIXED') && labStatus
           ? `<div class="pos-order-status" style="margin-top:6px">${posLabWfDisplay(labStatus)}</div>`
           : ''
@@ -5753,13 +6041,19 @@
           <div class="pos-order-card pos-order-card--pressable" data-order-id="${o.order_id}" role="listitem">
             <div class="pos-order-info">
               <div class="pos-order-no">${o.order_no}</div>
+              ${storeHtml}
               <div class="pos-order-customer">${o.customer_name} ${o.customer_phone ? '(' + o.customer_phone + ')' : ''}</div>
               <div class="pos-order-date">${dateStr}</div>
             </div>
             <div class="pos-order-meta">
               <div class="pos-order-amount">₹${o.total_amount.toLocaleString('en-IN')}</div>
-              <div class="pos-order-status ${statusLower}">${o.status}</div>
+              <div class="pos-order-status ${statusCss}">${escapeHtml(statusLabel)}</div>
+              ${dueHtml}
+              ${ownershipHtml}
+              ${transitBadgeHtml}
               ${labBadge}
+              ${resumePayHtml}
+              ${voidHtml}
               ${labActionHtml}
               ${collectHtml}
             </div>
@@ -6416,6 +6710,61 @@
       setTimeout(() => loadPosOrders(), 600)
     } catch (err) {
       if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+  }
+
+  window.voidPosUnpaidOrder = async function (orderId, btn) {
+    const session = getPosSession()
+    if (!session || !session.token) return
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      await apiPost('/api/pos/orders/' + orderId + '/void-unpaid', {}, session.token)
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Bill voided')
+      closePosOrderDetailModal()
+      const searchInput = document.getElementById('pos-orders-search')
+      const q = searchInput ? searchInput.value : ''
+      await loadOrderHistory(session, q, posOrdersSelectedStatus())
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+  }
+
+  window.resumePosOrderPayment = async function (orderId) {
+    const session = getPosSession()
+    if (!session || !session.token) return
+    try {
+      const detail = await apiGet('/api/pos/orders/' + orderId, session.token)
+      if (detail.can_mutate === false) {
+        if (typeof cosmosToastWarn === 'function') {
+          cosmosToastWarn('Only the cashier who created this order can collect payment.')
+        }
+        return
+      }
+      const order = detail.order || {}
+      const ps = detail.payment_summary || {}
+      const remaining = Number(ps.amount_remaining)
+      const due = Number.isFinite(remaining) ? remaining : Math.max(0, Number(order.total_amount) || 0)
+      if (due <= 0.009 && String(order.status || '').toUpperCase() !== 'OPEN') {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('This order has no balance due.')
+        return
+      }
+      const cust = detail.customer || {}
+      pendingCheckout = null
+      lastCreatedOrder = {
+        order_id: order.order_id,
+        order_no: order.order_no,
+        total_amount: order.total_amount,
+        subtotal_amount: order.subtotal_amount,
+        gst_amount: order.gst_amount,
+        order_kind: order.order_kind,
+        customer_phone: cust.phone || ''
+      }
+      forceBalanceSettlement = false
+      navigate(POS_ROUTES.PAYMENT)
+    } catch (err) {
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
     }
   }

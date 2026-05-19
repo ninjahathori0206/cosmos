@@ -4,7 +4,7 @@ const sql = require('mssql');
 const { getPool } = require('../config/db');
 const { getStoreTypeRoleKeys, isKnownStoreTypeRole } = require('../config/storeTypeRolesCatalog');
 
-/** Bootstrap seed when dbo.store_type_catalog is empty (first deploy / post-flush). */
+/** In-memory defaults when dbo.store_type_catalog is empty (read-only; not written to SQL). */
 const FALLBACK_SEED = Object.freeze([
   {
     key: 'HQ',

@@ -3217,7 +3217,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const LOOKUP_TYPE_META = {
     source_type:    { label: 'Source Types',     desc: 'How a product is sourced — drives identity rules in New Purchase form.' },
-    product_type:   { label: 'Product Types',    desc: 'Category of eyewear product (Frames, Sunglasses, etc.).' },
+    product_type:   { label: 'Product Types',    desc: 'Single source of truth for Foundry dropdowns and POS rules (fulfillment, unit scan, lens wizard).' },
     bypass_reason:  { label: 'Bypass Reasons',   desc: 'Reasons allowed when skipping the branding stage.' },
     label_placement:{ label: 'Label Placement',  desc: 'Where on the frame the branding label is placed.' },
     frame_material: { label: 'Frame Materials',  desc: 'Material used in the frame construction.' },
@@ -3261,94 +3261,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     _foundryLookupKeyTouched = true;
   }
 
+  function foundryLookupColspan(typeKey) {
+    return typeKey === 'product_type' ? 10 : 7;
+  }
+
+  function renderLookupThead(typeKey) {
+    const thead = document.getElementById('foundry-lookup-thead');
+    if (!thead) return;
+    if (typeKey === 'product_type') {
+      thead.innerHTML = '<tr>' +
+        '<th>#</th><th>Key</th><th>Label</th><th>Description</th><th>Order</th>' +
+        '<th>Fulfillment</th><th>Unit scan</th><th>Lens wizard</th><th>Status</th><th></th>' +
+        '</tr>';
+    } else {
+      thead.innerHTML = '<tr>' +
+        '<th>#</th><th>Key (Internal)</th><th>Label (Displayed in forms)</th>' +
+        '<th>Description / Use Case</th><th>Order</th><th>Status</th><th></th>' +
+        '</tr>';
+    }
+  }
+
+  function toggleProductTypeModalFields(typeKey) {
+    const block = document.getElementById('fl-product-type-fields');
+    if (!block) return;
+    block.style.display = typeKey === 'product_type' ? 'block' : 'none';
+  }
+
+  function setProductTypeModalFields(row) {
+    const ff = document.getElementById('fl-fulfillment');
+    const lp = document.getElementById('fl-lens-policy');
+    const ub = document.getElementById('fl-unit-barcode');
+    if (ff) ff.value = (row && row.fulfillment_mode) ? row.fulfillment_mode : 'INSTANT';
+    if (lp) lp.value = (row && row.lens_wizard_policy) ? row.lens_wizard_policy : 'NEVER';
+    if (ub) ub.checked = !row || (row.requires_unit_barcode !== false && row.requires_unit_barcode !== 0);
+  }
+
   async function loadFoundrySettings() {
+    const tbody = document.getElementById('foundry-lookup-tbody');
+    const cols = foundryLookupColspan(_activeLookupType);
+    if (tbody && typeof window.cosmosSkeletonTable === 'function') {
+      window.cosmosSkeletonTable('foundry-lookup-tbody', cols);
+    }
     try {
       const data = await apiGet('/api/foundry-lookups');
       _foundryLookupAll = data;
       renderLookupTypeTabs();
+      renderLookupThead(_activeLookupType);
       renderLookupTable(_activeLookupType);
     } catch (err) {
-      const tbody = document.getElementById('foundry-lookup-tbody');
-      if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="td-muted">Error: ${escHtml(err.message)}</td></tr>`;
-    }
-  }
-
-  let _cuPosPtcRows = [];
-
-  async function loadCuPosProductTypeConfig() {
-    const tbody = document.getElementById('cu-pos-ptc-tbody');
-    const status = document.getElementById('cu-pos-ptc-status');
-    if (!tbody) return;
-    if (status) status.textContent = '';
-    if (typeof window.cosmosSkeletonTable === 'function') {
-      window.cosmosSkeletonTable('cu-pos-ptc-tbody', 3);
-    }
-    try {
-      const rows = await apiGet('/api/settings/pos-product-type-config');
-      _cuPosPtcRows = Array.isArray(rows) ? rows : [];
-      if (!_cuPosPtcRows.length) {
-        tbody.innerHTML = '<tr><td colspan="3" class="td-muted" style="text-align:center;padding:24px">No product types configured. Run POS migrations first.</td></tr>';
-        return;
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="' + cols + '" class="td-muted">Error: ' + escHtml(err.message) + '</td></tr>';
       }
-      tbody.innerHTML = _cuPosPtcRows.map(function (r) {
-        const key = escHtml(r.product_type_key || '');
-        const ff = escHtml(r.fulfillment_mode || '—');
-        const checked = r.requires_unit_barcode !== false && r.requires_unit_barcode !== 0;
-        return '<tr data-ptc-key="' + key + '">' +
-          '<td class="mono fw-600">' + key + '</td>' +
-          '<td class="td-muted">' + ff + '</td>' +
-          '<td><label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
-          '<input type="checkbox" class="cu-ptc-unit-cb" data-key="' + key + '"' + (checked ? ' checked' : '') + '>' +
-          '<span style="font-size:13px;color:var(--text2)">Scan each unit</span></label></td>' +
-          '</tr>';
-      }).join('');
-    } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="3" class="td-muted" style="text-align:center;padding:24px;color:var(--red)">' +
-        escHtml(err.message || 'Could not load') + '</td></tr>';
       if (typeof window.cosmosToastError === 'function') {
-        window.cosmosToastError(err.message || 'Could not load POS product type rules');
+        window.cosmosToastError(err.message || 'Could not load Foundry settings');
       }
     }
-  }
-
-  async function handleSaveCuPosProductTypeConfig() {
-    const tbody = document.getElementById('cu-pos-ptc-tbody');
-    const status = document.getElementById('cu-pos-ptc-status');
-    const btn = document.getElementById('btn-cu-save-pos-ptc');
-    if (!tbody || !btn) return;
-    const rows = [];
-    tbody.querySelectorAll('tr[data-ptc-key]').forEach(function (tr) {
-      const key = tr.getAttribute('data-ptc-key');
-      if (!key) return;
-      const cb = tr.querySelector('input.cu-ptc-unit-cb');
-      rows.push({
-        product_type_key: key,
-        requires_unit_barcode: !!(cb && cb.checked)
-      });
-    });
-    if (!rows.length) {
-      if (typeof window.cosmosToastWarn === 'function') {
-        window.cosmosToastWarn('Nothing to save.');
-      }
-      return;
-    }
-    if (status) status.textContent = '';
-    if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn);
-    try {
-      await apiPut('/api/settings/pos-product-type-config', { rows: rows });
-      if (typeof window.cosmosToastSuccess === 'function') {
-        window.cosmosToastSuccess('Unit barcode rules saved.');
-      }
-      if (status) status.textContent = 'Saved.';
-      await loadCuPosProductTypeConfig();
-    } catch (err) {
-      if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn);
-      if (typeof window.cosmosToastError === 'function') {
-        window.cosmosToastError(err.message || 'Save failed');
-      }
-      return;
-    }
-    if (typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn);
   }
 
   async function loadInventoryHubSettings() {
@@ -3425,6 +3392,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.addEventListener('click', () => {
         _activeLookupType = typeKey;
         renderLookupTypeTabs();
+        renderLookupThead(typeKey);
         renderLookupTable(typeKey);
       });
       container.appendChild(btn);
@@ -3442,8 +3410,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (desc) desc.textContent = meta.desc;
 
     const rows = _foundryLookupAll.filter((v) => v.lookup_type === typeKey);
+    const colspan = foundryLookupColspan(typeKey);
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="td-muted" style="text-align:center;padding:20px">No values yet. Click "+ Add Value" to add one.</td></tr>`;
+      tbody.innerHTML = '<tr><td colspan="' + colspan + '" class="td-muted" style="text-align:center;padding:20px">No values yet. Click "+ Add Value" to add one.</td></tr>';
       return;
     }
     tbody.innerHTML = '';
@@ -3451,14 +3420,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       const tr = document.createElement('tr');
       tr.dataset.lookupId = v.lookup_id;
       tr.style.opacity = v.is_active ? '1' : '0.5';
-      tr.innerHTML = `
-        <td class="td-muted text-xs">${i + 1}</td>
-        <td><code style="background:var(--bg2);padding:2px 6px;border-radius:4px;font-size:11px">${escHtml(v.lookup_key)}</code></td>
-        <td class="fw-600">${escHtml(v.lookup_label)}</td>
-        <td class="td-muted text-xs">${escHtml(v.description || '—')}</td>
-        <td class="td-muted text-xs">${v.display_order}</td>
-        <td>${v.is_active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>'}</td>
-        <td><button class="topbar-btn lookup-edit-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>`;
+      if (typeKey === 'product_type') {
+        const unitScan = v.requires_unit_barcode !== false && v.requires_unit_barcode !== 0;
+        tr.innerHTML =
+          '<td class="td-muted text-xs">' + (i + 1) + '</td>' +
+          '<td><code style="background:var(--bg2);padding:2px 6px;border-radius:4px;font-size:11px">' + escHtml(v.lookup_key) + '</code></td>' +
+          '<td class="fw-600">' + escHtml(v.lookup_label) + '</td>' +
+          '<td class="td-muted text-xs">' + escHtml(v.description || '—') + '</td>' +
+          '<td class="td-muted text-xs">' + (v.display_order ?? 0) + '</td>' +
+          '<td class="td-muted text-xs mono">' + escHtml(v.fulfillment_mode || '—') + '</td>' +
+          '<td class="text-xs">' + (unitScan ? 'Yes' : 'No') + '</td>' +
+          '<td class="td-muted text-xs mono">' + escHtml(v.lens_wizard_policy || 'NEVER') + '</td>' +
+          '<td>' + (v.is_active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>') + '</td>' +
+          '<td><button class="topbar-btn lookup-edit-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>';
+      } else {
+        tr.innerHTML =
+          '<td class="td-muted text-xs">' + (i + 1) + '</td>' +
+          '<td><code style="background:var(--bg2);padding:2px 6px;border-radius:4px;font-size:11px">' + escHtml(v.lookup_key) + '</code></td>' +
+          '<td class="fw-600">' + escHtml(v.lookup_label) + '</td>' +
+          '<td class="td-muted text-xs">' + escHtml(v.description || '—') + '</td>' +
+          '<td class="td-muted text-xs">' + (v.display_order ?? 0) + '</td>' +
+          '<td>' + (v.is_active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>') + '</td>' +
+          '<td><button class="topbar-btn lookup-edit-btn" style="padding:5px 10px;font-size:12px">Edit</button></td>';
+      }
       tbody.appendChild(tr);
     });
     tbody.querySelectorAll('.lookup-edit-btn').forEach((btn) => {
@@ -3488,6 +3472,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     showError('foundry-lookup-error', '');
     const delBtn = document.getElementById('foundry-lookup-delete-btn');
     if (delBtn) delBtn.style.display = 'none';
+    toggleProductTypeModalFields(_activeLookupType);
+    setProductTypeModalFields(null);
     window.openModal && window.openModal('modal-foundry-lookup');
   }
 
@@ -3511,6 +3497,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     showError('foundry-lookup-error', '');
     const delBtn = document.getElementById('foundry-lookup-delete-btn');
     if (delBtn) delBtn.style.display = 'inline-block';
+    toggleProductTypeModalFields(v.lookup_type);
+    setProductTypeModalFields(v.lookup_type === 'product_type' ? v : null);
     window.openModal && window.openModal('modal-foundry-lookup');
   }
 
@@ -3554,21 +3542,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         is_active:     document.getElementById('fl-active').value === '1'
       };
       if (!body.lookup_label) throw new Error('Label is required.');
+      const ptExtras = typeKey === 'product_type' ? {
+        fulfillment_mode: val('fl-fulfillment') || 'INSTANT',
+        lens_wizard_policy: val('fl-lens-policy') || 'NEVER',
+        requires_unit_barcode: !!(document.getElementById('fl-unit-barcode') && document.getElementById('fl-unit-barcode').checked)
+      } : {};
       if (_editingLookupId) {
         const keyNorm = normalizeFoundryLookupKey(val('fl-key'));
         if (!keyNorm) throw new Error('Key (internal code) is required.');
-        await apiPut(`/api/foundry-lookups/${_editingLookupId}`, {
+        await apiPut('/api/foundry-lookups/' + _editingLookupId, {
           lookup_key: keyNorm,
-          ...body
+          ...body,
+          ...ptExtras
         });
       } else {
         const keyNorm = normalizeFoundryLookupKey(val('fl-key'));
         if (!keyNorm) throw new Error('Key is required.');
         await apiPost('/api/foundry-lookups', {
-          lookup_type:   typeKey,
-          lookup_key:    keyNorm,
-          ...body
+          lookup_type: typeKey,
+          lookup_key: keyNorm,
+          ...body,
+          ...ptExtras
         });
+      }
+      if (typeof window.cosmosToastSuccess === 'function') {
+        window.cosmosToastSuccess(typeKey === 'product_type' ? 'Product type saved.' : 'Lookup value saved.');
       }
       window.closeModal && window.closeModal('modal-foundry-lookup');
       await loadFoundrySettings();
@@ -3596,9 +3594,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   })();
   document.getElementById('btn-cu-save-inventory-hub')?.addEventListener('click', function () {
     void handleSaveInventoryHub();
-  });
-  document.getElementById('btn-cu-save-pos-ptc')?.addEventListener('click', function () {
-    void handleSaveCuPosProductTypeConfig();
   });
   const _cuPrimaryWhSel = document.getElementById('cu-primary-wh-select');
   if (_cuPrimaryWhSel) {
@@ -4255,7 +4250,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (id === 'foundry-settings') {
         void loadFoundrySettings();
         void loadInventoryHubSettings();
-        void loadCuPosProductTypeConfig();
       }
       if (id === 'store-types') void loadStoreTypeCatalogAdmin();
     };
@@ -4279,7 +4273,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (_cuBootPage === 'foundry-settings') {
     void loadFoundrySettings();
     void loadInventoryHubSettings();
-    void loadCuPosProductTypeConfig();
   }
   if (_cuBootPage === 'store-types') void loadStoreTypeCatalogAdmin();
 });

@@ -822,33 +822,9 @@
       </div>
     </div>
 
-        <div class="card" style="margin-bottom:16px" id="cu-pos-product-types-card">
-      <div class="card-header">
-        <div class="card-title">POS product types — unit barcode</div>
-        <div class="td-muted text-xs">When enabled, Foundry transfers and POS checkout require scanning each 7-digit unit QR. Bulk types (e.g. contact lenses) can use quantity only.</div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Product type</th>
-              <th>Fulfillment</th>
-              <th>Requires unit scan</th>
-            </tr>
-          </thead>
-          <tbody id="cu-pos-ptc-tbody">
-            <tr><td colspan="3" class="td-muted" style="text-align:center;padding:24px">Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div style="padding:12px 16px;display:flex;gap:10px;align-items:center">
-        <button type="button" class="topbar-btn primary" id="btn-cu-save-pos-ptc">Save unit barcode rules</button>
-        <span class="td-muted text-xs" id="cu-pos-ptc-status"></span>
-      </div>
-    </div>
 <div class="alert alert-blue" style="margin-bottom:16px">
       <span class="alert-icon">ℹ️</span>
-      <div>Select a lookup type below to view, add, edit or disable its values. These values appear as dropdown options in the Foundry procurement forms.</div>
+      <div>Select a lookup type below to view, add, edit or disable its values. <strong>Product Types</strong> are the single source of truth for Foundry dropdowns and POS rules (fulfillment, unit scan, lens wizard).</div>
     </div>
 
     <!-- Lookup Type Tabs -->
@@ -862,7 +838,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead>
+          <thead id="foundry-lookup-thead">
             <tr>
               <th>#</th>
               <th>Key (Internal)</th>
@@ -1714,6 +1690,32 @@
             <option value="1">Active</option>
             <option value="0">Inactive</option>
           </select>
+        </div>
+        <div id="fl-product-type-fields" class="form-group span2" style="display:none;grid-column:1/-1">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:4px;padding-top:12px;border-top:1px solid var(--border)">
+            <div class="form-group">
+              <label for="fl-fulfillment">Fulfillment mode</label>
+              <select id="fl-fulfillment">
+                <option value="INSTANT">INSTANT</option>
+                <option value="LAB">LAB</option>
+                <option value="DUAL">DUAL</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="fl-lens-policy">Lens wizard policy</label>
+              <select id="fl-lens-policy">
+                <option value="NEVER">NEVER</option>
+                <option value="OPTIONAL">OPTIONAL</option>
+                <option value="REQUIRED">REQUIRED</option>
+              </select>
+            </div>
+            <div class="form-group" style="display:flex;align-items:flex-end">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+                <input type="checkbox" id="fl-unit-barcode" checked>
+                <span>Requires unit scan (7-digit QR)</span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
       <div id="foundry-lookup-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>

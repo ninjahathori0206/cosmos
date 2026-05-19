@@ -104,6 +104,7 @@ const RAW_PERMISSION_GROUPS = [
     ['pos.customers.create', 'POS — Register customer'],
     ['pos.orders.view', 'POS — Orders list & detail'],
     ['pos.orders.create', 'POS — Create order'],
+    ['pos.orders.void_unpaid', 'POS — Void zero-payment unpaid bill'],
     ['pos.payment.collect', 'POS — Record payment'],
     ['pos.lab.workflow', 'POS — Lab sub-order status updates'],
     ['pos.lab.bypass_order_sibling', 'POS — Bypass lab pair dispatch guard when authorised (audited)'],

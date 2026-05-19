@@ -2,6 +2,7 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure, getPool } = require('../config/db');
+const { clearCacheByPrefix } = require('../cache/ttlCache');
 const { requireModule, requirePermission } = require('../middleware/authorize');
 const { writeAuditLog } = require('../services/auditService');
 const { SCOPE_DIMENSIONS, ALLOWED_SCOPE_KINDS } = require('../config/offerScopeDimensions');
@@ -1034,42 +1035,220 @@ router.get('/pos-product-types', ...promotionsView, async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
+const FULFILLMENT_MODES = ['INSTANT', 'LAB', 'DUAL'];
+const LENS_WIZARD_POLICIES = ['NEVER', 'OPTIONAL', 'REQUIRED'];
+
 const posProductTypeConfigPutSchema = Joi.object({
   rows: Joi.array().items(
     Joi.object({
-      product_type_key: Joi.string().max(50).required(),
+      product_type_key: Joi.string().max(100).required(),
       requires_unit_barcode: Joi.boolean().required()
-    })
+    }).unknown(true)
   ).min(1).required()
 });
 
+const posProductTypeCreateSchema = Joi.object({
+  product_type_key: Joi.string().max(100).required(),
+  label: Joi.string().max(200).required(),
+  description: Joi.string().max(500).allow(null, '').optional(),
+  display_order: Joi.number().integer().min(0).optional(),
+  fulfillment_mode: Joi.string().valid(...FULFILLMENT_MODES).default('INSTANT'),
+  requires_unit_barcode: Joi.boolean().default(true),
+  lens_wizard_policy: Joi.string().valid(...LENS_WIZARD_POLICIES).default('NEVER'),
+  rx_required: Joi.boolean().optional(),
+  allow_qty_gt_1: Joi.boolean().optional(),
+  is_active: Joi.boolean().optional()
+});
+
+const posProductTypeUpdateSchema = Joi.object({
+  product_type_key: Joi.string().max(100).optional(),
+  label: Joi.string().max(200).required(),
+  description: Joi.string().max(500).allow(null, '').optional(),
+  display_order: Joi.number().integer().min(0).optional(),
+  fulfillment_mode: Joi.string().valid(...FULFILLMENT_MODES).optional(),
+  requires_unit_barcode: Joi.boolean().optional(),
+  lens_wizard_policy: Joi.string().valid(...LENS_WIZARD_POLICIES).optional(),
+  rx_required: Joi.boolean().optional(),
+  allow_qty_gt_1: Joi.boolean().optional(),
+  is_active: Joi.boolean().optional()
+});
+
+function normalizeProductTypeKey(raw) {
+  return String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+async function queryPosProductTypeConfig(pool) {
+  const result = await pool.request().query(`
+    SELECT
+      config_id,
+      product_type_key,
+      label,
+      description,
+      display_order,
+      fulfillment_mode,
+      rx_required,
+      allow_qty_gt_1,
+      is_active,
+      ISNULL(lens_wizard_policy, N'NEVER') AS lens_wizard_policy,
+      CAST(requires_unit_barcode AS BIT) AS requires_unit_barcode
+    FROM dbo.pos_product_type_config
+    ORDER BY display_order, product_type_key
+  `);
+  return result.recordset || [];
+}
+
+function defaultLensWizardPolicy(fulfillmentMode) {
+  return fulfillmentMode === 'DUAL' ? 'OPTIONAL' : 'NEVER';
+}
+
 /**
  * GET /api/settings/pos-product-type-config
- * Full POS product type rules (Foundry Settings → unit barcode per type).
+ * SSOT for product types (labels + POS behaviour).
  */
 router.get('/pos-product-type-config', ...settingsView, async (req, res, next) => {
   try {
     const pool = await getPool();
-    const result = await pool.request().query(`
-      SELECT
-        product_type_key,
-        fulfillment_mode,
-        rx_required,
-        allow_qty_gt_1,
-        is_active,
-        CAST(requires_unit_barcode AS BIT) AS requires_unit_barcode
-      FROM dbo.pos_product_type_config
-      ORDER BY product_type_key
-    `);
-    return res.json({ success: true, data: result.recordset || [] });
+    return res.json({ success: true, data: await queryPosProductTypeConfig(pool) });
   } catch (err) {
     return next(err);
   }
 });
 
 /**
+ * POST /api/settings/pos-product-type-config
+ * Create a product type row.
+ */
+router.post('/pos-product-type-config', ...settingsManage, async (req, res, next) => {
+  try {
+    const { error, value } = posProductTypeCreateSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ success: false, message: error.details[0].message });
+    }
+    const key = normalizeProductTypeKey(value.product_type_key);
+    if (!key) {
+      return res.status(400).json({ success: false, message: 'Product type key is required.' });
+    }
+    const fulfillment = value.fulfillment_mode || 'INSTANT';
+    const lensPolicy = value.lens_wizard_policy || defaultLensWizardPolicy(fulfillment);
+    const pool = await getPool();
+    const reqIns = pool.request();
+    reqIns.input('product_type_key', sql.NVarChar(100), key);
+    reqIns.input('label', sql.NVarChar(200), value.label);
+    reqIns.input('description', sql.NVarChar(500), value.description || null);
+    reqIns.input('display_order', sql.Int, value.display_order ?? 0);
+    reqIns.input('fulfillment_mode', sql.VarChar(10), fulfillment);
+    reqIns.input('requires_unit_barcode', sql.Bit, value.requires_unit_barcode !== false ? 1 : 0);
+    reqIns.input('lens_wizard_policy', sql.NVarChar(10), lensPolicy);
+    reqIns.input('rx_required', sql.Bit, value.rx_required ? 1 : 0);
+    reqIns.input('allow_qty_gt_1', sql.Bit, value.allow_qty_gt_1 !== false ? 1 : 0);
+    reqIns.input('is_active', sql.Bit, value.is_active !== false ? 1 : 0);
+    try {
+      await reqIns.query(`
+        INSERT INTO dbo.pos_product_type_config (
+          product_type_key, label, description, display_order,
+          fulfillment_mode, requires_unit_barcode, lens_wizard_policy,
+          rx_required, allow_qty_gt_1, is_active
+        )
+        VALUES (
+          @product_type_key, @label, @description, @display_order,
+          @fulfillment_mode, @requires_unit_barcode, @lens_wizard_policy,
+          @rx_required, @allow_qty_gt_1, @is_active
+        );
+      `);
+    } catch (err) {
+      if (err.number === 2627 || err.number === 2601) {
+        return res.status(422).json({ success: false, message: 'A product type with this key already exists.' });
+      }
+      throw err;
+    }
+    clearCacheByPrefix('foundry-lookups:');
+    return res.status(201).json({
+      success: true,
+      data: (await queryPosProductTypeConfig(pool)).find((r) => r.product_type_key === key)
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * PUT /api/settings/pos-product-type-config/:configId
+ * Update one product type (full row).
+ */
+router.put('/pos-product-type-config/:configId', ...settingsManage, async (req, res, next) => {
+  try {
+    const configId = Number(req.params.configId);
+    if (!configId) {
+      return res.status(400).json({ success: false, message: 'Invalid config id.' });
+    }
+    const { error, value } = posProductTypeUpdateSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ success: false, message: error.details[0].message });
+    }
+    const pool = await getPool();
+    const existing = await pool.request()
+      .input('config_id', sql.Int, configId)
+      .query('SELECT product_type_key FROM dbo.pos_product_type_config WHERE config_id = @config_id');
+    if (!existing.recordset || !existing.recordset[0]) {
+      return res.status(404).json({ success: false, message: 'Product type not found.' });
+    }
+    const oldKey = existing.recordset[0].product_type_key;
+    const newKey = value.product_type_key != null
+      ? normalizeProductTypeKey(value.product_type_key)
+      : oldKey;
+    if (!newKey) {
+      return res.status(400).json({ success: false, message: 'Product type key is required.' });
+    }
+    const fulfillment = value.fulfillment_mode;
+    const lensPolicy = value.lens_wizard_policy
+      || (fulfillment ? defaultLensWizardPolicy(fulfillment) : undefined);
+    const reqUp = pool.request();
+    reqUp.input('config_id', sql.Int, configId);
+    reqUp.input('product_type_key', sql.NVarChar(100), newKey);
+    reqUp.input('label', sql.NVarChar(200), value.label);
+    reqUp.input('description', sql.NVarChar(500), value.description || null);
+    reqUp.input('display_order', sql.Int, value.display_order ?? 0);
+    reqUp.input('fulfillment_mode', sql.VarChar(10), fulfillment || null);
+    reqUp.input('requires_unit_barcode', sql.Bit, value.requires_unit_barcode != null ? (value.requires_unit_barcode ? 1 : 0) : null);
+    reqUp.input('lens_wizard_policy', sql.NVarChar(10), lensPolicy || null);
+    reqUp.input('rx_required', sql.Bit, value.rx_required != null ? (value.rx_required ? 1 : 0) : null);
+    reqUp.input('allow_qty_gt_1', sql.Bit, value.allow_qty_gt_1 != null ? (value.allow_qty_gt_1 ? 1 : 0) : null);
+    reqUp.input('is_active', sql.Bit, value.is_active !== false ? 1 : 0);
+    await reqUp.query(`
+      UPDATE dbo.pos_product_type_config
+      SET
+        product_type_key = @product_type_key,
+        label = @label,
+        description = @description,
+        display_order = @display_order,
+        fulfillment_mode = COALESCE(@fulfillment_mode, fulfillment_mode),
+        requires_unit_barcode = COALESCE(@requires_unit_barcode, requires_unit_barcode),
+        lens_wizard_policy = COALESCE(@lens_wizard_policy, lens_wizard_policy),
+        rx_required = COALESCE(@rx_required, rx_required),
+        allow_qty_gt_1 = COALESCE(@allow_qty_gt_1, allow_qty_gt_1),
+        is_active = @is_active
+      WHERE config_id = @config_id;
+    `);
+    clearCacheByPrefix('foundry-lookups:');
+    const rows = await queryPosProductTypeConfig(pool);
+    const row = rows.find((r) => r.config_id === configId) || rows.find((r) => r.product_type_key === newKey);
+    return res.json({ success: true, data: row || null });
+  } catch (err) {
+    if (err.number === 2627 || err.number === 2601) {
+      return res.status(422).json({ success: false, message: 'A product type with this key already exists.' });
+    }
+    return next(err);
+  }
+});
+
+/**
  * PUT /api/settings/pos-product-type-config
- * Update requires_unit_barcode flags (bulk).
+ * Bulk update requires_unit_barcode (legacy path; still supported).
  */
 router.put('/pos-product-type-config', ...settingsManage, async (req, res, next) => {
   try {
@@ -1083,7 +1262,7 @@ router.put('/pos-product-type-config', ...settingsManage, async (req, res, next)
     try {
       for (const row of value.rows) {
         const reqUp = new sql.Request(transaction);
-        reqUp.input('product_type_key', sql.NVarChar(50), row.product_type_key);
+        reqUp.input('product_type_key', sql.NVarChar(100), row.product_type_key);
         reqUp.input('requires_unit_barcode', sql.Bit, row.requires_unit_barcode ? 1 : 0);
         const upd = await reqUp.query(`
           UPDATE dbo.pos_product_type_config
@@ -1116,16 +1295,8 @@ router.put('/pos-product-type-config', ...settingsManage, async (req, res, next)
     } catch (_auditErr) {
       /* non-fatal */
     }
-    const result = await pool.request().query(`
-      SELECT
-        product_type_key,
-        fulfillment_mode,
-        CAST(requires_unit_barcode AS BIT) AS requires_unit_barcode,
-        is_active
-      FROM dbo.pos_product_type_config
-      ORDER BY product_type_key
-    `);
-    return res.json({ success: true, data: result.recordset || [] });
+    clearCacheByPrefix('foundry-lookups:');
+    return res.json({ success: true, data: await queryPosProductTypeConfig(pool) });
   } catch (err) {
     if (err.statusCode === 400) {
       return res.status(400).json({ success: false, message: err.message });

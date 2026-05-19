@@ -3,7 +3,7 @@
  *
  * Wipes stores, products, orders, customers, inventory, Foundry, POS data, etc.
  * Keeps dbo.roles, dbo.role_permissions, dbo.role_module_access, dbo.store_type_catalog,
- * and ONE user (Talha / @KeepUsername in SQL). Re-seeds store types if the catalog table was empty.
+ * and ONE user (Talha / @KeepUsername in SQL). Does not re-seed store types (configure in Command Unit).
  *
  * Requires env:
  *   COSMOS_PURGE_CONFIRM=I_UNDERSTAND   (exact string)
@@ -41,46 +41,6 @@ const config = {
   connectionTimeout: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 15000)
 }
 
-async function runSqlBatches(pool, relativePathFromRepoRoot) {
-  const file = path.join(__dirname, '..', ...relativePathFromRepoRoot.split('/'))
-  const source = fs.readFileSync(file, 'utf8')
-  const batches = source.split(/^\s*GO\s*$/im).map((b) => b.trim()).filter(Boolean)
-  for (const batch of batches) {
-    await pool.request().query(batch)
-  }
-  return batches.length
-}
-
-async function reseedStoreTypeCatalogIfEmpty(pool) {
-  const check = await pool.request().query(
-    'SELECT COUNT(*) AS cnt FROM dbo.store_type_catalog'
-  )
-  const cnt = check.recordset[0]?.cnt ?? 0
-  if (cnt > 0) return false
-  const n47 = await runSqlBatches(pool, 'sql/migrations/47_store_type_catalog.sql')
-  console.log('[purge] store_type_catalog was empty — re-ran migration 47 (' + n47 + ' batch(es)).')
-  return true
-}
-
-async function reseedStoreTypeRolesIfEmpty(pool) {
-  const check = await pool.request().query(
-    "SELECT COUNT(*) AS cnt FROM sys.tables WHERE name = N'store_type_catalog_roles'"
-  )
-  if (!(check.recordset[0]?.cnt > 0)) {
-    await runSqlBatches(pool, 'sql/migrations/48_store_type_catalog_roles.sql')
-    console.log('[purge] store_type_catalog_roles table missing — ran migration 48.')
-    return true
-  }
-  const roles = await pool.request().query(
-    'SELECT COUNT(*) AS cnt FROM dbo.store_type_catalog_roles'
-  )
-  const cnt = roles.recordset[0]?.cnt ?? 0
-  if (cnt > 0) return false
-  const n48 = await runSqlBatches(pool, 'sql/migrations/48_store_type_catalog_roles.sql')
-  console.log('[purge] store_type_catalog_roles was empty — re-ran migration 48 (' + n48 + ' batch(es)).')
-  return true
-}
-
 async function main() {
   if (!config.database || !config.user) {
     console.error('Missing DB_NAME or DB_USER in .env — cannot connect.')
@@ -111,9 +71,8 @@ async function main() {
     for (const batch of batches) {
       await pool.request().query(batch)
     }
-    await reseedStoreTypeCatalogIfEmpty(pool)
-    await reseedStoreTypeRolesIfEmpty(pool)
     console.log('[purge] OK — ran', batches.length, 'batch(es). Re-login as the kept user.')
+    console.log('[purge] Add store types and stores in Command Unit if the catalog was wiped.')
   } finally {
     await pool.close()
   }

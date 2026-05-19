@@ -5008,7 +5008,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!tb || !_lcData) return;
     const cats = _lcData.categories || [];
     if (!cats.length) {
-      tb.innerHTML = '<tr><td colspan="1" class="td2 p12" style="color:var(--text3)">No categories</td></tr>';
+      tb.innerHTML = '<tr><td colspan="2" class="td2 p12" style="color:var(--text3)">No categories</td></tr>';
       return;
     }
     tb.innerHTML = cats
@@ -5019,7 +5019,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const btn = lcCanEdit
           ? `<button type="button" class="btn xs" onclick="event.stopPropagation();window.lcEditCategory && window.lcEditCategory(${Number(c.id)})">Edit</button>`
           : '';
-        return `<tr class="tr-link${sel ? ' lc-cat-sel' : ''}" data-lc-cat="${Number(c.id)}" style="${sel ? 'background:var(--accL);' : ''}"><td class="td2"><div class="fw6">${lcEsc(lcPosLabel(c.pos_brand, c.pos_name, c.name))}</div><div class="xs td2">${dot} ${btn}</div></td></tr>`;
+        const brand = lcEsc(String(c.pos_brand || '').trim() || '—');
+        const name = lcEsc(String(c.pos_name || c.name || '').trim() || '—');
+        return `<tr class="tr-link${sel ? ' lc-cat-sel' : ''}" data-lc-cat="${Number(c.id)}" style="${sel ? 'background:var(--accL);' : ''}"><td class="td2 xs">${brand}</td><td class="td2"><div class="fw6">${name}</div><div class="xs td2">${dot} ${btn}</div></td></tr>`;
       })
       .join('');
     tb.querySelectorAll('tr[data-lc-cat]').forEach((tr) => {
@@ -5093,6 +5095,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('lc-pkg-price').value = p.price != null ? String(p.price) : '';
     document.getElementById('lc-pkg-sort').value = String(p.sort_order != null ? p.sort_order : 0);
     document.getElementById('lc-pkg-active').checked = lcBool(p.is_active);
+    const feat1 = document.getElementById('lc-pkg-card-feat1');
+    const feat2 = document.getElementById('lc-pkg-card-feat2');
+    const warr = document.getElementById('lc-pkg-card-warranty');
+    const warrTone = document.getElementById('lc-pkg-card-warranty-tone');
+    if (feat1) feat1.value = p.card_feat_line1 || '';
+    if (feat2) feat2.value = p.card_feat_line2 || '';
+    if (warr) warr.value = p.card_warranty_label || '';
+    if (warrTone) warrTone.value = String(p.card_warranty_tone != null ? p.card_warranty_tone : 1);
     const chk = document.getElementById('lc-pkg-addons-chk');
     if (chk && lcCanEdit) {
       const allowed = new Set(lcPackageAddonSet(p.id));
@@ -5140,6 +5150,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('lc-pkg-price').value = '0';
     document.getElementById('lc-pkg-sort').value = '0';
     document.getElementById('lc-pkg-active').checked = true;
+    const feat1 = document.getElementById('lc-pkg-card-feat1');
+    const feat2 = document.getElementById('lc-pkg-card-feat2');
+    const warr = document.getElementById('lc-pkg-card-warranty');
+    const warrTone = document.getElementById('lc-pkg-card-warranty-tone');
+    if (feat1) feat1.value = '';
+    if (feat2) feat2.value = '';
+    if (warr) warr.value = '';
+    if (warrTone) warrTone.value = '1';
     const chk = document.getElementById('lc-pkg-addons-chk');
     if (chk) chk.innerHTML = '';
     document.getElementById('lc-pkg-addons-wrap').style.display = 'none';
@@ -5171,7 +5189,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       internal_name: (document.getElementById('lc-pkg-int-name').value || '').trim() || String(posNameEl.value || '').trim(),
       price,
       sort_order: parseInt(document.getElementById('lc-pkg-sort').value, 10) || 0,
-      is_active: document.getElementById('lc-pkg-active').checked
+      is_active: document.getElementById('lc-pkg-active').checked,
+      card_feat_line1: (document.getElementById('lc-pkg-card-feat1') && document.getElementById('lc-pkg-card-feat1').value || '').trim() || null,
+      card_feat_line2: (document.getElementById('lc-pkg-card-feat2') && document.getElementById('lc-pkg-card-feat2').value || '').trim() || null,
+      card_warranty_label: (document.getElementById('lc-pkg-card-warranty') && document.getElementById('lc-pkg-card-warranty').value || '').trim() || null,
+      card_warranty_tone: parseInt(document.getElementById('lc-pkg-card-warranty-tone') && document.getElementById('lc-pkg-card-warranty-tone').value, 10) || 1
     };
     const idStr = document.getElementById('lc-pkg-id').value;
     try {
@@ -5235,7 +5257,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('lc-cat-pos-brand').value = c.pos_brand || '';
     document.getElementById('lc-cat-pos-name').value = c.pos_name || c.name || '';
     document.getElementById('lc-cat-int-brand').value = c.internal_brand || '';
-    document.getElementById('lc-cat-int-name').value = c.internal_name || c.name || '';
+    document.getElementById('lc-cat-int-name').value = c.internal_name || '';
     document.getElementById('lc-cat-sort').value = String(c.sort_order != null ? c.sort_order : 0);
     document.getElementById('lc-cat-active').checked = lcBool(c.is_active);
     document.getElementById('lc-cat-notes').value = c.notes || '';
@@ -5485,10 +5507,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         '<div class="empty-ic" aria-hidden="true">📋</div>' +
         '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No product types in POS config</div>' +
         '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;max-width:52ch">' +
-        'The table <span class="mono">pos_product_type_config</span> has no rows. From the repo root run ' +
-        '<span class="mono">npm run deploy:pos-sql</span> (or re-run <span class="mono">sql/migrations/lens_wizard_dynamic.sql</span> in SSMS) so default product types are seeded.' +
+        'No product types configured. Add them in Command Unit → Foundry Settings → Product Types (single source for dropdowns and POS rules).' +
         '</div>' +
-        '<button type="button" class="btn primary sm" onclick="window.loadLensWizardRulesPage && window.loadLensWizardRulesPage()">↻ Refresh after deploy</button>' +
+        '<button type="button" class="btn primary sm" onclick="window.loadLensWizardRulesPage && window.loadLensWizardRulesPage()">↻ Refresh</button>' +
         '</div></td></tr>';
       return;
     }

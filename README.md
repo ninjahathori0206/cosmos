@@ -167,8 +167,7 @@ npm run sql:tables
 
 # 3. Deploy all stored procedures (sql/sp/)
 # 4. Run sql/alter/*.sql in numeric filename order, then sql/migrations/* as needed
-# 5. Seed initial data
-sqlcmd -S localhost -U sa -P password -d CosmosERP -i sql/seed/01_seed_core.sql
+# 5. Configure roles, stores, users, and reference data in Command Unit / Foundry (sql/seed is disabled)
 ```
 
 See `sql/README.md` and `docs/database/schema-overview.md` for layout and deploy order.
@@ -198,11 +197,7 @@ Use this only when you want to wipe an existing database and start fresh on the 
 # 1) Flush all rows from all user tables (keeps schema/SPs/constraints)
 sqlcmd -S <host>,<port> -U <admin_user> -P <password> -d CosmosERP -i sql/maintenance/flush_all_data.sql
 
-# 2) Re-seed reference lookups
-sqlcmd -S <host>,<port> -U <admin_user> -P <password> -d CosmosERP -i sql/alter/05_foundry_lookup_values.sql
-
-# 3) Re-seed minimal core login data (super_admin + HQ + admin)
-sqlcmd -S <host>,<port> -U <admin_user> -P <password> -d CosmosERP -i sql/seed/01_seed_core.sql
+# 2) Configure lookups, store types, roles, and users in Command Unit / Foundry (no SQL auto-seed)
 ```
 
 Then update `.env` for your actual SQL Server values and restart app/PM2:
@@ -269,11 +264,7 @@ Protected routes combine **module access** and **permission** checks (see `src/m
 | Finance reports / dashboard | `finance` | `finance.view` |
 | Record payments | `finance` | `finance.manage` |
 
-Assign permissions in **Command Unit → Roles** (matrix includes `finance.view` / `finance.manage`). Optional SQL seed for **`hq_manager`**: grants `foundry.purchases.view`, `foundry.suppliers.view`, `foundry.branding.manage`, `foundry.sku.generate`, and `foundry.warehouse.approve` — not `foundry.purchases.create` (use the Roles UI if HQ should register new purchases). The seed does not modify `role_module_access` (see `sql/maintenance/verify_hq_manager_foundry_access.sql` for diagnostics).
-
-```bash
-sqlcmd -S <host>,<port> -U <admin_user> -P <password> -d CosmosERP -i sql/seed/02_hq_manager_foundry_view.sql
-```
+Assign permissions in **Command Unit → Roles** (matrix includes `finance.view` / `finance.manage`). For **`hq_manager`**, grant `foundry.purchases.view`, `foundry.suppliers.view`, `foundry.branding.manage`, `foundry.sku.generate`, and `foundry.warehouse.approve` in the Roles UI (SQL seeds are disabled). See `sql/maintenance/verify_hq_manager_foundry_access.sql` for diagnostics.
 
 **Important:** Changing a role’s permissions in the database does not update existing JWTs until the user **logs in again**.
 

@@ -16,7 +16,7 @@ This avoids fragile “directory sort” ordering (for example ensuring `04_bran
 3. `alter/01_*.sql` … `alter/30_*.sql` (numeric filename order)
 4. `migrations/` — follow `docs/` runbooks or `package.json` `migrate:*` scripts
 5. `sp/*.sql` — deploy all procedures your API expects
-6. `seed/*.sql`
+6. **Do not** run `seed/*.sql` — auto-seed is disabled; see `sql/seed/README.md`
 
 ## Brownfield — staff login column rename
 
@@ -37,7 +37,7 @@ Works in **bash**, **cmd**, and **PowerShell 7+**. On **Windows PowerShell 5.1**
 
 ## Brownfield — store type catalog (`stores.store_type`)
 
-- **`migrations/47_store_type_catalog.sql`** — creates **`dbo.store_type_catalog`**, MERGE-seeds **`HQ`**, **`Owned`**, **`Franchise`**, **`Kiosk`**, **`Online`** (same keys as **`src/config/storeTypesCatalog.js`**). Adds **`FK_stores_store_type_catalog`** only when every **`dbo.stores.store_type`** exists in the catalog; if you have legacy types, fix or extend the catalog first, then re-run. Run **`npm run migrate:47-store-type-catalog`** once per database.
+- **`migrations/47_store_type_catalog.sql`** — creates **`dbo.store_type_catalog`** (DDL only). Add rows in **Command Unit → Store types**. Adds **`FK_stores_store_type_catalog`** only when every **`dbo.stores.store_type`** exists in the catalog. Run **`npm run migrate:47-store-type-catalog`** once per database.
 
 ## Brownfield — duplicate store incharge roles (`store_in_charge` vs `store_incharge`)
 

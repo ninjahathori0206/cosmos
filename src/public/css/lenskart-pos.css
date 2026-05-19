@@ -278,6 +278,26 @@
   user-select: none;
 }
 
+.pos-order-transit-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.pos-order-transit-badge--transit-to-lab {
+  color: var(--acc2);
+  background: var(--accL);
+}
+
+.pos-order-transit-badge--transit-to-store {
+  color: var(--teal);
+  background: var(--tealL);
+}
+
 .pos-order-info {
   display: flex;
   flex-direction: column;
@@ -326,7 +346,8 @@
   justify-content: center;
 }
 
-.pos-order-status.open { background: #E0F2FE; color: #0284C7; }
+.pos-order-status.open { background: var(--accL); color: var(--acc2); }
+.pos-order-status.unpaid { background: var(--goldL); color: var(--gold); }
 .pos-order-status.paid { background: #DCFCE7; color: #16A34A; }
 .pos-order-status.delivered { background: #F3E8FF; color: #7E22CE; }
 .pos-order-status.cancelled { background: #FEE2E2; color: #DC2626; }
@@ -2912,15 +2933,30 @@ body.pos-lk-flow .pos-lens-actions {
   gap: 4px;
   padding: 3px 8px;
   border-radius: 999px;
-  background: #EFF6FF;
+  background: var(--accL);
   font-size: 11px;
   font-weight: 700;
-  color: var(--lk-blue);
+  color: var(--acc2);
 }
 
 .pos-lk-warranty-pill-2 {
-  background: #FEF3C7;
-  color: #92400E;
+  background: var(--tealL);
+  color: var(--teal);
+}
+
+.pos-lk-warranty-pill-tone3 {
+  background: var(--goldL);
+  color: var(--gold);
+}
+
+.pos-lk-warranty-pill-tone4 {
+  background: var(--accL);
+  color: var(--acc);
+}
+
+.pos-lk-warranty-pill-tone5 {
+  background: var(--orangeL);
+  color: var(--orange);
 }
 
 .pos-lk-lens-thumb-col {

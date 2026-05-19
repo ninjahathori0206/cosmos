@@ -7,11 +7,16 @@ const { executeStoredProcedure, getPool } = require('../config/db')
 const { authJwt }           = require('../middleware/authJwt')
 const { apiKeyAuth }        = require('../middleware/apiKeyAuth')
 const { requireTabletSession } = require('../middleware/requireTabletSession')
-const { requireModule, requirePermission, hasPermission } = require('../middleware/authorize')
+const { requireModule, requirePermission, hasPermission, isSuperAdmin } = require('../middleware/authorize')
 const { writeAuditLog }     = require('../services/auditService')
 const { resolveProcurementMode, readSetting } = require('../services/procurementService')
 const { nowUnixSec } = require('../services/jwtPolicyService')
 const orderService = require('../services/orderService')
+const {
+  POS_ORDER_QUEUE_KEYS,
+  POS_ORDER_QUEUE_TABS,
+  resolveQueueFetchOptions
+} = require('../config/posOrderQueueCatalog')
 const { resolveSkuFacts, computeOfferDiscountAmount } = require('../services/customerOfferDiscountService')
 
 const router = express.Router()
@@ -23,9 +28,12 @@ const posCustomersView = [authJwt, requireModule('pos'), requirePermission('pos.
 const posCustomersCreate = [authJwt, requireModule('pos'), requirePermission('pos.customers.create')]
 const posOrdersView = [authJwt, requireModule('pos'), requirePermission('pos.orders.view')]
 const posOrdersCreate = [authJwt, requireModule('pos'), requirePermission('pos.orders.create')]
+const posOrdersVoidUnpaid = [authJwt, requireModule('pos'), requirePermission('pos.orders.void_unpaid', 'pos.orders.create')]
 /** Matches cart sidebar: promo visibility + checkout — either may preview discount math. */
 const posPreviewDiscount = [authJwt, requireModule('pos'), requirePermission('pos.orders.create', 'pos.promotions.view')]
 const posPaymentCollect = [authJwt, requireModule('pos'), requirePermission('pos.payment.collect')]
+/** Atomic first payment + order insert (Store OS checkout). */
+const posCheckoutAndPay = [authJwt, requireModule('pos'), requirePermission('pos.orders.create', 'pos.payment.collect')]
 const posLabWorkflow = [authJwt, requireModule('pos'), requirePermission('pos.lab.workflow')]
 const posStaffPinSet = [authJwt, requireModule('pos'), requirePermission('pos.staff.pin.set')]
 
@@ -44,6 +52,21 @@ function truthyPosSetting(val) {
 }
 
 /** Validates POS JWT store context; rejects non-finite or missing IDs. */
+function posActorUserId(req) {
+  const raw = req.user && (req.user.user_id != null ? req.user.user_id : req.user.employee_id)
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
+function posCanMutateOrder(req, orderRow) {
+  try {
+    orderService.assertPosOrderCreatorMutation(orderRow, posActorUserId(req), { bypass: isSuperAdmin(req) })
+    return true
+  } catch (_e) {
+    return false
+  }
+}
+
 function posJwtStoreIdOr400(req, res) {
   const sid = Number(req.user && req.user.store_id)
   if (!Number.isFinite(sid) || sid < 1) {
@@ -395,6 +418,20 @@ const paymentSchema = Joi.object({
   external_ref:  Joi.string().max(200).allow('', null)
 })
 
+const paymentAtCheckoutSchema = Joi.object({
+  stage:         Joi.string().valid('ADVANCE', 'BALANCE', 'FULL').required(),
+  method:        Joi.string().max(20).required(),
+  amount:        Joi.number().min(0).required(),
+  tendered:      Joi.number().min(0).allow(null),
+  change_given:  Joi.number().min(0).allow(null),
+  external_ref:  Joi.string().max(200).allow('', null)
+})
+
+const checkoutAndPaySchema = Joi.object({
+  order: createOrderSchema.required(),
+  payment: paymentAtCheckoutSchema.required()
+})
+
 const orderStatusSchema = Joi.object({
   sub_order_id: Joi.number().integer().positive().required(),
   to_status:    Joi.string().max(30).required(),
@@ -497,6 +534,10 @@ function buildLensCatalogPayload(result, productTypeKey) {
           brand_label: brandLabel,
           price: Number(p.price) || 0,
           sort_order: Number(p.sort_order) || 0,
+          card_feat_line1: String(p.card_feat_line1 || '').trim(),
+          card_feat_line2: String(p.card_feat_line2 || '').trim(),
+          card_warranty_label: String(p.card_warranty_label || '').trim(),
+          card_warranty_tone: Number(p.card_warranty_tone) || 1,
           addons: pkgAddons
         }
       })
@@ -1057,6 +1098,84 @@ router.get('/settings', ...posCatalogue, async (req, res, next) => {
 })
 
 /**
+ * Server-side offer discount for order create / checkout-and-pay (anti-tamper).
+ * @param {import('mssql').ConnectionPool} pool
+ * @param {object} value validated createOrderSchema body
+ */
+async function resolveAuthorisedDiscountForPosOrder(pool, value) {
+  let authorisedDiscountAmount = value.discount_amount || 0
+  if (!value.applied_offer_id) {
+    const offers = await fetchEligibleCartOffersForPos(pool, value.customer_id || null)
+    let qualifying = 0
+    for (const offer of offers) {
+      const offerRow = await pool.request()
+        .input('offer_id', sql.Int, offer.offer_id)
+        .query(`
+            SELECT offer_id, discount_type, discount_value, trigger_type, trigger_value, benefit_target, max_discount_amount
+            FROM   dbo.customer_offers WHERE offer_id = @offer_id
+          `)
+      const row = offerRow.recordset && offerRow.recordset[0]
+      if (!row || !row.offer_id) continue
+      const amt = await computeOfferDiscountAmount(pool, row, value.lines, { cartPreview: false })
+      if (Number(amt) > 0) qualifying += 1
+      if (qualifying > 1) {
+        const err = new Error('Multiple offers qualify. Cashier must select one offer before checkout.')
+        err.statusCode = 400
+        throw err
+      }
+    }
+    return authorisedDiscountAmount
+  }
+  const offerRow = await pool.request()
+    .input('offer_id', sql.Int, value.applied_offer_id)
+    .query(`
+        SELECT offer_id, discount_type, discount_value, is_active, valid_from, valid_to
+        FROM   dbo.customer_offers WHERE offer_id = @offer_id
+      `)
+  const offer = offerRow.recordset && offerRow.recordset[0]
+  if (!offer || !offer.is_active) {
+    const err = new Error('Applied offer is no longer active.')
+    err.statusCode = 400
+    throw err
+  }
+  const nowMs = Date.now()
+  const vt = offer.valid_to ? new Date(offer.valid_to).getTime() : NaN
+  if (Number.isFinite(vt) && nowMs > vt) {
+    const err = new Error('Applied offer has expired.')
+    err.statusCode = 400
+    throw err
+  }
+  authorisedDiscountAmount = await computeOfferDiscountAmount(pool, offer, value.lines, { cartPreview: false })
+  return authorisedDiscountAmount
+}
+
+async function recordPosOfferUsage(pool, { value, out, storeId, employeeId, authorisedDiscountAmount }) {
+  if (!value.applied_offer_id || Number(authorisedDiscountAmount) <= 0) return
+  try {
+    await pool.request()
+      .input('offer_id', sql.Int, Number(value.applied_offer_id))
+      .input('order_id', sql.Int, Number(out.order_id))
+      .input('order_no', sql.NVarChar(80), String(out.order_no || ''))
+      .input('store_id', sql.Int, Number(storeId))
+      .input('cashier_user_id', sql.Int, Number(employeeId))
+      .input('customer_id', sql.Int, value.customer_id || null)
+      .input('discount_amount', sql.Decimal(12, 2), Number(authorisedDiscountAmount) || 0)
+      .input('sale_amount', sql.Decimal(12, 2), Number(out.total_amount) || 0)
+      .query(`
+          IF OBJECT_ID('dbo.sp_RecordOfferUsage', 'P') IS NOT NULL
+          BEGIN
+            EXEC dbo.sp_RecordOfferUsage
+              @offer_id=@offer_id, @order_id=@order_id, @order_no=@order_no, @store_id=@store_id,
+              @cashier_user_id=@cashier_user_id, @customer_id=@customer_id,
+              @discount_amount=@discount_amount, @sale_amount=@sale_amount
+          END
+        `)
+  } catch (_usageErr) {
+    /* non-fatal */
+  }
+}
+
+/**
  * Active Eyewoot Go offers for POS + scope rows (for client PCT/FLAT preview).
  * @param {import('mssql').ConnectionPool} pool
  * @param {number|null} customerId
@@ -1336,34 +1455,48 @@ router.get('/orders', ...posOrdersView, async (req, res, next) => {
     if (storeId == null) return
 
     const search = (req.query.q || '').trim() || null
-    const statusFilter = (req.query.status || '').trim() || null
-    if (String(statusFilter || '').toUpperCase() === 'COMPLETED') {
+    const searchScope = String(req.query.search_scope || 'store').trim().toLowerCase()
+    const queueRaw = String(req.query.queue || 'ACTIVE').trim().toUpperCase()
+    if (!POS_ORDER_QUEUE_KEYS.includes(queueRaw)) {
       return res.status(400).json({
         success: false,
-        message: 'Completed orders are not listed on Store OS. Open CX › Dashboard and use Completed orders.'
+        message: `Invalid queue. Use one of: ${POS_ORDER_QUEUE_KEYS.join(', ')}`
       })
     }
 
-    const orderKind = (req.query.kind || '').trim() || null
-    const labStatusFilter = (req.query.lab_status || '').trim() || null
-    const excludeRaw = (req.query.exclude_lab_status || '').trim()
-    const labStatusExcludes = excludeRaw ? excludeRaw.split(',').map((s) => s.trim()).filter(Boolean) : []
-
     const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
+
+    if (search && searchScope === 'all') {
+      const orders = await orderService.fetchAllOrders(pool, mode, {
+        search,
+        limit: 100
+      })
+      return res.json({ success: true, data: orders })
+    }
+
+    const qOpts = resolveQueueFetchOptions(queueRaw)
     const orders = await orderService.fetchStoreOrders(pool, storeId, mode, {
       search,
-      statusFilter,
-      orderKind,
-      labStatusFilter,
-      labStatusExcludes,
-      excludeOrderStatuses: statusFilter ? [] : ['COMPLETED']
+      orderKind: qOpts.orderKind || null,
+      labStatusIncludes: qOpts.labStatusIncludes || [],
+      labStatusExcludesUnion: qOpts.labStatusExcludesUnion || [],
+      invoicedSinceDays: qOpts.invoicedSinceDays != null ? qOpts.invoicedSinceDays : null,
+      activeQueue: qOpts.activeQueue === true,
+      transitRequiresPayment: qOpts.transitRequiresPayment === true,
+      excludeOrderStatuses: Array.isArray(qOpts.excludeOrderStatuses)
+        ? qOpts.excludeOrderStatuses
+        : ['COMPLETED']
     })
 
     return res.json({ success: true, data: orders })
   } catch (err) {
     return next(err)
   }
+})
+
+router.get('/order-queues', ...posOrdersView, (req, res) => {
+  return res.json({ success: true, data: { tabs: POS_ORDER_QUEUE_TABS, keys: POS_ORDER_QUEUE_KEYS } })
 })
 
 // ── GET /api/pos/orders/:id ──────────────────────────────────────────────────
@@ -1382,15 +1515,19 @@ router.get('/orders/:id', ...posOrdersView, async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Order not found for this store.' })
     }
 
+    const actorId = posActorUserId(req)
     return res.json({
       success: true,
       data: {
-        order: orderService.mapOrderRowForApi(bundle.order),
+        order: orderService.mapOrderRowForApi(bundle.order, { payment_summary: bundle.payment_summary }),
         customer: bundle.customer || null,
         sub_orders: bundle.subList,
         payments: bundle.payments,
         payment_summary: bundle.payment_summary,
-        orders_engine_mode: mode
+        orders_engine_mode: mode,
+        created_by_user_id: bundle.order.created_by_user_id != null ? Number(bundle.order.created_by_user_id) : null,
+        can_mutate: posCanMutateOrder(req, bundle.order),
+        is_mine: actorId != null && Number(bundle.order.created_by_user_id) === actorId
       }
     })
   } catch (err) {
@@ -1442,49 +1579,7 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
     const firstPt = value.lines[0].product_type
     const procurementMode = await resolveProcurementMode(pool, storeId, firstPt)
     const mode = await orderService.getOrdersEngineMode(pool)
-
-    // Authoritative offer discount re-computation (prevents client-side manipulation)
-    let authorisedDiscountAmount = value.discount_amount || 0
-    if (!value.applied_offer_id) {
-      const offers = await fetchEligibleCartOffersForPos(pool, value.customer_id || null)
-      let qualifying = 0
-      for (const offer of offers) {
-        const offerRow = await pool.request()
-          .input('offer_id', sql.Int, offer.offer_id)
-          .query(`
-            SELECT offer_id, discount_type, discount_value, trigger_type, trigger_value, benefit_target, max_discount_amount
-            FROM   dbo.customer_offers WHERE offer_id = @offer_id
-          `)
-        const row = offerRow.recordset && offerRow.recordset[0]
-        if (!row || !row.offer_id) continue
-        const amt = await computeOfferDiscountAmount(pool, row, value.lines, { cartPreview: false })
-        if (Number(amt) > 0) qualifying += 1
-        if (qualifying > 1) {
-          return res.status(400).json({
-            success: false,
-            message: 'Multiple offers qualify. Cashier must select one offer before checkout.'
-          })
-        }
-      }
-    }
-    if (value.applied_offer_id) {
-      const offerRow = await pool.request()
-        .input('offer_id', sql.Int, value.applied_offer_id)
-        .query(`
-          SELECT offer_id, discount_type, discount_value, is_active, valid_from, valid_to
-          FROM   dbo.customer_offers WHERE offer_id = @offer_id
-        `)
-      const offer = offerRow.recordset && offerRow.recordset[0]
-      if (!offer || !offer.is_active) {
-        return res.status(400).json({ success: false, message: 'Applied offer is no longer active.' })
-      }
-      const nowMs = Date.now()
-      const vt = offer.valid_to ? new Date(offer.valid_to).getTime() : NaN
-      if (Number.isFinite(vt) && nowMs > vt) {
-        return res.status(400).json({ success: false, message: 'Applied offer has expired.' })
-      }
-      authorisedDiscountAmount = await computeOfferDiscountAmount(pool, offer, value.lines, { cartPreview: false })
-    }
+    const authorisedDiscountAmount = await resolveAuthorisedDiscountForPosOrder(pool, value)
 
     const transaction = new sql.Transaction(pool)
     await transaction.begin()
@@ -1507,30 +1602,7 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
 
       await transaction.commit()
 
-      if (value.applied_offer_id && Number(authorisedDiscountAmount) > 0) {
-        try {
-          await pool.request()
-            .input('offer_id', sql.Int, Number(value.applied_offer_id))
-            .input('order_id', sql.Int, Number(out.order_id))
-            .input('order_no', sql.NVarChar(80), String(out.order_no || ''))
-            .input('store_id', sql.Int, Number(storeId))
-            .input('cashier_user_id', sql.Int, Number(employeeId))
-            .input('customer_id', sql.Int, value.customer_id || null)
-            .input('discount_amount', sql.Decimal(12, 2), Number(authorisedDiscountAmount) || 0)
-            .input('sale_amount', sql.Decimal(12, 2), Number(out.total_amount) || 0)
-            .query(`
-              IF OBJECT_ID('dbo.sp_RecordOfferUsage', 'P') IS NOT NULL
-              BEGIN
-                EXEC dbo.sp_RecordOfferUsage
-                  @offer_id=@offer_id, @order_id=@order_id, @order_no=@order_no, @store_id=@store_id,
-                  @cashier_user_id=@cashier_user_id, @customer_id=@customer_id,
-                  @discount_amount=@discount_amount, @sale_amount=@sale_amount
-              END
-            `)
-        } catch (_usageErr) {
-          // non-fatal for checkout
-        }
-      }
+      await recordPosOfferUsage(pool, { value, out, storeId, employeeId, authorisedDiscountAmount })
 
       return res.json({
         success: true,
@@ -1543,7 +1615,8 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
           gst_amount: out.gst_amount,
           total_amount: out.total_amount,
           sub_orders: out.sub_orders,
-          orders_engine_mode: mode
+          orders_engine_mode: mode,
+          created_by_user_id: employeeId != null ? Number(employeeId) : null
         }
       })
     } catch (inner) {
@@ -1551,8 +1624,98 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
       throw inner
     }
   } catch (err) {
-    if (err.statusCode === 400) {
+    if (err.statusCode === 400 || err.statusCode === 403) {
+      return res.status(err.statusCode).json({ success: false, message: err.message })
+    }
+    if (err.message && err.message.includes('Insufficient stock')) {
       return res.status(400).json({ success: false, message: err.message })
+    }
+    if (err.message && (err.message.includes('inventory_committed') || err.message.includes('Invalid column name'))) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database migration required: run sql/migrations/pos_checkout_inventory_drafts.sql (inventory_committed on orders).'
+      })
+    }
+    return next(err)
+  }
+})
+
+// ── POST /api/pos/checkout-and-pay — create order + first payment atomically (Store OS) ──
+router.post('/checkout-and-pay', ...posCheckoutAndPay, async (req, res, next) => {
+  const storeId = posJwtStoreIdOr400(req, res)
+  if (storeId == null) return
+
+  const employeeId = req.user.employee_id
+  try {
+    const { error, value } = checkoutAndPaySchema.validate(req.body)
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      })
+    }
+
+    const pool = await getPool()
+    const cfgResult = await executeStoredProcedure('sp_POS_GetStartupConfig', {})
+    const cfg = mapStartupConfig(cfgResult)
+    const gstRate = Number(await readSetting(pool, 'pos_gst_rate') || 0.05)
+    const advPct = Number(await readSetting(pool, 'lab_advance_pct') || 40)
+    const compositionScheme = truthyPosSetting(await readSetting(pool, 'pos_composition_scheme'))
+    const pricesGstInclusive = truthyPosSetting(await readSetting(pool, 'pos_prices_gst_inclusive'))
+    const firstPt = value.order.lines[0].product_type
+    const procurementMode = await resolveProcurementMode(pool, storeId, firstPt)
+    const mode = await orderService.getOrdersEngineMode(pool)
+    const authorisedDiscountAmount = await resolveAuthorisedDiscountForPosOrder(pool, value.order)
+
+    const out = await orderService.checkoutAndPay(pool, mode, storeId, employeeId, {
+      createParams: {
+        mode,
+        value: value.order,
+        storeId,
+        employeeId,
+        gstRate,
+        compositionScheme,
+        pricesGstInclusive,
+        advPct,
+        procurementMode,
+        cfg,
+        discountAmount: authorisedDiscountAmount,
+        appliedOfferId: value.order.applied_offer_id || null,
+        inventoryDeferred: false
+      },
+      paymentBody: value.payment
+    })
+
+    await recordPosOfferUsage(pool, {
+      value: value.order,
+      out,
+      storeId,
+      employeeId,
+      authorisedDiscountAmount
+    })
+
+    return res.json({
+      success: true,
+      message: 'Order created and payment recorded.',
+      data: {
+        order_id: out.order_id,
+        order_no: out.order_no,
+        order_kind: out.order_kind,
+        subtotal_amount: out.subtotal_amount,
+        discount_amount: out.discount_amount,
+        gst_amount: out.gst_amount,
+        total_amount: out.total_amount,
+        sub_orders: out.sub_orders,
+        payment_summary: out.payment_summary,
+        invoice_no: out.invoice_no || null,
+        orders_engine_mode: mode,
+        created_by_user_id: employeeId != null ? Number(employeeId) : null
+      }
+    })
+  } catch (err) {
+    if (err.statusCode === 400 || err.statusCode === 403) {
+      return res.status(err.statusCode).json({ success: false, message: err.message })
     }
     if (err.message && err.message.includes('Insufficient stock')) {
       return res.status(400).json({ success: false, message: err.message })
@@ -1706,7 +1869,10 @@ router.post('/payment', posPaymentCollect, async (req, res, next) => {
     const employeeId = req.user.employee_id
     const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
-    const result = await orderService.recordPayment(pool, mode, storeId, employeeId, value)
+    const result = await orderService.recordPayment(pool, mode, storeId, employeeId, value, {
+      actorUserId: posActorUserId(req),
+      allowMutationBypass: isSuperAdmin(req)
+    })
     return res.json({
       success: true,
       message: result.message,
@@ -1716,7 +1882,39 @@ router.post('/payment', posPaymentCollect, async (req, res, next) => {
       }
     })
   } catch (err) {
-    if (err.statusCode === 400 || err.statusCode === 404) {
+    if (err.statusCode === 400 || err.statusCode === 403 || err.statusCode === 404) {
+      return res.status(err.statusCode).json({ success: false, message: err.message })
+    }
+    return next(err)
+  }
+})
+
+// ── POST /api/pos/orders/:id/void-unpaid — cancel zero-payment OPEN orphan (creator-only) ──
+router.post('/orders/:id/void-unpaid', ...posOrdersVoidUnpaid, async (req, res, next) => {
+  try {
+    const orderId = parseInt(req.params.id, 10)
+    if (!Number.isFinite(orderId)) {
+      return res.status(400).json({ success: false, message: 'Invalid order id.' })
+    }
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
+    const pool = await getPool()
+    const mode = await orderService.getOrdersEngineMode(pool)
+    const out = await orderService.voidUnpaidPosOrder(
+      pool,
+      mode,
+      storeId,
+      orderId,
+      posActorUserId(req),
+      { bypass: isSuperAdmin(req) }
+    )
+    return res.json({
+      success: true,
+      message: 'Unpaid bill voided.',
+      data: out
+    })
+  } catch (err) {
+    if (err.statusCode === 400 || err.statusCode === 403 || err.statusCode === 404) {
       return res.status(err.statusCode).json({ success: false, message: err.message })
     }
     return next(err)
@@ -1748,6 +1946,13 @@ router.post('/orders/:id/status', ...posLabWorkflow, async (req, res, next) => {
 
     const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
+    const bundle = await orderService.fetchOrderBundle(pool, orderId, storeId, mode)
+    if (!bundle) {
+      return res.status(404).json({ success: false, message: 'Order not found for this store.' })
+    }
+    orderService.assertPosOrderCreatorMutation(bundle.order, posActorUserId(req), {
+      bypass: isSuperAdmin(req)
+    })
     const employeeId = req.user.employee_id
     const actorRole = 'store_in_charge'
     const out = await orderService.updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
@@ -1764,7 +1969,7 @@ router.post('/orders/:id/status', ...posLabWorkflow, async (req, res, next) => {
     })
     return res.json({ success: true, message: out.message, data: { from_status: out.from_status, to_status: out.to_status } })
   } catch (err) {
-    if (err.statusCode === 400 || err.statusCode === 404) {
+    if (err.statusCode === 400 || err.statusCode === 403 || err.statusCode === 404) {
       return res.status(err.statusCode).json({ success: false, message: err.message })
     }
     return next(err)

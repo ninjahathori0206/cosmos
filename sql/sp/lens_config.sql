@@ -36,6 +36,10 @@ BEGIN
     p.price,
     p.sort_order,
     CAST(p.is_active AS BIT) AS is_active,
+    ISNULL(p.card_feat_line1, N'')     AS card_feat_line1,
+    ISNULL(p.card_feat_line2, N'')     AS card_feat_line2,
+    ISNULL(p.card_warranty_label, N'') AS card_warranty_label,
+    ISNULL(p.card_warranty_tone, 1)  AS card_warranty_tone,
     c.name AS category_legacy_name
   FROM dbo.pos_lens_packages p
   INNER JOIN dbo.pos_lens_categories c ON c.id = p.category_id
@@ -141,9 +145,13 @@ CREATE OR ALTER PROCEDURE dbo.sp_LensConfig_Package_Save
   @pos_name       NVARCHAR(100)  = NULL,
   @internal_brand NVARCHAR(100)  = N'',
   @internal_name  NVARCHAR(100)  = NULL,
-  @price          DECIMAL(10, 2),
-  @sort_order     INT            = 0,
-  @is_active      BIT            = 1
+  @price               DECIMAL(10, 2),
+  @sort_order          INT            = 0,
+  @is_active           BIT            = 1,
+  @card_feat_line1     NVARCHAR(250)  = NULL,
+  @card_feat_line2     NVARCHAR(250)  = NULL,
+  @card_warranty_label NVARCHAR(40)   = NULL,
+  @card_warranty_tone  TINYINT        = NULL
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -159,23 +167,35 @@ BEGIN
 
   IF @id IS NULL
   BEGIN
-    INSERT INTO dbo.pos_lens_packages (category_id, name, pos_brand, pos_name, internal_brand, internal_name, price, sort_order, is_active)
-    VALUES (@category_id, @nm, @pos_brand, @pos_name, @internal_brand, @internal_name, @price, @sort_order, @is_active);
+    INSERT INTO dbo.pos_lens_packages (
+      category_id, name, pos_brand, pos_name, internal_brand, internal_name,
+      price, sort_order, is_active,
+      card_feat_line1, card_feat_line2, card_warranty_label, card_warranty_tone
+    )
+    VALUES (
+      @category_id, @nm, @pos_brand, @pos_name, @internal_brand, @internal_name,
+      @price, @sort_order, @is_active,
+      @card_feat_line1, @card_feat_line2, @card_warranty_label, @card_warranty_tone
+    );
     SET @id = SCOPE_IDENTITY();
   END
   ELSE
   BEGIN
     UPDATE dbo.pos_lens_packages
     SET
-      category_id    = @category_id,
-      name           = @nm,
-      pos_brand      = @pos_brand,
-      pos_name       = @pos_name,
-      internal_brand = @internal_brand,
-      internal_name  = @internal_name,
-      price          = @price,
-      sort_order     = @sort_order,
-      is_active      = @is_active
+      category_id         = @category_id,
+      name                = @nm,
+      pos_brand           = @pos_brand,
+      pos_name            = @pos_name,
+      internal_brand      = @internal_brand,
+      internal_name       = @internal_name,
+      price               = @price,
+      sort_order          = @sort_order,
+      is_active           = @is_active,
+      card_feat_line1     = @card_feat_line1,
+      card_feat_line2     = @card_feat_line2,
+      card_warranty_label = @card_warranty_label,
+      card_warranty_tone  = @card_warranty_tone
     WHERE id = @id;
   END
 

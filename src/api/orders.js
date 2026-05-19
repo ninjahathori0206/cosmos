@@ -115,26 +115,48 @@ function gateStorepilotLabMutations(req, res, next) {
   return res.status(403).json({ success: false, message: 'Permission denied.' })
 }
 
+/**
+ * Maps a JWT caller + target status to the actor_role slot used in pos_lab_transitions.
+ *
+ * Real roles in this system:
+ *   hq_manager   — Foundry / Command Unit staff (all HQ lab stages: fitting, QC, dispatch)
+ *   store_in_charge — StorePilot / POS store incharge (acceptance, receive, store QC)
+ *   store_staff     — StorePilot store staff (marks ready for delivery)
+ *
+ * DELIVERED, BALANCE_COLLECTED, INVOICED are set atomically by the handover API
+ * (advanceLabSubOrdersThroughInvoiced) and must NOT be reachable via lab-status.
+ * They are blocked at the route level; if somehow reached here, return 'system'.
+ *
+ * Precedence: when JWT has multiple modules (e.g. legacy empty-module token), the
+ * user's role_key is the decisive tiebreaker — store roles win over HQ modules.
+ */
 function resolveActorRole(req, toStatus) {
   const target = String(toStatus || '').toUpperCase()
+  const roleKey = String((req.user && req.user.role) || '').toLowerCase()
+
   const isFoundry     = hasModuleAccess(req, 'foundry')
   const isCommandUnit = hasModuleAccess(req, 'command_unit')
   const isStorePilot  = hasModuleAccess(req, 'storepilot')
   const isPos         = hasModuleAccess(req, 'pos')
+
+  // Store roles always resolve to store actor slots regardless of module map.
+  const isStoreRole = roleKey === 'store_incharge' || roleKey === 'store_in_charge'
+    || roleKey === 'store_manager' || roleKey === 'store_staff'
+
+  if (isStoreRole || isStorePilot || isPos) {
+    if (target === 'STORE_QC_PASS' || target === 'STORE_QC_PARTIAL'
+        || target === 'READY_FOR_DELIVERY') return 'store_staff'
+    // Handover tail must not route through here; guard just in case.
+    if (target === 'DELIVERED' || target === 'BALANCE_COLLECTED' || target === 'INVOICED') return 'system'
+    return 'store_in_charge'
+  }
+
+  // HQ staff (hq_manager via Foundry / Command Unit) — both fitting and QC stages.
   if (isFoundry || isCommandUnit) {
-    if (target === 'QC_PASS' || target === 'QC_FAIL_LAB') return 'qc_team'
-    return 'lab_manager'
+    return 'hq_manager'
   }
-  if (isStorePilot) {
-    if (target === 'READY_FOR_DELIVERY' || target === 'DELIVERED' || target === 'BALANCE_COLLECTED') return 'store_staff'
-    return 'store_in_charge'
-  }
-  // POS/Store OS — align delivery-stage actor with StorePilot so sp_POS_ValidateLabTransition allows the same paths.
-  if (isPos) {
-    if (target === 'READY_FOR_DELIVERY' || target === 'DELIVERED' || target === 'BALANCE_COLLECTED') return 'store_staff'
-    return 'store_in_charge'
-  }
-  return String(req.user && req.user.role ? req.user.role : '')
+
+  return roleKey || 'unknown'
 }
 
 router.get('/', requireAnyModule(['foundry', 'command_unit', 'storepilot']), gateStorepilotLabOrdersList, async (req, res, next) => {
@@ -223,6 +245,10 @@ router.post('/:id/lab-intake', requireAnyModule(['foundry', 'command_unit']), as
   }
 })
 
+// Statuses owned exclusively by the handover API (advanceLabSubOrdersThroughInvoiced).
+// They must never be settable through the manual lab-status endpoint.
+const LAB_STATUS_HANDOVER_ONLY = new Set(['DELIVERED', 'BALANCE_COLLECTED', 'INVOICED'])
+
 router.post('/:id/lab-status', requireAnyModule(['foundry', 'command_unit', 'storepilot', 'pos']), gateStorepilotLabMutations, async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id, 10)
@@ -235,6 +261,15 @@ router.post('/:id/lab-status', requireAnyModule(['foundry', 'command_unit', 'sto
         success: false,
         message: 'Validation error',
         errors: error.details.map((d) => d.message)
+      })
+    }
+
+    // DELIVERED, BALANCE_COLLECTED, INVOICED are joint handover events set atomically
+    // by POST /handover only. Block any attempt to drive them manually here.
+    if (LAB_STATUS_HANDOVER_ONLY.has(String(value.to_status || '').toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: `'${value.to_status}' is set automatically during handover. Use POST /api/orders/:id/handover instead.`
       })
     }
 
@@ -312,7 +347,7 @@ router.get('/:id/timeline', requireAnyModule(['storepilot', 'foundry', 'command_
           sl.note,
           sl.created_at,
           u.full_name  AS actor_name,
-          u.role       AS actor_role
+          u.role_key   AS actor_role
         FROM ${t.status_log} sl
         LEFT JOIN dbo.users u ON u.user_id = sl.actor_user_id
         WHERE sl.order_id = @oid
