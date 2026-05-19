@@ -43,7 +43,8 @@
     "publish:design-local": "node scripts/publish-design-local.js",
     "generate:favicon": "node scripts/generate-favicon.js",
     "merge:pen": "node scripts/merge-pen-into-primary.js",
-    "sql:tables": "node scripts/run-sql.js"
+    "sql:tables": "node scripts/run-sql.js",
+    "tunnel:storeos": "npx --yes ngrok@latest http 4000"
   },
   "keywords": [
     "cosmos",

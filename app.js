@@ -440,6 +440,7 @@ app.get('/storeos-sw.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'src', 'public', 'storeos-sw.js'));
 });
 app.get('/storeos-manifest.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'src', 'public', 'storeos-manifest.json'));
 });
