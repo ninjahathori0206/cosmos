@@ -88,8 +88,33 @@ function assertAuthEnv() {
 
 const PORT = process.env.PORT || 4000;
 const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
-const API_RATE_LIMIT_WINDOW_MS = Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
-const API_RATE_LIMIT_MAX = Number(process.env.API_RATE_LIMIT_MAX || 1000);
+function parseRateLimitPositiveInt(raw, fallback, label) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) {
+    // eslint-disable-next-line no-console
+    console.warn(`[rate-limit] invalid ${label}="${raw}", using ${fallback}`);
+    return fallback;
+  }
+  return Math.floor(n);
+}
+
+const API_RATE_LIMIT_WINDOW_MS = parseRateLimitPositiveInt(
+  process.env.API_RATE_LIMIT_WINDOW_MS,
+  15 * 60 * 1000,
+  'API_RATE_LIMIT_WINDOW_MS'
+);
+const API_RATE_LIMIT_MAX = parseRateLimitPositiveInt(
+  process.env.API_RATE_LIMIT_MAX,
+  1000,
+  'API_RATE_LIMIT_MAX'
+);
+
+/** QR label previews hit /api/qr heavily; that route has its own limiter — skip global /api bucket. */
+function isQrApiRequest(req) {
+  const path = String(req.originalUrl || req.url || '').split('?')[0];
+  return path === '/api/qr' || path.startsWith('/api/qr/');
+}
 
 /** Canonical form for Origin comparison — trims paths, slashes, folds host case, drops default ports. */
 function normalizeCorsOrigin(origin) {
@@ -270,7 +295,7 @@ app.get('/config/bootstrap.json', (req, res) => {
   });
 });
 
-// Simple rate limiter for all APIs
+// Simple rate limiter for all APIs (QR previews excluded — see isQrApiRequest)
 app.use(
   '/api',
   rateLimit({
@@ -278,6 +303,13 @@ app.use(
     max: API_RATE_LIMIT_MAX,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => isQrApiRequest(req),
+    handler: (req, res) => {
+      res.status(429).json({
+        success: false,
+        message: 'Too many API requests. Wait a moment and try again.'
+      });
+    },
     ...(apiRateLimitStore ? { store: apiRateLimitStore } : {})
   })
 );

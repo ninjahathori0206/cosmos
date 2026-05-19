@@ -1,4 +1,4 @@
-/* Lenskart-Style Flow Aesthetics */
+﻿/* Lenskart-Style Flow Aesthetics */
 :root {
   --lk-ocean: #011C3A;
   --lk-blue: #0A58ca;
@@ -5835,4 +5835,25 @@ body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-product .pos-pdp-detail
     box-shadow: var(--lk-shadow);
     z-index: auto;
   }
+}
+
+.pos-unit-scan-manual {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.pos-unit-scan-manual-lbl {
+  display: block;
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 8px;
+}
+.pos-unit-scan-manual-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.pos-unit-scan-manual-row .pos-lk-cart-unit-input {
+  flex: 1;
+  min-width: 0;
 }

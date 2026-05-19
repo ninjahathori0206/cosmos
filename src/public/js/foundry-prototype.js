@@ -266,23 +266,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     return new Error(msg);
   }
 
+  async function _parseApiJsonResponse(res) {
+    const text = await res.text();
+    if (!text) {
+      if (res.status === 429) {
+        throw new Error('Too many requests — wait a moment and refresh the page.');
+      }
+      throw new Error(`HTTP ${res.status}: empty response`);
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (_e) {
+      if (res.status === 429) {
+        throw new Error('Too many requests — wait a moment and refresh the page.');
+      }
+      const snippet = text.length > 120 ? text.slice(0, 120) + '…' : text;
+      throw new Error(`HTTP ${res.status}: ${snippet}`);
+    }
+    return data;
+  }
+
   async function apiGet(path) {
     const res = await fetch(path, { headers: authHeaders(), cache: 'no-store' });
-    let data; try { data = await res.json(); } catch(_) { throw new Error(`HTTP ${res.status}: unparseable response`); }
+    const data = await _parseApiJsonResponse(res);
     if (!res.ok || !data.success) throw _buildApiError(data, res.status);
     return data.data;
   }
 
   async function apiPost(path, body) {
     const res = await fetch(path, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body), cache: 'no-store' });
-    let data; try { data = await res.json(); } catch(_) { throw new Error(`HTTP ${res.status}: unparseable response`); }
+    const data = await _parseApiJsonResponse(res);
     if (!res.ok || !data.success) throw _buildApiError(data, res.status);
     return data.data;
   }
 
   async function apiPut(path, body) {
     const res = await fetch(path, { method: 'PUT', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body), cache: 'no-store' });
-    let data; try { data = await res.json(); } catch(_) { throw new Error(`HTTP ${res.status}: unparseable response`); }
+    const data = await _parseApiJsonResponse(res);
     if (!res.ok || !data.success) throw _buildApiError(data, res.status);
     return data.data;
   }
@@ -380,15 +401,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       .replace(/"/g, '&quot;');
   }
 
+  let _warehouseRefreshPromise = null;
+
   async function refreshWarehouseContext() {
-    try {
-      const wh = await apiGet('/api/foundry-lookups/warehouse-context');
-      if (wh && typeof wh.warehouse_display_name === 'string') {
-        const t = wh.warehouse_display_name.trim();
-        if (t) _warehouseDisplayName = t;
+    if (_warehouseRefreshPromise) return _warehouseRefreshPromise;
+    _warehouseRefreshPromise = (async () => {
+      try {
+        const wh = await apiGet('/api/foundry-lookups/warehouse-context');
+        if (wh && typeof wh.warehouse_display_name === 'string') {
+          const t = wh.warehouse_display_name.trim();
+          if (t) _warehouseDisplayName = t;
+        }
+      } catch (e) {
+        console.error('refreshWarehouseContext', e);
       }
-    } catch (e) {
-      console.error('refreshWarehouseContext', e);
+    })();
+    try {
+      await _warehouseRefreshPromise;
+    } finally {
+      _warehouseRefreshPromise = null;
     }
   }
   window._brandingReceiptDraftByHeader = {};
@@ -404,22 +435,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   // ── Lookup / initial data ─────────────────────────────────────────────────
-  async function loadFormData() {
+  let _formDataLoadPromise = null;
+  let _formDataReady = false;
+
+  async function loadFormData(forceReload) {
+    if (_formDataLoadPromise) return _formDataLoadPromise;
+    if (!forceReload && _formDataReady) return;
+    _formDataLoadPromise = _loadFormDataInner(forceReload);
+    try {
+      await _formDataLoadPromise;
+    } finally {
+      _formDataLoadPromise = null;
+    }
+  }
+
+  async function _loadFormDataInner(forceReload) {
     // Use allSettled so one failing endpoint (e.g. branding-agents) does not block suppliers.
     // Use GET /api/suppliers?status=active (full list) — search?q= uses sp_Supplier_Search TOP 20 only.
     showErr('new-purchase-error', '');
     await refreshWarehouseContext();
-    const [supR, makersR, lookupsR, brandsR, ptR, agentsR] = await Promise.allSettled([
+    const [supR, makersR, lookupsR, brandsR, agentsR] = await Promise.allSettled([
       apiGet('/api/suppliers?status=active'),
       apiGet('/api/maker-master'),
       apiGet('/api/foundry-lookups'),
       apiGet('/api/home-brands'),
-      apiGet('/api/foundry-lookups?type=product_type'),
       apiGet('/api/branding-agents')
     ]);
 
     if (supR.status === 'fulfilled') {
       _allSuppliers = supR.value || [];
+      _formDataReady = true;
     } else {
       console.error('loadFormData: suppliers', supR.reason);
       _allSuppliers = [];
@@ -446,13 +491,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       _lookups[t].push({ key: row.lookup_key, label: row.lookup_label, id: row.lookup_id });
     });
 
-    const productTypeRows = ptR.status === 'fulfilled' ? (ptR.value || []) : [];
-    if (ptR.status === 'rejected') console.error('loadFormData: product_type lookups', ptR.reason);
-    _lookups.product_type = (productTypeRows || []).map((row) => ({
-      key: row.lookup_key,
-      label: row.lookup_label,
-      id: row.lookup_id
-    }));
+    if (!_lookups.product_type || !_lookups.product_type.length) {
+      _lookups.product_type = (lookupArr || [])
+        .filter((row) => row.lookup_type === 'product_type')
+        .map((row) => ({
+          key: row.lookup_key,
+          label: row.lookup_label,
+          id: row.lookup_id
+        }));
+    }
 
     populateAllSupplierSelects();
     populateMakerSelects();
@@ -5679,6 +5726,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let _bcSkus = [];        // current set of SKUs in the modal
   let _bcUsbDevice = null; // connected WebUSB device
+  let _bcPreviewDebounceTimer = null;
 
   // TSC P210 USB vendor/product IDs (TSC Auto ID)
   const TSC_VENDOR_ID = 0x0EB8;
@@ -5768,14 +5816,45 @@ document.addEventListener('DOMContentLoaded', async () => {
       .replace(/"/g, '&quot;');
   }
 
-  /** PID (or barcode when pid omitted) for QR; never use SKU alone when barcode carries PID. */
+  /** Per-unit 7-digit code when present; else PID / batch barcode / sku_code. */
   function _bcQrPayload(sk) {
+    const ub = sk.unit_barcode != null && String(sk.unit_barcode).trim() !== '' ? String(sk.unit_barcode).trim() : '';
+    if (/^\d{7}$/.test(ub)) return ub;
     const sku = sk.sku_code || '';
     const p = sk.pid != null && String(sk.pid).trim() !== '' ? String(sk.pid) : '';
     const b = sk.barcode != null && String(sk.barcode).trim() !== '' ? String(sk.barcode) : '';
     if (p) return p;
     if (b && b !== sku) return b;
     return sku;
+  }
+
+  async function _bcExpandSkusWithUnits(skus) {
+    const out = [];
+    for (let i = 0; i < skus.length; i++) {
+      const sk = skus[i];
+      let units = Array.isArray(sk.units) ? sk.units : null;
+      if (!units && sk.sku_id) {
+        try {
+          const res = await apiGet('/api/skus/' + encodeURIComponent(String(sk.sku_id)) + '/units');
+          units = Array.isArray(res) ? res : [];
+        } catch (_e) {
+          units = [];
+        }
+      }
+      if (units && units.length) {
+        for (let u = 0; u < units.length; u++) {
+          const row = units[u];
+          out.push(Object.assign({}, sk, {
+            unit_barcode: row.unit_barcode,
+            unit_no: row.unit_no,
+            quantity: 1
+          }));
+        }
+      } else {
+        out.push(sk);
+      }
+    }
+    return out;
   }
 
   window.openBarcodeModal = async function(skus, opts) {
@@ -5787,16 +5866,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       alert(err.message || 'Failed to load barcode library.');
       return;
     }
-    _bcSkus = skus;
+    _bcSkus = await _bcExpandSkusWithUnits(skus);
+    if (!_bcSkus.some(function (sk) { return sk.unit_barcode }) && skus.some(function (sk) { return (Number(sk.quantity) || 0) > 0 })) {
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn('No unit barcodes for this SKU. Run maintenance backfill or re-generate SKU, then print again.');
+      }
+    }
 
     // Build SKU list rows — each row has its own qty input defaulting to unit quantity
     const listEl = document.getElementById('bc-sku-list');
     if (listEl) {
-      listEl.innerHTML = skus.map((sk, i) => {
+      listEl.innerHTML = _bcSkus.map((sk, i) => {
         const sku = sk.sku_code || '—';
         const qrVal = _bcQrPayload(sk);
-        const legacy = !sk.pid && sk.barcode === sk.sku_code && sk.sku_code;
-        const qrLine = qrVal !== sku
+        const isUnit = sk.unit_barcode && /^\d{7}$/.test(String(sk.unit_barcode));
+        const legacy = !isUnit && !sk.pid && sk.barcode === sk.sku_code && sk.sku_code;
+        const qrLine = (qrVal !== sku || isUnit)
           ? `<div class="bc-sku-qr mono" style="font-size:9px;color:var(--text2);margin-top:2px">QR: ${_bcEsc(qrVal)}</div>`
           : '';
         const legacyLine = legacy
@@ -5807,15 +5892,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           <input type="checkbox" id="bc-chk-${i}" checked onchange="bcRenderPreview()">
           <div style="flex:1;min-width:0">
             <div class="bc-sku-code">${_bcEsc(sku)}</div>
-            ${qrLine}${legacyLine}
+            ${qrLine}${isUnit && sk.unit_no ? `<div style="font-size:9px;color:var(--text3);margin-top:2px">Piece ${sk.unit_no}</div>` : ''}${legacyLine}
             <div class="bc-sku-info">${_bcEsc(sk.ew_collection || '')} · ${_bcEsc(sk.colour_name || '')}</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0">
-            <span style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">Qty</span>
-            <input type="number" id="bc-qty-${i}" min="1" max="9999" value="${sk.quantity || 1}"
+            <span style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">${isUnit ? 'Labels' : 'Qty'}</span>
+            <input type="number" id="bc-qty-${i}" min="1" max="${isUnit ? 1 : 9999}" value="${isUnit ? 1 : (sk.quantity || 1)}"
               style="width:52px;text-align:center;font-size:12px;padding:3px 4px"
-              oninput="bcRenderPreview()">
-            <span style="font-size:9px;color:var(--text2)">${sk.quantity || 0} stk</span>
+              oninput="bcRenderPreview()" ${isUnit ? 'readonly title="One label per unit"' : ''}>
+            <span style="font-size:9px;color:var(--text2)">${isUnit ? '1 unit' : ((sk.quantity || 0) + ' stk')}</span>
           </div>
         </div>`;
       }).join('');
@@ -6064,8 +6149,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     box.innerHTML = lines.map((line) => _bcEsc(line)).join('<br>');
   }
 
-  // Render the visual preview of labels in the modal
+  // Render the visual preview of labels in the modal (debounced — each QR <img> hits /api/qr)
   window.bcRenderPreview = function() {
+    if (_bcPreviewDebounceTimer) clearTimeout(_bcPreviewDebounceTimer);
+    _bcPreviewDebounceTimer = setTimeout(_bcRenderPreviewNow, 200);
+  };
+
+  function _bcRenderPreviewNow() {
     _bcUpdateBarcodeLiveSummary();
 
     const previewEl = document.getElementById('bc-preview-rows');
@@ -6158,7 +6248,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (summaryEl) {
       summaryEl.textContent = `${totalLabels} label${totalLabels !== 1 ? 's' : ''} · ${totalRows} row${totalRows !== 1 ? 's' : ''} of ${cols} · ${items.length} unique SKU${items.length !== 1 ? 's' : ''}`;
     }
-  };
+  }
 
   function _bcCalibrationStorageKey(device) {
     if (!device || typeof device.vendorId !== 'number') return '';

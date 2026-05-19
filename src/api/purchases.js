@@ -205,7 +205,19 @@ router.get(
       const result = await executeStoredProcedure('sp_PurchaseHeader_GetSKUs', {
         header_id: { type: sql.Int, value: Number(req.params.id) }
       });
-      return res.json({ success: true, data: result.recordset || [] });
+      const rows = result.recordset || [];
+      for (const row of rows) {
+        if (!row.sku_id) continue;
+        try {
+          const unitsRes = await executeStoredProcedure('sp_SKU_GetUnits', {
+            sku_id: { type: sql.Int, value: Number(row.sku_id) }
+          });
+          row.units = unitsRes.recordset || [];
+        } catch (_u) {
+          row.units = [];
+        }
+      }
+      return res.json({ success: true, data: rows });
     } catch (err) { return next(err); }
   }
 );
@@ -548,10 +560,22 @@ router.post(
         sale_price:     { type: sql.Decimal(10,2), value: salePrice }
       });
       const row = result.recordset && result.recordset[0];
+      let units = [];
+      if (row && row.sku_id) {
+        try {
+          const unitsRes = await executeStoredProcedure('sp_SKU_GetUnits', {
+            sku_id: { type: sql.Int, value: Number(row.sku_id) }
+          });
+          units = unitsRes.recordset || [];
+        } catch (_u) {
+          units = [];
+        }
+      }
       return res.json({
         success: true,
         data: {
           ...(row || {}),
+          units,
           is_restock: isRestock || (row && row.stock_action === 'RESTOCK_EXISTING') || false
         }
       });

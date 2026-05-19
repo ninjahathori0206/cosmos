@@ -114,6 +114,27 @@ router.get(
   }
 );
 
+// GET /api/skus/:skuId/units — per-piece 7-digit barcodes for label print
+router.get(
+  '/:skuId/units',
+  requireModule('foundry'),
+  requirePermission('foundry.digitisation.view', 'foundry.catalogue.view'),
+  async (req, res, next) => {
+    try {
+      const skuId = Number(req.params.skuId)
+      if (!Number.isFinite(skuId) || skuId <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid sku id' })
+      }
+      const result = await executeStoredProcedure('sp_SKU_GetUnits', {
+        sku_id: { type: sql.Int, value: skuId }
+      })
+      return res.json({ success: true, data: result.recordset || [] })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
 router.get(
   '/by-product/:productId',
   requireAnyModule(['foundry', 'storepilot']),

@@ -11,6 +11,7 @@ BEGIN
       CONSTRAINT CK_pos_ptc_fulfillment CHECK (fulfillment_mode IN (N'INSTANT', N'LAB', N'DUAL')),
     rx_required      BIT           NOT NULL CONSTRAINT DF_pos_ptc_rx DEFAULT 0,
     allow_qty_gt_1   BIT           NOT NULL CONSTRAINT DF_pos_ptc_qty DEFAULT 1,
+    requires_unit_barcode BIT      NOT NULL CONSTRAINT DF_pos_ptc_requires_unit_bc DEFAULT 1,
     is_active        BIT           NOT NULL CONSTRAINT DF_pos_ptc_active DEFAULT 1,
     CONSTRAINT PK_pos_product_type_config PRIMARY KEY (product_type_key)
   );
@@ -44,23 +45,24 @@ GO
 MERGE dbo.pos_product_type_config AS tgt
 USING (
   SELECT * FROM (VALUES
-    (N'FRAMES',       N'DUAL',    1, 1),
-    (N'SUNGLASSES',   N'INSTANT', 0, 1),
-    (N'ZERO_POWER',   N'INSTANT', 0, 1),
-    (N'READERS',      N'INSTANT', 0, 1),
-    (N'CONTACT_LENS', N'DUAL',    0, 1),
-    (N'ACCESSORIES',  N'INSTANT', 0, 1)
-  ) AS s(product_type_key, fulfillment_mode, rx_required, allow_qty_gt_1)
+    (N'FRAMES',       N'DUAL',    1, 1, 1),
+    (N'SUNGLASSES',   N'INSTANT', 0, 1, 1),
+    (N'ZERO_POWER',   N'INSTANT', 0, 1, 1),
+    (N'READERS',      N'INSTANT', 0, 1, 1),
+    (N'CONTACT_LENS', N'DUAL',    0, 1, 0),
+    (N'ACCESSORIES',  N'INSTANT', 0, 1, 1)
+  ) AS s(product_type_key, fulfillment_mode, rx_required, allow_qty_gt_1, requires_unit_barcode)
 ) AS src
 ON tgt.product_type_key = src.product_type_key
 WHEN MATCHED THEN UPDATE SET
   fulfillment_mode = src.fulfillment_mode,
   rx_required      = src.rx_required,
   allow_qty_gt_1   = src.allow_qty_gt_1,
+  requires_unit_barcode = src.requires_unit_barcode,
   is_active        = 1
 WHEN NOT MATCHED BY TARGET THEN
-  INSERT (product_type_key, fulfillment_mode, rx_required, allow_qty_gt_1, is_active)
-  VALUES (src.product_type_key, src.fulfillment_mode, src.rx_required, src.allow_qty_gt_1, 1);
+  INSERT (product_type_key, fulfillment_mode, rx_required, allow_qty_gt_1, requires_unit_barcode, is_active)
+  VALUES (src.product_type_key, src.fulfillment_mode, src.rx_required, src.allow_qty_gt_1, src.requires_unit_barcode, 1);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM dbo.pos_lab_transitions)

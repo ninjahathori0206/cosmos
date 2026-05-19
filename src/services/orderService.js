@@ -1,5 +1,6 @@
 const sql = require('mssql')
 const { readSetting } = require('./procurementService')
+const { resolveProductTypeRule } = require('../config/posProductTypeRule')
 
 const ORDERS_ENGINE_MODE_KEY = 'orders_engine_mode'
 const MONEY_EPS = 0.02
@@ -378,14 +379,27 @@ function tableNames(mode) {
   }
 }
 
+function resolvePosProductTypeRule(cfg, productTypeKey) {
+  return resolveProductTypeRule(
+    cfg && cfg.productTypeConfig ? cfg.productTypeConfig : [],
+    productTypeKey
+  )
+}
+
+function lineRequiresUnitBarcode(cfg, productTypeKey) {
+  const rule = resolvePosProductTypeRule(cfg, productTypeKey)
+  if (!rule) return true
+  return rule.requires_unit_barcode !== false
+}
+
 /**
  * @param {object} cfg from mapStartupConfig
  * @param {object} value validated create order body
  */
 function validateOrderLinesAgainstConfig(cfg, value) {
-  const typeRule = (key) => (cfg.productTypeConfig || []).find((r) => r.key === key)
+  const seenUnitIds = new Set()
   for (const line of value.lines) {
-    const rule = typeRule(line.product_type)
+    const rule = resolvePosProductTypeRule(cfg, line.product_type)
     if (line.fulfillment === 'LAB') {
       if (!line.lens_bundle || !line.lens_bundle.package_id) {
         return { ok: false, message: 'Lab lines require a configured lens bundle.' }
@@ -394,7 +408,20 @@ function validateOrderLinesAgainstConfig(cfg, value) {
         return { ok: false, message: 'Rx snapshot required for this order.' }
       }
     }
-    if (rule && !rule.allow_qty_gt_1 && line.qty > 1) {
+    const needsUnit = lineRequiresUnitBarcode(cfg, line.product_type)
+    if (needsUnit) {
+      const unitId = line.unit_id != null ? Number(line.unit_id) : null
+      if (!Number.isFinite(unitId) || unitId <= 0) {
+        return { ok: false, message: 'Unit barcode scan required for this product line before checkout.' }
+      }
+      if (seenUnitIds.has(unitId)) {
+        return { ok: false, message: 'The same unit barcode cannot be used on more than one line.' }
+      }
+      seenUnitIds.add(unitId)
+      if (Number(line.qty) !== 1) {
+        return { ok: false, message: 'Scanned unit lines must have quantity 1.' }
+      }
+    } else if (rule && !rule.allow_qty_gt_1 && line.qty > 1) {
       return { ok: false, message: `Qty > 1 not allowed for ${line.product_type}.` }
     }
   }
@@ -838,6 +865,30 @@ async function createOrderInTransaction(transaction, {
       lensJson = JSON.stringify(b)
     }
     const lineTotal = roundMoney(lineUnit * line.qty)
+    const needsUnit = lineRequiresUnitBarcode(cfg, line.product_type)
+    const unitId = needsUnit && line.unit_id != null ? Number(line.unit_id) : null
+
+    if (needsUnit && unitId) {
+      const rUnit = new sql.Request(transaction)
+      rUnit.input('unit_id', sql.Int, unitId)
+      rUnit.input('sku_id', sql.Int, line.sku_id)
+      const unitRes = await rUnit.query(`
+        SELECT unit_id, sku_id, status
+        FROM dbo.sku_units
+        WHERE unit_id = @unit_id AND sku_id = @sku_id
+      `)
+      const unitRow = unitRes.recordset && unitRes.recordset[0]
+      if (!unitRow) {
+        const err = new Error('Unit barcode does not match this product line.')
+        err.statusCode = 400
+        throw err
+      }
+      if (String(unitRow.status || '').toUpperCase() !== 'AVAILABLE') {
+        const err = new Error('This unit has already been sold or is not available.')
+        err.statusCode = 400
+        throw err
+      }
+    }
 
     const rStock = new sql.Request(transaction)
     rStock.input('sku_id', sql.Int, line.sku_id)
@@ -872,13 +923,51 @@ async function createOrderInTransaction(transaction, {
     rItem.input('fulfillment', sql.NVarChar(10), line.fulfillment)
     rItem.input('line_key', sql.NVarChar(300), line.line_key)
     rItem.input('lens_bundle', sql.NVarChar(sql.MAX), lensJson)
-    await rItem.query(`
+    const itemIns = await rItem.query(`
       INSERT INTO ${t.order_items} (
         sub_order_id, sku_id, qty, unit_price, line_total, product_type, fulfillment, line_key, lens_bundle
       ) VALUES (
         @sub_order_id, @sku_id, @qty, @unit_price, @line_total, @product_type, @fulfillment, @line_key, @lens_bundle
-      )
+      );
+      SELECT CAST(SCOPE_IDENTITY() AS INT) AS order_item_id;
     `)
+    const orderItemId = itemIns.recordset && itemIns.recordset[0]
+      ? itemIns.recordset[0].order_item_id
+      : null
+
+    if (needsUnit && unitId && orderItemId) {
+      const rMark = new sql.Request(transaction)
+      rMark.input('unit_id', sql.Int, unitId)
+      rMark.input('order_id', sql.Int, orderId)
+      rMark.input('order_item_id', sql.Int, orderItemId)
+      rMark.input('store_id', sql.Int, storeId)
+      const markRes = await rMark.query(`
+        UPDATE dbo.sku_units
+        SET status = N'SOLD',
+            sold_at = DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+            sold_store_id = @store_id,
+            order_id = @order_id,
+            order_item_id = @order_item_id
+        WHERE unit_id = @unit_id AND status = N'AVAILABLE';
+        SELECT @@ROWCOUNT AS rows_updated;
+      `)
+      const updated = markRes.recordset && markRes.recordset[0]
+        ? Number(markRes.recordset[0].rows_updated)
+        : 0
+      if (updated !== 1) {
+        const err = new Error('Unit barcode is no longer available.')
+        err.statusCode = 400
+        throw err
+      }
+      const rOiu = new sql.Request(transaction)
+      rOiu.input('order_item_id', sql.Int, orderItemId)
+      rOiu.input('unit_id', sql.Int, unitId)
+      await rOiu.query(`
+        IF OBJECT_ID(N'dbo.order_item_units', N'U') IS NOT NULL
+          INSERT INTO dbo.order_item_units (order_item_id, unit_id)
+          VALUES (@order_item_id, @unit_id);
+      `)
+    }
   }
 
   const rLog = new sql.Request(transaction)

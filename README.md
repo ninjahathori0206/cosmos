@@ -66,6 +66,8 @@ cosmos/
 │   └── seed/                       # Seed data
 │
 ├── docs/
+│   ├── sku-generation.md           # sp_SKUv2_Generate, pid, unit barcodes
+│   ├── qr-pid-sku-structure.md     # sku_code / pid / QR payload reference
 │   └── database/
 │       └── schema-overview.md      # How SQL is layered and deployed
 │

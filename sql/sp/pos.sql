@@ -379,7 +379,8 @@ BEGIN
     fulfillment_mode,
     rx_required,
     allow_qty_gt_1,
-    ISNULL(lens_wizard_policy, N'NEVER') AS lens_wizard_policy
+    ISNULL(lens_wizard_policy, N'NEVER') AS lens_wizard_policy,
+    CAST(ISNULL(requires_unit_barcode, 1) AS BIT) AS requires_unit_barcode
   FROM dbo.pos_product_type_config
   WHERE is_active = 1
   ORDER BY product_type_key;

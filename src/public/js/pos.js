@@ -1384,16 +1384,21 @@
   function getTypeRule(productTypeKey) {
     const cfg = window.posConfig
     if (!cfg || !cfg.productTypeConfig) return null
-    let raw = String(productTypeKey || '').trim().toUpperCase()
-    if (!raw || raw.includes('EYE') || raw.includes('FRAME') || raw.includes('OPTIC')) {
-      raw = 'FRAMES'
-    } else if (!cfg.productTypeConfig.find(function (r) { return r.key === raw })) {
-      // Fallback for unknown product types: treat as DUAL/FRAMES unless it obviously looks like sunglasses
-      if (raw.includes('SUN')) raw = 'SUNGLASSES'
-      else if (raw.includes('ACCESSORY')) raw = 'ACCESSORIES'
-      else raw = 'FRAMES'
+    const raw = String(productTypeKey || '').trim().toUpperCase()
+    if (!raw) return null
+    const exact = cfg.productTypeConfig.find(function (r) {
+      return r && String(r.key || '').trim().toUpperCase() === raw
+    })
+    if (exact) return exact
+    return {
+      key: raw,
+      fulfillment_mode: 'DUAL',
+      rx_required: false,
+      allow_qty_gt_1: true,
+      lens_wizard_policy: 'OPTIONAL',
+      requires_unit_barcode: true,
+      unconfigured: true
     }
-    return cfg.productTypeConfig.find(function (r) { return r.key === raw }) || null
   }
 
   /** Returns true if this product type can use the lens wizard (policy OPTIONAL or REQUIRED). */
@@ -1402,6 +1407,34 @@
     if (!rule) return false
     const policy = String(rule.lens_wizard_policy || 'NEVER')
     return policy === 'OPTIONAL' || policy === 'REQUIRED'
+  }
+
+  function lineRequiresUnitBarcode(lineOrType) {
+    const pt = lineOrType && lineOrType.product_type != null
+      ? lineOrType.product_type
+      : lineOrType
+    const rule = getTypeRule(pt)
+    if (!rule) return true
+    return rule.requires_unit_barcode !== false
+  }
+
+  function isSevenDigitUnitCode(code) {
+    return /^\d{7}$/.test(String(code || '').trim())
+  }
+
+  function cartHasUnboundUnitLines() {
+    return obCart.some(function (l) {
+      return lineRequiresUnitBarcode(l) && !(l.unit_id != null && Number(l.unit_id) > 0)
+    })
+  }
+
+  function unitIdAlreadyInCart(unitId, exceptIdx) {
+    const uid = Number(unitId)
+    if (!Number.isFinite(uid) || uid <= 0) return false
+    return obCart.some(function (l, i) {
+      if (exceptIdx != null && i === exceptIdx) return false
+      return Number(l.unit_id) === uid
+    })
   }
 
   function defaultFulfillmentForRule(rule) {
@@ -1425,6 +1458,9 @@
   }
 
   function cartLineKey(line) {
+    if (line.unit_id != null && Number(line.unit_id) > 0) {
+      return String(line.sku_id) + ':UNIT:' + String(line.unit_id)
+    }
     if (line.fulfillment === 'INSTANT') return String(line.sku_id) + ':INSTANT'
     const pkg = line.lens_bundle && line.lens_bundle.package_id
     const ids = (line.lens_bundle && line.lens_bundle.addon_ids) ? line.lens_bundle.addon_ids.slice().sort(function (a, b) { return a - b }) : []
@@ -2364,10 +2400,102 @@
     })
   }
 
+  function addToCartFromUnitLookup(row) {
+    if (!row || !row.sku_id) return false
+    if (unitIdAlreadyInCart(row.unit_id, null)) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('This unit is already in the cart.')
+      return false
+    }
+    const rule = getTypeRule(row.product_type)
+    let fulfillment = defaultFulfillmentForRule(rule)
+    const lwp = rule ? String(rule.lens_wizard_policy || 'NEVER') : 'NEVER'
+    if (rule && rule.fulfillment_mode === 'DUAL' && lwp === 'REQUIRED') {
+      fulfillment = 'LAB'
+    }
+    const candidate = {
+      product_id: row.product_id || null,
+      sku_id: Number(row.sku_id),
+      sku_code: row.sku_code || '',
+      product_name: row.product_name || row.sku_code || 'Product',
+      brand_name: row.brand_name || '',
+      colour_name: row.colour_name || '',
+      product_type: row.product_type || '',
+      frame_unit_price: Number(row.sale_price) || 0,
+      mrp: Number(row.sale_price) || 0,
+      qty: 1,
+      unit_id: Number(row.unit_id),
+      unit_barcode: row.unit_barcode || '',
+      fulfillment: fulfillment,
+      lab_status: fulfillment === 'LAB' ? 'incomplete' : null,
+      rx_required: rule ? rule.rx_required : false,
+      lens_bundle: null
+    }
+    obCart.push(candidate)
+    saveCart()
+    return true
+  }
+
+  async function bindUnitBarcodeToCartLine(idx, rawCode) {
+    const line = obCart[idx]
+    if (!line || !lineRequiresUnitBarcode(line)) return
+    const code = String(rawCode || '').trim()
+    if (!isSevenDigitUnitCode(code)) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Enter the 7-digit unit barcode.')
+      return
+    }
+    const session = getPosSession()
+    if (!session || !session.token) return
+    try {
+      const res = await apiGet('/api/pos/unit-lookup?q=' + encodeURIComponent(code), session.token)
+      const row = res && res.data ? res.data : null
+      if (!row) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Unit barcode not found.')
+        return
+      }
+      if (Number(row.sku_id) !== Number(line.sku_id)) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('This barcode belongs to a different product.')
+        return
+      }
+      if (unitIdAlreadyInCart(row.unit_id, idx)) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('This unit is already on another cart line.')
+        return
+      }
+      line.unit_id = Number(row.unit_id)
+      line.unit_barcode = row.unit_barcode || code
+      line.qty = 1
+      saveCart()
+      obRenderCart()
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Unit ' + code + ' linked to this line.')
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not verify unit barcode.')
+    }
+  }
+
   async function applyCatalogueScanResult(raw) {
     var code = String(raw || '').trim()
     if (!code) return
     stopPosCatalogueScan()
+    if (isSevenDigitUnitCode(code)) {
+      const session = getPosSession()
+      if (session && session.token) {
+        try {
+          const res = await apiGet('/api/pos/unit-lookup?q=' + encodeURIComponent(code), session.token)
+          if (res && res.data && addToCartFromUnitLookup(res.data)) {
+            if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Added unit ' + code)
+            const onOrder = document.getElementById('screen-pos-order-builder')
+            if (onOrder && onOrder.classList.contains('active')) {
+              obRenderCart()
+            } else {
+              navigate(POS_ROUTES.ORDER)
+            }
+            return
+          }
+        } catch (err) {
+          if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Unit lookup failed')
+          return
+        }
+      }
+    }
     if (searchInput) searchInput.value = code
     await triggerCatalogueSearch(true)
   }
@@ -4290,6 +4418,9 @@
         line_key: cartLineKey(line),
         lens_bundle: null
       }
+      if (line.unit_id != null && Number(line.unit_id) > 0) {
+        out.unit_id = Number(line.unit_id)
+      }
       if (out.fulfillment === 'LAB' && b && b.package_id) {
         out.lens_bundle = {
           category_id: b.category_id != null ? Number(b.category_id) : null,
@@ -4439,8 +4570,11 @@
     if (obGstLbl) obGstLbl.textContent = posGstLineLabel()
     if (obTotal) obTotal.textContent = formatRupees(total)
     if (btnObProceed) {
-      btnObProceed.disabled = obCart.length === 0
-      btnObProceed.textContent = formatRupees(total) + ' · Proceed to payment'
+      const unbound = cartHasUnboundUnitLines()
+      btnObProceed.disabled = obCart.length === 0 || unbound
+      btnObProceed.textContent = unbound
+        ? 'Scan unit barcode on cart'
+        : (formatRupees(total) + ' · Proceed to payment')
     }
     if (obCartHeadingLine || headerCartCountEl) {
       const n = obCart.reduce(function (acc, line) { return acc + Math.max(1, Number(line.qty) || 0) }, 0)
@@ -4546,6 +4680,26 @@
       ? '<div class="pos-lk-cart-v2-meta">' + fulfillToggle + configureBtn + '</div>'
       : ''
 
+    let unitBindHtml = ''
+    if (lineRequiresUnitBarcode(line)) {
+      if (line.unit_id) {
+        unitBindHtml =
+          '<div class="pos-lk-cart-unit-bind pos-lk-cart-unit-bind--ok">' +
+          '<span class="pos-lk-cart-unit-bind-lbl">Unit</span>' +
+          '<span class="mono">' + escapeHtml(String(line.unit_barcode || '')) + '</span></div>'
+      } else {
+        unitBindHtml =
+          '<div class="pos-lk-cart-unit-bind pos-lk-cart-unit-bind--pending">' +
+          '<div style="font-size:12px;font-weight:600;color:var(--text1);margin-bottom:6px">Unit barcode required</div>' +
+          '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Scan or enter the 7-digit code on the label before checkout.</div>' +
+          '<div style="display:flex;gap:8px;align-items:center">' +
+          '<input type="text" class="pos-lk-cart-unit-input mono" data-action="bind-unit-input" data-idx="' + idx + '" ' +
+          'inputmode="numeric" maxlength="7" placeholder="0000000" aria-label="Unit barcode for line ' + (idx + 1) + '">' +
+          '<button type="button" class="btn primary btn-sm" data-action="bind-unit-submit" data-idx="' + idx + '">Link unit</button>' +
+          '</div></div>'
+      }
+    }
+
     return (
       '<div class="pos-lk-cart-item pos-lk-cart-item--v2">' +
       ribbon +
@@ -4583,6 +4737,7 @@
           '</div>' +
         '</div>' +
       '</div>' +
+      unitBindHtml +
       footerMeta +
       rxFoot +
       '</div>'
@@ -4639,7 +4794,13 @@
       return
     }
     const idx = Number(btn.dataset.idx)
+    if (action === 'bind-unit-submit') {
+      const inp = obCart_el.querySelector('[data-action="bind-unit-input"][data-idx="' + idx + '"]')
+      void bindUnitBarcodeToCartLine(idx, inp ? inp.value : '')
+      return
+    }
     if (action === 'inc') {
+      if (lineRequiresUnitBarcode(obCart[idx])) return
       const rule = getTypeRule(obCart[idx].product_type)
       if (rule && !rule.allow_qty_gt_1 && obCart[idx].qty >= 1) return
       obCart[idx].qty += 1
@@ -4655,6 +4816,9 @@
         return
       }
       const copy = JSON.parse(JSON.stringify(obCart[idx]))
+      delete copy.unit_id
+      delete copy.unit_barcode
+      copy.qty = 1
       obCart.splice(idx + 1, 0, copy)
     } else if (action === 'set-instant') {
       obCart[idx].fulfillment = 'INSTANT'
@@ -4718,14 +4882,18 @@
       rx_required: rule ? rule.rx_required : false,
       lens_bundle: null
     }
-    const key = cartLineKey(candidate)
-    const existing = obCart.find(function (line) { return cartLineKey(line) === key })
-    if (existing) {
-      const r = getTypeRule(existing.product_type)
-      if (r && !r.allow_qty_gt_1) return
-      existing.qty += 1
-    } else {
+    if (lineRequiresUnitBarcode(candidate)) {
       obCart.push(candidate)
+    } else {
+      const key = cartLineKey(candidate)
+      const existing = obCart.find(function (line) { return cartLineKey(line) === key })
+      if (existing) {
+        const r = getTypeRule(existing.product_type)
+        if (r && !r.allow_qty_gt_1) return
+        existing.qty += 1
+      } else {
+        obCart.push(candidate)
+      }
     }
     saveCart()
   }
@@ -4763,6 +4931,13 @@
     btnObAddMore.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
 
     obCart_el.addEventListener('click', obHandleCartClick)
+    obCart_el.addEventListener('keydown', function (e) {
+      const inp = e.target.closest('[data-action="bind-unit-input"]')
+      if (!inp || e.key !== 'Enter') return
+      e.preventDefault()
+      const idx = Number(inp.getAttribute('data-idx'))
+      void bindUnitBarcodeToCartLine(idx, inp.value)
+    })
 
     btnObProceed.addEventListener('click', () => { void handleProceedToPayment() })
 
@@ -4997,6 +5172,17 @@
   async function handleProceedToPayment() {
     if (obCart.length === 0) {
       if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Your cart is empty.')
+      return
+    }
+    const unbound = obCart.filter(function (l) {
+      return lineRequiresUnitBarcode(l) && !(l.unit_id != null && Number(l.unit_id) > 0)
+    })
+    if (unbound.length) {
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn(unbound.length === 1
+          ? 'Scan the unit barcode on the cart line before proceeding.'
+          : ('Scan unit barcodes on ' + unbound.length + ' cart lines before proceeding.'))
+      }
       return
     }
     for (let i = 0; i < obCart.length; i++) {

@@ -800,6 +800,15 @@ AS BEGIN
         FROM dbo.purchase_item_colours pic
         JOIN dbo.skus sk ON sk.sku_id = pic.linked_sku_id
         WHERE pic.colour_id = @item_colour_id;
+
+        IF OBJECT_ID(N'dbo.sp_SKUv2_AllocateUnits', N'P') IS NOT NULL
+        BEGIN
+          DECLARE @restock_qty_a INT;
+          SELECT @restock_qty_a = pic.quantity
+          FROM dbo.purchase_item_colours pic
+          WHERE pic.colour_id = @item_colour_id;
+          EXEC dbo.sp_SKUv2_AllocateUnits @sku_id = @linked_sku_id, @qty = @restock_qty_a;
+        END;
       END;
 
       SELECT
@@ -945,6 +954,15 @@ AS BEGIN
         FROM dbo.purchase_item_colours pic
         JOIN dbo.skus sk ON sk.sku_id = pic.linked_sku_id
         WHERE pic.colour_id = @item_colour_id;
+
+        IF OBJECT_ID(N'dbo.sp_SKUv2_AllocateUnits', N'P') IS NOT NULL
+        BEGIN
+          DECLARE @restock_qty_b INT;
+          SELECT @restock_qty_b = pic.quantity
+          FROM dbo.purchase_item_colours pic
+          WHERE pic.colour_id = @item_colour_id;
+          EXEC dbo.sp_SKUv2_AllocateUnits @sku_id = @linked_sku_id, @qty = @restock_qty_b;
+        END;
       END;
 
       SELECT
@@ -1075,6 +1093,10 @@ AS BEGIN
       (@product_master_id, @skuCode, @barcode, @pid, @quantity, @cost_price, @sale_price,
        'LIVE', DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()), @header_id, @item_id, @item_colour_id, @colour_image_url, @colour_video_url);
 
+    DECLARE @new_sku_id INT = CAST(SCOPE_IDENTITY() AS INT);
+    IF OBJECT_ID(N'dbo.sp_SKUv2_AllocateUnits', N'P') IS NOT NULL
+      EXEC dbo.sp_SKUv2_AllocateUnits @sku_id = @new_sku_id, @qty = @quantity;
+
     SELECT
       sk.sku_id,
       sk.sku_code,
@@ -1112,7 +1134,7 @@ AS BEGIN
     LEFT JOIN dbo.home_brands hb ON hb.brand_id = pm.home_brand_id
     LEFT JOIN dbo.maker_master mm ON mm.maker_id = pm.maker_master_id
     LEFT JOIN dbo.purchase_item_colours pic ON pic.colour_id = sk.item_colour_id
-    WHERE sk.sku_id = SCOPE_IDENTITY();
+    WHERE sk.sku_id = @new_sku_id;
   END TRY
   BEGIN CATCH
     THROW;

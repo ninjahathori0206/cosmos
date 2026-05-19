@@ -84,10 +84,55 @@ AS BEGIN
   IF @wh IS NULL
     RAISERROR('Primary warehouse is not configured.', 16, 1);
 
+  DECLARE @trim VARCHAR(200) = LTRIM(RTRIM(ISNULL(@code, '')));
+  DECLARE @unit_code CHAR(7) = RIGHT(REPLICATE('0', 7) + @trim, 7);
+
+  IF LEN(@trim) <= 7 AND @unit_code LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+     AND EXISTS (SELECT 1 FROM dbo.sku_units u WHERE u.unit_barcode = @unit_code)
+  BEGIN
+    SELECT TOP 1
+      sk.sku_id,
+      sk.sku_code,
+      sk.barcode,
+      u.unit_id,
+      u.unit_no,
+      u.unit_barcode,
+      u.status AS unit_status,
+      ISNULL(pm.ew_collection,'') + ' · ' + ISNULL(pm.style_model,'') AS product_name,
+      pm.ew_collection,
+      pm.style_model,
+      pm.product_type,
+      LTRIM(RTRIM(COALESCE(
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+        ''
+      ))) AS brand_name,
+      pic.colour_name,
+      pic.colour_code,
+      ISNULL(sb.qty, 0) AS warehouse_qty,
+      sk.sale_price,
+      sk.status
+    FROM dbo.sku_units u
+    JOIN dbo.skus sk ON sk.sku_id = u.sku_id
+    JOIN dbo.product_master pm ON sk.product_master_id = pm.product_id
+    LEFT JOIN dbo.home_brands hb ON pm.home_brand_id = hb.brand_id
+    LEFT JOIN dbo.maker_master mm ON pm.maker_master_id = mm.maker_id
+    LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
+    LEFT JOIN dbo.stock_balances sb
+      ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = @wh
+    WHERE u.unit_barcode = @unit_code;
+    RETURN;
+  END;
+
   SELECT TOP 1
     sk.sku_id,
     sk.sku_code,
     sk.barcode,
+    CAST(NULL AS INT) AS unit_id,
+    CAST(NULL AS INT) AS unit_no,
+    CAST(NULL AS CHAR(7)) AS unit_barcode,
+    CAST(NULL AS VARCHAR(20)) AS unit_status,
     ISNULL(pm.ew_collection,'') + ' · ' + ISNULL(pm.style_model,'') AS product_name,
     pm.ew_collection,
     pm.style_model,
@@ -110,7 +155,7 @@ AS BEGIN
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
   LEFT JOIN dbo.stock_balances sb
     ON sk.sku_id = sb.sku_id AND sb.location_type = 'WAREHOUSE' AND sb.location_id = @wh
-  WHERE sk.sku_code = @code OR sk.barcode = @code;
+  WHERE sk.sku_code = @trim OR sk.barcode = @trim;
 END;
 GO
 

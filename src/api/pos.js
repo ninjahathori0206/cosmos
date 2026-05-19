@@ -329,7 +329,9 @@ const posOrderLineItemSchema = Joi.object({
     addon_prices: Joi.array().items(Joi.number().min(0)).default([])
   }).allow(null).optional(),
   /** Optional: groups frame+lens pairs on one bill (server defaults by line index). */
-  pair_index: Joi.number().integer().min(1).optional()
+  pair_index: Joi.number().integer().min(1).optional(),
+  /** Required when product type has requires_unit_barcode (7-digit unit scan). */
+  unit_id: Joi.number().integer().positive().optional()
 })
 
 const createOrderSchema = Joi.object({
@@ -385,7 +387,8 @@ function mapStartupConfig(result) {
     fulfillment_mode: String(r.fulfillment_mode || ''),
     rx_required: Boolean(r.rx_required),
     allow_qty_gt_1: Boolean(r.allow_qty_gt_1),
-    lens_wizard_policy: String(r.lens_wizard_policy || 'NEVER')
+    lens_wizard_policy: String(r.lens_wizard_policy || 'NEVER'),
+    requires_unit_barcode: r.requires_unit_barcode !== false && r.requires_unit_barcode !== 0
   }))
 
   const lookups = {}
@@ -938,6 +941,35 @@ router.get('/startup-config', ...posCatalogue, async (req, res, next) => {
     const data = mapStartupConfig(result)
     return res.json({ success: true, data })
   } catch (err) {
+    return next(err)
+  }
+})
+
+// ── GET /api/pos/unit-lookup?q=0010447 ────────────────────────────────────────
+router.get('/unit-lookup', ...posCatalogue, async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '').trim()
+    if (!q) {
+      return res.status(400).json({ success: false, message: 'q param required' })
+    }
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
+    const result = await executeStoredProcedure('sp_SKU_LookupUnitByBarcode', {
+      unit_barcode: { type: sql.VarChar(20), value: q },
+      store_id: { type: sql.Int, value: storeId }
+    })
+    const row = result.recordset && result.recordset[0]
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Unit barcode not found' })
+    }
+    if (String(row.status || '').toUpperCase() !== 'AVAILABLE') {
+      return res.status(409).json({ success: false, message: 'This unit is not available for sale.' })
+    }
+    return res.json({ success: true, data: row })
+  } catch (err) {
+    if (err.code === 'EREQUEST') {
+      return res.status(400).json({ success: false, message: err.message })
+    }
     return next(err)
   }
 })
