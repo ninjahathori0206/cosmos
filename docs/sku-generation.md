@@ -15,11 +15,13 @@ When branding is **bypassed** (stage moves to `PENDING_DIGITISATION`), the proce
 | Field | Rule |
 |-------|------|
 | **`ew_collection`** | If **`source_collection`** is non-empty, set **`ew_collection = source_collection`** (source wins). If source collection is blank, **`ew_collection` is left unchanged**. |
-| **`home_brand_id`** | If **`source_brand`** is non-empty: resolve a **`home_brands`** row whose **`brand_name`** matches (case-insensitive, trimmed). If none exists, **INSERT** a new `home_brands` row (`brand_name` = trimmed source brand, **`brand_code`** = alphanumeric prefix up to 10 chars, with a numeric suffix until `brand_code` is unique), then set **`home_brand_id`** to that id. |
+| **`home_brand_id`** | If **`source_brand`** is non-empty: resolve a **`home_brands`** row whose **`brand_name`** or **`brand_code`** matches (case-insensitive, trimmed). If none exists, **INSERT** a new `home_brands` row (`brand_name` = trimmed source brand, **`brand_code`** = alphanumeric prefix up to 10 chars, with a numeric suffix until `brand_code` is unique), then set **`home_brand_id`** to that id. |
 
 This runs **before** digitisation SKU generation so the **brand** segment of the SKU can use the linked home brand name.
 
 Deploy: **`npm run migrate:34-branding-bypass-sync-sku-model`** (or run [`sql/alter/34_branding_bypass_sync_sku_model.sql`](../sql/alter/34_branding_bypass_sync_sku_model.sql)).
+
+**Brand code prefix (migration 57):** **`npm run migrate:57-sku-brand-code-prefix`** — uses `home_brands.brand_code` for the SKU prefix when `home_brand_id` is set; resolves catalog match by code or name before falling back to **`GEN`**.
 
 ## Format (four body segments — no global numeric tail on `sku_code`)
 
@@ -31,7 +33,7 @@ sku_code = BrandPrefix-CollectionPrefix-ModelPrefix-ColourPrefix
 
 | Segment | Source | Normalization (as in SQL) |
 |---------|--------|---------------------------|
-| **Brand** | `home_brands.brand_name` (via `product_master.home_brand_id`) | `UPPER(LEFT(ISNULL(brand_name,'GEN'), 3))` |
+| **Brand** | `home_brands.brand_code` when linked, else `brand_name`, else `source_brand`, else `maker_name` | `UPPER(LEFT(..., 3))`; **`GEN`** only when all are blank. Example: **`BLNK`** home brand → prefix **`BLN`** (3 chars). |
 | **Collection** | `product_master.ew_collection` | `UPPER(LEFT(REPLACE(ISNULL(ew_collection,'XX'),' ',''), 4))` |
 | **Model** | `product_master.source_model_number`, else **`style_model`** | Trim; strip spaces and hyphens; `UPPER(LEFT(..., 8))`; if empty **`UNK`** |
 | **Colour** | `purchase_item_colours.colour_code` | `UPPER(LEFT(REPLACE(ISNULL(colour_code,'00'),' ',''), 3))` |

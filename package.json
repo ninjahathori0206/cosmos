@@ -37,6 +37,8 @@
     "deploy:sp-supplier-invoice-list": "node scripts/deploy-sp-supplier-invoice-list.js",
     "deploy:sp-challan-list": "node scripts/deploy-sp-challan-list.js",
     "migrate:37-sku-gen-source-brand-fallback": "node scripts/run-migration-37-sku-gen-source-brand-fallback.js",
+    "migrate:57-sku-brand-code-prefix": "node scripts/run-migration-57-sku-brand-code-prefix.js",
+    "maintenance:remap-gen-sku-prefix": "node scripts/run-maintenance-remap-gen-sku-prefix.js",
     "maintenance:fix-sku-gen-old-std-p38": "node scripts/run-maintenance-fix-sku-gen-old-std-p38.js",
     "maintenance:purge-all-purchases": "node scripts/run-maintenance-purge-all-purchases.js",
     "maintenance:migrate-store-in-charge-role": "node scripts/run-maintenance-migrate-store-in-charge-role.js",

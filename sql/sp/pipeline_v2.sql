@@ -678,7 +678,8 @@ AS BEGIN
         SET @match_brand_id = NULL;
         SELECT TOP (1) @match_brand_id = hb.brand_id
         FROM dbo.home_brands hb
-        WHERE LOWER(LTRIM(RTRIM(hb.brand_name))) = LOWER(LTRIM(RTRIM(@src_brand)));
+        WHERE LOWER(LTRIM(RTRIM(hb.brand_name))) = LOWER(LTRIM(RTRIM(@src_brand)))
+           OR UPPER(LTRIM(RTRIM(hb.brand_code))) = UPPER(LTRIM(RTRIM(@src_brand)));
 
         IF @match_brand_id IS NULL
         BEGIN
@@ -865,6 +866,8 @@ AS BEGIN
     DECLARE @ew_collection VARCHAR(200);
     DECLARE @colour_code VARCHAR(50);
     DECLARE @brand_name VARCHAR(200);
+    DECLARE @brand_for_prefix VARCHAR(200);
+    DECLARE @resolved_home_brand_id INT;
     DECLARE @source_model_number VARCHAR(200);
     DECLARE @style_model VARCHAR(200);
     DECLARE @colour_image_url VARCHAR(500);
@@ -880,8 +883,16 @@ AS BEGIN
       @quantity = pic.quantity,
       @ew_collection = pm.ew_collection,
       @colour_code = pic.colour_code,
+      @brand_for_prefix = LTRIM(RTRIM(COALESCE(
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_code, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
+        ''
+      ))),
       @brand_name = LTRIM(RTRIM(COALESCE(
         NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_code, ''))), ''),
         NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
         NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
         ''
@@ -1061,7 +1072,35 @@ AS BEGIN
       RETURN;
     END;
 
-    DECLARE @brandPfx VARCHAR(10) = UPPER(LEFT(COALESCE(@brand_name, @source_brand_match, 'GEN'), 3));
+    SET @resolved_home_brand_id = NULL;
+    IF NULLIF(@brand_for_prefix, '') IS NULL
+       AND NULLIF(LTRIM(RTRIM(ISNULL(@source_brand_match, ''))), '') IS NOT NULL
+    BEGIN
+      SELECT TOP (1)
+        @resolved_home_brand_id = hb.brand_id,
+        @brand_for_prefix = LTRIM(RTRIM(COALESCE(
+          NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_code, ''))), ''),
+          NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+          ''
+        )))
+      FROM dbo.home_brands hb
+      WHERE hb.is_active = 1
+        AND (
+          UPPER(LTRIM(RTRIM(hb.brand_code))) = UPPER(LTRIM(RTRIM(@source_brand_match)))
+          OR LOWER(LTRIM(RTRIM(hb.brand_name))) = LOWER(LTRIM(RTRIM(@source_brand_match)))
+        );
+    END;
+
+    IF @resolved_home_brand_id IS NOT NULL
+    BEGIN
+      UPDATE dbo.product_master
+      SET home_brand_id = @resolved_home_brand_id,
+          updated_at    = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      WHERE product_id = @product_master_id
+        AND home_brand_id IS NULL;
+    END;
+
+    DECLARE @brandPfx VARCHAR(10) = UPPER(LEFT(COALESCE(NULLIF(@brand_for_prefix, ''), 'GEN'), 3));
     DECLARE @collPfx  VARCHAR(10) = UPPER(LEFT(REPLACE(ISNULL(@ew_collection, 'XX'), ' ', ''), 4));
     DECLARE @modelSrc VARCHAR(200) = LTRIM(RTRIM(ISNULL(@source_model_number, '')));
     IF @modelSrc = '' SET @modelSrc = LTRIM(RTRIM(ISNULL(@style_model, '')));
