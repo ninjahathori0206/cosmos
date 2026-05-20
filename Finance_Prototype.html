@@ -6,8 +6,6 @@
 <link rel="icon" href="/favicon.ico" type="image/png" sizes="32x32">
 <title>Finance — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/fonts.css">
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260521-mobile">
-<script src="/js/cosmos-ui-polish.js?v=20260521-mobile" defer></script>
 <style>
   :root {
     --navy:    #0B1F35;
@@ -195,8 +193,10 @@
     .fg3 { grid-template-columns:1fr 1fr; }
   }
 </style>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260522-app-scroll">
+<script src="/js/cosmos-ui-polish.js?v=20260522-app-scroll" defer></script>
 </head>
-<body>
+<body class="cosmos-app-shell">
 
 <!-- SIDEBAR -->
 <aside class="sidebar">
@@ -244,6 +244,8 @@
     <div class="breadcrumb">Finance <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="bc">Dashboard</span></div>
     <div class="tb-actions" id="tba"></div>
   </div>
+
+  <div class="cosmos-app-scroll" id="cosmos-app-scroll">
 
   <!-- ═══ DASHBOARD ═══ -->
   <div class="page active" id="page-dashboard">
@@ -801,6 +803,8 @@
       </div>
     </div>
   </div>
+
+  </div><!-- /.cosmos-app-scroll -->
 
 </main>
 

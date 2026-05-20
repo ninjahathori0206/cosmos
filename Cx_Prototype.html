@@ -6,8 +6,6 @@
 <link rel="icon" href="/favicon.ico" type="image/png" sizes="32x32">
 <title>CX — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/fonts.css">
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260521-mobile">
-<script src="/js/cosmos-ui-polish.js?v=20260521-mobile" defer></script>
 <style>
   :root {
     --navy:    #0F172A;
@@ -354,8 +352,10 @@
     .gm-price-grid { grid-template-columns: 1fr; }
   }
 </style>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260522-app-scroll">
+<script src="/js/cosmos-ui-polish.js?v=20260522-app-scroll" defer></script>
 </head>
-<body>
+<body class="cosmos-app-shell">
 <div class="cx-mob-backdrop" onclick="document.body.classList.remove('cx-mob-nav-open')" aria-hidden="true"></div>
 
 <aside class="sidebar">
@@ -393,6 +393,8 @@
   <div class="topbar">
     <div class="breadcrumb">CX <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="cx-bc">Dashboard</span></div>
   </div>
+
+  <div class="cosmos-app-scroll" id="cosmos-app-scroll">
 
   <!-- Dashboard -->
   <div class="page active" id="page-dashboard">
@@ -495,6 +497,8 @@
       </div>
     </div>
   </div>
+
+  </div><!-- /.cosmos-app-scroll -->
 
 </main>
 

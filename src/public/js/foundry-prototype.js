@@ -3,12 +3,14 @@
 function openSidebar() {
   document.querySelector('.sidebar').classList.add('open');
   document.getElementById('fy-sidebar-overlay').classList.add('open');
-  document.body.style.overflow = 'hidden';
+  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll();
+  else document.body.style.overflow = 'hidden';
 }
 function closeSidebar() {
   document.querySelector('.sidebar').classList.remove('open');
   document.getElementById('fy-sidebar-overlay').classList.remove('open');
-  document.body.style.overflow = '';
+  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll();
+  else document.body.style.overflow = '';
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

@@ -17,12 +17,12 @@
 <link rel="preload" href="/css/cosmos-ui.css" as="style">
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/foundry-prototype.css">
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260521-mobile">
-<script src="/js/cosmos-ui-polish.js?v=20260521-mobile" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260522-app-scroll">
+<script src="/js/cosmos-ui-polish.js?v=20260522-app-scroll" defer></script>
 
 
 </head>
-<body>
+<body class="cosmos-app-shell">
 
 <!-- SIDEBAR -->
 <aside class="sidebar">
@@ -89,6 +89,8 @@
     <div class="breadcrumb">Foundry <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="bc">Dashboard</span></div>
     <div class="tb-actions" id="tba"></div>
   </div>
+
+  <div class="cosmos-app-scroll" id="cosmos-app-scroll">
 
   <!-- ═══ DASHBOARD ═══ -->
   <div class="page active" id="page-dashboard">
@@ -1034,6 +1036,8 @@
     </div>
   </div>
 
+  </div><!-- /.cosmos-app-scroll -->
+
 </main>
 
 <!-- MODALS — Lens config -->
@@ -1458,6 +1462,7 @@ function nav(id, el) {
   if (el) el.classList.add('active');
   document.getElementById('bc').textContent = bcMap[id] || id;
   if (typeof closeSidebar === 'function') closeSidebar();
+  if (window.cosmosResetAppScroll) window.cosmosResetAppScroll();
   // lazy-load Transfer Requests list when navigating to that page
   if (id === 'transfer-requests' && typeof window.loadTransferRequests === 'function') {
     window.loadTransferRequests();
@@ -1511,7 +1516,7 @@ function addColour() {
   crossorigin="anonymous"
 ></script>
 <script src="/js/cosmos-module-switch.js" defer></script>
-<script src="/js/cosmos-bucket-scan.js?v=20260521-mobile" defer></script>
+<script src="/js/cosmos-bucket-scan.js?v=20260522-app-scroll" defer></script>
 <script src="/js/foundry-prototype.js?v=20260520-pv-print2" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)

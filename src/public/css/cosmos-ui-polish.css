@@ -277,6 +277,56 @@ tbody tr.tr-link:hover td:last-child::after {
   }
 }
 
+/* ═══ App shell — fixed chrome + single content scroll (native mobile feel) ═══ */
+body.cosmos-app-shell {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.cosmos-app-shell .main {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+body.cosmos-app-shell .main > .topbar,
+body.cosmos-app-shell .main > .cx-mob-bar {
+  flex-shrink: 0;
+  position: relative;
+  top: auto;
+  z-index: 50;
+}
+
+body.cosmos-app-shell .cosmos-app-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+@media print {
+  body.cosmos-app-shell {
+    height: auto;
+    overflow: visible;
+  }
+  body.cosmos-app-shell .main {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  body.cosmos-app-shell .cosmos-app-scroll {
+    overflow: visible !important;
+    height: auto !important;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Order Timeline — shared component
    ═══════════════════════════════════════════════════════════════════════════ */

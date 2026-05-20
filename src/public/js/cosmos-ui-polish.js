@@ -114,7 +114,7 @@
         }
       }
     } else {
-      var bar = document.querySelector('.topbar, .pos-lk-header, .page-header, header.app-header')
+      var bar = document.querySelector('.cx-mob-bar, .topbar, .pos-lk-header, .page-header, header.app-header')
       if (bar) {
         var br = bar.getBoundingClientRect()
         if (br.height > 0 && br.bottom > 0) top = br.bottom + gap
@@ -125,27 +125,56 @@
     root.style.setProperty('--cosmos-toast-top', top + 'px')
   }
 
+  window.cosmosResetAppScroll = function cosmosResetAppScroll() {
+    var scroll = document.getElementById('cosmos-app-scroll') || document.querySelector('.cosmos-app-scroll')
+    if (scroll) scroll.scrollTop = 0
+  }
+
+  window.cosmosLockAppBodyScroll = function cosmosLockAppBodyScroll() {
+    if (document.body.classList.contains('cosmos-app-shell')) {
+      document.body.style.overflow = 'hidden'
+    }
+  }
+
   function cosmosInitMobileChrome() {
     cosmosBindMobileViewportInsets()
     window.cosmosUpdateToastTopOffset()
     window.addEventListener('resize', window.cosmosUpdateToastTopOffset)
     window.addEventListener('orientationchange', function () {
       setTimeout(window.cosmosUpdateToastTopOffset, 120)
+      setTimeout(window.cosmosResetAppScroll, 120)
     })
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', window.cosmosUpdateToastTopOffset)
       window.visualViewport.addEventListener('scroll', window.cosmosUpdateToastTopOffset)
     }
     if (typeof MutationObserver !== 'undefined') {
-      var obs = new MutationObserver(function () {
+      var toastObs = new MutationObserver(function () {
         window.cosmosUpdateToastTopOffset()
       })
-      obs.observe(document.body, {
+      toastObs.observe(document.body, {
         attributes: true,
         subtree: true,
         attributeFilter: ['class', 'style']
       })
+      var scrollObs = new MutationObserver(function (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var m = mutations[i]
+          if (m.type !== 'attributes' || m.attributeName !== 'class') continue
+          var t = m.target
+          if (t.classList && t.classList.contains('page') && t.classList.contains('active')) {
+            window.cosmosResetAppScroll()
+            break
+          }
+        }
+      })
+      scrollObs.observe(document.body, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ['class']
+      })
     }
+    window.cosmosResetAppScroll()
   }
 
   if (document.readyState === 'loading') {
