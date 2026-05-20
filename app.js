@@ -469,6 +469,18 @@ app.get('/storeos-manifest.json', (req, res) => {
   res.sendFile(path.join(__dirname, 'src', 'public', 'storeos-manifest.json'));
 });
 
+// Store Pilot PWA manifest + service worker
+app.get('/storepilot-sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(__dirname, 'src', 'public', 'storepilot-sw.js'));
+});
+app.get('/storepilot-manifest.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'src', 'public', 'storepilot-manifest.json'));
+});
+
 // Auth/public routes that do not use grouped protected router.
 app.use('/api/auth', apiKeyAuth, authRouter);
 // POS router: no apiKeyAuth — tablet boots before any session exists.

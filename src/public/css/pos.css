@@ -2635,3 +2635,116 @@ body.pos-catalogue-locked #screen-pos-catalogue.active .pos-lk-page {
   color: var(--text2);
   line-height: 1.45;
 }
+
+/* ── Store OS PWA — install banner, iOS hint, offline gate ───────────────── */
+.sos-pwa-install-banner,
+.sos-pwa-ios-hint {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  left: env(safe-area-inset-left, 0px);
+  right: env(safe-area-inset-right, 0px);
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.12);
+}
+
+.sos-pwa-install-banner {
+  background: #eff6ff;
+  border-bottom: 1px solid rgba(37, 99, 235, 0.25);
+}
+
+.sos-pwa-ios-hint {
+  background: #fffbeb;
+  border-bottom: 1px solid rgba(217, 119, 6, 0.35);
+}
+
+.sos-pwa-install-banner[hidden],
+.sos-pwa-ios-hint[hidden] {
+  display: none !important;
+}
+
+.sos-pwa-install-copy {
+  font-size: 13px;
+  color: #1560b5;
+  flex: 1;
+  min-width: 200px;
+  line-height: 1.4;
+}
+
+.sos-pwa-ios-hint .sos-pwa-install-copy {
+  color: #d97706;
+  font-weight: 600;
+}
+
+.sos-pwa-ios-sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text2);
+}
+
+.sos-pwa-install-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.sos-pwa-install-btn {
+  padding: 8px 16px !important;
+  font-size: 13px !important;
+  min-height: 40px;
+  width: auto !important;
+  margin: 0 !important;
+}
+
+.sos-pwa-dismiss-btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  color: var(--text1);
+  cursor: pointer;
+  touch-action: manipulation;
+  font-family: inherit;
+}
+
+body.sos-pwa-standalone .sos-pwa-install-banner,
+body.sos-pwa-standalone .sos-pwa-ios-hint {
+  display: none !important;
+}
+
+.sos-pwa-offline-msg {
+  background: #fffbeb;
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.45;
+}
+
+.sos-pwa-offline-msg strong {
+  display: block;
+  color: #d97706;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.sos-pwa-offline-msg[hidden] {
+  display: none;
+}
+
+body:has(.sos-pwa-install-banner:not([hidden])) .pos-screen,
+body:has(.sos-pwa-ios-hint:not([hidden])) .pos-screen {
+  padding-top: calc(1rem + 52px + env(safe-area-inset-top, 0px));
+}

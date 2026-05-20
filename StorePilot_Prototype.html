@@ -2,8 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <link rel="icon" href="/favicon.ico" type="image/png" sizes="32x32">
+<link rel="manifest" href="/storepilot-manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1D6FD4">
+<link rel="apple-touch-icon" href="/img/storepilot-icon-192.png">
 <title>Store Pilot — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/fonts.css">
 <style>
@@ -208,8 +213,55 @@
   .modal-body { padding:20px; }
   .modal-foot { display:flex; gap:8px; justify-content:flex-end; padding:14px 20px; border-top:1px solid var(--border); }
 
+  /* ── PWA install / iOS hint ───────────────────────────────────────────────── */
+  .sp-pwa-install-banner,
+  .sp-pwa-ios-hint {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 14px;
+    margin: 0 0 0;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .sp-pwa-install-banner { background: var(--accL); }
+  .sp-pwa-ios-hint { background: var(--goldL); border-bottom-color: rgba(217,119,6,0.25); }
+  .sp-pwa-install-banner[hidden],
+  .sp-pwa-ios-hint[hidden] { display: none !important; }
+  .sp-pwa-install-copy { font-size: 13px; color: var(--accD); flex: 1; min-width: 180px; line-height: 1.4; }
+  .sp-pwa-ios-hint .sp-pwa-install-copy { color: var(--gold); font-weight: 600; }
+  .sp-pwa-ios-sub { font-size: 12px; color: var(--text2); font-weight: 400; display: block; margin-top: 4px; }
+  .sp-pwa-install-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  body.sp-pwa-standalone .topbar { box-shadow: 0 1px 0 var(--border); }
+
   /* ── RESPONSIVE BREAKPOINTS ───────────────────────────────────────────────── */
   @media (max-width:768px) {
+    .topbar {
+      padding-top: env(safe-area-inset-top, 0px);
+      min-height: calc(54px + env(safe-area-inset-top, 0px));
+      height: auto;
+    }
+    .sidebar,
+    .sidebar.open {
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    }
+    .menu-toggle {
+      min-width: 44px;
+      min-height: 44px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn,
+    .nav-item {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    tr.tr-link {
+      touch-action: manipulation;
+    }
     /* Sidebar: off-canvas slide */
     .sidebar { transform:translateX(-100%); transition:transform .25s ease; position:fixed; z-index:200; height:100vh; }
     .sidebar.open { transform:translateX(0); }
@@ -256,6 +308,7 @@
 </style>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260524-sidebar-minimal">
 <script src="/js/cosmos-ui-polish.js?v=20260524-sidebar-minimal" defer></script>
+<script src="/js/storepilot-pwa.js?v=20260521-pwa" defer></script>
 </head>
 <body class="cosmos-app-shell">
 
@@ -306,6 +359,19 @@
     </button>
     <div class="breadcrumb">Store Pilot <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="sp-bc">Dashboard</span></div>
     <span id="dash-last-updated" style="font-size:11.5px;color:var(--text3)"></span>
+  </div>
+
+  <div id="sp-pwa-install-banner" class="sp-pwa-install-banner" hidden role="region" aria-label="Install app">
+    <div class="sp-pwa-install-copy">Install Store Pilot for quick access from your home screen.</div>
+    <div class="sp-pwa-install-actions">
+      <button type="button" class="btn primary sm" id="sp-pwa-install-btn" onclick="spPwaInstall()">Install</button>
+      <button type="button" class="btn sm" onclick="spPwaDismissInstall()">Not now</button>
+    </div>
+  </div>
+
+  <div id="sp-pwa-ios-hint" class="sp-pwa-ios-hint" hidden role="region" aria-label="Add to Home Screen">
+    <div class="sp-pwa-install-copy">Add to Home Screen<span class="sp-pwa-ios-sub">Tap Share, then Add to Home Screen to install Store Pilot.</span></div>
+    <button type="button" class="btn sm" onclick="spPwaDismissIosHint()">Got it</button>
   </div>
 
   <div class="cosmos-app-scroll" id="cosmos-app-scroll">

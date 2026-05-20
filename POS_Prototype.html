@@ -8,21 +8,41 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#2563EB">
+<link rel="apple-touch-icon" href="/img/storeos-icon-192.png">
 <title>Store OS — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260521-mobile">
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
 <link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260521-unit-pill-tags">
 <script src="/js/cosmos-ui-polish.js?v=20260521-mobile" defer></script>
+<script src="/js/storeos-pwa.js?v=20260521-pwa" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
 <script src="/js/pos.js?v=storeos-20260520-order-queues" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
+
+<div id="sos-pwa-install-banner" class="sos-pwa-install-banner" hidden role="region" aria-label="Install Store OS">
+  <div class="sos-pwa-install-copy">Install Store OS for quick access from your home screen.</div>
+  <div class="sos-pwa-install-actions">
+    <button type="button" class="pos-login-btn sos-pwa-install-btn" id="sos-pwa-install-btn" onclick="sosPwaInstall()">Install</button>
+    <button type="button" class="sos-pwa-dismiss-btn" onclick="sosPwaDismissInstall()">Not now</button>
+  </div>
+</div>
+
+<div id="sos-pwa-ios-hint" class="sos-pwa-ios-hint" hidden role="region" aria-label="Add to Home Screen">
+  <div class="sos-pwa-install-copy">Add to Home Screen<span class="sos-pwa-ios-sub">Tap Share, then Add to Home Screen to install Store OS.</span></div>
+  <button type="button" class="sos-pwa-dismiss-btn" onclick="sosPwaDismissIosHint()">Got it</button>
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      SCREEN 1a — Tablet unlock (device + store gate; no staff PIN here)
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-login-tablet" class="pos-screen">
   <div class="pos-login-card pos-login-card-tablet">
+
+    <div id="sos-pwa-offline-msg" class="sos-pwa-offline-msg" hidden role="status">
+      <strong>You are offline</strong>
+      Connect to the internet to unlock this tablet. Cached shell only — data loads when you are online.
+    </div>
 
     <div class="pos-branding">
       <div class="pos-logo-row">

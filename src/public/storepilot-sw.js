@@ -1,46 +1,50 @@
-/* Store OS PWA — Service Worker
-   Scope: /storeos/ — caches Store OS shell + shared static assets under allowed paths.
-   Strategy: network-only for /api/*; network-first for /storeos navigations; cache-first for allowed static GET. */
+/* Store Pilot PWA — Service Worker
+   Scope: registered at / — only caches Store Pilot shell + shared static assets + login.
+   Strategy: network-only for /api/*; network-first for /storepilot navigations; cache-first for allowed static GET. */
 
-var CACHE_NAME = 'storeos-v2';
+var CACHE_NAME = 'storepilot-v1';
 
 var SHELL_URLS = [
-  '/storeos/login',
+  '/',
+  '/login.html',
+  '/storepilot/dashboard',
   '/css/cosmos-ui-polish.css',
-  '/css/pos.css',
-  '/css/lenskart-pos.css',
   '/css/fonts.css',
   '/js/cosmos-ui-polish.js',
-  '/js/pos-order-queue-catalog.js',
-  '/js/pos.js',
-  '/js/storeos-pwa.js',
-  '/storeos-manifest.json',
+  '/js/cosmos-modules-catalog.js',
+  '/js/cosmos-module-switch.js',
+  '/js/cosmos-bucket-scan.js',
+  '/js/storepilot-prototype.js',
+  '/js/storepilot-pwa.js',
+  '/js/login.js',
+  '/storepilot-manifest.json',
   '/config/bootstrap.json',
-  '/img/storeos-icon-192.png',
-  '/img/storeos-icon-512.png',
+  '/img/storepilot-icon-192.png',
+  '/img/storepilot-icon-512.png',
   '/favicon.ico'
 ];
 
-var ALLOWED_PREFIXES = ['/storeos', '/css/', '/js/', '/img/', '/config/', '/favicon.ico'];
+var MODULE_PREFIXES = ['/storepilot', '/css/', '/js/', '/img/', '/config/', '/favicon.ico'];
 
-function isStoreOsNavigation(request) {
+function isStorePilotNavigation(request) {
   if (request.mode === 'navigate') return true;
   return request.destination === 'document';
 }
 
 function isAllowedStaticPath(pathname) {
-  if (pathname === '/storeos-manifest.json') return true;
-  for (var i = 0; i < ALLOWED_PREFIXES.length; i++) {
-    if (pathname.indexOf(ALLOWED_PREFIXES[i]) === 0) return true;
+  if (pathname === '/' || pathname === '/login.html') return true;
+  for (var i = 0; i < MODULE_PREFIXES.length; i++) {
+    if (pathname.indexOf(MODULE_PREFIXES[i]) === 0) return true;
   }
-  return false;
+  return pathname === '/storepilot-manifest.json';
 }
 
 function shouldHandleFetch(url, request) {
   if (request.method !== 'GET') return false;
   if (url.pathname.startsWith('/api/')) return true;
-  if (url.pathname.indexOf('/storeos') === 0) return true;
-  return isAllowedStaticPath(url.pathname);
+  if (url.pathname.indexOf('/storepilot') === 0) return true;
+  if (isAllowedStaticPath(url.pathname)) return true;
+  return false;
 }
 
 self.addEventListener('install', function (e) {
@@ -76,16 +80,18 @@ self.addEventListener('fetch', function (e) {
     return;
   }
 
-  if (url.pathname.indexOf('/storeos') === 0 && isStoreOsNavigation(e.request)) {
+  if (url.pathname.indexOf('/storepilot') === 0 && isStorePilotNavigation(e.request)) {
     e.respondWith(
       fetch(e.request).catch(function () {
-        return caches.match('/storeos/login');
+        return caches.match('/').then(function (cached) {
+          return cached || caches.match('/login.html');
+        });
       })
     );
     return;
   }
 
-  if (!isAllowedStaticPath(url.pathname) && url.pathname.indexOf('/storeos') !== 0) {
+  if (!isAllowedStaticPath(url.pathname) && url.pathname.indexOf('/storepilot') !== 0) {
     return;
   }
 

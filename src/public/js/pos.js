@@ -1,13 +1,6 @@
 (function initPosApp() {
   'use strict'
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/storeos-sw.js', { scope: '/storeos/' })
-      .catch(function (err) {
-        console.warn('[Store OS SW] Registration failed:', err)
-      })
-  }
-
   document.addEventListener('DOMContentLoaded', async function onPosDomReady() {
 
   document.body.classList.add('pos-target-tablet-landscape')

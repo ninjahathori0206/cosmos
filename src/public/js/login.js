@@ -91,9 +91,26 @@ function attachReadonlyUnlock() {
   });
 }
 
+function getPwaModuleLanding() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('module') === 'storepilot') return '/storepilot/dashboard';
+    if (params.get('module') === 'storeos' || params.get('module') === 'pos') return '/storeos/login';
+  } catch (_) { /* ignore */ }
+  return null;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   applySavedOrDefaults();
   attachReadonlyUnlock();
+
+  const pwaDest = getPwaModuleLanding();
+  if (pwaDest) {
+    const sub = document.querySelector('.sub');
+    if (sub) {
+      sub.textContent = pwaDest.indexOf('/storeos') === 0 ? 'Sign in to Store OS' : 'Sign in to Store Pilot';
+    }
+  }
 
   const form = document.getElementById('login-form');
   const errorEl = document.getElementById('error');
@@ -170,6 +187,12 @@ document.addEventListener('DOMContentLoaded', () => {
       ];
 
       function pickLanding() {
+        const pwaModule = getPwaModuleLanding();
+        if (pwaModule) {
+          if (!hasMap) return pwaModule;
+          if (pwaModule.indexOf('/storepilot') === 0 && mods.storepilot !== false) return pwaModule;
+          if (pwaModule.indexOf('/storeos') === 0 && mods.pos !== false) return pwaModule;
+        }
         if (!hasMap) return '/command-unit/dashboard';
         for (const [key, path] of LANDING) {
           if (mods[key] !== false) return path;
