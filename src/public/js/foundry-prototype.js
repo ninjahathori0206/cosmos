@@ -5816,7 +5816,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Client-side QR generation (preview + browser print — no /api/qr storm) ──
   let _qrCodeLoader = null;
+  const _BC_QR_CACHE_MAX = 500;
   const _bcQrCache = new Map();
+
+  function _bcQrCacheSet(key, value) {
+    if (_bcQrCache.size >= _BC_QR_CACHE_MAX) {
+      _bcQrCache.delete(_bcQrCache.keys().next().value);
+    }
+    _bcQrCache.set(key, value);
+  }
 
   function loadBcQrLib() {
     if (window._QRCode_loaded && typeof QRCode !== 'undefined') return Promise.resolve();
@@ -5868,7 +5876,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       errorCorrectionLevel: 'M',
       margin: 1
     });
-    _bcQrCache.set(key, dataUrl);
+    _bcQrCacheSet(key, dataUrl);
     return dataUrl;
   }
 
@@ -5970,6 +5978,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.openBarcodeModal = async function(skus, opts) {
     opts = opts || {};
     if (!skus || !skus.length) { alert('No SKUs available to print.'); return; }
+    _bcQrCache.clear();
     try {
       await Promise.all([loadJsBarcodeLib(), loadBcQrLib()]);
     } catch (err) {
@@ -6748,6 +6757,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
 
     const isQR = labelType === 'QR';
+    const printDataUrls = new Map();
     if (isQR) {
       try {
         await loadBcQrLib();
@@ -6756,9 +6766,11 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
         return;
       }
       const allItems = batches.flat().filter(Boolean);
-      await Promise.all(allItems.map((item) =>
-        _bcQrDataUrl(item.code, qrPreviewPx).catch(() => null)
-      ));
+      await Promise.all(allItems.map(async (item) => {
+        const key = `${item.code}|${qrPreviewPx}`;
+        const url = await _bcQrDataUrl(item.code, qrPreviewPx).catch(() => '');
+        printDataUrls.set(key, url);
+      }));
     }
 
     const win = window.open('', '_blank', 'width=900,height=700');
@@ -6778,7 +6790,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
         const item = row[col];
         if (!item || !item.code) { cells.push('<td class="empty"></td>'); continue; }
         if (isQR) {
-          const dataUrl = _bcQrCache.get(`${item.code}|${qrPreviewPx}`) || '';
+          const dataUrl = printDataUrls.get(`${item.code}|${qrPreviewPx}`) || '';
           cells.push(`<td class="label-cell"><img src="${dataUrl}" class="qr-img"><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);
         } else {
           const ac = String(item.code || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
