@@ -2045,6 +2045,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (s === n) step.classList.add('active');
       }
     }
+    if (typeof window.pvUpdatePrintSelectedBtn === 'function') window.pvUpdatePrintSelectedBtn();
   };
 
   // Stage 1 — Purchase Registration
@@ -2131,11 +2132,93 @@ document.addEventListener('DOMContentLoaded', async () => {
     </div>`;
   }
 
+  function _pvActiveStagePanel() {
+    for (let s = 5; s >= 4; s--) {
+      const el = document.getElementById('pv-stage-' + s);
+      if (el && el.style.display !== 'none') return el;
+    }
+    return null;
+  }
+
+  function _pvBarcodeToolbarHtml() {
+    return `<button type="button" class="btn btn-sm primary pv-print-selected-btn" onclick="pvPrintSelectedBarcodes()" disabled style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print selected</button>
+      <button type="button" class="btn btn-sm" onclick="window.openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print all</button>`;
+  }
+
+  function _pvSkuSelectCellHtml(sk) {
+    const sid = sk.sku_id != null ? Number(sk.sku_id) : 0;
+    const code = _mcEsc(sk.sku_code || '');
+    return `<td class="tc" style="width:36px"><input type="checkbox" class="pv-sku-chk" data-sku-id="${sid}" data-sku-code="${code}" onchange="pvUpdatePrintSelectedBtn()" onclick="event.stopPropagation()"></td>`;
+  }
+
+  window.pvPrintBarcodesForSkuIds = function pvPrintBarcodesForSkuIds(skuIds) {
+    const all = window._pvCurrentSkus || [];
+    const numSet = new Set();
+    const codeSet = new Set();
+    (skuIds || []).forEach(function (x) {
+      const n = Number(x);
+      if (n > 0) numSet.add(n);
+      else if (typeof x === 'string' && String(x).trim()) codeSet.add(String(x).trim());
+    });
+    const filtered = all.filter(function (sk) {
+      const sid = Number(sk.sku_id);
+      if (sid > 0 && numSet.has(sid)) return true;
+      if (sk.sku_code && codeSet.has(String(sk.sku_code).trim())) return true;
+      return false;
+    });
+    if (!filtered.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No SKUs selected for print.');
+      return;
+    }
+    if (typeof window.openBarcodeModal !== 'function') {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Barcode print is not loaded yet.');
+      return;
+    }
+    window.openBarcodeModal(filtered);
+  };
+
+  window.pvPrintSelectedBarcodes = function pvPrintSelectedBarcodes() {
+    const panel = _pvActiveStagePanel();
+    const chks = panel ? panel.querySelectorAll('.pv-sku-chk:checked') : [];
+    const keys = [];
+    chks.forEach(function (c) {
+      const id = Number(c.getAttribute('data-sku-id'));
+      if (id > 0) keys.push(id);
+      else {
+        const code = c.getAttribute('data-sku-code');
+        if (code) keys.push(code);
+      }
+    });
+    if (!keys.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select at least one SKU to print.');
+      return;
+    }
+    pvPrintBarcodesForSkuIds(keys);
+  };
+
+  window.pvToggleAllSkuChecks = function pvToggleAllSkuChecks(checked) {
+    const panel = _pvActiveStagePanel();
+    const scope = panel || document;
+    scope.querySelectorAll('.pv-sku-chk').forEach(function (c) {
+      c.checked = !!checked;
+    });
+    pvUpdatePrintSelectedBtn();
+  };
+
+  window.pvUpdatePrintSelectedBtn = function pvUpdatePrintSelectedBtn() {
+    const panel = _pvActiveStagePanel();
+    const n = panel ? panel.querySelectorAll('.pv-sku-chk:checked').length : 0;
+    document.querySelectorAll('.pv-print-selected-btn').forEach(function (btn) {
+      btn.disabled = n < 1;
+    });
+  };
+
   // Stage 4 — Digitisation
   function _pvRenderStage4(items, skus) {
     const el = document.getElementById('pv-stage-4');
     if (!el) return;
     const rows = skus.map((sk) => `<tr>
+      ${_pvSkuSelectCellHtml(sk)}
       <td class="mono xs fw6">${sk.sku_code}</td>
       <td class="mono xs">${sk.barcode}</td>
       <td>${sk.ew_collection || ''} · ${sk.style_model || ''}</td>
@@ -2144,24 +2227,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       <td class="tc">${sk.quantity}</td>
       <td><span class="b b-green xs">${sk.status}</span></td>
     </tr>`).join('');
-    const printBtn4 = skus.length
-      ? `<button type="button" class="btn btn-sm" onclick="openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print Barcodes</button>`
-      : '';
+    const printToolbar = skus.length ? _pvBarcodeToolbarHtml() : '';
     el.innerHTML = `<div class="card">
       <div class="ch" style="gap:12px">
         <div class="ct" style="min-width:0">Generated SKUs</div>
         <div class="flex ic g2" style="flex-shrink:0;margin-left:auto">
           <span class="b b-teal xs">${skus.length} SKUs</span>
-          ${printBtn4}
+          ${printToolbar}
         </div>
       </div>
       <div class="cb">
         <div class="tw"><table>
-          <thead><tr><th>SKU Code</th><th>Barcode</th><th>Product</th><th>Colour</th><th>Sale Price</th><th>Qty</th><th>Status</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="7" class="tc td2">No SKUs generated</td></tr>'}</tbody>
+          <thead><tr>
+            <th class="tc" style="width:36px"><input type="checkbox" title="Select all" onchange="pvToggleAllSkuChecks(this.checked)" onclick="event.stopPropagation()"></th>
+            <th>SKU Code</th><th>Barcode</th><th>Product</th><th>Colour</th><th>Sale Price</th><th>Qty</th><th>Status</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="8" class="tc td2">No SKUs generated</td></tr>'}</tbody>
         </table></div>
       </div>
     </div>`;
+    pvUpdatePrintSelectedBtn();
   }
 
   // Stage 5 — Warehouse
@@ -2213,6 +2298,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }).join('');
 
     const tableRows = skus.map((sk) => `<tr>
+      ${_pvSkuSelectCellHtml(sk)}
       <td class="mono xs fw6">${sk.sku_code}</td>
       <td>${sk.ew_collection || ''} · ${sk.style_model || ''}</td>
       <td>${sk.colour_name || '—'}</td>
@@ -2221,13 +2307,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       <td class="mono xs">${inrD(Number(sk.sale_price || 0) * Number(sk.quantity || 0))}</td>
     </tr>`).join('');
 
+    const printToolbar5 = skus.length ? _pvBarcodeToolbarHtml() : '';
+
     el.innerHTML = `<div class="main-side">
       <div class="col-stack">
         <div class="card">
           <div class="ch" style="gap:12px">
             <div class="ct" style="min-width:0">Warehouse Stock Added</div>
             <div class="flex ic g2" style="flex-shrink:0;margin-left:auto">
-              <button type="button" class="btn btn-sm" onclick="openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print Barcodes</button>
+              ${printToolbar5}
               <span class="b b-green">✓ LIVE</span>
             </div>
           </div>
@@ -2241,13 +2329,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             ${productCards ? `<div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;margin-bottom:16px">${productCards}</div>` : ''}
             <div class="section-lbl mb2">SKU Details</div>
             <div class="tw"><table>
-              <thead><tr><th>SKU Code</th><th>Product</th><th>Colour</th><th>Sale Price</th><th>Qty</th><th>Value</th></tr></thead>
-              <tbody>${tableRows || '<tr><td colspan="6" class="tc td2">No SKUs</td></tr>'}</tbody>
+              <thead><tr>
+                <th class="tc" style="width:36px"><input type="checkbox" title="Select all" onchange="pvToggleAllSkuChecks(this.checked)" onclick="event.stopPropagation()"></th>
+                <th>SKU Code</th><th>Product</th><th>Colour</th><th>Sale Price</th><th>Qty</th><th>Value</th>
+              </tr></thead>
+              <tbody>${tableRows || '<tr><td colspan="7" class="tc td2">No SKUs</td></tr>'}</tbody>
             </table></div>
           </div>
         </div>
       </div>
     </div>`;
+    pvUpdatePrintSelectedBtn();
   }
 
   window.runRevertPurchaseToDraft = async function runRevertPurchaseToDraft(headerId, buttonEl) {
@@ -3077,8 +3169,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           const imgId  = `clr-img-${item.item_id}-${col.colour_id}`;
 
           // Colour-level media — prefer SKU level, fall back to colour record
-          const colourImgUrl = (existingSku && existingSku.image_url) || col.image_url || null;
-          const colourVidUrl = (existingSku && existingSku.video_url) || col.video_url || null;
+          const colourImgUrl = col.image_url || (existingSku && existingSku.image_url) || null;
+          const colourVidUrl = col.video_url || (existingSku && existingSku.video_url) || null;
           const mediaThumbs = [];
           if (colourImgUrl) {
             mediaThumbs.push(`<div class="digi-media-thumb">
@@ -3480,7 +3572,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await apiPut(`/api/purchases/${headerId}/warehouse-ready`, {});
       const skus = await apiGet(`/api/purchases/${headerId}/skus`);
-      openBarcodeModal(skus, { defaultType: 'QR' });
+      window.openBarcodeModal(skus, { defaultType: 'QR' });
       loadPurchases();
       nav('purchases', document.querySelector('.nav-item[onclick*="nav(\'purchases\'"]'));
     } catch (err) { alert(err.message); }
@@ -5975,14 +6067,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     return out;
   }
 
+  function _bcRowShouldBeChecked(sk, opts) {
+    if (!opts.onlySkuIds || !opts.onlySkuIds.length) return true;
+    const idSet = new Set(opts.onlySkuIds.map(function (x) { return Number(x); }).filter(function (n) { return n > 0; }));
+    if (sk.sku_id != null && idSet.has(Number(sk.sku_id))) return true;
+    const codes = opts.onlySkuCodes;
+    if (codes && codes.length && sk.sku_code && codes.indexOf(sk.sku_code) >= 0) return true;
+    return false;
+  }
+
   window.openBarcodeModal = async function(skus, opts) {
     opts = opts || {};
-    if (!skus || !skus.length) { alert('No SKUs available to print.'); return; }
+    if (!skus || !skus.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No SKUs available to print.');
+      return;
+    }
     _bcQrCache.clear();
     try {
       await Promise.all([loadJsBarcodeLib(), loadBcQrLib()]);
     } catch (err) {
-      alert(err.message || 'Failed to load print libraries.');
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to load print libraries.');
+      else alert(err.message || 'Failed to load print libraries.');
       return;
     }
     _bcSkus = await _bcExpandSkusWithUnits(skus);
@@ -6006,9 +6111,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const legacyLine = legacy
           ? `<div style="font-size:9px;color:var(--gold);margin-top:2px">Legacy row: QR may match SKU only.</div>`
           : '';
+        const chkOn = _bcRowShouldBeChecked(sk, opts);
         return `
         <div class="bc-sku-row">
-          <input type="checkbox" id="bc-chk-${i}" checked onchange="bcRenderPreview()">
+          <input type="checkbox" id="bc-chk-${i}" ${chkOn ? 'checked' : ''} onchange="bcRenderPreview()">
           <div style="flex:1;min-width:0">
             <div class="bc-sku-code">${_bcEsc(sku)}</div>
             ${qrLine}${isUnit && sk.unit_no ? `<div style="font-size:9px;color:var(--text3);margin-top:2px">Piece ${sk.unit_no}</div>` : ''}${legacyLine}

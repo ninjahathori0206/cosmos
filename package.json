@@ -51,6 +51,7 @@
     "verify:api-modules": "node scripts/verify-api-modules.js",
     "migrate:38-tablet-session-version": "node scripts/run-migration-38-tablet-session-version.js",
     "migrate:39-sku-getall-display-brand": "node scripts/run-migration-39-sku-getall-display-brand.js",
+    "migrate:58-purchase-colour-media-catalogue": "node scripts/run-migration-58-purchase-colour-media-catalogue.js",
     "deploy:pos-sql": "node scripts/deploy_pos_sql.js",
     "deploy:pos-sp": "node scripts/deploy-pos-sp-only.js",
     "publish:design-local": "node scripts/publish-design-local.js",

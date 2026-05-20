@@ -24,8 +24,16 @@ AS BEGIN
     pm.product_type AS pm_product_type,
     pm.description, pm.frame_width, pm.lens_height,
     pm.temple_length, pm.frame_material,
-    ISNULL(sk.image_url, pm.image_url) AS image_url,
-    ISNULL(sk.video_url, pic.video_url) AS video_url,
+    COALESCE(
+      NULLIF(LTRIM(RTRIM(sk.image_url)), ''),
+      NULLIF(LTRIM(RTRIM(pic.image_url)), ''),
+      pm.image_url
+    ) AS image_url,
+    COALESCE(
+      NULLIF(LTRIM(RTRIM(sk.video_url)), ''),
+      NULLIF(LTRIM(RTRIM(pic.video_url)), ''),
+      NULL
+    ) AS video_url,
     hb.brand_id,
     LTRIM(RTRIM(COALESCE(
       NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),

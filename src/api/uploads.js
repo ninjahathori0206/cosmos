@@ -1,8 +1,8 @@
 const express = require('express');
 const multer  = require('multer');
 const path    = require('path');
-const fs      = require('fs');
 const { requireModule, requirePermission } = require('../middleware/authorize');
+const { PRODUCT_UPLOAD_DIR, ensureUploadDirs } = require('../config/uploadPaths');
 
 const router = express.Router();
 
@@ -11,8 +11,8 @@ const digitisationUpload = [
   requirePermission('foundry.digitisation.edit')
 ];
 
-const UPLOAD_DIR = path.join(__dirname, '..', 'public', 'uploads', 'products');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+ensureUploadDirs();
+const UPLOAD_DIR = PRODUCT_UPLOAD_DIR;
 
 // Shared disk storage (same folder, unique filenames)
 const storage = multer.diskStorage({

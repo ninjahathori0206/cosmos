@@ -2,6 +2,7 @@ const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
 const { getPool, executeStoredProcedure } = require('../config/db');
+const { assertUploadFileExists } = require('../config/uploadPaths');
 const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
@@ -616,6 +617,10 @@ router.put(
       const { image_url, video_url } = req.body;
       if (!image_url && !video_url)
         return res.status(400).json({ success: false, message: 'image_url or video_url is required.' });
+
+      if (image_url) assertUploadFileExists(image_url, 'Image');
+      if (video_url) assertUploadFileExists(video_url, 'Video');
+
       const result = await executeStoredProcedure('sp_PurchaseItemColour_SetMedia', {
         colour_id: { type: sql.Int,          value: Number(req.params.colourId) },
         image_url: { type: sql.VarChar(500), value: image_url || null },

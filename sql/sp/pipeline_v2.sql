@@ -1198,7 +1198,17 @@ AS BEGIN
          pm.ew_collection, pm.style_model,
          sk.pid AS purchase_event_id,
          CAST(0 AS BIT) AS is_restock,
-         'NEW_SKU' AS stock_action
+         'NEW_SKU' AS stock_action,
+         COALESCE(
+           NULLIF(LTRIM(RTRIM(sk.image_url)), ''),
+           NULLIF(LTRIM(RTRIM(pic.image_url)), ''),
+           pm.image_url
+         ) AS image_url,
+         COALESCE(
+           NULLIF(LTRIM(RTRIM(sk.video_url)), ''),
+           NULLIF(LTRIM(RTRIM(pic.video_url)), ''),
+           NULL
+         ) AS video_url
   FROM dbo.skus sk
   JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
   JOIN dbo.purchase_items pi         ON pic.item_id = pi.item_id
@@ -1214,7 +1224,17 @@ AS BEGIN
          pm.ew_collection, pm.style_model,
          pre.purchase_event_id,
          CAST(1 AS BIT) AS is_restock,
-         'RESTOCK_EXISTING' AS stock_action
+         'RESTOCK_EXISTING' AS stock_action,
+         COALESCE(
+           NULLIF(LTRIM(RTRIM(sk.image_url)), ''),
+           NULLIF(LTRIM(RTRIM(pic.image_url)), ''),
+           pm.image_url
+         ) AS image_url,
+         COALESCE(
+           NULLIF(LTRIM(RTRIM(sk.video_url)), ''),
+           NULLIF(LTRIM(RTRIM(pic.video_url)), ''),
+           NULL
+         ) AS video_url
   FROM dbo.purchase_restock_events pre
   JOIN dbo.purchase_item_colours pic ON pic.colour_id = pre.item_colour_id
   JOIN dbo.purchase_items pi ON pi.item_id = pre.item_id

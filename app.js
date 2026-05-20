@@ -3,6 +3,7 @@ require('dotenv').config();
 
 const jwt = require('jsonwebtoken');
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 const helmet = require('helmet');
 const zlib = require('zlib');
@@ -55,6 +56,7 @@ const {
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 
 const { filterStoresRetailDestinations, warmStoreTypesCache } = require('./src/config/storeTypesCatalog');
+const { UPLOADS_ROOT, ensureUploadDirs } = require('./src/config/uploadPaths');
 
 async function handleDestinationStores(req, res, next) {
   try {
@@ -337,13 +339,29 @@ app.get('/finance.html', (req, res) => res.redirect(302, '/finance/dashboard'));
 app.get('/command-unit.html', (req, res) => res.redirect(302, '/command-unit/dashboard'));
 app.get('/cx.html', (req, res) => res.redirect(302, '/cx/dashboard'));
 
-// Default browser probe — many agents request `/favicon.ico`; we ship a PNG under that URL (widely supported).
-const faviconPngPath = path.join(__dirname, 'src', 'public', 'favicon.png');
-app.get('/favicon.ico', (req, res) => {
+// Default browser probe — many agents request `/favicon.ico`; we ship PNG bytes (widely supported).
+const faviconPublicDir = path.join(__dirname, 'src', 'public');
+const faviconAssetPath = path.join(faviconPublicDir, 'favicon.ico');
+const faviconPngFallback = path.join(faviconPublicDir, 'favicon.png');
+app.get('/favicon.ico', (req, res, next) => {
+  const assetPath = fs.existsSync(faviconAssetPath)
+    ? faviconAssetPath
+    : (fs.existsSync(faviconPngFallback) ? faviconPngFallback : null);
+  if (!assetPath) return next();
   res.type('image/png');
   res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
-  return res.sendFile(faviconPngPath);
+  return res.sendFile(assetPath, (err) => (err ? next(err) : undefined));
 });
+
+// User uploads (digitization photos, prescriptions) — gitignored; must exist on disk per environment.
+ensureUploadDirs();
+app.use(
+  '/uploads',
+  express.static(UPLOADS_ROOT, {
+    maxAge: '7d',
+    fallthrough: false
+  })
+);
 
 // Self-hosted fonts: long cache lifetime + immutable.
 app.use(

@@ -14,9 +14,15 @@ const svg = Buffer.from(
 )
 
 ;(async () => {
-  const out = path.join(__dirname, '..', 'src', 'public', 'favicon.png')
-  await sharp(svg).resize(32, 32).png().toFile(out)
-  console.log('Wrote', out)
+  const publicDir = path.join(__dirname, '..', 'src', 'public')
+  const pngOut = path.join(publicDir, 'favicon.png')
+  const icoOut = path.join(publicDir, 'favicon.ico')
+  const buf = await sharp(svg).resize(32, 32).png().toBuffer()
+  await fs.promises.writeFile(pngOut, buf)
+  // Browsers accept PNG bytes at /favicon.ico; static middleware can serve this file too.
+  await fs.promises.writeFile(icoOut, buf)
+  console.log('Wrote', pngOut)
+  console.log('Wrote', icoOut)
 })().catch((e) => {
   console.error(e)
   process.exit(1)

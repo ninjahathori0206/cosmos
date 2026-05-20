@@ -9,8 +9,11 @@ node_modules/
 .env.production.local
 .env.test.local
 
-# Uploaded product media (user content)
-src/public/uploads/
+# Uploaded product media (user content) — keep folder placeholders in git
+src/public/uploads/products/*
+!src/public/uploads/products/.gitkeep
+src/public/uploads/prescriptions/*
+!src/public/uploads/prescriptions/.gitkeep
 
 # Logs
 logs/

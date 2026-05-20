@@ -25,6 +25,15 @@ AS BEGIN
       image_url = ISNULL(@image_url, image_url),
       video_url = ISNULL(@video_url, video_url)
     WHERE colour_id = @colour_id;
+
+    IF @image_url IS NOT NULL OR @video_url IS NOT NULL
+    BEGIN
+      UPDATE dbo.skus SET
+        image_url = CASE WHEN @image_url IS NOT NULL THEN @image_url ELSE image_url END,
+        video_url = CASE WHEN @video_url IS NOT NULL THEN @video_url ELSE video_url END
+      WHERE item_colour_id = @colour_id;
+    END;
+
     SELECT colour_id, colour_name, colour_code, image_url, video_url
     FROM dbo.purchase_item_colours WHERE colour_id = @colour_id;
   END TRY
@@ -167,7 +176,11 @@ AS BEGIN
     pm.product_type AS pm_product_type,
     pm.description, pm.frame_width, pm.lens_height,
     pm.temple_length, pm.frame_material,
-    ISNULL(sk.image_url, pm.image_url) AS image_url,
+    COALESCE(
+      NULLIF(LTRIM(RTRIM(sk.image_url)), ''),
+      NULLIF(LTRIM(RTRIM(pic.image_url)), ''),
+      pm.image_url
+    ) AS image_url,
     ISNULL(sk.video_url, pic.video_url) AS video_url,
     hb.brand_id,
     LTRIM(RTRIM(COALESCE(
