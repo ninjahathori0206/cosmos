@@ -9,20 +9,14 @@
 
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/command-unit.css">
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260522-app-scroll">
-<script src="/js/cosmos-ui-polish.js?v=20260522-app-scroll" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260524-sidebar-minimal">
+<script src="/js/cosmos-ui-polish.js?v=20260524-sidebar-minimal" defer></script>
 
 </head>
 <body class="cosmos-app-shell">
 
 <!-- ════════════ SIDEBAR ════════════ -->
 <aside class="sidebar">
-  <div class="sidebar-logo">
-    <div class="cosmos">🌌 Cosmos ERP</div>
-    <div class="module-name">
-      <span>⚙️</span> Command Unit
-    </div>
-  </div>
   <nav class="sidebar-nav">
     <div class="nav-section-label">Overview</div>
     <div class="nav-item active" onclick="showPage('dashboard', this)">
@@ -97,40 +91,32 @@
       <span class="nav-badge">12</span>
     </div>
 
-    <div class="nav-section-label">Switch Module</div>
-    <div class="nav-item" data-cosmos-module="foundry" onclick="window.location.href='/foundry/dashboard'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
-      <span class="icon">🔩</span> Foundry (Procurement)
-    </div>
-    <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance/dashboard'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
-      <span class="icon">💰</span> Finance (AP)
-    </div>
-    <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot/dashboard'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
-      <span class="icon">🏬</span> StorePilot (Showroom)
-    </div>
-    <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/storeos/login'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
-      <span class="icon">🧾</span> Store OS (POS)
-    </div>
-    <div class="nav-item" data-cosmos-module="cx" onclick="window.location.href='/cx/dashboard'" style="color:rgba(255,255,255,0.5);font-size:12.5px">
-      <span class="icon">📊</span> CX (Customers &amp; revenue)
-    </div>
-    <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.35);font-size:12.5px">
-      <span class="icon">🚪</span> Sign Out
-    </div>
   </nav>
-  <div class="sidebar-user">
-    <div class="user-avatar">TJ</div>
-    <div class="user-info">
-      <div class="user-name">Talha Junani</div>
-      <div class="user-role">Super Admin</div>
+  <div class="sidebar-user sidebar-user--with-modules">
+    <div class="sidebar-user-top">
+      <div class="user-avatar">TJ</div>
+      <div class="user-info sidebar-user-meta">
+        <div class="sidebar-user-name-row">
+          <div class="user-name">Talha Junani</div>
+          <button type="button" class="sidebar-logout-btn" onclick="cosmosSignOut()" aria-label="Sign out" title="Sign out"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="16 17 21 12 16 7"/><line fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" x1="21" y1="12" x2="9" y2="12"/></svg></button>
+        </div>
+        <div class="user-role">Super Admin</div>
+      </div>
     </div>
+    <div id="cosmos-module-switch-footer" data-current-module="command_unit"></div>
   </div>
 </aside>
+
+<div class="cu-sidebar-overlay" id="cu-sidebar-overlay" onclick="closeSidebar()" aria-hidden="true"></div>
 
 <!-- ════════════ MAIN ════════════ -->
 <main class="main">
 
   <!-- TOPBAR -->
   <div class="topbar" id="topbar">
+    <button type="button" class="menu-toggle" id="cu-menu-toggle" onclick="openSidebar()" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
     <div class="topbar-breadcrumb">
       <span>Command Unit</span>
       <span class="sep">›</span>
@@ -1933,11 +1919,32 @@
 
 <!-- ════════════ SCRIPTS ════════════ -->
 <script>
+function openSidebar() {
+  var sb = document.querySelector('.sidebar');
+  var ov = document.getElementById('cu-sidebar-overlay');
+  if (sb) sb.classList.add('open');
+  if (ov) { ov.classList.add('open'); ov.setAttribute('aria-hidden', 'false'); }
+  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll();
+  else document.body.style.overflow = 'hidden';
+}
+function closeSidebar() {
+  var sb = document.querySelector('.sidebar');
+  var ov = document.getElementById('cu-sidebar-overlay');
+  if (sb) sb.classList.remove('open');
+  if (ov) { ov.classList.remove('open'); ov.setAttribute('aria-hidden', 'true'); }
+  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll();
+  else document.body.style.overflow = '';
+}
+window.openSidebar = openSidebar;
+window.closeSidebar = closeSidebar;
+
 function showPage(id, el, _opts) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
   if (el) el.classList.add('active');
+  if (typeof closeSidebar === 'function') closeSidebar();
+  if (window.cosmosResetAppScroll) window.cosmosResetAppScroll();
   const labels = {
     dashboard: 'Dashboard', stores: 'Store Management', users: 'User Management',
     roles: 'Roles & Permissions', modules: 'Module Access Control',
@@ -1983,6 +1990,8 @@ function switchTab(el, targetId) {
 
 // showRoleDetail is now handled dynamically by command-unit-prototype.js
 </script>
+<script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
+<script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/command-unit-prototype.js?v=cu-store-types-stores-endpoint-20260514" defer></script>
 </body>
 </html>

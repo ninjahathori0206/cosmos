@@ -352,36 +352,32 @@
     .gm-price-grid { grid-template-columns: 1fr; }
   }
 </style>
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260522-app-scroll">
-<script src="/js/cosmos-ui-polish.js?v=20260522-app-scroll" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260524-sidebar-minimal">
+<script src="/js/cosmos-ui-polish.js?v=20260524-sidebar-minimal" defer></script>
 </head>
 <body class="cosmos-app-shell">
 <div class="cx-mob-backdrop" onclick="document.body.classList.remove('cx-mob-nav-open')" aria-hidden="true"></div>
 
 <aside class="sidebar">
-  <div class="sidebar-logo">
-    <div class="cosmos-tag">Cosmos ERP</div>
-    <div class="module-name"><span>📊</span><span>CX</span></div>
-  </div>
   <nav class="sidebar-nav">
     <div class="nav-group">Overview</div>
     <div class="nav-item active" data-cx-page="dashboard" onclick="cxNav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
     <div class="nav-item" data-cx-page="customers" onclick="cxNav('customers',this)"><span class="ic">👥</span> Customers</div>
     <div class="nav-item" data-cx-page="offers" onclick="cxNav('offers',this)"><span class="ic">🎁</span> Customer Offers</div>
 
-    <div id="cx-switch-module-wrap">
-      <div class="nav-group">System</div>
-      <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
-      <div class="nav-item" data-cosmos-module="foundry" onclick="window.location.href='/foundry/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🔩</span> Foundry</div>
-      <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
-      <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🏬</span> StorePilot</div>
-      <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/storeos/login'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🧾</span> Store OS (POS)</div>
-    </div>
-    <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.3);font-size:12px"><span class="ic">🚪</span> Sign Out</div>
   </nav>
-  <div class="sidebar-user">
-    <div class="u-av" id="cx-user-av">CX</div>
-    <div><div class="u-name" id="cx-user-name">Loading...</div><div class="u-role">Customer Experience</div></div>
+  <div class="sidebar-user sidebar-user--with-modules">
+    <div class="sidebar-user-top">
+      <div class="u-av" id="cx-user-av">CX</div>
+      <div class="sidebar-user-meta">
+        <div class="sidebar-user-name-row">
+          <div class="u-name" id="cx-user-name">Loading...</div>
+          <button type="button" class="sidebar-logout-btn" onclick="cosmosSignOut()" aria-label="Sign out" title="Sign out"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="16 17 21 12 16 7"/><line fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" x1="21" y1="12" x2="9" y2="12"/></svg></button>
+        </div>
+        <div class="u-role">Customer Experience</div>
+      </div>
+    </div>
+    <div id="cosmos-module-switch-footer" data-current-module="cx"></div>
   </div>
 </aside>
 
@@ -694,7 +690,8 @@
   </div>
 </div>
 
-<script src="/js/cosmos-module-switch.js"></script>
+<script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal"></script>
+<script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
 <script src="/js/cx-prototype.js"></script>
 <script>
 /* ── CX: Offers page ─────────────────────────────────────────── */

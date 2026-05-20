@@ -30,7 +30,7 @@ Shell HTML should include `viewport-fit=cover` so `env(safe-area-inset-*)` works
 
 ## Native app scroll shell (ERP prototypes)
 
-Foundry, StorePilot, Finance, CX, and Command Unit use a **single scroll region** so the topbar (and CX `.cx-mob-bar`) stay fixed while only page content scrolls — similar to a native app.
+Foundry, StorePilot, Finance, CX, and Command Unit use a **single scroll region** (Command Unit also uses hamburger + off-canvas sidebar on ≤768px — see [`command-unit-mobile.md`](command-unit-mobile.md)) so the topbar (and CX `.cx-mob-bar`) stay fixed while only page content scrolls — similar to a native app.
 
 ### Markup
 

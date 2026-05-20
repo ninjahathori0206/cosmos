@@ -311,6 +311,259 @@ body.cosmos-app-shell .cosmos-app-scroll {
   overscroll-behavior-y: contain;
 }
 
+/* Sidebar footer — sign out beside user name (not in nav scroll) */
+.sidebar-user-meta {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sidebar-user-name-row .u-name,
+.sidebar-user-name-row .user-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-logout-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.42);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.sidebar-logout-btn:hover,
+.sidebar-logout-btn:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+}
+.sidebar-logout-btn:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+.sidebar-logout-btn svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+/* Sidebar — no header branding; nav starts at top */
+.sidebar-logo {
+  display: none !important;
+}
+.sidebar .sidebar-nav {
+  padding-top: 12px;
+}
+
+/* Sidebar footer — minimal module switcher */
+.sidebar-user--with-modules {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  margin-top: auto;
+  background: rgba(0, 0, 0, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.sidebar-user-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px 0;
+}
+.sidebar-user--with-modules.sidebar-user {
+  padding: 0;
+}
+.sidebar-user--with-modules .u-role,
+.sidebar-user--with-modules .user-role {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.32);
+}
+.sidebar-user--with-modules .u-name,
+.sidebar-user--with-modules .user-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.sidebar-logout-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+.sidebar-logout-btn svg {
+  width: 16px;
+  height: 16px;
+}
+#cosmos-module-switch-footer {
+  width: 100%;
+}
+#cosmos-module-switch-footer[hidden] {
+  display: none !important;
+}
+
+.cosmos-sidebar-footer-modules {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 14px;
+}
+
+.cosmos-module-active {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 0 2px;
+  margin: 0;
+  border: none;
+}
+.cosmos-module-active-cap {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.28);
+  line-height: 1;
+}
+.cosmos-module-active-lbl {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.cosmos-module-switch {
+  position: relative;
+  width: 100%;
+  padding: 0;
+}
+.cosmos-module-flyout {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(15, 30, 53, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.cosmos-module-flyout-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  text-decoration: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.cosmos-module-flyout-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.cosmos-module-flyout-item.is-active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-weight: 600;
+}
+.cosmos-module-strip-wrap {
+  display: block;
+  width: 100%;
+}
+.cosmos-module-strip {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.cosmos-module-strip::-webkit-scrollbar {
+  display: none;
+}
+.cosmos-module-chip {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+  transition: opacity 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+.cosmos-module-chip:hover:not(:disabled) {
+  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.08);
+}
+.cosmos-module-chip.is-active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
+  cursor: default;
+}
+.cosmos-module-chip:disabled {
+  opacity: 1;
+}
+.cosmos-module-chip-ic {
+  font-size: 14px;
+  line-height: 1;
+}
+
+@media (hover: hover) {
+  .cosmos-module-switch:hover .cosmos-module-flyout,
+  .cosmos-module-switch:focus-within .cosmos-module-flyout {
+    display: flex;
+  }
+}
+@media (hover: none) {
+  .cosmos-module-switch.is-open .cosmos-module-flyout {
+    display: flex;
+  }
+}
+
 @media print {
   body.cosmos-app-shell {
     height: auto;

@@ -12,13 +12,14 @@
   integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt"
   crossorigin="anonymous"
 >
+<link rel="preload" href="/js/cosmos-modules-catalog.js" as="script">
 <link rel="preload" href="/js/cosmos-module-switch.js" as="script">
 <link rel="preload" href="/js/foundry-prototype.js?v=20260520-qr-client" as="script">
 <link rel="preload" href="/css/cosmos-ui.css" as="style">
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/foundry-prototype.css">
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260522-app-scroll">
-<script src="/js/cosmos-ui-polish.js?v=20260522-app-scroll" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260524-sidebar-minimal">
+<script src="/js/cosmos-ui-polish.js?v=20260524-sidebar-minimal" defer></script>
 
 
 </head>
@@ -26,10 +27,6 @@
 
 <!-- SIDEBAR -->
 <aside class="sidebar">
-  <div class="sidebar-logo">
-    <div class="cosmos-tag">🌌 Cosmos ERP</div>
-    <div class="module-name"><span>🔩</span><span>Foundry</span></div>
-  </div>
   <nav class="sidebar-nav">
     <div class="nav-group">Overview</div>
     <div class="nav-item active" onclick="nav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
@@ -61,19 +58,19 @@
     <div class="nav-group" data-foundry-nav-group="lab">Lab Operations</div>
     <div class="nav-item" data-foundry-permission="foundry.lab.view" onclick="nav('lab-orders',this)"><span class="ic">🔬</span> Lab Orders</div>
 
-    <div id="fd-switch-module-wrap">
-      <div class="nav-group">System</div>
-      <div class="nav-item" data-cosmos-module="finance" onclick="window.location.href='/finance/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">💰</span> Finance</div>
-      <div class="nav-item" data-cosmos-module="storepilot" onclick="window.location.href='/storepilot/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🏬</span> StorePilot</div>
-      <div class="nav-item" data-cosmos-module="pos" onclick="window.location.href='/storeos/login'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">🧾</span> Store OS (POS)</div>
-      <div class="nav-item" data-cosmos-module="command_unit" onclick="window.location.href='/command-unit/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">⚙️</span> Command Unit</div>
-      <div class="nav-item" data-cosmos-module="cx" onclick="window.location.href='/cx/dashboard'" style="color:rgba(255,255,255,0.4);font-size:12px"><span class="ic">📊</span> CX</div>
-    </div>
-    <div class="nav-item" onclick="sessionStorage.clear();window.location.href='/'" style="color:rgba(255,255,255,0.3);font-size:12px"><span class="ic">🚪</span> Sign Out</div>
   </nav>
-  <div class="sidebar-user" style="cursor:pointer" id="foundry-sidebar-user">
-    <div class="u-av" id="foundry-user-av">AM</div>
-    <div><div class="u-name" id="foundry-user-name">Loading...</div><div class="u-role" id="foundry-user-role">Procurement</div></div>
+  <div class="sidebar-user sidebar-user--with-modules" style="cursor:pointer" id="foundry-sidebar-user">
+    <div class="sidebar-user-top">
+      <div class="u-av" id="foundry-user-av">AM</div>
+      <div class="sidebar-user-meta">
+        <div class="sidebar-user-name-row">
+          <div class="u-name" id="foundry-user-name">Loading...</div>
+          <button type="button" class="sidebar-logout-btn" onclick="event.stopPropagation();cosmosSignOut()" aria-label="Sign out" title="Sign out"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="16 17 21 12 16 7"/><line fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" x1="21" y1="12" x2="9" y2="12"/></svg></button>
+        </div>
+        <div class="u-role" id="foundry-user-role">Procurement</div>
+      </div>
+    </div>
+    <div id="cosmos-module-switch-footer" data-current-module="foundry"></div>
   </div>
 </aside>
 
@@ -1515,7 +1512,8 @@ function addColour() {
   integrity="sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6"
   crossorigin="anonymous"
 ></script>
-<script src="/js/cosmos-module-switch.js" defer></script>
+<script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
+<script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260522-app-scroll" defer></script>
 <script src="/js/foundry-prototype.js?v=20260520-pv-print2" defer></script>
 <script>

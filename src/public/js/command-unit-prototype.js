@@ -107,11 +107,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  document.querySelectorAll('[data-cosmos-module]').forEach((el) => {
-    const key = el.getAttribute('data-cosmos-module');
-    if (!key) return;
-    el.style.display = cosmosModuleAllowed(key) ? '' : 'none';
-  });
+  if (typeof window.initCosmosModuleSwitchFooter === 'function') {
+    window.initCosmosModuleSwitchFooter(user);
+  }
 
   const sidebarUser = document.querySelector('.sidebar-user .user-info');
   const sidebarAvatar = document.querySelector('.sidebar-user .user-avatar');
@@ -130,6 +128,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.showPage = function(id, el, options) {
       const showOptions = options || {}
       baseShowPage(id, el)
+      if (typeof window.closeSidebar === 'function') window.closeSidebar()
+      if (window.cosmosResetAppScroll) window.cosmosResetAppScroll()
       const nextPath = COMMAND_UNIT_PAGE_PATHS[id] || '/command-unit/dashboard'
       if (!showOptions.fromHistory && window.location.pathname !== nextPath) {
         window.history.pushState({ module: 'command-unit', page: id }, '', nextPath)

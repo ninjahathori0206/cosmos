@@ -114,7 +114,7 @@
         }
       }
     } else {
-      var bar = document.querySelector('.cx-mob-bar, .topbar, .pos-lk-header, .page-header, header.app-header')
+      var bar = document.querySelector('.cx-mob-bar, .topbar, .pos-lk-header, .page-header, header.app-header, .cu-mob-bar')
       if (bar) {
         var br = bar.getBoundingClientRect()
         if (br.height > 0 && br.bottom > 0) top = br.bottom + gap
@@ -134,6 +134,11 @@
     if (document.body.classList.contains('cosmos-app-shell')) {
       document.body.style.overflow = 'hidden'
     }
+  }
+
+  window.cosmosSignOut = function cosmosSignOut() {
+    try { sessionStorage.clear() } catch (e) { /* ignore */ }
+    window.location.href = '/'
   }
 
   function cosmosInitMobileChrome() {

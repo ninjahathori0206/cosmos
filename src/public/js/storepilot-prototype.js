@@ -707,8 +707,8 @@ function applyStorepilotPermissionNav() {
   nav.querySelectorAll('.nav-group').forEach((group) => {
     const items = [];
     let sibling = group.nextElementSibling;
-    while (sibling && !sibling.classList.contains('nav-group') && sibling.id !== 'sp-switch-module-wrap') {
-      if (sibling.classList.contains('nav-item') && sibling.hasAttribute('data-storepilot-menu')) items.push(sibling);
+    while (sibling && sibling.classList.contains('nav-item')) {
+      if (sibling.hasAttribute('data-storepilot-menu')) items.push(sibling);
       sibling = sibling.nextElementSibling;
     }
     const hasVisible = items.some((el) => el.style.display !== 'none');
@@ -784,8 +784,8 @@ function loadUser() {
     _spPermissions = Array.isArray(u.permissions) ? u.permissions.map((x) => String(x).toLowerCase()) : [];
     _storeId   = u.store_id   || null;
     _storeName = u.store_name || null;
-    if (typeof window.applyCosmosModuleSwitchNav === 'function') {
-      window.applyCosmosModuleSwitchNav('sp-switch-module-wrap', u);
+    if (typeof window.initCosmosModuleSwitchFooter === 'function') {
+      window.initCosmosModuleSwitchFooter(u);
     }
     const visibleMenuIds = applyStorepilotPermissionNav();
     if (!visibleMenuIds.length) {

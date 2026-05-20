@@ -285,8 +285,8 @@ function cxLoadUser () {
     var nm = document.getElementById('cx-user-name')
     if (av) av.textContent = initials
     if (nm) nm.textContent = name
-    if (typeof window.applyCosmosModuleSwitchNav === 'function') {
-      window.applyCosmosModuleSwitchNav('cx-switch-module-wrap', u)
+    if (typeof window.initCosmosModuleSwitchFooter === 'function') {
+      window.initCosmosModuleSwitchFooter(u)
     }
     cxApplyFinePermissionsUi()
   } catch (_) {}

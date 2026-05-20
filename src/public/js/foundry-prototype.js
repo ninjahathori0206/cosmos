@@ -217,8 +217,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     avEl.textContent = user.full_name.split(' ').filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
   }
 
-  if (typeof window.applyCosmosModuleSwitchNav === 'function') {
-    window.applyCosmosModuleSwitchNav('fd-switch-module-wrap', user);
+  if (typeof window.initCosmosModuleSwitchFooter === 'function') {
+    window.initCosmosModuleSwitchFooter(user);
   }
 
   // ── Foundry sidebar permission gating ─────────────────────────────────────
@@ -244,8 +244,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Collect all nav-items between this group and the next sibling group (or end)
       const items = [];
       let sibling = group.nextElementSibling;
-      while (sibling && !sibling.classList.contains('nav-group') && sibling.id !== 'fd-switch-module-wrap') {
-        if (sibling.classList.contains('nav-item') && sibling.hasAttribute('data-foundry-permission')) {
+      while (sibling && sibling.classList.contains('nav-item')) {
+        if (sibling.hasAttribute('data-foundry-permission')) {
           items.push(sibling);
         }
         sibling = sibling.nextElementSibling;

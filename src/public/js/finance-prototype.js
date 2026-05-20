@@ -145,8 +145,8 @@ function loadUser() {
     const nm = document.getElementById('fin-user-name');
     if (av) av.textContent = initials;
     if (nm) nm.textContent = name;
-    if (typeof window.applyCosmosModuleSwitchNav === 'function') {
-      window.applyCosmosModuleSwitchNav('fin-switch-module-wrap', u);
+    if (typeof window.initCosmosModuleSwitchFooter === 'function') {
+      window.initCosmosModuleSwitchFooter(u);
     }
   } catch (_) {}
 }
