@@ -111,6 +111,10 @@
     if (!el) return;
     if (typeof window.openM === 'function') window.openM(MODAL_ID);
     else el.classList.add('open');
+    if (window.cosmosUpdateToastTopOffset) {
+      window.cosmosUpdateToastTopOffset();
+      setTimeout(window.cosmosUpdateToastTopOffset, 80);
+    }
   }
 
   function bucketModalClose() {
@@ -119,6 +123,7 @@
     if (!el) return;
     if (typeof window.closeM === 'function') window.closeM(MODAL_ID);
     else el.classList.remove('open');
+    if (window.cosmosUpdateToastTopOffset) window.cosmosUpdateToastTopOffset();
   }
 
   function bucketShowScreen(name) {
@@ -126,7 +131,17 @@
       const el = document.getElementById('bucket-screen-' + n);
       if (el) el.style.display = n === name ? '' : 'none';
     });
+    const foot = document.getElementById('bucket-modal-foot');
+    const footScan = document.getElementById('bucket-foot-scan');
+    const footReview = document.getElementById('bucket-foot-review');
+    if (foot) foot.classList.toggle('is-visible', name === 'scan' || name === 'review');
+    if (footScan) footScan.style.display = name === 'scan' ? '' : 'none';
+    if (footReview) footReview.style.display = name === 'review' ? '' : 'none';
     _bucket.status = name === 'idle' ? 'IDLE' : name === 'scan' ? 'SCANNING' : 'REVIEW';
+    if (window.cosmosUpdateToastTopOffset) {
+      window.cosmosUpdateToastTopOffset();
+      setTimeout(window.cosmosUpdateToastTopOffset, 60);
+    }
   }
 
   function bucketFlash(kind) {

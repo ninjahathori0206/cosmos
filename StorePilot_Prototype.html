@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="icon" href="/favicon.ico" type="image/png" sizes="32x32">
 <title>Store Pilot — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/fonts.css">
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css">
-<script src="/js/cosmos-ui-polish.js" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260521-mobile">
+<script src="/js/cosmos-ui-polish.js?v=20260521-mobile" defer></script>
 <style>
   :root {
     --navy:    #0B1F33;
@@ -730,15 +730,15 @@
 
   <!-- ═══════════════ BUCKET SCAN (RECEIVE) ═══════════════ -->
   <div class="overlay" id="modal-bucket-scan">
-    <div class="modal" style="max-width:520px;width:96vw;max-height:92vh;overflow:hidden;display:flex;flex-direction:column">
-      <div class="modal-head" style="flex-shrink:0;display:flex;align-items:center;gap:10px">
+    <div class="modal modal--bucket-scan">
+      <div class="modal-head bucket-modal-head" style="flex-shrink:0;display:flex;align-items:center;gap:10px">
         <div style="flex:1;min-width:0">
           <div class="modal-title" id="bucket-header-label">Scan bucket</div>
           <span id="bucket-mode-badge" class="b b-green" style="margin-top:6px">RECEIVE</span>
         </div>
         <button class="modal-close" onclick="bucketClose()">✕</button>
       </div>
-      <div class="modal-body" style="flex:1;overflow-y:auto;padding:16px 20px">
+      <div class="modal-body bucket-modal-body" style="padding:16px 20px">
         <div id="bucket-screen-idle">
           <p style="font-size:13px;color:var(--text2);margin:0 0 16px">Scan each <strong>unit on this transfer document</strong> once. Codes not on the Foundry challan are rejected.</p>
           <button type="button" class="btn primary" style="width:100%" onclick="bucketStartScanning()">Start scanning</button>
@@ -752,13 +752,9 @@
           <div style="margin-top:12px;font-size:14px;font-weight:600;color:var(--text1)" id="bucket-score-label">0 / 0 units verified</div>
           <div class="bucket-score-bar"><div id="bucket-score-bar-fill" class="bucket-score-bar-fill"></div></div>
           <div id="bucket-scanned-list" class="bucket-scanned-list"></div>
-          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <div class="bucket-manual-row">
             <input id="bucket-manual-input" type="text" style="flex:1;min-width:140px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px" placeholder="Unit code + Enter" onkeydown="bucketManualKeydown(event)">
             <button type="button" class="btn sm" onclick="bucketManualScan()">Add</button>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-            <button type="button" class="btn sm" onclick="bucketStopScanning()">Stop</button>
-            <button type="button" class="btn sm primary" onclick="bucketGoReview()">Review &amp; submit</button>
           </div>
         </div>
         <div id="bucket-screen-review" style="display:none">
@@ -770,10 +766,16 @@
             <div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:6px">Missing</div>
             <div id="bucket-review-missing"></div>
           </div>
-          <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-            <button type="button" class="btn sm" onclick="bucketBackToScan()">← Back</button>
-            <button type="button" class="btn sm primary" id="bucket-review-submit-btn" onclick="bucketSubmit()" disabled>✓ Submit bucket</button>
-          </div>
+        </div>
+      </div>
+      <div id="bucket-modal-foot" class="bucket-modal-foot cosmos-modal-actions">
+        <div id="bucket-foot-scan" class="bucket-foot-row" style="display:none">
+          <button type="button" class="btn sm" onclick="bucketStopScanning()">Stop</button>
+          <button type="button" class="btn sm primary" onclick="bucketGoReview()">Review &amp; submit</button>
+        </div>
+        <div id="bucket-foot-review" class="bucket-foot-row" style="display:none">
+          <button type="button" class="btn sm" onclick="bucketBackToScan()">← Back</button>
+          <button type="button" class="btn sm primary" id="bucket-review-submit-btn" onclick="bucketSubmit()" disabled>✓ Submit bucket</button>
         </div>
       </div>
     </div>
@@ -803,7 +805,7 @@
 </main>
 
 <script src="/js/cosmos-module-switch.js" defer></script>
-<script src="/js/cosmos-bucket-scan.js?v=20260520-bucket" defer></script>
+<script src="/js/cosmos-bucket-scan.js?v=20260521-mobile" defer></script>
 <script src="/js/storepilot-prototype.js?v=20260520-bucket" defer></script>
 </body>
 </html>

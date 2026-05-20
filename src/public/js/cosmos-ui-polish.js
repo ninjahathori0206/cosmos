@@ -62,11 +62,96 @@
 
   function ensureToastContainer() {
     var existing = document.getElementById('cosmos-toast-container')
-    if (existing) return existing
+    if (existing) {
+      if (window.cosmosUpdateToastTopOffset) window.cosmosUpdateToastTopOffset()
+      return existing
+    }
     var container = document.createElement('div')
     container.id = 'cosmos-toast-container'
+    container.setAttribute('role', 'status')
+    container.setAttribute('aria-live', 'polite')
     document.body.appendChild(container)
+    if (window.cosmosUpdateToastTopOffset) window.cosmosUpdateToastTopOffset()
     return container
+  }
+
+  function cosmosBindMobileViewportInsets() {
+    var root = document.documentElement
+    function applyVv() {
+      var vv = window.visualViewport
+      if (!vv) {
+        root.style.setProperty('--cosmos-vvh', '100dvh')
+        root.style.setProperty('--cosmos-vv-bottom', '0px')
+        return
+      }
+      root.style.setProperty('--cosmos-vvh', vv.height + 'px')
+      var bottom = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      root.style.setProperty('--cosmos-vv-bottom', bottom + 'px')
+    }
+    applyVv()
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', applyVv)
+      window.visualViewport.addEventListener('scroll', applyVv)
+    }
+    window.addEventListener('resize', applyVv)
+  }
+
+  window.cosmosUpdateToastTopOffset = function cosmosUpdateToastTopOffset() {
+    var root = document.documentElement
+    var gap = 8
+    var top = 12
+    var overlay = document.querySelector('.overlay.open')
+    if (overlay) {
+      var head = overlay.querySelector('.bucket-modal-head, .mh, .modal-head')
+      if (head) {
+        var hr = head.getBoundingClientRect()
+        if (hr.height > 0) top = Math.max(top, hr.bottom + gap)
+      } else {
+        var modal = overlay.querySelector('.modal')
+        if (modal) {
+          var mr = modal.getBoundingClientRect()
+          top = Math.max(top, mr.top + gap)
+        }
+      }
+    } else {
+      var bar = document.querySelector('.topbar, .pos-lk-header, .page-header, header.app-header')
+      if (bar) {
+        var br = bar.getBoundingClientRect()
+        if (br.height > 0 && br.bottom > 0) top = br.bottom + gap
+      } else {
+        top = 66
+      }
+    }
+    root.style.setProperty('--cosmos-toast-top', top + 'px')
+  }
+
+  function cosmosInitMobileChrome() {
+    cosmosBindMobileViewportInsets()
+    window.cosmosUpdateToastTopOffset()
+    window.addEventListener('resize', window.cosmosUpdateToastTopOffset)
+    window.addEventListener('orientationchange', function () {
+      setTimeout(window.cosmosUpdateToastTopOffset, 120)
+    })
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', window.cosmosUpdateToastTopOffset)
+      window.visualViewport.addEventListener('scroll', window.cosmosUpdateToastTopOffset)
+    }
+    if (typeof MutationObserver !== 'undefined') {
+      var obs = new MutationObserver(function () {
+        window.cosmosUpdateToastTopOffset()
+      })
+      obs.observe(document.body, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ['class', 'style']
+      })
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', cosmosInitMobileChrome)
+  } else {
+    cosmosInitMobileChrome()
   }
 
   function removeToastNode(node) {

@@ -95,23 +95,26 @@
 
 #cosmos-toast-container {
   position: fixed;
-  bottom: 24px;
+  top: var(--cosmos-toast-top, calc(env(safe-area-inset-top, 0px) + 66px));
+  bottom: auto;
   right: 24px;
+  left: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  z-index: 9999;
+  z-index: 10000;
   pointer-events: none;
+  max-width: min(380px, calc(100vw - 32px));
 }
 
 @keyframes cosmosToastIn {
-  from { opacity: 0; transform: translateX(20px); }
-  to { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes cosmosToastOut {
-  from { opacity: 1; transform: translateX(0); }
-  to { opacity: 0; transform: translateX(20px); }
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-8px); }
 }
 
 .cosmos-toast {
@@ -217,13 +220,60 @@ tbody tr.tr-link:hover td:last-child::after {
 
 @media (max-width: 768px) {
   #cosmos-toast-container {
-    bottom: 16px;
     right: 12px;
     left: 12px;
+    max-width: none;
   }
   .cosmos-toast {
     min-width: 0;
     max-width: 100%;
+  }
+}
+
+/* ═══ Mobile-safe overlays (Safari bottom bar + dvh) ═══ */
+@media (max-width: 768px) {
+  .overlay.open {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .overlay.open .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: min(92dvh, 92vh, calc(var(--cosmos-vvh, 100dvh) * 0.92)) !important;
+    border-radius: 16px 16px 0 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .overlay.open .modal .mb,
+  .overlay.open .modal .modal-body,
+  .overlay.open .modal .bucket-modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 12px;
+  }
+  .overlay.open .bucket-modal-foot.is-visible {
+    flex-shrink: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px) + var(--cosmos-vv-bottom, 0px));
+    border-top: 1px solid var(--border, #e2e8f0);
+    background: var(--card, #fff);
+  }
+  .overlay.open .cosmos-modal-actions:not(.bucket-modal-foot) {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin-top: 12px;
+    padding: 12px 0 calc(8px + env(safe-area-inset-bottom, 0px) + var(--cosmos-vv-bottom, 0px));
+    background: linear-gradient(to top, var(--card, #fff) 72%, transparent);
+  }
+}
+
+@media (min-width: 769px) {
+  .overlay.open .modal.modal--bucket-scan {
+    max-height: min(90dvh, 90vh, calc(var(--cosmos-vvh, 100vh) * 0.9)) !important;
   }
 }
 
@@ -445,6 +495,46 @@ tbody tr.tr-link:hover td:last-child::after {
 }
 
 /* ═══ Bucket scan modal (TRANSFER / RECEIVE) ═══ */
+#modal-bucket-scan .modal.modal--bucket-scan {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 96vw;
+  max-width: 520px;
+}
+
+#modal-bucket-scan .bucket-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+#modal-bucket-scan .bucket-modal-foot {
+  flex-shrink: 0;
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px) + var(--cosmos-vv-bottom, 0px));
+  border-top: 1px solid var(--border, #e2e8f0);
+  background: var(--card, #fff);
+}
+
+#modal-bucket-scan .bucket-modal-foot.is-visible {
+  display: flex;
+}
+
+#modal-bucket-scan .bucket-modal-foot .bucket-foot-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#modal-bucket-scan .bucket-modal-foot .btn {
+  min-height: 44px;
+  flex: 1 1 auto;
+}
+
 #modal-bucket-scan .bucket-scan-viewport {
   position: relative;
   width: 100%;
@@ -458,7 +548,9 @@ tbody tr.tr-link:hover td:last-child::after {
 #modal-bucket-scan #bucket-video {
   width: 100%;
   display: block;
-  min-height: 200px;
+  min-height: 160px;
+  max-height: min(42dvh, 280px);
+  aspect-ratio: 4 / 3;
   object-fit: cover;
 }
 #modal-bucket-scan .bucket-scan-line {
@@ -503,6 +595,25 @@ tbody tr.tr-link:hover td:last-child::after {
   max-height: 160px;
   overflow-y: auto;
   margin-top: 10px;
+}
+
+@media (max-width: 768px) {
+  #modal-bucket-scan .bucket-scanned-list {
+    max-height: clamp(80px, 22dvh, 140px);
+  }
+  #modal-bucket-scan .bucket-manual-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+  #modal-bucket-scan .bucket-manual-row input {
+    flex: 1 1 140px;
+    min-height: 44px;
+  }
+  #modal-bucket-scan .bucket-manual-row .btn {
+    min-height: 44px;
+  }
 }
 #modal-bucket-scan .bucket-scanned-row {
   display: flex;

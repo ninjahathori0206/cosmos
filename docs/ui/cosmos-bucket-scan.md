@@ -25,6 +25,13 @@ Loaded on **Foundry** and **StorePilot** prototypes with `#modal-bucket-scan`.
 - Score: `N units · M SKUs`.
 - Submit with ≥1 scanned unit; glue fills Foundry cart (`_ftrApplyBucketResult` / `openGoodsTransferDispatchBucket`).
 
+## Mobile layout (phones / Safari)
+
+- Modal uses class `modal--bucket-scan`: bottom sheet on viewports ≤768px, height from `100dvh` / `visualViewport` (`--cosmos-vvh`, `--cosmos-vv-bottom` in [`cosmos-ui-polish.js`](../../src/public/js/cosmos-ui-polish.js)).
+- **Primary actions** (Stop, Review & submit, Back, Submit) live in `#bucket-modal-foot` — fixed above the browser bottom bar with `env(safe-area-inset-bottom)`.
+- Scrollable body: camera, score, scanned list, manual entry only.
+- Toasts (`cosmosToast*`) appear **below the modal header**, not at the screen bottom (shared polish behaviour).
+
 ## Camera
 
 `BarcodeDetector` (QR) → fallback `jsQR.min.js` — same pattern as StorePilot incoming camera (not Html5Qrcode).
