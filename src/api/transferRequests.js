@@ -12,6 +12,7 @@ const {
   shouldScopeTransferRequestsToUserStore,
   canConfirmTransferReceipt
 } = require('../config/storeRoles');
+const { buildDispatchSkuLines } = require('../services/transferDispatchUnits');
 
 const router = express.Router();
 
@@ -154,13 +155,15 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
           line_id:        Joi.number().integer().min(1).required(),
           approved_qty:   Joi.number().integer().min(0).optional(),
           dispatched_qty: Joi.number().integer().min(0).optional(),
-          received_qty:   Joi.number().integer().min(0).optional()
+          received_qty:   Joi.number().integer().min(0).optional(),
+          unit_ids:       Joi.array().items(Joi.number().integer().min(1)).optional()
         })
       ).optional(),
       extra_lines: Joi.array().items(
         Joi.object({
-          sku_id: Joi.number().integer().min(1).required(),
-          qty:    Joi.number().integer().min(1).required()
+          sku_id:   Joi.number().integer().min(1).required(),
+          qty:      Joi.number().integer().min(1).required(),
+          unit_ids: Joi.array().items(Joi.number().integer().min(1)).optional()
         })
       ).optional(),
       notes: Joi.string().max(500).allow('', null).optional()
@@ -246,15 +249,29 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
                 : (l.approved_qty != null && l.approved_qty > 0) ? l.approved_qty
                 : l.requested_qty;
           }
-          return { sku_id: l.sku_id, qty: dispatchQty, line_id: l.line_id };
+          const unitIds = bodyLine && Array.isArray(bodyLine.unit_ids) ? bodyLine.unit_ids : undefined;
+          return { sku_id: l.sku_id, qty: dispatchQty, line_id: l.line_id, unit_ids: unitIds };
         })
         .filter((l) => l.qty > 0);
 
       const extraLines = (value.extra_lines || []).filter((e) => e.sku_id && e.qty > 0);
-      const allSkuLines = [
-        ...dispatchLines.map(({ sku_id, qty }) => ({ sku_id, qty })),
-        ...extraLines.map(({ sku_id, qty }) => ({ sku_id, qty }))
-      ];
+
+      if (!dispatchLines.length && !extraLines.length) {
+        return res.status(422).json({ success: false, message: 'No dispatchable lines (all quantities are zero).' });
+      }
+
+      let allSkuLines;
+      try {
+        allSkuLines = await buildDispatchSkuLines(
+          dispatchLines.map(({ sku_id, qty, unit_ids }) => ({ sku_id, qty, unit_ids })),
+          extraLines.map(({ sku_id, qty, unit_ids }) => ({ sku_id, qty, unit_ids })),
+          reqLines,
+          { strictUnitOnly: true }
+        );
+      } catch (unitErr) {
+        const code = unitErr.statusCode === 422 ? 422 : 500;
+        return res.status(code).json({ success: false, message: unitErr.message });
+      }
 
       if (!allSkuLines.length) {
         return res.status(422).json({ success: false, message: 'No dispatchable lines (all quantities are zero).' });
@@ -306,6 +323,9 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
 
     return res.json({ success: true, data: { request_id: requestId, status: value.status, doc_id: createdDocId } });
   } catch (err) {
+    if (err.statusCode === 422) {
+      return res.status(422).json({ success: false, message: err.message });
+    }
     return next(err);
   }
 });

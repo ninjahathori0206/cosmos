@@ -133,6 +133,7 @@ BEGIN
     pm.ew_collection,
     pm.style_model,
     pm.product_type,
+    CAST(ISNULL(ptc.requires_unit_barcode, 1) AS BIT) AS requires_unit_barcode,
     LTRIM(RTRIM(COALESCE(
       NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
       NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
@@ -150,6 +151,7 @@ BEGIN
   FROM dbo.transfer_request_lines l
   JOIN dbo.skus sk                        ON sk.sku_id             = l.sku_id
   JOIN dbo.product_master pm              ON sk.product_master_id  = pm.product_id
+  LEFT JOIN dbo.pos_product_type_config ptc ON ptc.product_type_key = pm.product_type
   LEFT JOIN dbo.home_brands hb            ON pm.home_brand_id      = hb.brand_id
   LEFT JOIN dbo.maker_master mm           ON pm.maker_master_id    = mm.maker_id
   LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id     = pic.colour_id

@@ -649,22 +649,10 @@
       <div class="ch">
         <div class="ct">Add Items</div>
         <div style="display:flex;gap:8px;margin-left:auto">
-          <button class="btn sm" id="st-cam-btn" onclick="stToggleCamera()">📷 Scan QR</button>
+          <button class="btn sm primary" type="button" onclick="openGoodsTransferDispatchBucket()">📷 Open scan bucket</button>
         </div>
       </div>
       <div class="cb">
-        <!-- Camera scanner -->
-        <div id="st-scan-container" style="display:none;margin-bottom:12px">
-          <div class="st-scan-area">
-            <div id="st-reader"></div>
-            <div id="st-scan-overlay" class="st-scan-overlay">
-              <div class="st-scan-icon">📷</div>
-              <div>Tap <strong>Scan QR</strong> to start your camera</div>
-            </div>
-          </div>
-          <button class="btn w100 mt3" style="justify-content:center;color:var(--red)" onclick="stStopCamera()">✕ Stop Camera</button>
-        </div>
-
         <!-- Manual / scanner-wedge search -->
         <div class="sw" style="margin-bottom:8px">
           <span class="si">🔍</span>
@@ -1358,6 +1346,57 @@
   </div>
 </div>
 
+<!-- ── Bucket scan (TRANSFER / RECEIVE) ── -->
+<div class="overlay" id="modal-bucket-scan">
+  <div class="modal" style="max-width:520px;width:96vw;max-height:92vh;overflow:hidden;display:flex;flex-direction:column">
+    <div class="mh" style="flex-shrink:0;display:flex;align-items:center;gap:10px">
+      <div style="flex:1;min-width:0">
+        <div class="mt-title" id="bucket-header-label">Scan bucket</div>
+        <span id="bucket-mode-badge" class="b b-blue" style="margin-top:6px">TRANSFER</span>
+      </div>
+      <div class="mc" onclick="bucketClose()">×</div>
+    </div>
+    <div class="mb" style="flex:1;overflow-y:auto;padding:16px 20px">
+      <div id="bucket-screen-idle">
+        <p style="font-size:13px;color:var(--text2);margin:0 0 16px">Scan each <strong>7-digit unit barcode</strong> with the camera or a wedge scanner.</p>
+        <button type="button" class="btn primary w100" onclick="bucketStartScanning()">Start scanning</button>
+      </div>
+      <div id="bucket-screen-scan" style="display:none">
+        <div class="bucket-scan-viewport">
+          <video id="bucket-video" autoplay playsinline muted></video>
+          <div class="bucket-scan-line"></div>
+          <div id="bucket-scan-flash" class="bucket-scan-flash"></div>
+        </div>
+        <div style="margin-top:12px;font-size:14px;font-weight:600;color:var(--text1)" id="bucket-score-label">0 units</div>
+        <div class="bucket-score-bar"><div id="bucket-score-bar-fill" class="bucket-score-bar-fill"></div></div>
+        <div id="bucket-scanned-list" class="bucket-scanned-list"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <input id="bucket-manual-input" type="text" class="qty-input" style="flex:1;min-width:140px;text-align:left" placeholder="Unit code + Enter" onkeydown="bucketManualKeydown(event)">
+          <button type="button" class="btn sm" onclick="bucketManualScan()">Add</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+          <button type="button" class="btn sm" onclick="bucketStopScanning()">Stop</button>
+          <button type="button" class="btn primary sm" onclick="bucketGoReview()">Review &amp; submit</button>
+        </div>
+      </div>
+      <div id="bucket-screen-review" style="display:none">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px" id="bucket-review-title">Review</div>
+        <div id="bucket-review-score-text" style="font-size:13px;color:var(--text2);margin-bottom:12px"></div>
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">Verified</div>
+        <div id="bucket-review-verified" style="margin-bottom:12px"></div>
+        <div id="bucket-review-missing-wrap">
+          <div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:6px">Missing</div>
+          <div id="bucket-review-missing"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+          <button type="button" class="btn sm" onclick="bucketBackToScan()">← Back</button>
+          <button type="button" class="btn primary sm" id="bucket-review-submit-btn" onclick="bucketSubmit()" disabled>✓ Submit bucket</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
   <!-- ═══ LAB ORDERS ═══ -->
   <div class="page" id="page-lab-orders">
     <div class="ph flex ic">
@@ -1469,7 +1508,8 @@ function addColour() {
   crossorigin="anonymous"
 ></script>
 <script src="/js/cosmos-module-switch.js" defer></script>
-<script src="/js/foundry-prototype.js?v=20260520-qr-client" defer></script>
+<script src="/js/cosmos-bucket-scan.js?v=20260520-bucket" defer></script>
+<script src="/js/foundry-prototype.js?v=20260520-bucket" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)
 document.addEventListener('DOMContentLoaded', function() {

@@ -1816,6 +1816,72 @@ function spIncRefreshLineUi(docId, line) {
 function spIncDocHasUnitScanLines(lines) {
   return (lines || []).some((l) => spLineRequiresUnitScans(l));
 }
+
+function _spApplyBucketReceiveResult(docId, result) {
+  const lines = _incDocLinesByDoc[docId] || [];
+  _incQrVerificationByDoc[docId] = spFreshIncVerification();
+  (result.scanned || []).forEach((s) => {
+    const hit = spFindUnitOnDocLines(lines, s.unit_barcode || String(s.unit_id));
+    if (hit && hit.unit && hit.unit.unit_id) {
+      _incQrVerificationByDoc[docId].units[Number(hit.unit.unit_id)] = true;
+    }
+  });
+  lines.forEach((l) => {
+    spIncRefreshLineUi(docId, l);
+    const recvInp = document.getElementById('sp-recv-' + l.line_id);
+    if (recvInp && spLineRequiresUnitScans(l)) {
+      recvInp.value = spIncVerifiedUnitCount(docId, l);
+    }
+  });
+  spUpdateIncStockBtn(docId, lines);
+  const msgEl = document.getElementById('sp-inc-action-msg');
+  const sc = result.score || {};
+  if (msgEl) {
+    if (sc.total > 0 && sc.verified === sc.total) {
+      msgEl.style.color = 'var(--green)';
+      msgEl.textContent = '✓ All units verified. You can Verify & Stock.';
+    } else {
+      msgEl.style.color = 'var(--text2)';
+      msgEl.textContent = (sc.verified || 0) + ' / ' + (sc.total || 0) + ' units verified.';
+    }
+  }
+}
+
+window.openIncomingTransferBucket = function openIncomingTransferBucket(docId) {
+  const lines = _incDocLinesByDoc[docId] || [];
+  const expected = [];
+  lines.forEach((l) => {
+    (l.units || []).forEach((u) => {
+      expected.push({
+        unit_barcode: u.unit_barcode,
+        unit_id: u.unit_id,
+        sku_code: l.sku_code,
+        sku_id: l.sku_id,
+        line_id: l.line_id
+      });
+    });
+  });
+  if (!expected.length) {
+    if (typeof cosmosToastError === 'function') {
+      cosmosToastError('No units on this transfer document. Ask HQ to re-dispatch with unit scans.');
+    }
+    return;
+  }
+  if (typeof window.openBucket !== 'function') {
+    if (typeof cosmosToastError === 'function') cosmosToastError('Scan bucket is not loaded.');
+    return;
+  }
+  stopIncQrCamera();
+  window.openBucket({
+    mode: 'RECEIVE',
+    sessionId: docId,
+    label: 'Transfer #' + docId,
+    expected,
+    onSubmit(result) {
+      _spApplyBucketReceiveResult(docId, result);
+    }
+  });
+};
 let _incCameraStream = null;
 let _incCameraRafId = null;
 let _incCameraDocId = null;
@@ -2006,28 +2072,17 @@ window.expandIncTransfer = async function (docId) {
         <div>${lineRows}</div>
         ${isAccepted ? `
           <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg)">
-            <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Stock Verification via Scan QR</div>
-            <div id="sp-inc-camera-hint" style="display:none;font-size:11px;color:var(--gold);margin-bottom:8px"></div>
+            <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Stock verification — unit scan bucket</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <input
-                id="sp-inc-qr-input"
-                type="text"
-                class="qty-input"
-                style="width:280px;text-align:left"
-                placeholder="Scan 7-digit unit barcode or SKU code"
-                onkeydown="if(event.key==='Enter'){ incVerifyQr(${doc.doc_id}) }"
-              >
-              <button class="btn sm" onclick="incVerifyQr(${doc.doc_id})">Verify Scan</button>
-              <button id="sp-inc-camera-start-btn" class="btn sm" onclick="startIncQrCamera(${doc.doc_id})">Scan with Camera</button>
-              <button class="btn sm" onclick="stopIncQrCamera()">Stop Camera</button>
-              <button class="btn sm" onclick="incResetQrVerification(${doc.doc_id})">Reset</button>
+              ${hasUnitLines
+                ? `<button type="button" class="btn sm primary" onclick="openIncomingTransferBucket(${doc.doc_id})">📷 Open scan bucket</button>`
+                : `<span style="font-size:12px;color:var(--gold)">No unit list on document — contact HQ to re-dispatch with unit scans.</span>`}
+              <button type="button" class="btn sm" onclick="incResetQrVerification(${doc.doc_id})">Reset verification</button>
             </div>
-            <div id="sp-inc-camera-wrap" style="display:none;margin-top:10px">
-              <video id="sp-inc-camera-video" autoplay playsinline muted style="width:100%;max-width:420px;border:1px solid var(--border);border-radius:8px;background:#000"></video>
-              <div style="font-size:11px;color:var(--text3);margin-top:6px">Point camera at unit barcode or SKU QR to auto-verify.</div>
-            </div>
-            <div style="font-size:11px;color:var(--text3);margin-top:6px">
-              ${hasUnitLines ? 'Scan each <strong>7-digit unit barcode</strong> on this shipment once. Bulk lines: scan SKU code once.' : 'Scan each item QR once.'} Stocking is enabled when every line is fully verified.
+            <div style="font-size:11px;color:var(--text3);margin-top:8px">
+              ${hasUnitLines
+                ? 'Only units on this Foundry transfer document can be scanned. Extra units are rejected. Verify &amp; Stock unlocks when all units are verified.'
+                : 'Unit-level verification is required for this shipment.'}
             </div>
           </div>
         ` : ''}
@@ -2039,19 +2094,6 @@ window.expandIncTransfer = async function (docId) {
         </div>
       </div>`;
 
-    if (isAccepted) {
-      const cameraHintEl = document.getElementById('sp-inc-camera-hint')
-      const cameraStartBtnEl = document.getElementById('sp-inc-camera-start-btn')
-      const blockedReason = _getCameraStartBlockedReason()
-      if (cameraHintEl) {
-        cameraHintEl.textContent = blockedReason || ''
-        cameraHintEl.style.display = blockedReason ? '' : 'none'
-      }
-      if (cameraStartBtnEl) {
-        cameraStartBtnEl.disabled = !!blockedReason
-        cameraStartBtnEl.title = blockedReason || 'Start camera QR scanner'
-      }
-    }
   } catch (err) {
     bodyEl.innerHTML = `<div style="padding:20px;color:var(--red)">Error: ${escHtml(err.message)}</div>`;
   }

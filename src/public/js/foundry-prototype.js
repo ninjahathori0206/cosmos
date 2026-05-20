@@ -6877,6 +6877,65 @@ ${initScript}
     win.document.close();
   }
 
+  // ── Shared Goods Transfer / Goods Request dispatch helpers ───────────────
+  window.transferNormalizeScanPayload = function transferNormalizeScanPayload(raw) {
+    let s = String(raw || '').trim().replace(/\s+/g, ' ');
+    if (!s) return '';
+    if (/^https?:\/\//i.test(s)) {
+      try {
+        const u = new URL(s);
+        const qSku = u.searchParams.get('sku') || u.searchParams.get('code');
+        if (qSku) return qSku.trim();
+        const path = u.pathname.replace(/\/+$/, '');
+        const parts = path.split('/').filter(Boolean);
+        const last = parts.length ? parts[parts.length - 1] : '';
+        if (last) return decodeURIComponent(last);
+      } catch (_) { /* ignore */ }
+    }
+    return s;
+  };
+
+  window.transferSkuRequiresUnit = function transferSkuRequiresUnit(sku) {
+    return sku && (sku.requires_unit_barcode === true || sku.requires_unit_barcode === 1);
+  };
+
+  window.transferRenderUnitChips = function transferRenderUnitChips(units, skuId, removeHandlerName) {
+    if (!units || !units.length) {
+      return '<span style="font-size:11px;color:var(--text3)">No units scanned</span>';
+    }
+    return units.map(function (u) {
+      return '<div style="display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0;padding:2px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;font-size:11px">' +
+        '<span class="mono">' + String(u.unit_barcode || u.unit_id).replace(/&/g, '&amp;') + '</span>' +
+        '<button type="button" class="st-remove-btn" style="padding:1px 5px;font-size:10px" onclick="event.stopPropagation();' + removeHandlerName + '(' + skuId + ',' + u.unit_id + ')" title="Remove unit">✕</button>' +
+        '</div>';
+    }).join('');
+  };
+
+  window.transferLookupSku = async function transferLookupSku(code) {
+    const key = window.transferNormalizeScanPayload(code);
+    if (!key) return null;
+    return apiGet('/api/stock-transfers/lookup?q=' + encodeURIComponent(key));
+  };
+
+  let _transferHtml5QrLoader = null;
+  window.loadHtml5QrLibTransfer = function loadHtml5QrLibTransfer() {
+    if (window.Html5Qrcode) return Promise.resolve();
+    if (_transferHtml5QrLoader) return _transferHtml5QrLoader;
+    _transferHtml5QrLoader = new Promise(function (resolve, reject) {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';
+      script.integrity = 'sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+';
+      script.crossOrigin = 'anonymous';
+      script.async = true;
+      script.onload = function () { resolve(); };
+      script.onerror = function () { reject(new Error('Failed to load QR scanner library')); };
+      document.head.appendChild(script);
+    }).finally(function () {
+      _transferHtml5QrLoader = null;
+    });
+    return _transferHtml5QrLoader;
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // STOCK TRANSFER MODULE
   // Mobile-first, QR-scan-or-search driven HQ → Store stock transfer.
@@ -6985,7 +7044,7 @@ ${initScript}
     }
 
     function stSkuRequiresUnitBarcode(sku) {
-      return sku && (sku.requires_unit_barcode === true || sku.requires_unit_barcode === 1);
+      return window.transferSkuRequiresUnit(sku);
     }
 
     function stCartUnitIds() {
@@ -7120,6 +7179,36 @@ ${initScript}
     window.stClearCart = function stClearCart() {
       _cart = [];
       stRenderCart();
+    };
+
+    window.openGoodsTransferDispatchBucket = function openGoodsTransferDispatchBucket() {
+      if (typeof window.openBucket !== 'function') {
+        if (typeof cosmosToastError === 'function') cosmosToastError('Scan bucket is not loaded.');
+        return;
+      }
+      if (typeof window.stStopCamera === 'function') window.stStopCamera();
+      window.openBucket({
+        mode: 'TRANSFER',
+        sessionId: 'st-cart',
+        label: 'Goods Transfer',
+        expected: [],
+        onSubmit: function (result) {
+          (result.scanned || []).forEach(function (s) {
+            stAddToCart({
+              sku_id: s.sku_id,
+              sku_code: s.sku_code,
+              product_name: s.product_name || '',
+              brand_name: s.brand_name || '',
+              colour_name: s.colour_name || '',
+              unit_id: s.unit_id,
+              unit_barcode: s.unit_barcode,
+              unit_no: s.unit_no,
+              warehouse_qty: s.warehouse_qty,
+              requires_unit_barcode: true
+            });
+          });
+        }
+      });
     };
 
     function stRenderCart() {
@@ -7287,29 +7376,11 @@ ${initScript}
     };
 
     // ── Lookup by code (scan / Enter) ─────────────────────────────────────────
-    /** QR / wedge scan: trim; if payload is a URL, use ?sku= / ?code= or last path segment for lookup. */
-    function stNormalizeScanPayload(raw) {
-      let s = String(raw || '').trim().replace(/\s+/g, ' ');
-      if (!s) return '';
-      if (/^https?:\/\//i.test(s)) {
-        try {
-          const u = new URL(s);
-          const qSku = u.searchParams.get('sku') || u.searchParams.get('code');
-          if (qSku) return qSku.trim();
-          const path = u.pathname.replace(/\/+$/, '');
-          const parts = path.split('/').filter(Boolean);
-          const last = parts.length ? parts[parts.length - 1] : '';
-          if (last) return decodeURIComponent(last);
-        } catch (_) { /* ignore */ }
-      }
-      return s;
-    }
-
     async function stLookupAndAdd(code) {
-      const key = stNormalizeScanPayload(code);
+      const key = window.transferNormalizeScanPayload(code);
       if (!key) return;
       try {
-        const sku = await apiGet(`/api/stock-transfers/lookup?q=${encodeURIComponent(key)}`);
+        const sku = await window.transferLookupSku(code);
         if (sku) stAddToCart(sku);
       } catch (err) {
         stToast('Not found: ' + key, '#e53e3e');
@@ -7528,6 +7599,336 @@ ${initScript}
   let _trFilter    = '';
   let _trExpanded  = null;
   let _ftrDispatchSearchResults = [];
+  let _ftrDispatchCart = null;
+  let _trRejectPendingId = null;
+  let _ftrScanner = null;
+  let _ftrScanRunning = false;
+  let _ftrLastScan = '';
+  let _ftrLastScanTs = 0;
+
+  function ftrApprovedCap(line) {
+    if (line.approved_qty != null && Number(line.approved_qty) > 0) return Number(line.approved_qty);
+    return Math.max(0, Number(line.requested_qty) || 0);
+  }
+
+  function ftrInitDispatchCart(req) {
+    _ftrDispatchCart = {
+      requestId: req.request_id,
+      lines: (req.lines || []).map(function (l) {
+        const cap = ftrApprovedCap(l);
+        return {
+          line_id: l.line_id,
+          sku_id: l.sku_id,
+          sku_code: l.sku_code,
+          description: l.product_name || '',
+          brand_name: l.brand_name || '',
+          requested_qty: l.requested_qty,
+          approved_cap: cap,
+          requires_unit_barcode: window.transferSkuRequiresUnit(l),
+          warehouse_qty: Math.max(0, Number(l.warehouse_qty) || 0),
+          units: [],
+          qty: 0,
+          omitted: false
+        };
+      }),
+      extras: []
+    };
+  }
+
+  function ftrAllCartUnitIds() {
+    const ids = [];
+    if (!_ftrDispatchCart) return ids;
+    _ftrDispatchCart.lines.forEach(function (r) {
+      (r.units || []).forEach(function (u) { if (u.unit_id) ids.push(Number(u.unit_id)); });
+    });
+    _ftrDispatchCart.extras.forEach(function (r) {
+      (r.units || []).forEach(function (u) { if (u.unit_id) ids.push(Number(u.unit_id)); });
+    });
+    return ids;
+  }
+
+  function ftrFindRequestLineBySkuId(skuId) {
+    if (!_ftrDispatchCart) return null;
+    return _ftrDispatchCart.lines.find(function (r) {
+      return !r.omitted && Number(r.sku_id) === Number(skuId);
+    }) || null;
+  }
+
+  function ftrFindExtraBySkuId(skuId) {
+    if (!_ftrDispatchCart) return null;
+    return _ftrDispatchCart.extras.find(function (r) { return Number(r.sku_id) === Number(skuId); }) || null;
+  }
+
+  function ftrCreateExtraRow(sku) {
+    return {
+      sku_id: sku.sku_id,
+      sku_code: sku.sku_code,
+      description: sku.product_name || '',
+      brand_name: sku.brand_name || '',
+      requires_unit_barcode: window.transferSkuRequiresUnit(sku),
+      warehouse_qty: Math.max(0, Number(sku.warehouse_qty) || 0),
+      units: [],
+      qty: 0
+    };
+  }
+
+  window.ftrRenderDispatchTable = function ftrRenderDispatchTable() {
+    const linesTb = document.getElementById('ftr-dispatch-lines-tbody');
+    const extraTb = document.getElementById('ftr-dispatch-extra-tbody');
+    if (!linesTb || !_ftrDispatchCart) return;
+
+    linesTb.innerHTML = _ftrDispatchCart.lines.filter(function (r) { return !r.omitted; }).map(function (r) {
+      const scanned = (r.units || []).length;
+      const qtyCell = '<span class="b ' + (scanned > 0 && scanned <= r.approved_cap ? 'b-green' : 'b-gray') + '">' + scanned + ' / ' + r.approved_cap + '</span>';
+      return '<tr class="ftr-dispatch-req-row" data-line-id="' + r.line_id + '">' +
+        '<td class="mono xs">' + trEsc(r.sku_code) + '<span class="b b-blue" style="font-size:10px;margin-left:6px">Unit scan</span></td>' +
+        '<td>' + trEsc(r.description) + '</td>' +
+        '<td>' + trEsc(r.brand_name) + '</td>' +
+        '<td style="text-align:right"><span class="b b-gray">' + r.requested_qty + '</span></td>' +
+        '<td style="text-align:right"><span class="b b-blue">' + r.approved_cap + '</span></td>' +
+        '<td style="text-align:right">' + qtyCell + '</td>' +
+        '<td style="min-width:120px">' + window.transferRenderUnitChips(r.units, r.sku_id, 'ftrRemoveUnitFromLine') + '</td>' +
+        '<td><button type="button" class="btn sm" onclick="event.stopPropagation();ftrOmitLine(' + r.line_id + ')">Remove</button></td></tr>';
+    }).join('');
+
+    if (extraTb) {
+      extraTb.innerHTML = _ftrDispatchCart.extras.map(function (r) {
+        const scanned = (r.units || []).length;
+        const qtyCell = '<span class="b ' + (scanned > 0 ? 'b-green' : 'b-gray') + '">' + scanned + ' scanned</span>';
+        return '<tr class="ftr-dispatch-extra-row" data-sku-id="' + r.sku_id + '">' +
+          '<td class="mono xs">' + trEsc(r.sku_code) + '</td>' +
+          '<td colspan="2">' + trEsc(r.description) + ' <span style="font-size:10px;color:var(--text3)">(added)</span></td>' +
+          '<td style="text-align:center;color:var(--text3)">—</td>' +
+          '<td style="text-align:center;color:var(--text3)">—</td>' +
+          '<td style="text-align:right">' + qtyCell + '</td>' +
+          '<td style="min-width:120px">' + window.transferRenderUnitChips(r.units, r.sku_id, 'ftrRemoveUnitFromExtra') + '</td>' +
+          '<td><button type="button" class="btn sm" onclick="event.stopPropagation();ftrRemoveExtra(' + r.sku_id + ')">Remove</button></td></tr>';
+      }).join('');
+    }
+  };
+
+  window.ftrOmitLine = function (lineId) {
+    const row = _ftrDispatchCart && _ftrDispatchCart.lines.find(function (r) { return r.line_id === lineId; });
+    if (!row) return;
+    row.omitted = true;
+    row.qty = 0;
+    row.units = [];
+    ftrRenderDispatchTable();
+  };
+
+  window.ftrRemoveExtra = function (skuId) {
+    if (!_ftrDispatchCart) return;
+    _ftrDispatchCart.extras = _ftrDispatchCart.extras.filter(function (r) { return Number(r.sku_id) !== Number(skuId); });
+    ftrRenderDispatchTable();
+  };
+
+  window.ftrRemoveUnitFromLine = function (skuId, unitId) {
+    const row = ftrFindRequestLineBySkuId(skuId);
+    if (!row || !row.units) return;
+    row.units = row.units.filter(function (u) { return Number(u.unit_id) !== Number(unitId); });
+    row.qty = row.units.length;
+    ftrRenderDispatchTable();
+  };
+
+  window.ftrRemoveUnitFromExtra = function (skuId, unitId) {
+    const row = ftrFindExtraBySkuId(skuId);
+    if (!row || !row.units) return;
+    row.units = row.units.filter(function (u) { return Number(u.unit_id) !== Number(unitId); });
+    row.qty = row.units.length;
+    if (!row.qty) ftrRemoveExtra(skuId);
+    else ftrRenderDispatchTable();
+  };
+
+  function ftrAddUnitToRow(row, sku) {
+    const unitId = sku.unit_id != null ? Number(sku.unit_id) : null;
+    if (!unitId) return false;
+    const used = ftrAllCartUnitIds();
+    if (used.includes(unitId)) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Unit ' + (sku.unit_barcode || unitId) + ' is already in this dispatch.');
+      return false;
+    }
+    row.units = row.units || [];
+    if (row.approved_cap != null && row.approved_cap > 0 && row.units.length >= row.approved_cap) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Cannot exceed approved quantity (' + row.approved_cap + ').');
+      return false;
+    }
+    if (row.warehouse_qty > 0 && row.units.length >= row.warehouse_qty) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('No more units at warehouse for this SKU.');
+      return false;
+    }
+    row.units.push({
+      unit_id: unitId,
+      unit_barcode: sku.unit_barcode || '',
+      unit_no: sku.unit_no
+    });
+    row.qty = row.units.length;
+    return true;
+  }
+
+  window.ftrDispatchLookupAndAdd = async function (code) {
+    if (!_ftrDispatchCart) return;
+    const key = window.transferNormalizeScanPayload(code);
+    if (!key) return;
+    try {
+      const sku = await window.transferLookupSku(code);
+      if (!sku) return;
+      const unitId = sku.unit_id != null ? Number(sku.unit_id) : null;
+
+      if (!unitId) {
+        if (typeof cosmosToastError === 'function') {
+          cosmosToastError('Scan the 7-digit unit barcode on each piece — manual quantity is not allowed.');
+        }
+        return;
+      }
+
+      let row = ftrFindRequestLineBySkuId(sku.sku_id);
+      if (row) {
+        if (ftrAddUnitToRow(row, sku)) {
+          if (typeof cosmosToastSuccess === 'function') {
+            cosmosToastSuccess('Added unit ' + (sku.unit_barcode || unitId) + ' · ' + sku.sku_code);
+          }
+          ftrRenderDispatchTable();
+        }
+        return;
+      }
+
+      let extra = ftrFindExtraBySkuId(sku.sku_id);
+      if (!extra) {
+        extra = ftrCreateExtraRow(sku);
+        _ftrDispatchCart.extras.push(extra);
+      }
+      if (ftrAddUnitToRow(extra, sku)) {
+        if (typeof cosmosToastSuccess === 'function') {
+          cosmosToastSuccess('Added unit ' + (sku.unit_barcode || unitId) + ' · ' + sku.sku_code);
+        }
+        ftrRenderDispatchTable();
+      }
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || ('Not found: ' + key));
+    }
+  };
+
+  window.ftrDispatchSearchKeydown = function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const q = (document.getElementById('ftr-dispatch-search') || {}).value || '';
+      const trimmed = String(q).trim();
+      if (trimmed) ftrDispatchLookupAndAdd(trimmed);
+    }
+  };
+
+  window._ftrApplyBucketResult = function _ftrApplyBucketResult(result) {
+    if (!_ftrDispatchCart || !result || !Array.isArray(result.scanned)) return;
+    result.scanned.forEach(function (s) {
+      const sku = {
+        sku_id: s.sku_id,
+        sku_code: s.sku_code,
+        product_name: s.product_name || s.description || '',
+        brand_name: s.brand_name || '',
+        unit_id: s.unit_id,
+        unit_barcode: s.unit_barcode,
+        warehouse_qty: s.warehouse_qty != null ? Number(s.warehouse_qty) : 0
+      };
+      let row = ftrFindRequestLineBySkuId(sku.sku_id);
+      if (row) {
+        ftrAddUnitToRow(row, sku);
+      } else {
+        let extra = ftrFindExtraBySkuId(sku.sku_id);
+        if (!extra) {
+          extra = ftrCreateExtraRow(sku);
+          if (sku.warehouse_qty > 0) extra.warehouse_qty = sku.warehouse_qty;
+          _ftrDispatchCart.extras.push(extra);
+        }
+        ftrAddUnitToRow(extra, sku);
+      }
+    });
+    ftrRenderDispatchTable();
+  };
+
+  window.openGoodsRequestDispatchBucket = function openGoodsRequestDispatchBucket(requestId) {
+    if (!_ftrDispatchCart) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Dispatch cart not loaded.');
+      return;
+    }
+    if (typeof window.openBucket !== 'function') {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Scan bucket is not loaded.');
+      return;
+    }
+    if (typeof ftrStopCamera === 'function') ftrStopCamera();
+    window.openBucket({
+      mode: 'TRANSFER',
+      sessionId: requestId,
+      label: 'Request #' + requestId,
+      expected: [],
+      onSubmit: function (result) {
+        window._ftrApplyBucketResult(result);
+      }
+    });
+  };
+
+  window.ftrToggleCamera = async function ftrToggleCamera() {
+    const container = document.getElementById('ftr-scan-container');
+    if (!container) return;
+    if (_ftrScanRunning) {
+      ftrStopCamera();
+      return;
+    }
+    container.style.display = '';
+    const overlay = document.getElementById('ftr-scan-overlay');
+    if (overlay) overlay.style.display = 'none';
+    try {
+      await window.loadHtml5QrLibTransfer();
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'QR scanner failed to load');
+      return;
+    }
+    _ftrScanner = new Html5Qrcode('ftr-reader');
+    _ftrScanRunning = true;
+    const camBtn = document.getElementById('ftr-cam-btn');
+    if (camBtn) camBtn.textContent = '⏹ Stop QR scan';
+    Html5Qrcode.getCameras()
+      .then(function (devices) {
+        const cam = devices.find(function (d) { return /back|rear|environment/i.test(d.label); }) || devices[devices.length - 1];
+        const camId = cam ? cam.id : { facingMode: 'environment' };
+        return _ftrScanner.start(
+          camId,
+          { fps: 10, qrbox: { width: 220, height: 220 } },
+          function (decodedText) { ftrOnScanSuccess(decodedText); },
+          function () {}
+        );
+      })
+      .catch(function (err) {
+        if (typeof cosmosToastError === 'function') cosmosToastError('Camera error: ' + (err.message || err));
+        ftrStopCamera();
+      });
+  };
+
+  window.ftrStopCamera = function ftrStopCamera() {
+    if (_ftrScanner && _ftrScanRunning) {
+      _ftrScanner.stop().catch(function () {}).finally(function () {
+        _ftrScanner = null;
+        _ftrScanRunning = false;
+        const btn = document.getElementById('ftr-cam-btn');
+        if (btn) btn.textContent = '📷 Scan QR';
+        const container = document.getElementById('ftr-scan-container');
+        if (container) container.style.display = 'none';
+        const overlay = document.getElementById('ftr-scan-overlay');
+        if (overlay) overlay.style.display = '';
+      });
+    } else {
+      _ftrScanRunning = false;
+      const container = document.getElementById('ftr-scan-container');
+      if (container) container.style.display = 'none';
+    }
+  };
+
+  async function ftrOnScanSuccess(code) {
+    const now = Date.now();
+    if (code === _ftrLastScan && now - _ftrLastScanTs < 1500) return;
+    _ftrLastScan = code;
+    _ftrLastScanTs = now;
+    await ftrDispatchLookupAndAdd(code.trim());
+  }
 
   window.setTrFilter = function (status, btn) {
     _trFilter = status;
@@ -7540,7 +7941,10 @@ ${initScript}
     const wrap  = document.getElementById('ftr-list-wrap');
     const errEl = document.getElementById('ftr-err');
     if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-    if (wrap)  wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>';
+    if (wrap) {
+      wrap.innerHTML = '<div class="tw"><table><thead><tr><th>#</th><th>Store</th><th>Requested by</th><th>Date</th><th>Items</th><th>Status</th><th>Actions</th></tr></thead><tbody id="ftr-list-tbody"></tbody></table></div>';
+      if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('ftr-list-tbody', 7);
+    }
 
     try {
       const qs = new URLSearchParams({ top_n: 100 });
@@ -7571,7 +7975,7 @@ ${initScript}
             </thead>
             <tbody>
               ${rows.map((r) => `
-                <tr style="cursor:pointer" onclick="expandTrRequest(${r.request_id})">
+                <tr class="tr-link" onclick="expandTrRequest(${r.request_id})">
                   <td class="mono fw6" style="color:var(--acc)">#${r.request_id}</td>
                   <td>${trEsc(r.store_name || r.store_id)}</td>
                   <td>${trEsc(r.requested_by_fullname || r.requested_by_name)}</td>
@@ -7580,8 +7984,8 @@ ${initScript}
                   <td><span class="b ${TR_STATUS_BADGE[r.status] || 'b-gray'}">${r.status}</span></td>
                   <td>
                     ${r.status === 'SUBMITTED' ? `
-                      <button class="btn sm primary" onclick="event.stopPropagation();trQuickApprove(${r.request_id})">✓ Approve</button>
-                      <button class="btn sm" style="color:var(--red);border-color:var(--red);margin-left:4px" onclick="event.stopPropagation();trReject(${r.request_id})">✕ Reject</button>
+                      <button class="btn sm primary" data-tr-approve="${r.request_id}" onclick="event.stopPropagation();trQuickApprove(${r.request_id}, this)">✓ Approve</button>
+                      <button class="btn sm" style="color:var(--red);border-color:var(--red);margin-left:4px" onclick="event.stopPropagation();trReject(${r.request_id}, this)">✕ Reject</button>
                     ` : ''}
                     ${r.status === 'APPROVED' ? `
                       <button class="btn sm primary" onclick="event.stopPropagation();expandTrRequest(${r.request_id})">🚚 Preview &amp; Dispatch</button>
@@ -7613,7 +8017,11 @@ ${initScript}
     if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
 
     if (title) title.textContent = `Request #${requestId}`;
-    if (body)  body.innerHTML = '<div style="padding:16px;color:var(--text3)">Loading…</div>';
+    if (body) {
+      body.innerHTML = '<div id="ftr-detail-skeleton" style="padding:16px"></div>';
+      if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('ftr-detail-skeleton', 5);
+      else body.innerHTML = '<div style="padding:16px;color:var(--text3)">Loading…</div>';
+    }
     card.style.display = '';
     const ua = navigator.userAgent || ''
     const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
@@ -7631,7 +8039,7 @@ ${initScript}
       const linesHtmlReadonly = (req.lines || []).map((l) => `
         <tr>
           <td class="mono xs">${trEsc(l.sku_code)}</td>
-          <td>${trEsc(l.description || '')}</td>
+          <td>${trEsc(l.product_name || l.description || '')}</td>
           <td>${trEsc(l.brand_name  || '')}</td>
           <td style="text-align:right"><span class="b b-gray">${l.requested_qty}</span></td>
           <td style="text-align:right">${l.approved_qty   != null ? `<span class="b b-blue">${l.approved_qty}</span>`    : '<span style="color:var(--text3)">—</span>'}</td>
@@ -7642,7 +8050,7 @@ ${initScript}
       const linesHtmlApprove = (req.lines || []).map((l) => `
         <tr>
           <td class="mono xs">${trEsc(l.sku_code)}</td>
-          <td>${trEsc(l.description || '')}</td>
+          <td>${trEsc(l.product_name || l.description || '')}</td>
           <td>${trEsc(l.brand_name  || '')}</td>
           <td style="text-align:right"><span class="b b-gray">${l.requested_qty}</span></td>
           <td style="text-align:right">${l.approved_qty   != null ? `<span class="b b-blue">${l.approved_qty}</span>`    : '<span style="color:var(--text3)">—</span>'}</td>
@@ -7656,23 +8064,7 @@ ${initScript}
           </td>
         </tr>`).join('');
 
-      const linesHtmlDispatch = (req.lines || []).map((l) => {
-        const defDisp = (l.approved_qty != null && l.approved_qty > 0) ? l.approved_qty : l.requested_qty;
-        return `
-        <tr class="ftr-dispatch-req-row" data-line-id="${l.line_id}">
-          <td class="mono xs">${trEsc(l.sku_code)}</td>
-          <td>${trEsc(l.description || '')}</td>
-          <td>${trEsc(l.brand_name  || '')}</td>
-          <td style="text-align:right"><span class="b b-gray">${l.requested_qty}</span></td>
-          <td style="text-align:right">${l.approved_qty != null ? `<span class="b b-blue">${l.approved_qty}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
-          <td style="text-align:right">
-            <input type="number" class="ftr-dispatch-qty" min="0" value="${defDisp}" style="${inpStyle}" onclick="event.stopPropagation()">
-          </td>
-          <td>
-            <button type="button" class="btn sm" onclick="event.stopPropagation();this.closest('tr').remove()">Remove</button>
-          </td>
-        </tr>`;
-      }).join('');
+      if (canDispatch) ftrInitDispatchCart(req);
 
       let tableBlock;
       if (canApprove) {
@@ -7695,7 +8087,14 @@ ${initScript}
       } else if (canDispatch) {
         tableBlock = `
           <div class="hint" style="margin-bottom:14px">
-            <strong>Goods Transfer preview:</strong> Adjust dispatch quantities, remove lines, or add warehouse SKUs. Confirming creates a transfer document (warehouse decremented now; store accepts then verifies under Incoming Goods).
+            <strong>Goods Transfer preview:</strong> Scan each <strong>7-digit unit barcode</strong> (camera or wedge). Scan multiple units in sequence — dispatch count follows scans only (no manual qty).
+          </div>
+          <div style="margin-bottom:14px;padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border)">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+              <div style="font-weight:600;font-size:13px">Scan units · ${primaryWarehouseLabelHtml()}</div>
+              <button type="button" class="btn sm primary" onclick="event.stopPropagation();openGoodsRequestDispatchBucket(${req.request_id})">📷 Open scan bucket</button>
+            </div>
+            <p style="margin:0;font-size:12px;color:var(--text3)">Use the scan bucket to add each unit, then confirm dispatch below.</p>
           </div>
           <div class="tw mb3">
             <table>
@@ -7704,23 +8103,13 @@ ${initScript}
                   <th>SKU</th><th>Description</th><th>Brand</th>
                   <th style="text-align:right">Requested</th>
                   <th style="text-align:right">Approved</th>
-                  <th style="text-align:right">Dispatch qty</th>
-                  <th></th>
+                  <th style="text-align:right">Scanned</th>
+                  <th>Unit codes</th><th></th>
                 </tr>
               </thead>
-              <tbody>${linesHtmlDispatch}</tbody>
+              <tbody id="ftr-dispatch-lines-tbody"></tbody>
               <tbody id="ftr-dispatch-extra-tbody"></tbody>
             </table>
-          </div>
-          <div style="margin-bottom:16px;padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border)">
-            <div style="font-weight:600;margin-bottom:8px;font-size:13px">Add item from ${primaryWarehouseLabelHtml()}</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <input type="text" id="ftr-dispatch-search" placeholder="SKU code or keyword…"
-                style="flex:1;min-width:180px;max-width:320px;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
-                onclick="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();ftrDispatchSearch();}">
-              <button type="button" class="btn sm" onclick="event.stopPropagation();ftrDispatchSearch()">Search</button>
-            </div>
-            <div id="ftr-dispatch-search-results" style="display:none;margin-top:10px;border:1px solid var(--border);border-radius:6px;max-height:220px;overflow:auto;background:var(--bg)"></div>
           </div>`;
       } else {
         tableBlock = `
@@ -7762,7 +8151,10 @@ ${initScript}
                   onclick="event.stopPropagation()">
               </div>
               <button class="btn primary" onclick="trApproveFromDetail(${req.request_id})">✓ Approve request</button>
-              <button class="btn sm" style="color:var(--red);border-color:var(--red)" onclick="trReject(${req.request_id})">✕ Reject</button>
+              <input type="text" id="ftr-reject-note" placeholder="Reject reason (required)…"
+                style="width:min(100%,280px);padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
+                onclick="event.stopPropagation()">
+              <button class="btn sm" style="color:var(--red);border-color:var(--red)" onclick="trReject(${req.request_id}, this)">✕ Reject</button>
               <span id="ftr-detail-msg" style="font-size:12px;min-height:16px"></span>
             </div>
           ` : ''}
@@ -7781,15 +8173,18 @@ ${initScript}
             </div>
           ` : ''}
         </div>`;
+      if (canDispatch) ftrRenderDispatchTable();
     } catch (err) {
       if (body) body.innerHTML = `<div style="padding:16px;color:var(--red)">Error: ${trEsc(err.message)}</div>`;
     }
   };
 
   window.closeTrDetail = function () {
+    if (typeof ftrStopCamera === 'function') ftrStopCamera();
     const card = document.getElementById('ftr-detail-card');
     if (card) card.style.display = 'none';
     _trExpanded = null;
+    _ftrDispatchCart = null;
 
     // Clear any accidental sidebar overlay/body lock state.
     const overlayEl = document.getElementById('fy-sidebar-overlay')
@@ -7800,14 +8195,34 @@ ${initScript}
     if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
   };
 
-  // Quick approve from the list row (no qty adjustment)
-  window.trQuickApprove = async function (requestId) {
-    if (!confirm(`Approve transfer request #${requestId} with the requested quantities?`)) return;
+  window.trQuickApprove = async function (requestId, btn) {
+    if (btn && !btn.dataset.confirmed) {
+      btn.dataset.confirmed = '1';
+      btn.textContent = 'Confirm approve?';
+      if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Click again to approve with requested quantities.');
+      setTimeout(function () {
+        if (btn) {
+          delete btn.dataset.confirmed;
+          btn.textContent = '✓ Approve';
+        }
+      }, 4000);
+      return;
+    }
+    if (btn) {
+      delete btn.dataset.confirmed;
+      btn.textContent = '✓ Approve';
+      if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    }
     try {
       await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'APPROVED' });
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Request #' + requestId + ' approved.');
       loadTransferRequests();
       closeTrDetail();
-    } catch (err) { alert('Error: ' + err.message); }
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    } finally {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+    }
   };
 
   // Approve from the detail panel (with per-line qty editing)
@@ -7827,14 +8242,34 @@ ${initScript}
     }
   };
 
-  window.trReject = async function (requestId) {
-    const note = prompt(`Reason for rejecting request #${requestId} (shown to store manager):`);
-    if (note === null) return; // cancelled
+  window.trReject = async function (requestId, btn) {
+    if (_trRejectPendingId !== requestId) {
+      _trRejectPendingId = requestId;
+      expandTrRequest(requestId);
+      if (typeof cosmosToastInfo === 'function') {
+        cosmosToastInfo('Enter a reject reason below, then click Reject again.');
+      }
+      const noteInp = document.getElementById('ftr-reject-note');
+      if (noteInp) noteInp.focus();
+      return;
+    }
+    const note = ((document.getElementById('ftr-reject-note') || {}).value || '').trim();
+    if (!note) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Enter a reason for the store manager.');
+      return;
+    }
+    _trRejectPendingId = null;
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
     try {
-      await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'REJECTED', notes: note || null });
+      await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'REJECTED', notes: note });
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Request #' + requestId + ' rejected.');
       loadTransferRequests();
       closeTrDetail();
-    } catch (err) { alert('Error: ' + err.message); }
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    } finally {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+    }
   };
 
   window.ftrDispatchSearch = async function () {
@@ -7872,39 +8307,9 @@ ${initScript}
   };
 
   window.ftrPickDispatchSku = function (index) {
-    const r = _ftrDispatchSearchResults[index];
-    if (!r || !r.sku_id) return;
-    const tbody = document.getElementById('ftr-dispatch-extra-tbody');
-    const resEl = document.getElementById('ftr-dispatch-search-results');
-    const inpS  = document.getElementById('ftr-dispatch-search');
-    if (resEl) { resEl.innerHTML = ''; resEl.style.display = 'none'; }
-    if (inpS) inpS.value = '';
-    if (!tbody) return;
-    const wh = Math.max(0, Number(r.warehouse_qty) || 0);
-    const existing = tbody.querySelector(`tr.ftr-dispatch-extra-row[data-sku-id="${r.sku_id}"]`);
-    if (existing) {
-      const qInp = existing.querySelector('.ftr-dispatch-extra-qty');
-      if (qInp) {
-        const cap = wh || 999999;
-        const n   = Math.min(cap, Math.max(1, Number(qInp.value) + 1));
-        qInp.value = n;
-      }
-      return;
+    if (typeof cosmosToastInfo === 'function') {
+      cosmosToastInfo('Use Scan QR or type a 7-digit unit code — catalogue pick does not add qty.');
     }
-    const tr = document.createElement('tr');
-    tr.className = 'ftr-dispatch-extra-row';
-    tr.dataset.skuId = String(r.sku_id);
-    const cap = wh || 999999;
-    tr.innerHTML = `
-      <td class="mono xs">${trEsc(r.sku_code)}</td>
-      <td colspan="2" style="font-size:12.5px">${trEsc(r.product_name || '')} · ${trEsc(r.colour_name || '')} <span style="font-size:10px;color:var(--text3)">(added)</span></td>
-      <td style="text-align:center;color:var(--text3)">—</td>
-      <td style="text-align:center;color:var(--text3)">—</td>
-      <td style="text-align:right">
-        <input type="number" class="ftr-dispatch-extra-qty" min="1" max="${cap}" value="1" style="width:64px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center;outline:none" onclick="event.stopPropagation()">
-      </td>
-      <td><button type="button" class="btn sm" onclick="event.stopPropagation();this.closest('tr').remove()">Remove</button></td>`;
-    tbody.appendChild(tr);
   };
 
   window.ftrAfterDispatchNav = function () {
@@ -7918,26 +8323,57 @@ ${initScript}
     const msgEl = document.getElementById('ftr-detail-msg');
     const btn   = document.getElementById('ftr-dispatch-confirm-btn');
     if (msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
+    if (!_ftrDispatchCart) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Dispatch cart not loaded. Close and reopen the request.');
+      return;
+    }
 
     const lines = [];
-    document.querySelectorAll('#ftr-detail-body .ftr-dispatch-req-row').forEach((tr) => {
-      const lid = tr.dataset.lineId;
-      const inp = tr.querySelector('.ftr-dispatch-qty');
-      const q   = Math.max(0, Number(inp && inp.value) || 0);
-      lines.push({ line_id: Number(lid), dispatched_qty: q });
+    let dispatchValid = true;
+    _ftrDispatchCart.lines.forEach(function (r) {
+      if (r.omitted || r.qty < 1) return;
+      const unitIds = (r.units || []).map(function (u) { return u.unit_id; });
+      if (!unitIds.length || unitIds.length !== r.qty) {
+        dispatchValid = false;
+        if (typeof cosmosToastError === 'function') {
+          cosmosToastError('Request line ' + r.sku_code + ': scan unit barcode(s) — need ' + r.approved_cap + ', have ' + unitIds.length + '.');
+        }
+        return;
+      }
+      lines.push({
+        line_id: r.line_id,
+        dispatched_qty: r.qty,
+        unit_ids: unitIds
+      });
     });
 
     const extra_lines = [];
-    document.querySelectorAll('#ftr-detail-body .ftr-dispatch-extra-row').forEach((tr) => {
-      const skuId = Number(tr.dataset.skuId);
-      const inp   = tr.querySelector('.ftr-dispatch-extra-qty');
-      const q     = Math.max(0, Number(inp && inp.value) || 0);
-      if (q > 0 && skuId) extra_lines.push({ sku_id: skuId, qty: q });
+    _ftrDispatchCart.extras.forEach(function (r) {
+      if (r.qty < 1) return;
+      const unitIds = (r.units || []).map(function (u) { return u.unit_id; });
+      if (!unitIds.length || unitIds.length !== r.qty) {
+        dispatchValid = false;
+        if (typeof cosmosToastError === 'function') {
+          cosmosToastError('Extra SKU ' + r.sku_code + ': each piece needs a scanned unit barcode.');
+        }
+        return;
+      }
+      extra_lines.push({ sku_id: r.sku_id, qty: r.qty, unit_ids: unitIds });
     });
+    if (!dispatchValid) return;
 
-    const hasReqLine = lines.some((l) => l.dispatched_qty > 0);
+    const hasReqLine = lines.some(function (l) { return l.dispatched_qty > 0; });
     if (!hasReqLine && !extra_lines.length) {
-      if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Set a dispatch quantity on at least one request line, or add an item from warehouse.'; }
+      const m = 'Scan at least one unit barcode on a request line or extra SKU.';
+      if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = m; }
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn(m);
+      return;
+    }
+
+    const used = ftrAllCartUnitIds();
+    const dup = used.find(function (id, i) { return used.indexOf(id) !== i; });
+    if (dup) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Duplicate unit in dispatch cart.');
       return;
     }
 
@@ -7945,10 +8381,11 @@ ${initScript}
     const payload = { status: 'DISPATCHED', lines, notes };
     if (extra_lines.length) payload.extra_lines = extra_lines;
 
-    if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
     try {
       const data  = await apiPut(`/api/transfer-requests/${requestId}/status`, payload);
       const docId = data.doc_id;
+      _ftrDispatchCart = null;
       loadTransferRequests();
       const body = document.getElementById('ftr-detail-body');
       if (body) {
@@ -7960,9 +8397,12 @@ ${initScript}
             <button type="button" class="btn primary" onclick="ftrAfterDispatchNav()">Open Movement List</button>
           </div>`;
       }
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Goods Transfer #' + docId + ' dispatched.');
     } catch (err) {
       if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = err.message; }
-      if (btn) { btn.disabled = false; btn.textContent = '✓ Confirm dispatch (create Goods Transfer)'; }
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    } finally {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
     }
   };
 

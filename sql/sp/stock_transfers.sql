@@ -360,3 +360,56 @@ AS BEGIN
   ORDER BY sm.created_at DESC, sm.movement_id DESC;
 END;
 GO
+
+-- ==============================================================================
+-- sp_StockTransfer_PickWarehouseUnits
+-- FIFO pick of AVAILABLE units at primary warehouse (excludes open transfer docs).
+-- @exclude_json — JSON array of unit_id integers already chosen (scans).
+-- ==============================================================================
+IF OBJECT_ID('dbo.sp_StockTransfer_PickWarehouseUnits','P') IS NOT NULL
+  DROP PROCEDURE dbo.sp_StockTransfer_PickWarehouseUnits;
+GO
+CREATE PROCEDURE dbo.sp_StockTransfer_PickWarehouseUnits
+  @sku_id       INT,
+  @pick_count   INT,
+  @exclude_json NVARCHAR(MAX) = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  DECLARE @wh INT = dbo.fn_Foundry_PrimaryWarehouseLocationId();
+  IF @wh IS NULL
+    RAISERROR('Primary warehouse is not configured.', 16, 1);
+
+  IF @pick_count IS NULL OR @pick_count < 1
+    RETURN;
+
+  CREATE TABLE #exclude (unit_id INT PRIMARY KEY);
+  IF @exclude_json IS NOT NULL AND LTRIM(RTRIM(@exclude_json)) NOT IN (N'', N'[]')
+  BEGIN
+    INSERT INTO #exclude (unit_id)
+    SELECT DISTINCT CAST(u.value AS INT)
+    FROM OPENJSON(@exclude_json) u
+    WHERE CAST(u.value AS INT) > 0;
+  END
+
+  SELECT TOP (@pick_count)
+    u.unit_id,
+    u.unit_barcode,
+    u.unit_no
+  FROM dbo.sku_units u
+  WHERE u.sku_id = @sku_id
+    AND u.status = N'AVAILABLE'
+    AND u.location_type = N'WAREHOUSE'
+    AND u.location_id = @wh
+    AND NOT EXISTS (SELECT 1 FROM #exclude e WHERE e.unit_id = u.unit_id)
+    AND NOT EXISTS (
+      SELECT 1
+      FROM dbo.stock_transfer_doc_units du
+      INNER JOIN dbo.stock_transfer_docs d ON d.doc_id = du.doc_id
+      WHERE du.unit_id = u.unit_id
+        AND d.status IN (N'DISPATCHED', N'ACCEPTED')
+    )
+  ORDER BY u.unit_id ASC;
+END;
+GO
