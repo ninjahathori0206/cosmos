@@ -50,6 +50,38 @@ Works in **bash**, **cmd**, and **PowerShell 7+**. On **Windows PowerShell 5.1**
 - **`alter/`** — older numbered deltas that established the baseline; keep sequence when rebuilding from scratch.
 - **`migrations/`** — preferred place for **new** DDL going forward so releases stay traceable.
 
+## Operational reset (brownfield — keep config, wipe transactions)
+
+Clears POS orders/sales, stock, transfers, customers, sessions/audit, and Foundry purchases/SKUs. **Preserves** users, stores, tablets, RBAC, `app_settings` (resets `pos_order_seq` only), product-type/lens categorization, suppliers, and `product_master`.
+
+1. **Full backup** of `CosmosERP` (SSMS or your backup tool).
+2. Run preflight mentally: script prints row counts before delete.
+3. From repo root (`.env` must point at the target database):
+
+```powershell
+$env:COSMOS_PURGE_CONFIRM='I_UNDERSTAND'
+npm run maintenance:purge-operational-reset
+```
+
+Bash:
+
+```bash
+COSMOS_PURGE_CONFIRM=I_UNDERSTAND npm run maintenance:purge-operational-reset
+```
+
+4. Review **POST_VERIFY** counts in the console (expect zeros for wiped domains).
+5. Re-login users; restart the app if it is running.
+
+**SQL source:** `sql/maintenance/purge_operational_reset_keep_config.sql`
+
+**Not the same as:**
+
+- `maintenance:purge-keep-user` — also deletes stores and almost all users.
+- `maintenance:purge-all-purchases` — purchases/SKUs only (no POS orders/customers).
+- `flush_all_data.sql` — entire database wipe (requires `sa`).
+
+Optional: `npm run maintenance:remove-deploy-seeds` if demo lens catalog rows remain (separate from this purge).
+
 ## Application access pattern
 
 Node calls **`executeStoredProcedure` only** — no ad hoc SQL from routes. When you add tables, add or extend procedures under `sql/sp/` in the same change train.

@@ -4,11 +4,13 @@ const rateLimit = require('express-rate-limit');
 
 const router = express.Router();
 
-// Protect against bulk abuse — 300 requests per minute per IP is enough for
-// a label sheet with hundreds of QR codes while preventing external scraping
+// Safety net for external / legacy consumers — Foundry preview uses client-side QR.
+const qrLimiterMax = process.env.QR_RATE_LIMIT_MAX
+  ? parseInt(process.env.QR_RATE_LIMIT_MAX, 10)
+  : 2000;
 const qrLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 300,
+  max: Number.isFinite(qrLimiterMax) && qrLimiterMax > 0 ? qrLimiterMax : 2000,
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Too many QR requests — slow down.',

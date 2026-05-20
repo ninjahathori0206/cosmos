@@ -5814,6 +5814,94 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
   }
 
+  // ── Client-side QR generation (preview + browser print — no /api/qr storm) ──
+  let _qrCodeLoader = null;
+  const _bcQrCache = new Map();
+
+  function loadBcQrLib() {
+    if (window._QRCode_loaded && typeof QRCode !== 'undefined') return Promise.resolve();
+    if (_qrCodeLoader) return _qrCodeLoader;
+    const sources = [
+      '/js/vendor/qrcode.min.js',
+      'https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js'
+    ];
+    _qrCodeLoader = new Promise((resolve, reject) => {
+      let idx = 0;
+      function tryNext() {
+        if (typeof QRCode !== 'undefined') {
+          window._QRCode_loaded = true;
+          resolve();
+          return;
+        }
+        if (idx >= sources.length) {
+          reject(new Error('Failed to load QR library. Hard-refresh the page or check that /js/vendor/qrcode.min.js is reachable.'));
+          return;
+        }
+        const s = document.createElement('script');
+        s.src = sources[idx];
+        idx += 1;
+        s.async = true;
+        s.onload = () => {
+          if (typeof QRCode !== 'undefined') {
+            window._QRCode_loaded = true;
+            resolve();
+          } else {
+            tryNext();
+          }
+        };
+        s.onerror = tryNext;
+        document.head.appendChild(s);
+      }
+      tryNext();
+    }).finally(() => {
+      _qrCodeLoader = null;
+    });
+    return _qrCodeLoader;
+  }
+
+  async function _bcQrDataUrl(code, px) {
+    const key = `${code}|${px}`;
+    if (_bcQrCache.has(key)) return _bcQrCache.get(key);
+    if (typeof QRCode === 'undefined') await loadBcQrLib();
+    const dataUrl = await QRCode.toDataURL(String(code), {
+      width: px,
+      errorCorrectionLevel: 'M',
+      margin: 1
+    });
+    _bcQrCache.set(key, dataUrl);
+    return dataUrl;
+  }
+
+  function _bcFillQrPlaceholders(container) {
+    const placeholders = Array.from(container.querySelectorAll('.qr-placeholder'));
+    if (!placeholders.length) return;
+    const BATCH = 24;
+    let idx = 0;
+    function nextBatch() {
+      const slice = placeholders.slice(idx, idx + BATCH);
+      if (!slice.length) return;
+      idx += BATCH;
+      Promise.all(slice.map(async (el) => {
+        const code = el.getAttribute('data-qr-code');
+        const size = parseInt(el.getAttribute('data-qr-px'), 10) || 60;
+        if (!code) return;
+        try {
+          const dataUrl = await _bcQrDataUrl(code, size);
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.className = 'qr-img';
+          img.style.cssText = el.style.cssText;
+          img.style.display = 'block';
+          el.replaceWith(img);
+        } catch (_e) {
+          el.style.background = '#fee2e2';
+          el.title = 'QR generation failed for: ' + code;
+        }
+      })).then(() => requestAnimationFrame(nextBatch));
+    }
+    requestAnimationFrame(nextBatch);
+  }
+
   function loadHtml5QrLib() {
     return _loadScriptOnce(
       'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
@@ -5883,9 +5971,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     opts = opts || {};
     if (!skus || !skus.length) { alert('No SKUs available to print.'); return; }
     try {
-      await loadJsBarcodeLib();
+      await Promise.all([loadJsBarcodeLib(), loadBcQrLib()]);
     } catch (err) {
-      alert(err.message || 'Failed to load barcode library.');
+      alert(err.message || 'Failed to load print libraries.');
       return;
     }
     _bcSkus = await _bcExpandSkusWithUnits(skus);
@@ -6071,7 +6159,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return items;
   }
 
-  // Build a server-side QR image URL (always works — no client library needed)
+  /** Legacy server QR URL — preview/print use client-side _bcQrDataUrl instead. */
   function _bcQRSrc(code, px) {
     return `/api/qr?data=${encodeURIComponent(code)}&size=${px || 60}`;
   }
@@ -6171,7 +6259,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     box.innerHTML = lines.map((line) => _bcEsc(line)).join('<br>');
   }
 
-  // Render the visual preview of labels in the modal (debounced — each QR <img> hits /api/qr)
+  // Render the visual preview of labels in the modal (debounced; QR filled client-side in batches)
   window.bcRenderPreview = function() {
     if (_bcPreviewDebounceTimer) clearTimeout(_bcPreviewDebounceTimer);
     _bcPreviewDebounceTimer = setTimeout(_bcRenderPreviewNow, 200);
@@ -6230,13 +6318,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (type === 'QR') {
-          const errFontPt = Math.max(4, Math.round(textFontPt * 0.7))
           inner += `<div class="bc-label-cell" style="position:relative;width:${labelW}mm;height:${labelH}mm;padding:0;box-sizing:border-box">
-            <img
-              src="${_bcQRSrc(item.code, qrPreviewPx)}"
-              style="position:absolute;left:50%;transform:translateX(-50%);top:${qrTopMm}mm;width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;display:block"
-              onerror="this.outerHTML='<div style=\\'width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;background:#fef2f2;display:flex;align-items:center;justify-content:center;font-size:${errFontPt}pt;color:#ef4444\\'>QR ERR</div>'"
-            >
+            <div class="qr-placeholder"
+              data-qr-code="${_bcEsc(item.code)}"
+              data-qr-px="${qrPreviewPx}"
+              style="position:absolute;left:50%;transform:translateX(-50%);top:${qrTopMm}mm;width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;background:#e5e7eb;border-radius:2px;">
+            </div>
             <div class="bc-label-code" style="position:absolute;left:0;right:0;top:${textTopMm}mm;font-size:${textFontPt}pt;font-weight:700;margin-top:0;padding:0;line-height:1.1;white-space:normal;word-break:break-word;overflow-wrap:anywhere;max-height:2.2em;overflow:hidden">${_bcEsc(item.label)}</div>
           </div>`;
         } else {
@@ -6250,6 +6337,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       inner += '</div>';
     });
     previewEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:${rowGapCss}">${inner}</div>`;
+
+    if (type === 'QR') {
+      _bcFillQrPlaceholders(previewEl);
+    }
 
     // Render Code128 barcodes after DOM is updated
     if (type === 'CODE128' && typeof JsBarcode !== 'undefined') {
@@ -6604,7 +6695,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
 
     if (!_bcUsbDevice) {
       // Fallback: generate printable HTML window if no USB device
-      _bcPrintFallback(batches, type);
+      await _bcPrintFallback(batches, type);
       return;
     }
 
@@ -6638,15 +6729,12 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       if (printBtn) { printBtn.disabled = false; printBtn.textContent = '🖨️ Print Labels'; }
       _bcUpdatePrinterStatus('error', err.message);
       alert(`Print failed: ${err.message}\n\nFalling back to browser print…`);
-      _bcPrintFallback(batches, type);
+      await _bcPrintFallback(batches, type);
     }
   };
 
   // ── Browser-print fallback (generates printable HTML) ─────────────────
-  function _bcPrintFallback(batches, labelType) {
-    const win = window.open('', '_blank', 'width=900,height=700');
-    if (!win) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
-
+  async function _bcPrintFallback(batches, labelType) {
     const pad = _bcReadMarginsMm();
     const gp = _bcReadGapMm();
     const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
@@ -6657,18 +6745,31 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const contentH = Math.max(0, labelH - pad.top - pad.bottom);
     const qrTopMm = pad.top + qrTopRatio * contentH;
     const textTopMm = pad.top + textTopRatio * contentH;
-    const qrLeftInsetMm = Math.max(0, (labelW - qrVisualSizeMm) / 2);
     const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+
+    const isQR = labelType === 'QR';
+    if (isQR) {
+      try {
+        await loadBcQrLib();
+      } catch (err) {
+        alert(err.message || 'Failed to load QR library for print.');
+        return;
+      }
+      const allItems = batches.flat().filter(Boolean);
+      await Promise.all(allItems.map((item) =>
+        _bcQrDataUrl(item.code, qrPreviewPx).catch(() => null)
+      ));
+    }
+
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
 
     // Treat top/bottom as internal offsets (handled via absolute positioning inside each cell).
     // Left/right still acts as sheet padding.
     const sheetPad = `0mm ${pad.right}mm 0mm ${pad.left}mm`;
     const tableSpacing = `${gp.colGap}mm ${gp.rowGap}mm`;
 
-    const isQR = labelType === 'QR';
     const totalLabels = batches.reduce((s, r) => s + r.filter(Boolean).length, 0);
-    // Use absolute URL so the print window (different origin) can reach our server
-    const origin = window.location.origin;
 
     let labelRows = '';
     batches.forEach((row) => {
@@ -6677,9 +6778,8 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
         const item = row[col];
         if (!item || !item.code) { cells.push('<td class="empty"></td>'); continue; }
         if (isQR) {
-          // QR encodes pid (code); SKU (label) shown as human-readable text below
-          const src = `${origin}/api/qr?data=${encodeURIComponent(item.code)}&size=${qrPreviewPx}`;
-          cells.push(`<td class="label-cell"><img src="${src}" class="qr-img"><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);
+          const dataUrl = _bcQrCache.get(`${item.code}|${qrPreviewPx}`) || '';
+          cells.push(`<td class="label-cell"><img src="${dataUrl}" class="qr-img"><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);
         } else {
           const ac = String(item.code || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
           cells.push(`<td class="label-cell"><svg data-code="${ac}" class="bc-svg"></svg><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);

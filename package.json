@@ -43,6 +43,7 @@
     "maintenance:purge-all-purchases": "node scripts/run-maintenance-purge-all-purchases.js",
     "maintenance:migrate-store-in-charge-role": "node scripts/run-maintenance-migrate-store-in-charge-role.js",
     "maintenance:purge-keep-user": "node scripts/run-maintenance-purge-keep-user.js",
+    "maintenance:purge-operational-reset": "node scripts/run-maintenance-purge-operational-reset.js",
     "maintenance:remove-deploy-seeds": "node scripts/run-maintenance-remove-deploy-seeds.js",
     "deploy:auth-users-sp": "node scripts/deploy-auth-users-sp.js",
     "deploy:sp-user-set-pos-pin": "node scripts/deploy-sp-user-set-pos-pin.js",
