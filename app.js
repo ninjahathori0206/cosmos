@@ -69,6 +69,9 @@ async function handleDestinationStores(req, res, next) {
 }
 
 const app = express();
+if (process.env.NODE_ENV === 'production' || String(process.env.TRUST_PROXY || '').trim() === '1') {
+  app.set('trust proxy', 1);
+}
 const protectedApiRouter = express.Router();
 
 function assertAuthEnv() {
