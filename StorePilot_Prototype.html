@@ -57,7 +57,9 @@
 
   /* ── MAIN ─────────────────────────────────────────────────────────────────── */
   .main { margin-left:var(--sidebar); flex:1; height:100vh; overflow-y:auto; display:flex; flex-direction:column; }
+  body.cosmos-app-shell .main { height:100dvh; max-height:100dvh; overflow:hidden !important; }
   .topbar { background:var(--card); border-bottom:1px solid var(--border); padding:0 28px; height:54px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; position:sticky; top:0; z-index:50; }
+  body.cosmos-app-shell .topbar { position:relative; top:auto; flex-shrink:0; }
   .breadcrumb { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text2); }
   .breadcrumb .cur { color:var(--text1); font-weight:500; }
 

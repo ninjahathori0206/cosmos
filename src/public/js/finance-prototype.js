@@ -326,6 +326,7 @@ const _origNav = window.nav ? window.nav : null;
   window.nav = function(id, el, options) {
     const navOptions = options || {}
     origNav(id, el);
+    if (typeof window.closeSidebar === 'function') window.closeSidebar();
     const nextPath = FINANCE_PAGE_PATHS[id] || '/finance/dashboard'
     if (!navOptions.fromHistory && window.location.pathname !== nextPath) {
       window.history.pushState({ module: 'finance', page: id }, '', nextPath)

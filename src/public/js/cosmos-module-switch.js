@@ -1,5 +1,5 @@
 /**
- * Sidebar footer module switcher (active module name + horizontal strip + hover flyout).
+ * Sidebar footer module switcher (active module label + icon strip only).
  * Requires window.COSMOS_MODULES_CATALOG from cosmos-modules-catalog.js.
  */
 (function cosmosModuleSwitchBootstrap() {
@@ -36,29 +36,6 @@
     window.location.href = href;
   }
 
-  function closeAllModuleSwitchers(except) {
-    document.querySelectorAll('.cosmos-module-switch.is-open').forEach(function (el) {
-      if (except && el === except) return;
-      el.classList.remove('is-open');
-    });
-  }
-
-  function bindMobileToggle(root) {
-    if (root._cosmosModuleBound) return;
-    root._cosmosModuleBound = true;
-    var stripWrap = root.querySelector('.cosmos-module-strip-wrap');
-    if (!stripWrap) return;
-    stripWrap.addEventListener('click', function (e) {
-      if (window.matchMedia('(hover: hover)').matches) return;
-      if (e.target.closest('.cosmos-module-flyout a')) return;
-      e.preventDefault();
-      e.stopPropagation();
-      var wasOpen = root.classList.contains('is-open');
-      closeAllModuleSwitchers();
-      if (!wasOpen) root.classList.add('is-open');
-    });
-  }
-
   function buildActiveModuleRow(mod) {
     var row = document.createElement('div');
     row.className = 'cosmos-module-active';
@@ -85,10 +62,6 @@
     root.setAttribute('role', 'navigation');
     root.setAttribute('aria-label', 'Switch module');
 
-    var flyout = document.createElement('div');
-    flyout.className = 'cosmos-module-flyout';
-    flyout.setAttribute('role', 'menu');
-
     var stripWrap = document.createElement('div');
     stripWrap.className = 'cosmos-module-strip-wrap';
 
@@ -98,18 +71,6 @@
 
     visible.forEach(function (mod) {
       var isActive = mod.key === currentKey;
-      var flyItem = document.createElement('a');
-      flyItem.className = 'cosmos-module-flyout-item' + (isActive ? ' is-active' : '');
-      flyItem.setAttribute('role', 'menuitem');
-      flyItem.href = mod.href;
-      flyItem.setAttribute('data-cosmos-module', mod.key);
-      if (isActive) flyItem.setAttribute('aria-current', 'page');
-      flyItem.textContent = mod.shortLabel;
-      flyItem.addEventListener('click', function (e) {
-        e.preventDefault();
-        navigateToModule(mod.href);
-      });
-      flyout.appendChild(flyItem);
 
       var chip = document.createElement('button');
       chip.type = 'button';
@@ -130,9 +91,7 @@
     });
 
     stripWrap.appendChild(strip);
-    root.appendChild(flyout);
     root.appendChild(stripWrap);
-    bindMobileToggle(root);
     return root;
   }
 
@@ -184,14 +143,4 @@
     window.initCosmosModuleSwitchFooter(user);
   };
 
-  if (!window._cosmosModuleSwitchDocBound) {
-    window._cosmosModuleSwitchDocBound = true;
-    document.addEventListener('click', function (e) {
-      if (e.target.closest('.cosmos-module-switch')) return;
-      closeAllModuleSwitchers();
-    });
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') closeAllModuleSwitchers();
-    });
-  }
 })();

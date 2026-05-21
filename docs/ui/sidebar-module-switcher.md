@@ -41,24 +41,15 @@ Sidebar **header** shows only “Cosmos ERP” branding — not the module title
 
 ## Interaction
 
-### Desktop (≥769px)
+### Desktop & mobile
 
 | State | Behaviour |
 |-------|-----------|
-| Default | Icon-only chips in one row; `overflow-x: auto` if >5 modules |
-| Hover strip or “MODULES” label | Show **flyout** directly **above** the strip: horizontal panel with icon + short label per module |
-| Hover item | Subtle highlight; click navigates (`/foundry/dashboard`, etc.) |
-| Leave | Flyout hides (CSS `:hover` on `.cosmos-module-switch` wrapper) |
+| Default | Icon-only chips in one row in sidebar footer; `overflow-x: auto` if many modules |
+| Tap inactive chip | Navigate to module (`/foundry/dashboard`, etc.) |
+| Active chip | Disabled; shows current module via **Active** label row above strip |
 
-### Mobile (≤768px)
-
-| State | Behaviour |
-|-------|-----------|
-| Default | Same icon strip in drawer footer |
-| Tap strip / label | Toggle flyout open (class `.is-open`); second tap outside closes |
-| Tap module | Navigate + close drawer |
-
-No hover-only behaviour on touch devices.
+**Removed (May 2026):** horizontal text flyout bar (Foundry / Finance / Store labels) — it duplicated chrome and caused scroll issues on mobile. Module switching is icons-only in the drawer footer, matching Command Unit native feel.
 
 ---
 
