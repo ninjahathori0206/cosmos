@@ -6,6 +6,8 @@ Loaded on **Foundry** and **StorePilot** prototypes with `#modal-bucket-scan`.
 
 Styles: [`cosmos-ui-polish.css`](../../src/public/css/cosmos-ui-polish.css) — `#modal-bucket-scan`.
 
+**Stacking:** The bucket opens as a stacked overlay (`z-index: 260`) above extended detail panels (request / transfer details at 240–250). Do not close the request before scanning — dispatch cart state lives in the open detail panel.
+
 ## Entry points
 
 All call `window.openBucket({ mode, expected, onSubmit, ... })`.
@@ -74,3 +76,4 @@ Toggles text list of scanned unit barcodes (not QR images). Collapsed by default
 3. **Tap** on QR — unit added or duplicate/status message once.
 4. Manual entry still works.
 5. Show QR lists scanned codes.
+6. **Foundry request dispatch:** With Request details open, tap **Open bucket** — bucket appears on top (do not close detail). Scan → Submit → **Confirm shipment** without reopening the request.

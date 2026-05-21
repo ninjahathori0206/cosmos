@@ -1197,3 +1197,11 @@ body.cosmos-extended-detail-open {
     border-radius: 12px;
   }
 }
+
+/* Bucket scan must sit above extended detail (240/250) while request stays open */
+#modal-bucket-scan.overlay {
+  z-index: 260;
+}
+#modal-bucket-scan.overlay.open {
+  display: flex;
+}

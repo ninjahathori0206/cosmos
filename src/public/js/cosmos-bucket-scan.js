@@ -131,6 +131,10 @@
   function bucketModalOpen() {
     const el = document.getElementById(MODAL_ID);
     if (!el) return;
+    if (el.parentNode !== document.body || document.body.lastElementChild !== el) {
+      document.body.appendChild(el);
+    }
+    document.body.classList.add('cosmos-bucket-open');
     if (typeof window.openM === 'function') window.openM(MODAL_ID);
     else el.classList.add('open');
     if (window.cosmosUpdateToastTopOffset) {
@@ -145,6 +149,7 @@
     if (!el) return;
     if (typeof window.closeM === 'function') window.closeM(MODAL_ID);
     else el.classList.remove('open');
+    document.body.classList.remove('cosmos-bucket-open');
     if (window.cosmosUpdateToastTopOffset) window.cosmosUpdateToastTopOffset();
   }
 
