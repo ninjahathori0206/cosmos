@@ -539,7 +539,7 @@
       const rw = Math.max(64, Math.floor(w * ROI_SIZE));
       const rh = Math.max(64, Math.floor(h * ROI_SIZE));
       const sx = Math.min(w - rw, Math.max(0, Math.floor(_camRoi.x * w - rw / 2)));
-      const sy = Math.min(h - rh, Math.max(0, Math.floor(_camRoi.y * h - rh / 2));
+      const sy = Math.min(h - rh, Math.max(0, Math.floor(_camRoi.y * h - rh / 2)));
       const roiData = _camCtx.getImageData(sx, sy, rw, rh);
       const roiVal = bucketDecodeQrFromImageData(roiData, rw, rh);
       if (roiVal) {
