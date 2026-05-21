@@ -7651,38 +7651,45 @@ ${initScript}
       return 'b-gray';
     }
 
+    window.stOpenDispatchDoc = function stOpenDispatchDoc(docId) {
+      const navEl = document.querySelector('.sidebar-nav .nav-item[onclick*="movement-list"]');
+      if (typeof nav === 'function') nav('movement-list', navEl || null);
+      setTimeout(function () {
+        if (typeof expandMlDoc === 'function') expandMlDoc(docId);
+      }, 80);
+    };
+
     window.stLoadHistory = async function stLoadHistory() {
       const tbody = document.getElementById('st-history-tbody');
       if (!tbody) return;
       if (typeof window.cosmosSkeletonTable === 'function') {
-        window.cosmosSkeletonTable('st-history-tbody', 7, 6);
+        window.cosmosSkeletonTable('st-history-tbody', 5, 6);
       } else {
-        tbody.innerHTML = '<tr><td colspan="7" class="tc td2 p12">…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="tc td2 p12">…</td></tr>';
       }
       try {
         const rows = await apiGet('/api/stock-transfer-docs?top_n=50');
         if (!rows || !rows.length) {
-          tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12">No dispatch documents yet — dispatch a cart above to create a challan.</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="5" class="tc td2 p12">No dispatch documents yet — dispatch a cart above to create a challan.</td></tr>`;
           return;
         }
         tbody.innerHTML = rows.map((d) => {
           const dest = [d.store_name, d.store_code].filter(Boolean).join(' · ') || '—';
           const lines = Number(d.line_count);
-          return `<tr>
+          const docId = Number(d.doc_id);
+          return `<tr class="tr-link" onclick="stOpenDispatchDoc(${docId})">
           <td class="mono fw6" style="color:var(--acc2)">${stEsc(String(d.doc_id))}</td>
           <td class="xs td2" style="white-space:nowrap">${stFmtDate(d.dispatched_at || d.created_at)}</td>
           <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${stEsc(dest)}">${stEsc(dest)}</td>
           <td><span class="b ${stDocStatusBadgeClass(d.status)}">${stEsc(d.status || '—')}</span></td>
           <td class="tc fw6">${Number.isFinite(lines) ? lines : '—'}</td>
-          <td class="xs td2">${stEsc(d.dispatched_by_name || '—')}</td>
-          <td class="tc"><button type="button" class="btn xs primary" onclick="stPrintStockTransferDoc(${Number(d.doc_id)})">Print</button></td>
         </tr>`;
         }).join('');
       } catch (err) {
         if (typeof window.cosmosToastError === 'function') {
           window.cosmosToastError(err.message || 'Could not load dispatch documents');
         }
-        tbody.innerHTML = `<tr><td colspan="7" class="tc td2 p12" style="color:var(--red)">${stEsc(err.message)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="tc td2 p12" style="color:var(--red)">${stEsc(err.message)}</td></tr>`;
       }
     };
   }
@@ -8160,8 +8167,8 @@ ${initScript}
     const errEl = document.getElementById('ftr-err');
     if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
     if (wrap) {
-      wrap.innerHTML = '<div class="tw"><table><thead><tr><th>#</th><th>Store</th><th>Requested by</th><th>Date</th><th>Items</th><th>Status</th><th>Actions</th></tr></thead><tbody id="ftr-list-tbody"></tbody></table></div>';
-      if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('ftr-list-tbody', 7);
+      wrap.innerHTML = '<div class="tw"><table><thead><tr><th>#</th><th>Store</th><th>Date</th><th>Items</th><th>Status</th></tr></thead><tbody id="ftr-list-tbody"></tbody></table></div>';
+      if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('ftr-list-tbody', 5);
     }
 
     try {
@@ -8187,8 +8194,7 @@ ${initScript}
           <table>
             <thead>
               <tr>
-                <th>#</th><th>Store</th><th>Requested by</th>
-                <th>Date</th><th>Items</th><th>Status</th><th>Actions</th>
+                <th>#</th><th>Store</th><th>Date</th><th>Items</th><th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -8196,22 +8202,9 @@ ${initScript}
                 <tr class="tr-link" onclick="expandTrRequest(${r.request_id})">
                   <td class="mono fw6" style="color:var(--acc)">#${r.request_id}</td>
                   <td>${trEsc(r.store_name || r.store_id)}</td>
-                  <td>${trEsc(r.requested_by_fullname || r.requested_by_name)}</td>
                   <td class="xs">${fmtDate(r.created_at)}</td>
                   <td><span class="b b-gray">${r.line_count} SKU${r.line_count !== 1 ? 's' : ''}${r.total_requested_qty != null ? ' · ' + r.total_requested_qty + ' pcs' : ''}</span></td>
                   <td><span class="b ${TR_STATUS_BADGE[r.status] || 'b-gray'}">${r.status}</span></td>
-                  <td>
-                    ${r.status === 'SUBMITTED' ? `
-                      <button class="btn sm primary" data-tr-approve="${r.request_id}" onclick="event.stopPropagation();trQuickApprove(${r.request_id}, this)">✓ Approve</button>
-                      <button class="btn sm" style="color:var(--red);border-color:var(--red);margin-left:4px" onclick="event.stopPropagation();trReject(${r.request_id}, this)">✕ Reject</button>
-                    ` : ''}
-                    ${r.status === 'APPROVED' ? `
-                      <button class="btn sm primary" onclick="event.stopPropagation();expandTrRequest(${r.request_id})">🚚 Preview &amp; Dispatch</button>
-                    ` : ''}
-                    ${r.status === 'PARTIALLY_DISPATCHED' ? `
-                      <button class="btn sm primary" onclick="event.stopPropagation();expandTrRequest(${r.request_id})">🚚 Dispatch remainder</button>
-                    ` : ''}
-                  </td>
                 </tr>`).join('')}
             </tbody>
           </table>

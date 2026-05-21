@@ -1304,16 +1304,19 @@ window.setSpTrFilter = function (status, btn) {
 window.loadTransferHistory = async function () {
   const wrap = document.getElementById('tr-history-wrap');
   showErr('fmov-err', '');
-  if (wrap) wrap.innerHTML = `<div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>`;
+  if (wrap) {
+    wrap.innerHTML = '<div class="tw"><table><thead><tr><th>#</th><th>Submitted</th><th>Items</th><th>Status</th><th>Updated</th></tr></thead><tbody id="sp-tr-history-tbody"></tbody></table></div>';
+    if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('sp-tr-history-tbody', 5);
+  }
 
   try {
     const qs = new URLSearchParams({ top_n: 100 });
     if (_spTrFilter) qs.set('status', _spTrFilter);
     const data = await apiGet('/api/transfer-requests?' + qs.toString());
-    const rows = data.data || [];
+    const rows = Array.isArray(data) ? data : (data.data || []);
 
     if (!rows.length) {
-      wrap.innerHTML = `<div class="empty-state"><div class="ei">📬</div><div class="et">No transfer requests${_spTrFilter ? ' with status ' + _spTrFilter : ''}</div></div>`;
+      wrap.innerHTML = `<div class="empty-state"><div class="ei">📬</div><div class="et">No transfer requests${_spTrFilter ? ' with status ' + _spTrFilter : ''}</div><div class="es">Use <strong>New Request</strong> to submit a goods request to HQ.</div></div>`;
       return;
     }
 
@@ -1327,22 +1330,16 @@ window.loadTransferHistory = async function () {
               <th>Items</th>
               <th>Status</th>
               <th>Updated</th>
-              <th>Action</th>
             </tr>
           </thead>
           <tbody>
             ${rows.map((r) => `
-              <tr style="cursor:pointer" onclick="expandSpTrRequest(${r.request_id})">
+              <tr class="tr-link" onclick="expandSpTrRequest(${r.request_id})">
                 <td class="mono" style="font-weight:600;color:var(--acc)">#${r.request_id}</td>
                 <td>${fmtDate(r.created_at)}</td>
-                <td><span class="b b-gray">${r.line_count} SKU${r.line_count !== 1 ? 's' : ''}</span></td>
+                <td><span class="b b-gray">${r.line_count} SKU${r.line_count !== 1 ? 's' : ''}${r.total_requested_qty != null ? ' · ' + r.total_requested_qty + ' pcs' : ''}</span></td>
                 <td><span class="b ${TR_STATUS_BADGE[r.status] || 'b-gray'}">${TR_STATUS_LABEL[r.status] || r.status}</span></td>
                 <td style="font-size:12px;color:var(--text3)">${fmtDate(r.updated_at)}</td>
-                <td>
-                  ${r.status === 'DISPATCHED'
-                    ? `<button class="btn sm primary" onclick="event.stopPropagation();spConfirmReceipt(${r.request_id})">✓ Confirm Receipt</button>`
-                    : ''}
-                </td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -1979,12 +1976,12 @@ window.loadIncomingTransfers = async function () {
 
     if (listEl) {
       listEl.innerHTML = rows.map((r) => `
-        <div class="inc-tr-row" onclick="expandIncTransfer(${r.doc_id})">
+        <div class="inc-tr-row tr-link" onclick="expandIncTransfer(${r.doc_id})">
           <div class="inc-tr-meta">
             <div class="inc-tr-id">Transfer #${r.doc_id}
               <span style="font-weight:400;color:var(--text3);font-size:11px;margin-left:6px">${r.doc_type === 'REQUEST' ? '(via request)' : '(direct)'}</span>
             </div>
-            <div class="inc-tr-sub">${fmtDate(r.dispatched_at)} &middot; ${escHtml(r.line_count)} item${r.line_count !== 1 ? 's' : ''} &middot; by ${escHtml(r.dispatched_by_name || 'HQ')}</div>
+            <div class="inc-tr-sub">${fmtDate(r.dispatched_at)} &middot; ${escHtml(r.line_count)} item${r.line_count !== 1 ? 's' : ''}${r.doc_type === 'REQUEST' && r.source_request_id ? ' &middot; Request #' + r.source_request_id : ''}</div>
           </div>
           ${INC_STATUS_BADGE[r.status] || r.status}
         </div>`).join('');
