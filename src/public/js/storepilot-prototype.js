@@ -199,6 +199,7 @@ window.spNav = function (id, el, options) {
   }
   closeSidebar();
   loadStorePilotPage(id);
+  if (window.cosmosResetAppScroll) window.cosmosResetAppScroll();
 };
 
 function applyStorepilotRouteFromPath() {

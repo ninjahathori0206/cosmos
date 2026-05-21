@@ -10,6 +10,7 @@
 | `StorePilot PWA — Install banner` | `/storepilot/dashboard` | Chrome `beforeinstallprompt`; dismissible topbar chip |
 | `StorePilot PWA — iOS Add to Home` | `/storepilot/dashboard` | Safari coach mark (Share → Add to Home Screen) |
 | `StorePilot PWA — Offline gate` | `/` (login) | No network; cached login shell + message |
+| `StorePilot — Movement List` | `/storepilot/movement-list` | Fixed title + Refresh + filter chips; scrollable list card |
 
 ## Manifest & head
 
@@ -50,7 +51,11 @@ Head on [`StorePilot_Prototype.html`](../../StorePilot_Prototype.html) and [`log
 
 ## Touch & scroll
 
-- `body.cosmos-app-shell` + `.cosmos-app-scroll` (existing).
+- `body.cosmos-app-shell` + `#cosmos-app-scroll` as **page host** (does not scroll; `overflow: hidden`).
+- Each `.page.active` is a flex column: **fixed** `.sp-page-head` (title row, filters, errors) + **scrollable** `.sp-page-body` (lists, cards, grids, forms).
+- **Refresh** sits in `.sp-page-title-row` beside the page title (`.pt`), not on the filter chip row.
+- Catalogue pages: `.cat-cart-bar` is a flex footer sibling of `.sp-page-body` (pinned bottom, not `position: sticky`).
+- `cosmosResetAppScroll()` resets `.page.active .sp-page-body` scroll on navigation.
 - Mobile: `touch-action: manipulation` on `.btn`, `.nav-item`, table rows with `.tr-link`.
 - `-webkit-tap-highlight-color: transparent` on chrome controls.
 - `body.sp-pwa-standalone` optional class when installed for slightly tighter topbar padding.

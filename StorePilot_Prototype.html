@@ -66,11 +66,50 @@
   .breadcrumb .cur { color:var(--text1); font-weight:500; }
 
   /* ── PAGES ────────────────────────────────────────────────────────────────── */
-  .page { display:none; padding:26px; }
-  .page.active { display:block; }
+  body.cosmos-app-shell .cosmos-app-scroll {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+  .page { display:none; flex-direction:column; flex:1; min-height:0; overflow:hidden; padding:26px; }
+  .page.active { display:flex; }
+  .sp-page-head { flex-shrink:0; }
+  .sp-page-body {
+    flex:1 1 auto;
+    min-height:0;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-y:contain;
+  }
+  .sp-page-title-row {
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .sp-page-filters {
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:18px;
+    align-items:center;
+  }
   .ph { margin-bottom:22px; }
+  .sp-page-head .ph { margin-bottom:0; }
+  .sp-page-head .ph.sp-page-title-row { margin-bottom:22px; }
   .pt { font-family:'Inter',sans-serif; font-size:20px; font-weight:700; color:var(--text1); }
   .ps { font-size:13px; color:var(--text2); margin-top:3px; }
+  .inc-tr-row { display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s }
+  .inc-tr-row:last-child { border-bottom:none }
+  .inc-tr-row:hover { background:rgba(43,140,255,0.04) }
+  .inc-tr-meta { flex:1;min-width:0 }
+  .inc-tr-id { font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--acc) }
+  .inc-tr-sub { font-size:12px;color:var(--text2);margin-top:2px }
+  .inc-verify-line { display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border) }
+  .inc-verify-line:last-child { border-bottom:none }
 
   /* ── STAT CARDS ───────────────────────────────────────────────────────────── */
   .sg4 { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px; }
@@ -143,7 +182,8 @@
   .empty-state { text-align:center; padding:40px 20px; color:var(--text3); }
   .empty-state .ei { font-size:32px; margin-bottom:8px; }
   .empty-state .et { font-size:13.5px; }
-  .err-msg { color:var(--red); font-size:12.5px; padding:10px 14px; background:var(--redL); border-radius:8px; display:none; margin-bottom:12px; }
+  .err-msg { color:var(--red); font-size:12.5px; padding:10px 14px; background:var(--redL); border-radius:8px; display:none; }
+  .sp-page-head .err-msg { margin-bottom:12px; }
 
   /* ── STOCK DETAIL PANEL ───────────────────────────────────────────────────── */
   .detail-panel { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:0; overflow:hidden; }
@@ -194,7 +234,7 @@
   .sku-loc-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:12.5px; }
   .sku-loc-row:last-child { border-bottom:none; }
   .sku-loc-name { color:var(--text2); }
-  .cat-cart-bar { position:sticky; bottom:0; background:var(--navy); color:#fff; padding:12px 26px; display:flex; align-items:center; gap:14px; z-index:40; border-top:2px solid var(--acc2); }
+  .cat-cart-bar { flex-shrink:0; background:var(--navy); color:#fff; padding:12px 26px; display:flex; align-items:center; gap:14px; border-top:2px solid var(--acc2); }
   .cat-cart-bar-text { font-size:13.5px; font-weight:500; flex:1; }
   .cat-cart-bar-btn { background:var(--acc2); color:#fff; border:none; border-radius:8px; padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif; transition:background .15s; }
   .cat-cart-bar-btn:hover { background:var(--accD); }
@@ -306,13 +346,14 @@
     .sidebar, .topbar, .btn { display:none !important; }
     .main { margin-left:0 !important; height:auto !important; overflow:visible !important; }
     .page { display:none !important; }
-    #page-reports.active { display:block !important; padding:20px !important; }
+    #page-reports.active { display:block !important; overflow:visible !important; height:auto !important; flex:none !important; padding:20px !important; }
+    #page-reports.active .sp-page-body { overflow:visible !important; flex:none !important; }
     .sc, .card { break-inside:avoid; }
     .hint { display:none !important; }
   }
 </style>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260524-lock-zoom">
-<script src="/js/cosmos-ui-polish.js?v=20260524-lock-zoom" defer></script>
+<script src="/js/cosmos-ui-polish.js?v=20260521-sp-scroll" defer></script>
 <script src="/js/storepilot-pwa.js?v=20260521-pwa" defer></script>
 </head>
 <body class="cosmos-app-shell">
@@ -383,13 +424,15 @@
 
   <!-- ═══════════════ DASHBOARD ═══════════════ -->
   <div class="page active" id="page-dashboard">
-    <div class="ph" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
-      <div>
-        <div class="pt">Store command centre</div>
+    <div class="sp-page-head">
+      <div class="ph sp-page-title-row">
+        <div>
+          <div class="pt">Store command centre</div>
+        </div>
+        <button class="btn sm" onclick="loadDashboard()">↻ Refresh</button>
       </div>
-      <button class="btn sm" onclick="loadDashboard()">↻ Refresh</button>
     </div>
-
+    <div class="sp-page-body">
     <div class="sg4">
       <div class="sc" style="--sc-color:var(--acc)">
         <div class="sl">Transfers received</div>
@@ -422,28 +465,30 @@
         <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
       </div>
     </div>
-
+    </div>
   </div>
 
   <!-- ═══════════════ STOCK VIEW: BROWSE CATALOGUE ═══════════════ -->
   <div class="page" id="page-stock-browse" style="padding-bottom:0">
-    <div class="ph" style="padding:26px 26px 0">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div class="sp-page-head">
+      <div class="ph sp-page-title-row">
         <div>
           <div class="pt">Browse Catalogue</div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div class="sw" style="width:260px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="sw" style="width:260px;max-width:100%">
             <input type="text" id="bc-q" placeholder="Brand, type, SKU code…" oninput="onBrowseCatalogueSearch(this.value)">
             <span class="sp-spin" id="bc-spin">…</span>
           </div>
-          <button class="btn sm" onclick="loadBrowseCatalogue()">↻</button>
+          <button class="btn sm" onclick="loadBrowseCatalogue()">↻ Refresh</button>
         </div>
       </div>
-      <div id="bc-err" class="err-msg" style="margin:12px 0 0"></div>
+      <div id="bc-err" class="err-msg"></div>
     </div>
+    <div class="sp-page-body">
     <div id="bc-grid" class="sku-card-grid">
       <div style="grid-column:1/-1"><div class="empty-state"><div class="ei">⏳</div><div class="et">Loading catalogue…</div></div></div>
+    </div>
     </div>
     <div id="bc-cart-bar" class="cat-cart-bar" style="display:none">
       <span class="cat-cart-bar-text">🛒 <span id="bc-cart-count">0</span> items in request cart</span>
@@ -453,24 +498,26 @@
 
   <!-- ═══════════════ STOCK VIEW: STORE CATALOGUE ═══════════════ -->
   <div class="page" id="page-store-catalogue" style="padding-bottom:0">
-    <div class="ph" style="padding:26px 26px 0">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div class="sp-page-head">
+      <div class="ph sp-page-title-row">
         <div>
           <div class="pt">Store Catalogue</div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div class="sw" style="width:260px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="sw" style="width:260px;max-width:100%">
             <input type="text" id="sc-q" placeholder="Brand, type, SKU code…" oninput="onStoreCatalogueSearch(this.value)">
             <span class="sp-spin" id="sc-spin">…</span>
           </div>
-          <button class="btn sm" onclick="loadStoreCatalogue()">↻</button>
+          <button class="btn sm" onclick="loadStoreCatalogue()">↻ Refresh</button>
         </div>
       </div>
-      <div id="sc-err" class="err-msg" style="margin:12px 0 0"></div>
+      <div id="sc-err" class="err-msg"></div>
     </div>
-    <div id="sc-summary" class="sg4" style="padding:0 26px 10px"></div>
+    <div class="sp-page-body">
+    <div id="sc-summary" class="sg4" style="margin-bottom:10px"></div>
     <div id="sc-grid" class="sku-card-grid">
       <div style="grid-column:1/-1"><div class="empty-state"><div class="ei">⏳</div><div class="et">Loading store stock…</div></div></div>
+    </div>
     </div>
     <div id="sc-cart-bar" class="cat-cart-bar" style="display:none">
       <span class="cat-cart-bar-text">🛒 <span id="sc-cart-count">0</span> items in request cart</span>
@@ -480,31 +527,35 @@
 
   <!-- ═══════════════ TRANSFERS: HISTORY ═══════════════ -->
   <div class="page" id="page-transfers-history">
-    <div class="ph">
-      <div class="pt">My Transfer Requests</div>
-      <div class="ps">Stock requests submitted by your store to HQ Foundry for approval and dispatch.</div>
+    <div class="sp-page-head">
+      <div class="ph sp-page-title-row">
+        <div>
+          <div class="pt">My Transfer Requests</div>
+          <div class="ps">Stock requests submitted by your store to HQ Foundry for approval and dispatch.</div>
+        </div>
+        <button class="btn sm" onclick="loadTransferHistory()">↻ Refresh</button>
+      </div>
+
+      <div class="hint" style="margin-bottom:18px">
+        <strong>Store Request flow:</strong>
+        You submit a request (SUBMITTED) → HQ reviews and approves quantities (APPROVED) →
+        HQ dispatches stock and inventory is updated automatically (DISPATCHED) →
+        Confirm goods received (RECEIVED). Use <strong>New Request</strong> to start one.
+      </div>
+
+      <div class="sp-page-filters">
+        <button class="btn sm active" id="sp-tr-tab-all"        onclick="setSpTrFilter('',this)">All</button>
+        <button class="btn sm"        id="sp-tr-tab-submitted"  onclick="setSpTrFilter('SUBMITTED',this)">Pending</button>
+        <button class="btn sm"        id="sp-tr-tab-approved"   onclick="setSpTrFilter('APPROVED',this)">Approved</button>
+        <button class="btn sm"        id="sp-tr-tab-dispatched" onclick="setSpTrFilter('DISPATCHED',this)">Dispatched</button>
+        <button class="btn sm"        id="sp-tr-tab-received"   onclick="setSpTrFilter('RECEIVED',this)">Received</button>
+        <button class="btn sm"        id="sp-tr-tab-rejected"   onclick="setSpTrFilter('REJECTED',this)">Rejected</button>
+      </div>
+
+      <div id="fmov-err" class="err-msg"></div>
     </div>
 
-    <div class="hint" style="margin-bottom:18px">
-      <strong>Store Request flow:</strong>
-      You submit a request (SUBMITTED) → HQ reviews and approves quantities (APPROVED) →
-      HQ dispatches stock and inventory is updated automatically (DISPATCHED) →
-      Confirm goods received (RECEIVED). Use <strong>New Request</strong> to start one.
-    </div>
-
-    <!-- Status filter tabs -->
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
-      <button class="btn sm active" id="sp-tr-tab-all"        onclick="setSpTrFilter('',this)">All</button>
-      <button class="btn sm"        id="sp-tr-tab-submitted"  onclick="setSpTrFilter('SUBMITTED',this)">Pending</button>
-      <button class="btn sm"        id="sp-tr-tab-approved"   onclick="setSpTrFilter('APPROVED',this)">Approved</button>
-      <button class="btn sm"        id="sp-tr-tab-dispatched" onclick="setSpTrFilter('DISPATCHED',this)">Dispatched</button>
-      <button class="btn sm"        id="sp-tr-tab-received"   onclick="setSpTrFilter('RECEIVED',this)">Received</button>
-      <button class="btn sm"        id="sp-tr-tab-rejected"   onclick="setSpTrFilter('REJECTED',this)">Rejected</button>
-      <button class="btn sm"        style="margin-left:auto"  onclick="loadTransferHistory()">↻ Refresh</button>
-    </div>
-
-    <div id="fmov-err" class="err-msg" style="margin-bottom:12px"></div>
-
+    <div class="sp-page-body">
     <div class="card">
       <div id="tr-history-wrap">
         <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
@@ -519,13 +570,17 @@
       </div>
       <div id="sp-tr-detail-body"></div>
     </div>
+    </div>
   </div>
 
   <!-- ═══════════════ TRANSFERS: REQUEST TRANSFER ═══════════════ -->
   <div class="page" id="page-transfers-create">
-    <div class="ph">
-      <div class="pt">Request Goods</div>
+    <div class="sp-page-head">
+      <div class="ph sp-page-title-row">
+        <div class="pt">Request Goods</div>
+      </div>
     </div>
+    <div class="sp-page-body">
 
     <!-- Shown only when user has no store assignment -->
     <div id="transfer-create-no-store" style="display:none">
@@ -596,20 +651,23 @@
 
       </div>
     </div>
+    </div>
   </div>
 
   <!-- ═══════════════ REPORTS ═══════════════ -->
   <div class="page" id="page-reports">
-    <div class="ph" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
-      <div>
-        <div class="pt">Store reports</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn sm" onclick="loadReports()">↻ Refresh</button>
-        <button class="btn sm" onclick="window.print()">🖨️ Print</button>
+    <div class="sp-page-head">
+      <div class="ph sp-page-title-row">
+        <div>
+          <div class="pt">Store reports</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn sm" onclick="loadReports()">↻ Refresh</button>
+          <button class="btn sm" onclick="window.print()">🖨️ Print</button>
+        </div>
       </div>
     </div>
-
+    <div class="sp-page-body">
     <div class="sg4" id="reports-stats">
       <div style="grid-column:1/-1;padding:16px;color:var(--text3);font-size:13px">Loading report data…</div>
     </div>
@@ -665,28 +723,34 @@
         </div>
       </div>
     </div>
+    </div>
   </div>
 
   <div class="page" id="page-lab-orders">
-    <div class="head">
-      <div>
-        <div class="title">Lab Orders</div>
-        <div class="muted">Receive from lab, complete store QC, and mark ready for handover.</div>
+    <div class="sp-page-head">
+      <div class="ph sp-page-title-row">
+        <div>
+          <div class="pt">Lab Orders</div>
+          <div class="ps">Receive from lab, complete store QC, and mark ready for handover.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="sw" style="width:260px;max-width:100%">
+            <input type="text" id="sp-lab-search" placeholder="Search order or customer">
+          </div>
+          <button class="btn sm" onclick="loadSpLabOrders()">↻ Refresh</button>
+        </div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input id="sp-lab-search" class="search" placeholder="Search order or customer" style="min-width:220px">
-        <button class="btn" onclick="loadSpLabOrders()">Refresh</button>
+      <div class="sp-page-filters">
+        <button class="btn sm tab active" id="sp-lab-tab-all" onclick="setSpLabFilter('', this)">All</button>
+        <button class="btn sm tab" id="sp-lab-tab-dispatched" onclick="setSpLabFilter('DISPATCHED_TO_STORE', this)">Dispatched</button>
+        <button class="btn sm tab" onclick="setSpLabFilter('RECEIVED_AT_STORE', this)">At Store</button>
+        <button class="btn sm tab" onclick="setSpLabFilter('STORE_QC_PASS', this)">QC Pass</button>
+        <button class="btn sm tab" onclick="setSpLabFilter('STORE_QC_PARTIAL', this)">QC Partial</button>
+        <button class="btn sm tab" onclick="setSpLabFilter('QC_FAIL_STORE', this)">QC Fail</button>
+        <button class="btn sm tab" onclick="setSpLabFilter('READY_FOR_DELIVERY', this)">Ready for Handover</button>
       </div>
     </div>
-    <div class="tabs" style="margin:10px 0 12px">
-      <button class="tab active" id="sp-lab-tab-all" onclick="setSpLabFilter('', this)">All</button>
-      <button class="tab" id="sp-lab-tab-dispatched" onclick="setSpLabFilter('DISPATCHED_TO_STORE', this)">Dispatched</button>
-      <button class="tab" onclick="setSpLabFilter('RECEIVED_AT_STORE', this)">At Store</button>
-      <button class="tab" onclick="setSpLabFilter('STORE_QC_PASS', this)">QC Pass</button>
-      <button class="tab" onclick="setSpLabFilter('STORE_QC_PARTIAL', this)">QC Partial</button>
-      <button class="tab" onclick="setSpLabFilter('QC_FAIL_STORE', this)">QC Fail</button>
-      <button class="tab" onclick="setSpLabFilter('READY_FOR_DELIVERY', this)">Ready for Handover</button>
-    </div>
+    <div class="sp-page-body">
     <div class="card">
       <div style="overflow:auto">
         <table class="table">
@@ -702,6 +766,66 @@
           </thead>
           <tbody id="sp-lab-orders-tbody"></tbody>
         </table>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ INCOMING TRANSFERS ═══════════════ -->
+  <div class="page" id="page-incoming-transfers">
+    <div class="sp-page-head">
+      <div class="ph sp-page-title-row">
+        <div>
+          <div class="pt">Incoming Goods</div>
+        </div>
+        <button class="btn sm" onclick="loadIncomingTransfers()">↻ Refresh</button>
+      </div>
+      <div class="sp-page-filters">
+        <button class="btn sm active" id="sp-inc-tab-all"        onclick="setIncFilter('',this)">All</button>
+        <button class="btn sm"        id="sp-inc-tab-dispatched" onclick="setIncFilter('DISPATCHED',this)">📦 Dispatched</button>
+        <button class="btn sm"        id="sp-inc-tab-accepted"   onclick="setIncFilter('ACCEPTED',this)">✓ Accepted</button>
+        <button class="btn sm"        id="sp-inc-tab-stocked"    onclick="setIncFilter('STOCKED',this)">🏪 Stocked</button>
+      </div>
+      <div id="sp-inc-err" class="err-msg"></div>
+    </div>
+    <div class="sp-page-body">
+      <div class="card">
+        <div id="sp-inc-list">
+          <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ MOVEMENT LIST ═══ -->
+  <div class="page" id="page-movement-list">
+    <div class="sp-page-head">
+      <div class="ph sp-page-title-row">
+        <div>
+          <div class="pt">Movement List</div>
+        </div>
+        <button class="btn sm" onclick="loadSpMovementList()">↻ Refresh</button>
+      </div>
+      <div class="sp-page-filters">
+        <button class="btn sm active" id="sp-ml-tab-all"        onclick="setSpMlFilter('',this)">All</button>
+        <button class="btn sm"        id="sp-ml-tab-dispatched" onclick="setSpMlFilter('DISPATCHED',this)">📦 Dispatched</button>
+        <button class="btn sm"        id="sp-ml-tab-accepted"   onclick="setSpMlFilter('ACCEPTED',this)">✓ Accepted</button>
+        <button class="btn sm"        id="sp-ml-tab-stocked"    onclick="setSpMlFilter('STOCKED',this)">🏪 Stocked</button>
+      </div>
+      <div id="sp-ml-err" class="err-msg"></div>
+    </div>
+    <div class="sp-page-body">
+      <div class="card">
+        <div id="sp-ml-list">
+          <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
+        </div>
+      </div>
+      <div id="sp-ml-detail" class="card" style="display:none;margin-top:16px">
+        <div class="ch" style="justify-content:space-between">
+          <div class="ct" id="sp-ml-detail-title">Transfer document</div>
+          <button class="btn sm" onclick="closeSpMlDetail()">✕ Close</button>
+        </div>
+        <div id="sp-ml-detail-body"></div>
       </div>
     </div>
   </div>
@@ -721,42 +845,6 @@
     </div>
   </div>
 
-  <!-- ═══════════════ INCOMING TRANSFERS ═══════════════ -->
-  <div class="page" id="page-incoming-transfers">
-    <style>
-      .inc-tr-row { display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s }
-      .inc-tr-row:last-child { border-bottom:none }
-      .inc-tr-row:hover { background:var(--hover) }
-      .inc-tr-meta { flex:1;min-width:0 }
-      .inc-tr-id   { font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--acc) }
-      .inc-tr-sub  { font-size:12px;color:var(--text2);margin-top:2px }
-      .inc-verify-line { display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border) }
-      .inc-verify-line:last-child { border-bottom:none }
-    </style>
-
-    <div class="ph">
-      <div class="pt">Incoming Goods</div>
-    </div>
-
-    <!-- Status filter tabs -->
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
-      <button class="btn sm active" id="sp-inc-tab-all"        onclick="setIncFilter('',this)">All</button>
-      <button class="btn sm"        id="sp-inc-tab-dispatched" onclick="setIncFilter('DISPATCHED',this)">📦 Dispatched</button>
-      <button class="btn sm"        id="sp-inc-tab-accepted"   onclick="setIncFilter('ACCEPTED',this)">✓ Accepted</button>
-      <button class="btn sm"        id="sp-inc-tab-stocked"    onclick="setIncFilter('STOCKED',this)">🏪 Stocked</button>
-      <button class="btn sm"        style="margin-left:auto"   onclick="loadIncomingTransfers()">↻ Refresh</button>
-    </div>
-
-    <div id="sp-inc-err" class="err-msg" style="margin-bottom:12px"></div>
-
-    <div class="card">
-      <div id="sp-inc-list">
-        <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
-      </div>
-    </div>
-
-  </div>
-
   <!-- Incoming transfer — extended detail (overlay, not footer card) -->
   <div id="sp-inc-detail-backdrop" class="cosmos-extended-detail__backdrop" hidden aria-hidden="true" onclick="closeIncDetail()"></div>
   <div id="sp-inc-detail" class="cosmos-extended-detail__panel" role="dialog" aria-modal="true" aria-labelledby="sp-inc-detail-title" hidden>
@@ -772,37 +860,6 @@
     </div>
     <div id="sp-inc-action-msg" class="cosmos-extended-detail__msg" role="status" aria-live="polite"></div>
     <div id="sp-inc-detail-body" class="cosmos-extended-detail__body"></div>
-  </div>
-
-  <!-- ═══ MOVEMENT LIST ═══ -->
-  <div class="page" id="page-movement-list">
-    <div class="ph">
-      <div class="pt">Movement List</div>
-    </div>
-
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
-      <button class="btn sm active" id="sp-ml-tab-all"        onclick="setSpMlFilter('',this)">All</button>
-      <button class="btn sm"        id="sp-ml-tab-dispatched" onclick="setSpMlFilter('DISPATCHED',this)">📦 Dispatched</button>
-      <button class="btn sm"        id="sp-ml-tab-accepted"   onclick="setSpMlFilter('ACCEPTED',this)">✓ Accepted</button>
-      <button class="btn sm"        id="sp-ml-tab-stocked"    onclick="setSpMlFilter('STOCKED',this)">🏪 Stocked</button>
-      <button class="btn sm"        style="margin-left:auto"  onclick="loadSpMovementList()">↻ Refresh</button>
-    </div>
-
-    <div id="sp-ml-err" class="err-msg" style="margin-bottom:12px"></div>
-
-    <div class="card">
-      <div id="sp-ml-list">
-        <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
-      </div>
-    </div>
-
-    <div id="sp-ml-detail" class="card" style="display:none;margin-top:16px">
-      <div class="ch" style="justify-content:space-between">
-        <div class="ct" id="sp-ml-detail-title">Transfer document</div>
-        <button class="btn sm" onclick="closeSpMlDetail()">✕ Close</button>
-      </div>
-      <div id="sp-ml-detail-body"></div>
-    </div>
   </div>
 
   <!-- ═══════════════ BUCKET SCAN (RECEIVE) ═══════════════ -->
@@ -897,6 +954,6 @@
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260521-tap-scan" defer></script>
-<script src="/js/storepilot-prototype.js?v=20260521-ext-detail" defer></script>
+<script src="/js/storepilot-prototype.js?v=20260521-sp-scroll" defer></script>
 </body>
 </html>

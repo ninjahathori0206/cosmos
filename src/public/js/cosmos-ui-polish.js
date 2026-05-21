@@ -128,6 +128,8 @@
   window.cosmosResetAppScroll = function cosmosResetAppScroll() {
     var scroll = document.getElementById('cosmos-app-scroll') || document.querySelector('.cosmos-app-scroll')
     if (scroll) scroll.scrollTop = 0
+    var activeBody = document.querySelector('.page.active .sp-page-body')
+    if (activeBody) activeBody.scrollTop = 0
   }
 
   window.cosmosLockAppBodyScroll = function cosmosLockAppBodyScroll() {
