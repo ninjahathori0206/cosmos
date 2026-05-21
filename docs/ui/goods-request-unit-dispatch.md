@@ -84,11 +84,23 @@ HQ reviews store transfer requests and, when **APPROVED**, ships warehouse stock
 ```
 
 - `dispatched_qty` on each line = **this shipment only** (not cumulative).
+- After the transfer document is created, the API runs **`sp_TransferRequest_SyncDispatchedFromDocs`** so line `dispatched_qty` and header status match linked docs (source of truth).
 - Response: `{ request_id, status, doc_id, fully_dispatched }` where `status` is `PARTIALLY_DISPATCHED` or `DISPATCHED`.
+- If sync fails after doc creation: **422** with `doc_id` and message to use **Reconcile**.
+
+### Reconcile (out-of-sync repair)
+
+`POST /api/transfer-requests/:id/reconcile` — `foundry.transfers.edit`
+
+Re-runs sync from all `stock_transfer_docs` with `source_request_id`. UI: **Sync from documents** on the mismatch banner when shipments exist but summary shows 0 shipped.
+
+Ops script: `node scripts/repair-transfer-request-line-qty.js --request-id=N --sync-dispatched-only`
 
 ### Shipments list
 
 `GET /api/transfer-requests/:id/shipments`
+
+**Previous shipments** is always shown on the dispatch panel (not hidden when `dispatched_qty` is 0).
 
 ## Design source
 

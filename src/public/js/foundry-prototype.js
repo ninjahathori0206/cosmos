@@ -7817,22 +7817,73 @@ ${initScript}
     };
   }
 
-  window.ftrLoadRequestShipments = async function ftrLoadRequestShipments(requestId) {
+  function ftrShowShipmentSyncBanner(requestId) {
+    let banner = document.getElementById('ftr-shipment-sync-banner');
+    if (!banner) {
+      const section = document.getElementById('ftr-shipments-section');
+      if (!section) return;
+      banner = document.createElement('div');
+      banner.id = 'ftr-shipment-sync-banner';
+      banner.className = 'hint';
+      banner.style.marginBottom = '12px';
+      banner.style.background = 'var(--goldL)';
+      banner.style.borderColor = 'rgba(217,119,6,0.35)';
+      section.parentNode.insertBefore(banner, section);
+    }
+    banner.style.display = 'block';
+    banner.innerHTML =
+      '<strong>Shipments on file:</strong> Transfer document(s) exist for this request but shipped quantities on the request are out of sync. ' +
+      '<button type="button" class="btn sm" style="margin-left:8px" onclick="ftrReconcileRequest(' + requestId + ')">Sync from documents</button>';
+    const confirmBtn = document.getElementById('ftr-dispatch-confirm-btn');
+    if (confirmBtn) confirmBtn.style.display = 'none';
+  }
+
+  function ftrHideShipmentSyncBanner() {
+    const banner = document.getElementById('ftr-shipment-sync-banner');
+    if (banner) banner.style.display = 'none';
+    const confirmBtn = document.getElementById('ftr-dispatch-confirm-btn');
+    if (confirmBtn) confirmBtn.style.display = '';
+  }
+
+  window.ftrReconcileRequest = async function ftrReconcileRequest(requestId) {
+    try {
+      await apiPost('/api/transfer-requests/' + requestId + '/reconcile', {});
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('Request synced from shipment documents.');
+      }
+      ftrHideShipmentSyncBanner();
+      expandTrRequest(requestId);
+      loadTransferRequests();
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    }
+  };
+
+  window.ftrLoadRequestShipments = async function ftrLoadRequestShipments(requestId, opts) {
+    const options = opts || {};
     const wrap = document.getElementById('ftr-shipments-wrap');
-    if (!wrap) return;
+    if (!wrap) return [];
     try {
       const list = await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50') || [];
       if (!list.length) {
         wrap.innerHTML = '<span style="color:var(--text3)">No transfer documents yet.</span>';
-        return;
+        ftrHideShipmentSyncBanner();
+        return [];
       }
       wrap.innerHTML = '<ul style="margin:0;padding-left:18px">' + list.map(function (d) {
         return '<li style="margin-bottom:6px">Doc <span class="mono">#' + d.doc_id + '</span> · ' +
           fmtDate(d.dispatched_at || d.created_at) + ' · ' + trEsc(d.status || '') +
           ' · ' + (d.line_count || 0) + ' line(s)</li>';
       }).join('') + '</ul>';
+      if (options.qtySummary && options.qtySummary.totalDisp === 0) {
+        ftrShowShipmentSyncBanner(requestId);
+      } else {
+        ftrHideShipmentSyncBanner();
+      }
+      return list;
     } catch (err) {
       wrap.innerHTML = '<span style="color:var(--red)">' + trEsc(err.message) + '</span>';
+      return [];
     }
   };
 
@@ -8311,7 +8362,7 @@ ${initScript}
               <tbody id="ftr-dispatch-extra-tbody"></tbody>
             </table>
           </div>
-          <div id="ftr-shipments-section" style="margin-bottom:14px${qtySummary.totalDisp > 0 ? '' : ';display:none'}">
+          <div id="ftr-shipments-section" style="margin-bottom:14px">
             <div style="font-weight:600;font-size:13px;margin-bottom:8px">Previous shipments</div>
             <div id="ftr-shipments-wrap" style="font-size:13px;color:var(--text2)">Loading shipments…</div>
           </div>`;
@@ -8375,7 +8426,7 @@ ${initScript}
         </div>`;
       if (canDispatch) {
         ftrRenderDispatchTable();
-        if (qtySummary.totalDisp > 0) ftrLoadRequestShipments(req.request_id);
+        ftrLoadRequestShipments(req.request_id, { qtySummary: qtySummary });
       } else if (req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED') {
         const shipBlock = document.createElement('div');
         shipBlock.style.padding = '0 20px 16px';
@@ -8603,24 +8654,12 @@ ${initScript}
       const fullyDone = data.fully_dispatched === true;
       _ftrDispatchCart = null;
       loadTransferRequests();
-      const body = document.getElementById('ftr-detail-body');
-      const remainNote = fullyDone
-        ? 'This request is <strong>fully dispatched</strong>.'
-        : 'More units can be shipped later from <strong>Dispatch remainder</strong> on this request.';
-      if (body) {
-        body.innerHTML = `
-          <div style="padding:20px 22px">
-            <div style="color:var(--green);font-weight:700;font-size:15px;margin-bottom:10px">Shipment created</div>
-            <p style="margin:0 0 8px;font-size:13px;color:var(--text2)">Transfer document <strong class="mono">#${docId != null ? docId : '—'}</strong> is <strong>Dispatched</strong>. Request status: <strong>${trEsc(newStatus)}</strong>. ${primaryWarehouseLabelHtml()} stock has been decremented.</p>
-            <p style="margin:0 0 16px;font-size:13px;color:var(--text2)">${remainNote} Store receives under <strong>Incoming Goods</strong>.</p>
-            <button type="button" class="btn primary" onclick="${fullyDone ? 'ftrAfterDispatchNav()' : 'expandTrRequest(' + requestId + ')'}">${fullyDone ? 'Open Movement List' : 'Dispatch remainder'}</button>
-          </div>`;
-      }
       if (typeof cosmosToastSuccess === 'function') {
         cosmosToastSuccess(fullyDone
           ? 'Shipment #' + docId + ' — request fully dispatched.'
           : 'Shipment #' + docId + ' created. Dispatch remainder when ready.');
       }
+      expandTrRequest(requestId);
     } catch (err) {
       if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = err.message; }
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message);

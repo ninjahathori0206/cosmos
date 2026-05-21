@@ -51,6 +51,13 @@ function requestHasAnyDispatched(lines) {
   return (lines || []).some((l) => Math.max(0, Number(l.dispatched_qty) || 0) > 0);
 }
 
+async function syncTransferRequestFromDocs(requestId) {
+  const result = await executeStoredProcedure('sp_TransferRequest_SyncDispatchedFromDocs', {
+    request_id: { type: sql.Int, value: requestId }
+  });
+  return result.recordset?.[0]?.status || null;
+}
+
 // ── GET /api/transfer-requests ────────────────────────────────────────────────
 // Store-scoped (permissions + store_id) → own store only. HQ (foundry.transfers.edit) → all.
 // Optional ?status= and ?top_n= filters.
@@ -162,6 +169,48 @@ router.get('/:id/shipments', ...transferModAndView, async (req, res, next) => {
     return next(err);
   }
 });
+
+// ── POST /api/transfer-requests/:id/reconcile ────────────────────────────────
+// Sync line dispatched_qty from transfer docs and recompute header status.
+router.post(
+  '/:id/reconcile',
+  requireAnyModule(['foundry']),
+  requirePermission('foundry.transfers.edit'),
+  async (req, res, next) => {
+    try {
+      const requestId = Number(req.params.id);
+      if (!Number.isFinite(requestId) || requestId <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid request id.' });
+      }
+
+      const detail = await executeStoredProcedure('sp_TransferRequest_GetById', {
+        request_id: { type: sql.Int, value: requestId }
+      });
+      const header = detail.recordsets?.[0]?.[0];
+      if (!header) {
+        return res.status(404).json({ success: false, message: 'Transfer request not found.' });
+      }
+
+      const status = await syncTransferRequestFromDocs(requestId);
+      const refreshed = await executeStoredProcedure('sp_TransferRequest_GetById', {
+        request_id: { type: sql.Int, value: requestId }
+      });
+      const newHeader = refreshed.recordsets?.[0]?.[0];
+      const lines = refreshed.recordsets?.[1] || [];
+
+      return res.json({
+        success: true,
+        data: {
+          request_id: requestId,
+          status: status || newHeader?.status,
+          lines
+        }
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
 
 // ── GET /api/transfer-requests/:id ───────────────────────────────────────────
 // Returns header + lines for one request (two recordsets from the SP).
@@ -415,21 +464,41 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
         });
       }
 
-      const afterDetail = await executeStoredProcedure('sp_TransferRequest_GetById', {
-        request_id: { type: sql.Int, value: requestId }
-      });
-      const afterLines = afterDetail.recordsets?.[1] || [];
-      computedHeaderStatus = computeDispatchHeaderStatus(afterLines);
+      try {
+        const syncedStatus = await syncTransferRequestFromDocs(requestId);
+        if (syncedStatus) computedHeaderStatus = syncedStatus;
+      } catch (syncErr) {
+        const partialErr = new Error(
+          createdDocId
+            ? `Transfer document #${createdDocId} was created but request sync failed. Re-open the request or use Reconcile.`
+            : 'Shipment was recorded but request sync failed. Re-open the request or use Reconcile.'
+        );
+        partialErr.statusCode = 422;
+        partialErr.doc_id = createdDocId;
+        throw partialErr;
+      }
     }
 
     const statusToWrite = value.status === 'DISPATCHED' ? computedHeaderStatus : value.status;
 
-    await executeStoredProcedure('sp_TransferRequest_UpdateStatus', {
-      request_id: { type: sql.Int,           value: requestId },
-      status:     { type: sql.VarChar(20),   value: statusToWrite },
-      user_id:    { type: sql.Int,           value: user.user_id },
-      notes:      { type: sql.NVarChar(500), value: value.notes || null }
-    });
+    try {
+      await executeStoredProcedure('sp_TransferRequest_UpdateStatus', {
+        request_id: { type: sql.Int,           value: requestId },
+        status:     { type: sql.VarChar(20),   value: statusToWrite },
+        user_id:    { type: sql.Int,           value: user.user_id },
+        notes:      { type: sql.NVarChar(500), value: value.notes || null }
+      });
+    } catch (statusErr) {
+      if (value.status === 'DISPATCHED' && createdDocId) {
+        const partialErr = new Error(
+          `Transfer document #${createdDocId} was created but request status update failed. Use Reconcile on the request.`
+        );
+        partialErr.statusCode = 422;
+        partialErr.doc_id = createdDocId;
+        throw partialErr;
+      }
+      throw statusErr;
+    }
 
     // Quick approve (no lines body): default approved_qty = requested_qty per line
     if (value.status === 'APPROVED' && !value.lines?.length) {
@@ -475,7 +544,9 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
     });
   } catch (err) {
     if (err.statusCode === 422) {
-      return res.status(422).json({ success: false, message: err.message });
+      const body = { success: false, message: err.message };
+      if (err.doc_id != null) body.doc_id = err.doc_id;
+      return res.status(422).json(body);
     }
     return next(err);
   }

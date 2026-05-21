@@ -243,3 +243,94 @@ BEGIN
   WHERE line_id = @line_id;
 END;
 GO
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- sp_TransferRequest_SyncDispatchedFromDocs
+-- Reconcile transfer_request_lines.dispatched_qty from stock_transfer_docs
+-- linked via source_request_id; recompute header status (APPROVED /
+-- PARTIALLY_DISPATCHED / DISPATCHED). Source of truth after shipment dispatch.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR ALTER PROCEDURE dbo.sp_TransferRequest_SyncDispatchedFromDocs
+  @request_id INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.transfer_requests WHERE request_id = @request_id)
+    THROW 50001, 'Transfer request not found.', 1;
+
+  UPDATE l
+  SET dispatched_qty = ISNULL(agg.total_sent, 0)
+  FROM dbo.transfer_request_lines l
+  LEFT JOIN (
+    SELECT
+      d.source_request_id AS request_id,
+      dl.sku_id,
+      SUM(dl.qty_sent) AS total_sent
+    FROM dbo.stock_transfer_docs d
+    INNER JOIN dbo.stock_transfer_doc_lines dl ON dl.doc_id = d.doc_id
+    WHERE d.source_request_id = @request_id
+    GROUP BY d.source_request_id, dl.sku_id
+  ) agg ON agg.request_id = l.request_id AND agg.sku_id = l.sku_id
+  WHERE l.request_id = @request_id;
+
+  DECLARE @new_status VARCHAR(20);
+  DECLARE @cur_status VARCHAR(20);
+  SELECT @cur_status = status FROM dbo.transfer_requests WHERE request_id = @request_id;
+
+  DECLARE @any_dispatched BIT = 0;
+  DECLARE @all_complete BIT = 1;
+
+  IF EXISTS (
+    SELECT 1
+    FROM dbo.transfer_request_lines l
+    WHERE l.request_id = @request_id
+      AND ISNULL(l.dispatched_qty, 0) > 0
+  )
+    SET @any_dispatched = 1;
+
+  IF EXISTS (
+    SELECT 1
+    FROM dbo.transfer_request_lines l
+    WHERE l.request_id = @request_id
+      AND ISNULL(l.dispatched_qty, 0) < CASE
+        WHEN l.approved_qty IS NOT NULL AND l.approved_qty > 0 THEN l.approved_qty
+        ELSE l.requested_qty
+      END
+  )
+    SET @all_complete = 0;
+
+  IF @any_dispatched = 1 AND @all_complete = 1
+    SET @new_status = 'DISPATCHED';
+  ELSE IF @any_dispatched = 1
+    SET @new_status = 'PARTIALLY_DISPATCHED';
+  ELSE
+    SET @new_status = @cur_status;
+
+  IF @new_status IN ('DISPATCHED', 'PARTIALLY_DISPATCHED')
+     AND @cur_status IN ('APPROVED', 'PARTIALLY_DISPATCHED', 'DISPATCHED')
+     AND @new_status <> @cur_status
+  BEGIN
+    UPDATE dbo.transfer_requests
+    SET
+      status     = @new_status,
+      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+    WHERE request_id = @request_id;
+  END
+  ELSE IF @any_dispatched = 0 AND @cur_status IN ('PARTIALLY_DISPATCHED', 'DISPATCHED')
+  BEGIN
+    -- Docs removed or qty zeroed — revert to APPROVED if nothing shipped on docs
+    UPDATE dbo.transfer_requests
+    SET
+      status     = 'APPROVED',
+      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+    WHERE request_id = @request_id;
+    SET @new_status = 'APPROVED';
+  END
+  ELSE
+    SET @new_status = @cur_status;
+
+  SELECT @request_id AS request_id, @new_status AS status;
+END;
+GO

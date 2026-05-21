@@ -33,17 +33,26 @@ const config = {
 };
 
 async function syncDispatched(pool, rid) {
+  try {
+    await pool.request()
+      .input('request_id', sql.Int, rid)
+      .execute('sp_TransferRequest_SyncDispatchedFromDocs');
+    return;
+  } catch (e) {
+    if (e.number !== 2812) throw e;
+  }
   await pool.request().input('request_id', sql.Int, rid).query(`
     UPDATE l
-    SET dispatched_qty = agg.total_sent
+    SET dispatched_qty = ISNULL(agg.total_sent, 0)
     FROM dbo.transfer_request_lines l
-    INNER JOIN (
+    LEFT JOIN (
       SELECT d.source_request_id AS request_id, dl.sku_id, SUM(dl.qty_sent) AS total_sent
       FROM dbo.stock_transfer_docs d
       INNER JOIN dbo.stock_transfer_doc_lines dl ON dl.doc_id = d.doc_id
       WHERE d.source_request_id = @request_id
       GROUP BY d.source_request_id, dl.sku_id
     ) agg ON agg.request_id = l.request_id AND agg.sku_id = l.sku_id
+    WHERE l.request_id = @request_id
   `);
 }
 
