@@ -26,6 +26,7 @@
     "migrate:59-sync-transfer-dispatched-qty": "node scripts/run-migration-59-sync-transfer-dispatched-qty.js",
     "maintenance:repair-transfer-request-qty": "node scripts/repair-transfer-request-line-qty.js",
     "deploy:sp-stock-transfer-units": "node scripts/deploy-sp-stock-transfer-units.js",
+    "verify:atomic-dispatch-shipment": "node scripts/verify-atomic-dispatch-shipment.js",
     "verify:transfer-dispatch-schema": "node scripts/verify-transfer-dispatch-schema.js",
     "verify:partial-dispatch-logic": "node scripts/verify-partial-dispatch-logic.js",
     "maintenance:reconcile-duplicate-transfer-units": "node scripts/run-maintenance-reconcile-duplicate-transfer-units.js",

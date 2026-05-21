@@ -84,9 +84,9 @@ HQ reviews store transfer requests and, when **APPROVED**, ships warehouse stock
 ```
 
 - `dispatched_qty` on each line = **this shipment only** (not cumulative).
-- After the transfer document is created, the API runs **`sp_TransferRequest_SyncDispatchedFromDocs`** so line `dispatched_qty` and header status match linked docs (source of truth).
+- Shipment dispatch runs in one database transaction via **`sp_TransferRequest_DispatchShipment`**: creates the transfer document, syncs line `dispatched_qty` from linked docs (source of truth), and updates header status. On any failure, the document and request changes roll back together.
 - Response: `{ request_id, status, doc_id, fully_dispatched }` where `status` is `PARTIALLY_DISPATCHED` or `DISPATCHED`.
-- If sync fails after doc creation: **422** with `doc_id` and message to use **Reconcile**.
+- Legacy desync (doc exists, request stale): use **Reconcile** or ops repair scripts.
 
 ### Reconcile (out-of-sync repair)
 

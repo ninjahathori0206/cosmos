@@ -87,12 +87,26 @@ async function main() {
           AND u.location_id = @to_store_id
       `)
 
+    const sourceRequestId = doc.source_request_id != null ? Number(doc.source_request_id) : null;
+
     await new sql.Request(tx)
       .input('doc_id', sql.Int, docId)
       .query(`DELETE FROM dbo.stock_transfer_docs WHERE doc_id = @doc_id`)
 
+    if (sourceRequestId != null && Number.isFinite(sourceRequestId) && sourceRequestId > 0) {
+      await new sql.Request(tx)
+        .input('request_id', sql.Int, sourceRequestId)
+        .execute('sp_TransferRequest_SyncDispatchedFromDocs');
+    }
+
     await tx.commit()
-    console.log('[cancel-transfer-doc] OK — cancelled doc', docId, 'lines:', lines.length, 'WH restored')
+    console.log(
+      '[cancel-transfer-doc] OK — cancelled doc',
+      docId,
+      'lines:',
+      lines.length,
+      sourceRequestId ? 'request #' + sourceRequestId + ' synced' : 'WH restored'
+    )
   } catch (err) {
     await tx.rollback()
     throw err

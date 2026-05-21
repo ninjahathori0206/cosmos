@@ -22,22 +22,49 @@ GO
 -- @source_request_id : NULL for DIRECT transfers
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR ALTER PROCEDURE dbo.sp_StockTransferDoc_Dispatch
-  @lines_json        NVARCHAR(MAX),
-  @to_store_id       INT,
-  @doc_type          VARCHAR(10)   = 'DIRECT',
-  @source_request_id INT           = NULL,
-  @notes             NVARCHAR(500) = NULL,
-  @dispatched_by     INT           = NULL
+  @lines_json                   NVARCHAR(MAX),
+  @to_store_id                  INT,
+  @doc_type                     VARCHAR(10)   = 'DIRECT',
+  @source_request_id            INT           = NULL,
+  @notes                        NVARCHAR(500) = NULL,
+  @dispatched_by                INT           = NULL,
+  @caller_manages_transaction   BIT           = 0
 AS
 BEGIN
   SET NOCOUNT ON;
-  BEGIN TRANSACTION;
+  DECLARE @started_here BIT = 0;
+
+  IF @@TRANCOUNT = 0
+  BEGIN
+    BEGIN TRANSACTION;
+    SET @started_here = 1;
+  END;
+
   BEGIN TRY
 
     IF NOT EXISTS (
       SELECT 1 FROM dbo.stores WHERE store_id = @to_store_id AND status = 'ACTIVE'
     )
       RAISERROR('Destination store not found or inactive.', 16, 1);
+
+    IF @doc_type = 'REQUEST'
+    BEGIN
+      IF @source_request_id IS NULL
+        RAISERROR('source_request_id is required for REQUEST transfer documents.', 16, 1);
+
+      IF NOT EXISTS (
+        SELECT 1 FROM dbo.transfer_requests WHERE request_id = @source_request_id
+      )
+        RAISERROR('Transfer request not found for source_request_id.', 16, 1);
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM dbo.transfer_requests
+        WHERE request_id = @source_request_id
+          AND store_id = @to_store_id
+      )
+        RAISERROR('Destination store does not match the transfer request store.', 16, 1);
+    END
 
     CREATE TABLE #lines (
       sku_id        INT NOT NULL,
@@ -169,13 +196,21 @@ BEGIN
     CLOSE line_cur;
     DEALLOCATE line_cur;
     DROP TABLE #lines;
-    COMMIT TRANSACTION;
+
+    IF @caller_manages_transaction = 0 AND @started_here = 1
+      COMMIT TRANSACTION;
+
+    IF @caller_manages_transaction = 0
+       AND @doc_type = 'REQUEST'
+       AND @source_request_id IS NOT NULL
+      EXEC dbo.sp_TransferRequest_SyncDispatchedFromDocs @request_id = @source_request_id;
 
     SELECT @doc_id AS doc_id;
 
   END TRY
   BEGIN CATCH
-    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    IF @@TRANCOUNT > 0
+      ROLLBACK TRANSACTION;
     IF OBJECT_ID('tempdb..#lines') IS NOT NULL DROP TABLE #lines;
     DECLARE @msg1 NVARCHAR(500) = ERROR_MESSAGE(); RAISERROR(@msg1, 16, 1);
   END CATCH;

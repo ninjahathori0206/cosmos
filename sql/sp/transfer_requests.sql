@@ -334,3 +334,101 @@ BEGIN
   SELECT @request_id AS request_id, @new_status AS status;
 END;
 GO
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- sp_TransferRequest_DispatchShipment
+-- Atomic goods-request shipment: transfer document + sync lines/status from docs.
+-- Transfer documents are the source of truth for dispatched_qty.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR ALTER PROCEDURE dbo.sp_TransferRequest_DispatchShipment
+  @request_id    INT,
+  @lines_json    NVARCHAR(MAX),
+  @to_store_id   INT,
+  @notes         NVARCHAR(500) = NULL,
+  @dispatched_by INT           = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  DECLARE @started_here BIT = 0;
+  DECLARE @doc_id INT;
+  DECLARE @new_status VARCHAR(20);
+  DECLARE @req_status VARCHAR(20);
+  DECLARE @req_store_id INT;
+  DECLARE @status_err NVARCHAR(200);
+
+  IF @@TRANCOUNT = 0
+  BEGIN
+    BEGIN TRANSACTION;
+    SET @started_here = 1;
+  END;
+
+  BEGIN TRY
+    SELECT @req_status = status, @req_store_id = store_id
+    FROM dbo.transfer_requests
+    WHERE request_id = @request_id;
+
+    IF @req_status IS NULL
+      THROW 50001, 'Transfer request not found.', 1;
+
+    IF @req_status NOT IN ('APPROVED', 'PARTIALLY_DISPATCHED')
+    BEGIN
+      SET @status_err = N'Cannot dispatch shipment while request status is ' + ISNULL(@req_status, N'(unknown)') + N'.';
+      RAISERROR(@status_err, 16, 1);
+    END
+
+    IF @to_store_id <> @req_store_id
+      RAISERROR('Destination store does not match the transfer request store.', 16, 1);
+
+    CREATE TABLE #doc_out (doc_id INT);
+
+    INSERT INTO #doc_out (doc_id)
+    EXEC dbo.sp_StockTransferDoc_Dispatch
+      @lines_json                 = @lines_json,
+      @to_store_id                = @to_store_id,
+      @doc_type                   = 'REQUEST',
+      @source_request_id          = @request_id,
+      @notes                      = @notes,
+      @dispatched_by              = @dispatched_by,
+      @caller_manages_transaction = 1;
+
+    SELECT @doc_id = doc_id FROM #doc_out;
+
+    IF @doc_id IS NULL
+      RAISERROR('Transfer document was not created.', 16, 1);
+
+    CREATE TABLE #sync_out (
+      request_id INT,
+      status     VARCHAR(20)
+    );
+
+    INSERT INTO #sync_out (request_id, status)
+    EXEC dbo.sp_TransferRequest_SyncDispatchedFromDocs @request_id = @request_id;
+
+    SELECT @new_status = status FROM #sync_out;
+
+    IF @new_status IS NULL
+      SELECT @new_status = status FROM dbo.transfer_requests WHERE request_id = @request_id;
+
+    EXEC dbo.sp_TransferRequest_UpdateStatus
+      @request_id = @request_id,
+      @status     = @new_status,
+      @user_id    = @dispatched_by,
+      @notes      = @notes;
+
+    IF @started_here = 1
+      COMMIT TRANSACTION;
+
+    SELECT @doc_id AS doc_id, @new_status AS status;
+
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0
+      ROLLBACK TRANSACTION;
+    IF OBJECT_ID('tempdb..#doc_out') IS NOT NULL DROP TABLE #doc_out;
+    IF OBJECT_ID('tempdb..#sync_out') IS NOT NULL DROP TABLE #sync_out;
+    DECLARE @msg_dispatch NVARCHAR(500) = ERROR_MESSAGE();
+    RAISERROR(@msg_dispatch, 16, 1);
+  END CATCH;
+END;
+GO

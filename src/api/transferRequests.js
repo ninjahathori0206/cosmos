@@ -32,21 +32,6 @@ function transferLineCap(line) {
   return Math.max(0, Number(line.requested_qty) || 0);
 }
 
-function computeDispatchHeaderStatus(lines) {
-  if (!lines || !lines.length) return 'APPROVED';
-  let anyDispatched = false;
-  let allComplete = true;
-  for (const l of lines) {
-    const cap = transferLineCap(l);
-    const disp = Math.max(0, Number(l.dispatched_qty) || 0);
-    if (disp > 0) anyDispatched = true;
-    if (disp < cap) allComplete = false;
-  }
-  if (allComplete && anyDispatched) return 'DISPATCHED';
-  if (anyDispatched) return 'PARTIALLY_DISPATCHED';
-  return 'APPROVED';
-}
-
 function requestHasAnyDispatched(lines) {
   return (lines || []).some((l) => Math.max(0, Number(l.dispatched_qty) || 0) > 0);
 }
@@ -444,60 +429,29 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
         return res.status(422).json({ success: false, message: 'No dispatchable lines (all quantities are zero).' });
       }
 
-      // Create Transfer Document — WAREHOUSE balance decrements here.
-      // Store will Accept then Stock the document to credit their balance.
-      const docResult = await executeStoredProcedure('sp_StockTransferDoc_Dispatch', {
-        lines_json:        { type: sql.NVarChar(sql.MAX), value: JSON.stringify(allSkuLines) },
-        to_store_id:       { type: sql.Int,               value: reqHeader.store_id },
-        doc_type:          { type: sql.VarChar(10),        value: 'REQUEST' },
-        source_request_id: { type: sql.Int,               value: requestId },
-        notes:             { type: sql.NVarChar(500),      value: value.notes || `Dispatched from transfer request #${requestId}` },
-        dispatched_by:     { type: sql.Int,               value: user.user_id }
+      const dispatchNotes = value.notes || `Dispatched from transfer request #${requestId}`;
+      const shipmentResult = await executeStoredProcedure('sp_TransferRequest_DispatchShipment', {
+        request_id:    { type: sql.Int,               value: requestId },
+        lines_json:    { type: sql.NVarChar(sql.MAX), value: JSON.stringify(allSkuLines) },
+        to_store_id:   { type: sql.Int,               value: reqHeader.store_id },
+        notes:         { type: sql.NVarChar(500),      value: dispatchNotes },
+        dispatched_by: { type: sql.Int,               value: user.user_id }
       });
 
-      createdDocId = docResult.recordset?.[0]?.doc_id || null;
-
-      for (const l of dispatchLines) {
-        await executeStoredProcedure('sp_TransferRequest_AddDispatchedQty', {
-          line_id: { type: sql.Int, value: l.line_id },
-          add_qty: { type: sql.Int, value: l.qty }
-        });
-      }
-
-      try {
-        const syncedStatus = await syncTransferRequestFromDocs(requestId);
-        if (syncedStatus) computedHeaderStatus = syncedStatus;
-      } catch (syncErr) {
-        const partialErr = new Error(
-          createdDocId
-            ? `Transfer document #${createdDocId} was created but request sync failed. Re-open the request or use Reconcile.`
-            : 'Shipment was recorded but request sync failed. Re-open the request or use Reconcile.'
-        );
-        partialErr.statusCode = 422;
-        partialErr.doc_id = createdDocId;
-        throw partialErr;
-      }
+      const shipmentRow = shipmentResult.recordset?.[0];
+      createdDocId = shipmentRow?.doc_id || null;
+      computedHeaderStatus = shipmentRow?.status || computedHeaderStatus;
     }
 
     const statusToWrite = value.status === 'DISPATCHED' ? computedHeaderStatus : value.status;
 
-    try {
+    if (value.status !== 'DISPATCHED') {
       await executeStoredProcedure('sp_TransferRequest_UpdateStatus', {
         request_id: { type: sql.Int,           value: requestId },
         status:     { type: sql.VarChar(20),   value: statusToWrite },
         user_id:    { type: sql.Int,           value: user.user_id },
         notes:      { type: sql.NVarChar(500), value: value.notes || null }
       });
-    } catch (statusErr) {
-      if (value.status === 'DISPATCHED' && createdDocId) {
-        const partialErr = new Error(
-          `Transfer document #${createdDocId} was created but request status update failed. Use Reconcile on the request.`
-        );
-        partialErr.statusCode = 422;
-        partialErr.doc_id = createdDocId;
-        throw partialErr;
-      }
-      throw statusErr;
     }
 
     // Quick approve (no lines body): default approved_qty = requested_qty per line
