@@ -24,7 +24,7 @@
 | `theme_color` | `#1D6FD4` (accent) |
 | Icons | `/img/storepilot-icon-192.png`, `512.png` (maskable) |
 
-Head on [`StorePilot_Prototype.html`](../../StorePilot_Prototype.html) and [`login.html`](../../src/public/login.html): manifest link, `theme-color`, Apple standalone meta, `viewport-fit=cover`, `apple-touch-icon`.
+Head on [`StorePilot_Prototype.html`](../../StorePilot_Prototype.html) and [`login.html`](../../src/public/login.html): manifest link, `theme-color`, Apple standalone meta, `viewport-fit=cover`, `apple-touch-icon`, zoom-lock viewport + `html.cosmos-lock-zoom` (see [`cosmos-mobile-chrome.md`](cosmos-mobile-chrome.md#zoom-lock-store-os-store-pilot-login)).
 
 ## Install prompt UI
 

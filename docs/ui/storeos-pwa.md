@@ -23,7 +23,7 @@ Aligned with [Store Pilot PWA](storepilot-pwa.md) patterns; separate manifest an
 | `background_color` | `#0F172A` |
 | `theme_color` | `#2563EB` |
 
-Head on [`POS_Prototype.html`](../../POS_Prototype.html): manifest, Apple standalone meta, `apple-touch-icon`, [`storeos-pwa.js`](../../src/public/js/storeos-pwa.js).
+Head on [`POS_Prototype.html`](../../POS_Prototype.html): manifest, Apple standalone meta, `apple-touch-icon`, [`storeos-pwa.js`](../../src/public/js/storeos-pwa.js), zoom-lock viewport + `html.cosmos-lock-zoom` (see [`cosmos-mobile-chrome.md`](cosmos-mobile-chrome.md#zoom-lock-store-os-store-pilot-login)).
 
 ## Install prompt UI
 

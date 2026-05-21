@@ -28,6 +28,18 @@ Mobile browsers (especially iOS Safari) show a floating bottom toolbar that over
 
 Shell HTML should include `viewport-fit=cover` so `env(safe-area-inset-*)` works.
 
+### Zoom lock (Store OS, Store Pilot, login)
+
+Mobile/tablet shells that must not pinch-zoom or jump on input focus:
+
+- **Viewport:** `width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover`
+- **Markup:** `<html class="cosmos-lock-zoom">` on [`POS_Prototype.html`](../../POS_Prototype.html), [`StorePilot_Prototype.html`](../../StorePilot_Prototype.html), [`login.html`](../../src/public/login.html)
+- **CSS** ([`cosmos-ui-polish.css`](../../src/public/css/cosmos-ui-polish.css)): on coarse pointer / ≤1024px, `touch-action: pan-x pan-y` on `html`/`body`; form controls at `font-size: 16px` (stops iOS Safari auto-zoom on focus)
+
+**Limitations:** OS accessibility zoom may still apply. Desktop Ctrl+/− is unaffected (out of scope).
+
+See also [`storeos-pwa.md`](storeos-pwa.md) and [`storepilot-pwa.md`](storepilot-pwa.md).
+
 ## Native app scroll shell (ERP prototypes)
 
 Foundry, StorePilot, Finance, CX, and Command Unit use a **single scroll region** and shared mobile hamburger + off-canvas sidebar rules in `cosmos-ui-polish.css` (Command Unit parity). (Command Unit also uses hamburger + off-canvas sidebar on ≤768px — see [`command-unit-mobile.md`](command-unit-mobile.md)) so the topbar (and CX `.cx-mob-bar`) stay fixed while only page content scrolls — similar to a native app.
