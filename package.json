@@ -23,6 +23,7 @@
     "migrate:51-stock-transfer-doc-units": "node scripts/run-migration-51-stock-transfer-doc-units.js",
     "migrate:56-product-types-ssot": "node scripts/run-migration-56-product-types-ssot.js",
     "deploy:sp-stock-transfer-units": "node scripts/deploy-sp-stock-transfer-units.js",
+    "verify:transfer-dispatch-schema": "node scripts/verify-transfer-dispatch-schema.js",
     "maintenance:reconcile-duplicate-transfer-units": "node scripts/run-maintenance-reconcile-duplicate-transfer-units.js",
     "maintenance:cancel-transfer-doc": "node scripts/_cancel-transfer-doc.js",
     "maintenance:backfill-sku-units": "node scripts/run-maintenance-backfill-sku-units.js",

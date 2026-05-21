@@ -1,6 +1,7 @@
 /**
- * Deploy unit-aware stock transfer SPs
+ * Deploy unit-aware stock transfer SPs (Goods Request dispatch + transfer docs).
  * Usage: npm run deploy:sp-stock-transfer-units
+ * After deploy: npm run pm2:restart  (or restart node app.js) so Joi accepts extra_lines[].unit_ids.
  */
 require('dotenv').config()
 const fs = require('fs')
@@ -19,6 +20,7 @@ const config = {
 
 const files = [
   'sql/sp/stock_transfers.sql',
+  'sql/sp/transfer_requests.sql',
   'sql/sp/stock_transfer_docs.sql'
 ]
 

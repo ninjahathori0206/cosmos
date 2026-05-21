@@ -142,7 +142,7 @@ router.get('/:id', ...transferModAndView, async (req, res, next) => {
 //
 // Optional body:
 //   lines         — array of { line_id, approved_qty? / dispatched_qty? / received_qty? }
-//   extra_lines   — on DISPATCHED only: [{ sku_id, qty }] SKUs not on the request (HQ adds)
+//   extra_lines   — on DISPATCHED only: [{ sku_id, qty, unit_ids? }] SKUs not on the request (HQ adds)
 //   notes         — reviewer / dispatch note
 router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePermission('foundry.transfers.edit', 'storepilot.transfers.edit'), async (req, res, next) => {
   try {
