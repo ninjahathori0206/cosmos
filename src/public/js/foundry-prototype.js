@@ -8171,38 +8171,65 @@ ${initScript}
     }
   };
 
+  function ftrRenderDetailToolbar(req, canApprove, canDispatch) {
+    const actionsEl = document.getElementById('ftr-detail-actions');
+    const metaEl = document.getElementById('ftr-detail-meta');
+    if (!actionsEl) return;
+    if (metaEl) {
+      metaEl.innerHTML = '<span class="b ' + (TR_STATUS_BADGE[req.status] || 'b-gray') + '">' + trEsc(req.status) + '</span>' +
+        '<span>' + trEsc(req.store_name || req.store_id) + '</span>' +
+        '<span>' + fmtDate(req.created_at) + '</span>';
+    }
+    let html = '';
+    if (canApprove) {
+      html += '<button type="button" class="btn sm primary" id="ftr-approve-btn" onclick="trApproveFromDetail(' + req.request_id + ')">Approve</button>';
+      html += '<button type="button" class="btn sm" style="color:var(--red);border-color:var(--red)" id="ftr-reject-btn" onclick="trReject(' + req.request_id + ', this)">Reject</button>';
+    }
+    if (canDispatch) {
+      html += '<button type="button" class="btn sm primary" onclick="event.stopPropagation();openGoodsRequestDispatchBucket(' + req.request_id + ')">Open bucket</button>';
+      html += '<button type="button" class="btn sm primary" id="ftr-dispatch-confirm-btn" onclick="trDispatchConfirm(' + req.request_id + ')">Confirm shipment</button>';
+    }
+    actionsEl.innerHTML = html;
+  }
+
   window.expandTrRequest = async function (requestId) {
     const card  = document.getElementById('ftr-detail-card');
     const body  = document.getElementById('ftr-detail-body');
     const title = document.getElementById('ftr-detail-title');
+    const msgEl = document.getElementById('ftr-detail-msg');
     if (!card) return;
 
-    // If the mobile sidebar overlay is left open, it can hide the topbar/hamburger.
-    // Also, Chrome mobile can behave badly with sticky headers when we auto-scroll.
-    const overlayEl = document.getElementById('fy-sidebar-overlay')
-    const sidebarEl = document.querySelector('.sidebar')
-    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
-    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
-    const isBodyLocked = document.body.style.overflow === 'hidden'
-    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
+    const overlayEl = document.getElementById('fy-sidebar-overlay');
+    const sidebarEl = document.querySelector('.sidebar');
+    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'));
+    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'));
+    const isBodyLocked = document.body.style.overflow === 'hidden';
+    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar();
 
-    if (title) title.textContent = `Request #${requestId}`;
+    if (typeof window.cosmosOpenExtendedDetail === 'function') {
+      window.cosmosOpenExtendedDetail('ftr-detail-card', 'ftr-detail-backdrop');
+    }
+    if (msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
+    const actionsEl = document.getElementById('ftr-detail-actions');
+    if (actionsEl) actionsEl.innerHTML = '';
+
+    if (title) title.textContent = 'Request #' + requestId;
     if (body) {
       body.innerHTML = '<div id="ftr-detail-skeleton" style="padding:16px"></div>';
       if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('ftr-detail-skeleton', 5);
       else body.innerHTML = '<div style="padding:16px;color:var(--text3)">Loading…</div>';
     }
-    card.style.display = '';
-    const ua = navigator.userAgent || ''
-    const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
-    if (!isChromeLike) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     try {
       const req  = await apiGet(`/api/transfer-requests/${requestId}`);
       _trExpanded = req;
+      if (title) {
+        title.textContent = 'Request #' + requestId + (req.store_name ? ' — ' + req.store_name : '');
+      }
 
       const canApprove  = req.status === 'SUBMITTED';
       const canDispatch = req.status === 'APPROVED' || req.status === 'PARTIALLY_DISPATCHED';
+      ftrRenderDetailToolbar(req, canApprove, canDispatch);
       const qtySummary = ftrRequestQtySummary(req);
       const qtySummaryBlock = ftrQtySummaryHtml(qtySummary);
 
@@ -8268,13 +8295,7 @@ ${initScript}
           <div class="hint" style="margin-bottom:14px">
             <strong>Goods Transfer shipment:</strong> Scan each <strong>7-digit unit barcode</strong> (camera or wedge). This shipment only — count follows scans (no manual qty).
           </div>
-          <div style="margin-bottom:14px;padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border)">
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-              <div style="font-weight:600;font-size:13px">Scan units · ${primaryWarehouseLabelHtml()}</div>
-              <button type="button" class="btn sm primary" onclick="event.stopPropagation();openGoodsRequestDispatchBucket(${req.request_id})">📷 Open scan bucket</button>
-            </div>
-            <p style="margin:0;font-size:12px;color:var(--text3)">Use the scan bucket to add units for <strong>this shipment</strong>, then confirm below.</p>
-          </div>
+          <p style="margin:0 0 14px;font-size:12px;color:var(--text3)">Scan units with <strong>Open bucket</strong> in the toolbar (${primaryWarehouseLabelHtml()}), then <strong>Confirm shipment</strong>.</p>
           <div class="tw mb3">
             <table>
               <thead>
@@ -8328,33 +8349,27 @@ ${initScript}
           ${tableBlock}
 
           ${canApprove ? `
-            <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-              <div>
+            <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:14px">
+              <div style="flex:1;min-width:200px">
                 <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">Review note (optional)</label>
                 <input type="text" id="ftr-review-note" placeholder="Note to store manager…"
-                  style="width:260px;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
+                  style="width:100%;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
                   onclick="event.stopPropagation()">
               </div>
-              <button class="btn primary" onclick="trApproveFromDetail(${req.request_id})">✓ Approve request</button>
-              <input type="text" id="ftr-reject-note" placeholder="Reject reason (required)…"
-                style="width:min(100%,280px);padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
-                onclick="event.stopPropagation()">
-              <button class="btn sm" style="color:var(--red);border-color:var(--red)" onclick="trReject(${req.request_id}, this)">✕ Reject</button>
-              <span id="ftr-detail-msg" style="font-size:12px;min-height:16px"></span>
+              <div style="flex:1;min-width:200px">
+                <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">Reject reason</label>
+                <input type="text" id="ftr-reject-note" placeholder="Required to reject…"
+                  style="width:100%;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
+                  onclick="event.stopPropagation()">
+              </div>
             </div>
           ` : ''}
           ${canDispatch ? `
-            <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
-              <div>
-                <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">Note on transfer document (optional)</label>
-                <input type="text" id="ftr-dispatch-note" placeholder="Shown on Goods Transfer…"
-                  style="width:min(100%,400px);padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
-                  onclick="event.stopPropagation()">
-              </div>
-              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <button type="button" class="btn primary" id="ftr-dispatch-confirm-btn" onclick="trDispatchConfirm(${req.request_id})">✓ Confirm shipment (create Goods Transfer)</button>
-                <span id="ftr-detail-msg" style="font-size:12px;min-height:16px"></span>
-              </div>
+            <div style="margin-top:14px">
+              <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">Note on transfer document (optional)</label>
+              <input type="text" id="ftr-dispatch-note" placeholder="Shown on Goods Transfer…"
+                style="width:100%;max-width:400px;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
+                onclick="event.stopPropagation()">
             </div>
           ` : ''}
         </div>`;
@@ -8375,18 +8390,18 @@ ${initScript}
 
   window.closeTrDetail = function () {
     if (typeof ftrStopCamera === 'function') ftrStopCamera();
-    const card = document.getElementById('ftr-detail-card');
-    if (card) card.style.display = 'none';
+    if (typeof window.cosmosCloseExtendedDetail === 'function') {
+      window.cosmosCloseExtendedDetail('ftr-detail-card', 'ftr-detail-backdrop');
+    }
     _trExpanded = null;
     _ftrDispatchCart = null;
 
-    // Clear any accidental sidebar overlay/body lock state.
-    const overlayEl = document.getElementById('fy-sidebar-overlay')
-    const sidebarEl = document.querySelector('.sidebar')
-    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
-    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
-    const isBodyLocked = document.body.style.overflow === 'hidden'
-    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
+    const overlayEl = document.getElementById('fy-sidebar-overlay');
+    const sidebarEl = document.querySelector('.sidebar');
+    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'));
+    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'));
+    const isBodyLocked = document.body.style.overflow === 'hidden';
+    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar();
   };
 
   window.trQuickApprove = async function (requestId, btn) {
@@ -8427,12 +8442,16 @@ ${initScript}
     });
     const note  = (document.getElementById('ftr-review-note') || {}).value || null;
     const msgEl = document.getElementById('ftr-detail-msg');
+    const btn = document.getElementById('ftr-approve-btn');
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
     try {
       await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'APPROVED', lines, notes: note || null });
-      if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Approved.'; }
-      setTimeout(() => { loadTransferRequests(); closeTrDetail(); }, 900);
+      if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = 'Approved.'; }
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      setTimeout(function () { loadTransferRequests(); closeTrDetail(); }, 900);
     } catch (err) {
       if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
     }
   };
 

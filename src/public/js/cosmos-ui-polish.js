@@ -136,6 +136,29 @@
     }
   }
 
+  window.cosmosOpenExtendedDetail = function cosmosOpenExtendedDetail(panelId, backdropId) {
+    var panel = panelId ? document.getElementById(panelId) : null
+    var backdrop = backdropId ? document.getElementById(backdropId) : null
+    if (backdrop) backdrop.classList.add('is-open')
+    if (panel) {
+      panel.classList.add('is-open')
+      panel.removeAttribute('hidden')
+    }
+    document.body.classList.add('cosmos-extended-detail-open')
+    if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll()
+  }
+
+  window.cosmosCloseExtendedDetail = function cosmosCloseExtendedDetail(panelId, backdropId) {
+    var panel = panelId ? document.getElementById(panelId) : null
+    var backdrop = backdropId ? document.getElementById(backdropId) : null
+    if (backdrop) backdrop.classList.remove('is-open')
+    if (panel) {
+      panel.classList.remove('is-open')
+      panel.setAttribute('hidden', '')
+    }
+    document.body.classList.remove('cosmos-extended-detail-open')
+  }
+
   window.cosmosSignOut = function cosmosSignOut() {
     try { sessionStorage.clear() } catch (e) { /* ignore */ }
     window.location.href = '/'

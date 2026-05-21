@@ -991,14 +991,6 @@
       </div>
     </div>
 
-    <!-- Detail / action panel (shown when a row is expanded) -->
-    <div id="ftr-detail-card" class="card" style="display:none">
-      <div class="ch" style="justify-content:space-between">
-        <div class="ct" id="ftr-detail-title">Request details</div>
-        <button class="btn sm" onclick="closeTrDetail()">✕ Close</button>
-      </div>
-      <div id="ftr-detail-body"></div>
-    </div>
   </div>
 
   <!-- ═══ MOVEMENT LIST ═══ -->
@@ -1035,6 +1027,23 @@
   </div>
 
   </div><!-- /.cosmos-app-scroll -->
+
+  <!-- Goods request — extended detail (overlay, not footer card) -->
+  <div id="ftr-detail-backdrop" class="cosmos-extended-detail__backdrop" hidden aria-hidden="true" onclick="closeTrDetail()"></div>
+  <div id="ftr-detail-card" class="cosmos-extended-detail__panel" role="dialog" aria-modal="true" aria-labelledby="ftr-detail-title" hidden>
+    <div class="cosmos-extended-detail__toolbar">
+      <div class="cosmos-extended-detail__head">
+        <div id="ftr-detail-title" class="cosmos-extended-detail__title">Request details</div>
+        <div id="ftr-detail-meta" class="cosmos-extended-detail__meta"></div>
+      </div>
+      <div class="cosmos-extended-detail__actions-row">
+        <div id="ftr-detail-actions" class="cosmos-extended-detail__actions"></div>
+        <button type="button" class="btn sm" id="ftr-detail-close-btn" onclick="closeTrDetail()" aria-label="Close request details">Close</button>
+      </div>
+    </div>
+    <div id="ftr-detail-msg" class="cosmos-extended-detail__msg" role="status" aria-live="polite"></div>
+    <div id="ftr-detail-body" class="cosmos-extended-detail__body"></div>
+  </div>
 
 </main>
 
@@ -1367,11 +1376,16 @@
       <div id="bucket-screen-scan" style="display:none">
         <div class="bucket-scan-viewport" id="bucket-scan-viewport">
           <video id="bucket-video" autoplay playsinline muted></video>
-          <div class="bucket-scan-line"></div>
+          <div class="bucket-scan-frame" aria-hidden="true">
+            <span class="bucket-scan-frame__c bucket-scan-frame__c--tl"></span>
+            <span class="bucket-scan-frame__c bucket-scan-frame__c--tr"></span>
+            <span class="bucket-scan-frame__c bucket-scan-frame__c--bl"></span>
+            <span class="bucket-scan-frame__c bucket-scan-frame__c--br"></span>
+          </div>
           <div id="bucket-focus-reticle" class="bucket-focus-reticle" aria-hidden="true"></div>
           <div id="bucket-scan-flash" class="bucket-scan-flash"></div>
         </div>
-        <p class="bucket-scan-focus-hint">Tap on the label to focus</p>
+        <p class="bucket-scan-focus-hint">Aim QR in frame · tap to scan</p>
         <div style="margin-top:12px;font-size:14px;font-weight:600;color:var(--text1)" id="bucket-score-label">0 units</div>
         <div class="bucket-score-bar"><div id="bucket-score-bar-fill" class="bucket-score-bar-fill"></div></div>
         <div id="bucket-scan-status" class="bucket-scan-status" role="status" aria-live="polite"></div>
@@ -1523,8 +1537,8 @@ function addColour() {
 ></script>
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
-<script src="/js/cosmos-bucket-scan.js?v=20260521-bucket-syntax" defer></script>
-<script src="/js/foundry-prototype.js?v=20260520-pv-print2" defer></script>
+<script src="/js/cosmos-bucket-scan.js?v=20260521-tap-scan" defer></script>
+<script src="/js/foundry-prototype.js?v=20260521-ext-detail" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)
 document.addEventListener('DOMContentLoaded', function() {

@@ -20,113 +20,57 @@ All call `window.openBucket({ mode, expected, onSubmit, ... })`.
 
 | Mode | App | Screen | Behaviour |
 |------|-----|--------|-----------|
-| **TRANSFER** | Foundry | Goods Transfer, Goods Request dispatch | Open scan — any valid warehouse unit via `transferLookupSku` |
-| **RECEIVE** | StorePilot | Incoming Goods (ACCEPTED) | Closed list from doc `lines[].units[]` — **reject** scans not on Foundry challan |
-
-**STOCKTAKE** is not implemented.
+| **TRANSFER** | Foundry | Goods Transfer, Goods Request dispatch | Scan warehouse unit via tap or manual entry |
+| **RECEIVE** | StorePilot | Incoming Goods (ACCEPTED) | Closed list from doc `lines[].units[]` — reject scans not on Foundry challan |
 
 ## Modal flow (three screens)
 
-1. **Idle** — “Start scanning” button (`#bucket-screen-idle`)
-2. **Scan** — live camera, score bar, manual entry, optional scanned list (`#bucket-screen-scan`)
-3. **Review** — verified / missing lists, Submit bucket (`#bucket-screen-review`)
+1. **Idle** — “Start scanning”
+2. **Scan** — live camera preview, static QR frame, tap to scan, manual entry, Show QR list
+3. **Review** — submit bucket
 
-Transitions: `openBucket()` → Idle → `bucketStartScanning()` → Scan → `bucketGoReview()` → Review → `bucketSubmit()` closes modal. Stop / Back return to Idle or Scan.
+## Camera viewport (tap to scan)
 
-## QR scan vs tap (two different “tap” concepts)
+| Element | Behaviour |
+|---------|-----------|
+| Moving blue line | **Removed** (was misleading laser-scanner UX) |
+| Static corner frame | `.bucket-scan-frame` — four brackets, no animation |
+| Focus reticle | `#bucket-focus-reticle` — visible ~900ms **only on tap** |
+| Hint | **“Aim QR in frame · tap to scan”** |
 
-| User action | What it does |
-|-------------|--------------|
-| **Tap camera viewport** | Sets **focus region** for QR decode — does **not** trigger a one-shot scan |
-| **Tap “Show QR (N)”** | Toggles a **text list** of already-scanned unit barcodes (not QR images) |
+### Tap = one scan attempt
 
-**Scanning is continuous** while the camera is running (~10 fps), not on tap.
+While the camera is on, the feed is **preview only** — nothing is decoded until the user **taps** the viewport.
 
-Hint under camera: **“Tap on the label to focus”**.
+`pointerdown` on `#bucket-scan-viewport` → `bucketTapToScan()`:
 
-### Continuous camera decode
+1. Focus reticle + ROI at tap (`bucketApplyTapFocus`)
+2. Android autofocus (`pointsOfInterest` / `single-shot`) when supported
+3. **One** `bucketDecodeFrame()` — ROI crop first (jsQR), then full frame if needed
+4. If code found → `bucketHandleScan()`; else inline `No QR detected — tap again`
 
-When **Start scanning** runs `bucketStartCamera()`:
+Tap debounce: **400ms** (`TAP_DEBOUNCE_MS`). Per-unit cooldown: **2s** (`DEBOUNCE_MS`).
 
-1. **HTTPS check** — camera blocked on non-secure origins; message in `#bucket-scan-status`
-2. **Decoder priority:** native `BarcodeDetector` (QR only) if available; else `/js/jsQR.min.js` on canvas frames
-3. **Camera** — rear preferred (`facingMode: environment`), 1280×720 ideal
-4. **Loop** — `requestAnimationFrame` every **100ms** (`SCAN_TICK_MS`); each tick → `bucketDecodeFrame()` → `bucketHandleScan(value)` when a code is found
+Native `BarcodeDetector` (when available): single full-frame detect on each tap.
 
-**On success:** green flash, unit added to bucket, score updated, one success toast at a time (replaces previous), **2s debounce** per unit code (`DEBOUNCE_MS`).
+### “Show QR” button
 
-**On error / duplicate / wrong unit:** red or amber flash; inline `#bucket-scan-status` (duplicate feedback does not stack warn toasts).
-
-### Tap on viewport = focus ROI (not scan trigger)
-
-`pointerdown` on `#bucket-scan-viewport` → `bucketApplyTapFocus()`:
-
-1. **Visual** — brief focus reticle at tap point (`#bucket-focus-reticle`, ~900ms)
-2. **Android** — `pointsOfInterest` + `focusMode: single-shot` on video track when supported
-3. **jsQR path (often iOS)** — decode uses **42% ROI crop** centered on tap (`ROI_SIZE = 0.42`) instead of full frame
-
-**ROI fallback** in `bucketDecodeFrame()`:
-
-- ROI set → decode cropped region first
-- **12 consecutive misses** → clear ROI, fall back to full-frame decode
-- Native `BarcodeDetector` ignores ROI (full-frame only)
-
-Tap does **not** call `bucketHandleScan()` — it only narrows where the continuous loop looks and helps autofocus.
-
-### “Show QR” button (scanned list, not camera)
-
-`bucketToggleScannedList()` toggles `#bucket-scanned-list-wrap`:
-
-- **Collapsed by default** on mobile
-- Button: `Show QR` → `Show QR (3)` → `Hide QR`
-- List shows **7-digit unit barcodes** as text rows, not rendered QR images
-- Duplicate scan while list open → row pulse + scroll into view
-
-For reviewing what was already scanned, not for scanning new codes.
+Toggles text list of scanned unit barcodes (not QR images). Collapsed by default on mobile.
 
 ## Manual entry
 
 - `#bucket-manual-input` + Enter or **Add**
-- Same `bucketHandleScan()` path as camera
-- Works with wedge/USB scanners that type + Enter
-
-## RECEIVE rules (strict)
-
-- `expected[]` built from `GET /api/stock-transfer-docs/:id` unit rows.
-- Score: `n / m units verified`.
-- Unit not on document → error, no row, no override.
-- Submit bucket when `verified === total`; then **Verify & Stock** uses existing `incStock`.
-
-## TRANSFER rules
-
-- Score: `N units · M SKUs`.
-- Submit with ≥1 scanned unit; glue fills Foundry cart (`_ftrApplyBucketResult` / `openGoodsTransferDispatchBucket`).
-
-## Mobile layout (phones / Safari)
-
-- Modal uses class `modal--bucket-scan`: bottom sheet on viewports ≤768px, height from `100dvh` / `visualViewport` (`--cosmos-vvh`, `--cosmos-vv-bottom` in [`cosmos-ui-polish.js`](../../src/public/js/cosmos-ui-polish.js)).
-- **Primary actions** (Stop, Review & submit, Back, Submit) live in `#bucket-modal-foot` — fixed above the browser bottom bar with `env(safe-area-inset-bottom)`.
-- **Scan screen (default):** camera, total count + progress bar, inline `#bucket-scan-status` for errors only, manual entry. Unit code list hidden until **Show QR** is tapped.
+- Same `bucketHandleScan()` as a successful camera tap
+- Wedge/USB scanners supported
 
 ## Script version
 
-Load with cache-bust on prototype HTML, e.g. `cosmos-bucket-scan.js?v=20260521-bucket-syntax` (syntax fix in commit `74f3d3b` — missing parenthesis blocked `openBucket`).
-
-## Common failure scenarios
-
-| Symptom | Likely cause |
-|---------|----------------|
-| “Scan bucket is not loaded” | `cosmos-bucket-scan.js` failed to parse/load — hard-refresh browser |
-| Tap does nothing visible | Camera not started (still on Idle screen) |
-| Tap but QR still hard to read | iOS: ROI only helps jsQR; BarcodeDetector ignores ROI — hold steady or use manual entry |
-| Duplicate scans ignored | 2s cooldown per unit code |
-| RECEIVE rejects valid-looking code | Unit not on HQ dispatch document `expected[]` |
+`cosmos-bucket-scan.js?v=20260521-tap-scan`
 
 ## Manual test
 
-1. Foundry Goods Transfer: bucket → dispatch doc → units `IN_TRANSIT`.
-2. Foundry Goods Request: bucket → confirm dispatch.
-3. StorePilot: Accept → bucket verify all units → Verify & Stock → `STOCKED`.
-4. RECEIVE: scan unit **not** on doc → rejected.
-5. Tap viewport → reticle appears; jsQR decode prefers tap region.
-6. Show QR → list of scanned unit codes; Hide QR → camera primary again.
+1. Start scanning — no moving line; corner frame visible.
+2. Point at QR **without tap** — bucket count unchanged.
+3. **Tap** on QR — unit added or duplicate/status message once.
+4. Manual entry still works.
+5. Show QR lists scanned codes.

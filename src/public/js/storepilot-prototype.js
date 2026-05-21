@@ -1994,29 +1994,61 @@ window.loadIncomingTransfers = async function () {
   }
 };
 
+function spIncRenderDetailToolbar(doc, lines, lineIds) {
+  const actionsEl = document.getElementById('sp-inc-detail-actions');
+  const metaEl = document.getElementById('sp-inc-detail-meta');
+  if (!actionsEl) return;
+  const isDispatched = doc.status === 'DISPATCHED';
+  const isAccepted = doc.status === 'ACCEPTED';
+  const allQrVerified = isAccepted ? spIsDocQrVerified(doc.doc_id, lines) : true;
+  const hasUnitLines = spIncDocHasUnitScanLines(lines);
+  if (metaEl) {
+    metaEl.innerHTML = (INC_STATUS_BADGE[doc.status] || doc.status) +
+      '<span>' + escHtml(fmtDate(doc.dispatched_at)) + '</span>';
+  }
+  let html = '';
+  if (isDispatched) {
+    html += '<button type="button" class="btn sm primary" id="sp-inc-accept-btn" onclick="incAccept(' + doc.doc_id + ')">Accept</button>';
+  }
+  if (isAccepted) {
+    if (hasUnitLines) {
+      html += '<button type="button" class="btn sm primary" id="sp-inc-bucket-btn" onclick="openIncomingTransferBucket(' + doc.doc_id + ')">Open bucket</button>';
+    }
+    html += '<button type="button" class="btn sm primary" id="sp-inc-stock-btn" onclick="incStock(' + doc.doc_id + ',[' + lineIds.join(',') + '])"' +
+      (allQrVerified ? '' : ' disabled title="Verify all units first"') + '>Verify &amp; Stock</button>';
+    if (hasUnitLines) {
+      html += '<button type="button" class="btn sm" onclick="incResetQrVerification(' + doc.doc_id + ')">Reset</button>';
+    }
+  }
+  if (doc.status === 'STOCKED') {
+    html += '<span style="font-size:13px;font-weight:600;color:var(--green)">Stocked ' + escHtml(fmtDate(doc.stocked_at)) + '</span>';
+  }
+  actionsEl.innerHTML = html;
+}
+
 window.expandIncTransfer = async function (docId) {
   const detailEl = document.getElementById('sp-inc-detail');
   const titleEl  = document.getElementById('sp-inc-detail-title');
   const bodyEl   = document.getElementById('sp-inc-detail-body');
+  const msgEl    = document.getElementById('sp-inc-action-msg');
   if (!detailEl || !bodyEl) return;
   stopIncQrCamera();
 
-  detailEl.style.display = '';
+  if (typeof window.cosmosOpenExtendedDetail === 'function') {
+    window.cosmosOpenExtendedDetail('sp-inc-detail', 'sp-inc-detail-backdrop');
+  }
+  if (msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
+  const actionsEl = document.getElementById('sp-inc-detail-actions');
+  if (actionsEl) actionsEl.innerHTML = '';
   if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('sp-inc-detail-body', 4);
   else bodyEl.innerHTML = '';
 
-  // If mobile sidebar overlay is left open, it can hide the hamburger/topbar.
-  // Also, Chrome mobile can mis-handle sticky headers when auto-scrolling.
-  const overlayEl = document.getElementById('sp-sidebar-overlay')
-  const sidebarEl = document.querySelector('.sidebar')
-  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
-  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
-  const isBodyLocked = document.body.style.overflow === 'hidden'
-  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
-
-  const ua = navigator.userAgent || ''
-  const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
-  if (!isChromeLike) detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const overlayEl = document.getElementById('sp-sidebar-overlay');
+  const sidebarEl = document.querySelector('.sidebar');
+  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'));
+  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'));
+  const isBodyLocked = document.body.style.overflow === 'hidden';
+  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar();
 
   try {
     const data = await apiGet(`/api/stock-transfer-docs/${docId}`);
@@ -2033,6 +2065,7 @@ window.expandIncTransfer = async function (docId) {
     const lineIds = lines.map((l) => l.line_id);
     const allQrVerified = isAccepted ? spIsDocQrVerified(docId, lines) : true;
     const hasUnitLines = spIncDocHasUnitScanLines(lines);
+    spIncRenderDetailToolbar(doc, lines, lineIds);
 
     const lineRows = lines.map((l) => {
       const unitMode = spLineRequiresUnitScans(l);
@@ -2077,47 +2110,33 @@ window.expandIncTransfer = async function (docId) {
 
     bodyEl.innerHTML = `
       <div style="padding:16px 20px">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px">
-          <div><div style="font-size:11px;color:var(--text3)">Status</div><div>${INC_STATUS_BADGE[doc.status] || doc.status}</div></div>
-          <div><div style="font-size:11px;color:var(--text3)">Dispatched</div><div style="font-size:13px">${fmtDate(doc.dispatched_at)}</div></div>
-          <div><div style="font-size:11px;color:var(--text3)">Type</div><div style="font-size:13px">${doc.doc_type === 'REQUEST' ? 'Store Request' : 'Direct Transfer'}</div></div>
-          ${doc.source_request_id ? `<div><div style="font-size:11px;color:var(--text3)">Request #</div><div style="font-size:13px">${doc.source_request_id}</div></div>` : ''}
+        <div class="cosmos-extended-detail__chips">
+          <div class="cosmos-extended-detail__chip"><label>Type</label><span>${doc.doc_type === 'REQUEST' ? 'Store Request' : 'Direct Transfer'}</span></div>
+          ${doc.source_request_id ? '<div class="cosmos-extended-detail__chip"><label>Request #</label><span>' + doc.source_request_id + '</span></div>' : '<div class="cosmos-extended-detail__chip"><label>Request #</label><span>—</span></div>'}
+          <div class="cosmos-extended-detail__chip"><label>Items</label><span>${lines.length}</span></div>
+          <div class="cosmos-extended-detail__chip"><label>Dispatched</label><span>${escHtml(fmtDate(doc.dispatched_at))}</span></div>
         </div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">Items (${lines.length})</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">Line items</div>
         <div>${lineRows}</div>
         ${isAccepted ? `
-          <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg)">
-            <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Stock verification — unit scan bucket</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              ${hasUnitLines
-                ? `<button type="button" class="btn sm primary" onclick="openIncomingTransferBucket(${doc.doc_id})">📷 Open scan bucket</button>`
-                : `<span style="font-size:12px;color:var(--gold)">No unit list on document — contact HQ to re-dispatch with unit scans.</span>`}
-              <button type="button" class="btn sm" onclick="incResetQrVerification(${doc.doc_id})">Reset verification</button>
-            </div>
-            <div style="font-size:11px;color:var(--text3);margin-top:8px">
-              ${hasUnitLines
-                ? 'Only units on this Foundry transfer document can be scanned. Extra units are rejected. Verify &amp; Stock unlocks when all units are verified.'
-                : 'Unit-level verification is required for this shipment.'}
-            </div>
-          </div>
+          <p style="margin-top:14px;font-size:12px;color:var(--text3)">${hasUnitLines
+            ? 'Use Open bucket in the toolbar to scan units on this transfer document. Verify &amp; Stock unlocks when every unit is verified.'
+            : 'No unit list on this document — contact HQ to re-dispatch with unit scans.'}</p>
         ` : ''}
-        <div id="sp-inc-action-msg" style="font-size:12px;min-height:16px;margin-top:10px"></div>
-        <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
-          ${isDispatched ? `<button class="btn primary" onclick="incAccept(${doc.doc_id})">✓ Accept Transfer</button>` : ''}
-          ${isAccepted   ? `<button id="sp-inc-stock-btn" class="btn primary" onclick="incStock(${doc.doc_id},[${lineIds.join(',')}])" ${allQrVerified ? '' : 'disabled'}>📦 Verify &amp; Stock</button>` : ''}
-          ${doc.status === 'STOCKED' ? `<span style="color:var(--green);font-size:13px;font-weight:600">✓ Stock credited on ${fmtDate(doc.stocked_at)}</span>` : ''}
-        </div>
       </div>`;
 
   } catch (err) {
     bodyEl.innerHTML = `<div style="padding:20px;color:var(--red)">Error: ${escHtml(err.message)}</div>`;
+    const actionsEl = document.getElementById('sp-inc-detail-actions');
+    if (actionsEl) actionsEl.innerHTML = '';
   }
 };
 
 window.closeIncDetail = function () {
   stopIncQrCamera();
-  const el = document.getElementById('sp-inc-detail');
-  if (el) el.style.display = 'none';
+  if (typeof window.cosmosCloseExtendedDetail === 'function') {
+    window.cosmosCloseExtendedDetail('sp-inc-detail', 'sp-inc-detail-backdrop');
+  }
 
   // Clear any accidental sidebar overlay/body lock state.
   const overlayEl = document.getElementById('sp-sidebar-overlay')
@@ -2130,19 +2149,21 @@ window.closeIncDetail = function () {
 
 window.incAccept = async function (docId) {
   const msgEl = document.getElementById('sp-inc-action-msg');
-  const btn   = document.querySelector('#sp-inc-detail .btn.primary');
-  if (btn) { btn.disabled = true; btn.textContent = 'Accepting…'; }
+  const btn = document.getElementById('sp-inc-accept-btn');
+  if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
   if (msgEl) msgEl.textContent = '';
 
   try {
     await apiPut(`/api/stock-transfer-docs/${docId}/accept`, {});
     _incQrVerificationByDoc[docId] = spFreshIncVerification();
-    if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Accepted. Enter received quantities and click Verify & Stock.'; }
+    if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = 'Accepted. Scan units with Open bucket, then Verify & Stock.'; }
+    if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
     await expandIncTransfer(docId);
     loadIncomingTransfers();
   } catch (err) {
     if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
-    if (btn) { btn.disabled = false; btn.textContent = '✓ Accept Transfer'; }
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+    else if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
   }
 };
 
@@ -2404,18 +2425,20 @@ window.incStock = async function (docId, lineIds) {
     return { line_id: lid, qty_received: input ? Math.max(0, Number(input.value) || 0) : 0 };
   });
 
-  const btn = document.querySelector('#sp-inc-detail .btn.primary');
-  if (btn) { btn.disabled = true; btn.textContent = 'Stocking…'; }
+  const btn = document.getElementById('sp-inc-stock-btn');
+  if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
 
   try {
     await apiPut(`/api/stock-transfer-docs/${docId}/stock`, { lines });
     delete _incQrVerificationByDoc[docId];
-    if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Stock credited to your store balance.'; }
+    if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = 'Stock credited to your store balance.'; }
+    if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
     await expandIncTransfer(docId);
     loadIncomingTransfers();
   } catch (err) {
     if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
-    if (btn) { btn.disabled = false; btn.textContent = '📦 Verify & Stock'; }
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+    else if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
   }
 };
 

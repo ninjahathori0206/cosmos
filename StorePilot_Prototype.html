@@ -755,14 +755,23 @@
       </div>
     </div>
 
-    <!-- Detail / action panel -->
-    <div id="sp-inc-detail" class="card" style="display:none;margin-top:16px">
-      <div class="ch" style="justify-content:space-between">
-        <div class="ct" id="sp-inc-detail-title">Transfer details</div>
-        <button class="btn sm" onclick="closeIncDetail()">✕ Close</button>
+  </div>
+
+  <!-- Incoming transfer — extended detail (overlay, not footer card) -->
+  <div id="sp-inc-detail-backdrop" class="cosmos-extended-detail__backdrop" hidden aria-hidden="true" onclick="closeIncDetail()"></div>
+  <div id="sp-inc-detail" class="cosmos-extended-detail__panel" role="dialog" aria-modal="true" aria-labelledby="sp-inc-detail-title" hidden>
+    <div class="cosmos-extended-detail__toolbar">
+      <div class="cosmos-extended-detail__head">
+        <div id="sp-inc-detail-title" class="cosmos-extended-detail__title">Transfer details</div>
+        <div id="sp-inc-detail-meta" class="cosmos-extended-detail__meta"></div>
       </div>
-      <div id="sp-inc-detail-body"></div>
+      <div class="cosmos-extended-detail__actions-row">
+        <div id="sp-inc-detail-actions" class="cosmos-extended-detail__actions"></div>
+        <button type="button" class="btn sm" id="sp-inc-close-btn" onclick="closeIncDetail()" aria-label="Close transfer details">Close</button>
+      </div>
     </div>
+    <div id="sp-inc-action-msg" class="cosmos-extended-detail__msg" role="status" aria-live="polite"></div>
+    <div id="sp-inc-detail-body" class="cosmos-extended-detail__body"></div>
   </div>
 
   <!-- ═══ MOVEMENT LIST ═══ -->
@@ -814,11 +823,16 @@
         <div id="bucket-screen-scan" style="display:none">
           <div class="bucket-scan-viewport" id="bucket-scan-viewport">
             <video id="bucket-video" autoplay playsinline muted></video>
-            <div class="bucket-scan-line"></div>
+            <div class="bucket-scan-frame" aria-hidden="true">
+              <span class="bucket-scan-frame__c bucket-scan-frame__c--tl"></span>
+              <span class="bucket-scan-frame__c bucket-scan-frame__c--tr"></span>
+              <span class="bucket-scan-frame__c bucket-scan-frame__c--bl"></span>
+              <span class="bucket-scan-frame__c bucket-scan-frame__c--br"></span>
+            </div>
             <div id="bucket-focus-reticle" class="bucket-focus-reticle" aria-hidden="true"></div>
             <div id="bucket-scan-flash" class="bucket-scan-flash"></div>
           </div>
-          <p class="bucket-scan-focus-hint">Tap on the label to focus</p>
+          <p class="bucket-scan-focus-hint">Aim QR in frame · tap to scan</p>
           <div style="margin-top:12px;font-size:14px;font-weight:600;color:var(--text1)" id="bucket-score-label">0 / 0 units verified</div>
           <div class="bucket-score-bar"><div id="bucket-score-bar-fill" class="bucket-score-bar-fill"></div></div>
           <div id="bucket-scan-status" class="bucket-scan-status" role="status" aria-live="polite"></div>
@@ -882,7 +896,7 @@
 
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
-<script src="/js/cosmos-bucket-scan.js?v=20260521-bucket-syntax" defer></script>
-<script src="/js/storepilot-prototype.js?v=20260520-bucket" defer></script>
+<script src="/js/cosmos-bucket-scan.js?v=20260521-tap-scan" defer></script>
+<script src="/js/storepilot-prototype.js?v=20260521-ext-detail" defer></script>
 </body>
 </html>

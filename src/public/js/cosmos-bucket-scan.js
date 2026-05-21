@@ -6,7 +6,7 @@
   'use strict';
 
   const DEBOUNCE_MS = 2000;
-  const SCAN_TICK_MS = 100;
+  const TAP_DEBOUNCE_MS = 400;
   const ROI_SIZE = 0.42;
   const MODAL_ID = 'modal-bucket-scan';
 
@@ -26,15 +26,14 @@
   const _scanCooldown = {};
   let _bucketActiveSuccessToast = null;
   let _camStream = null;
-  let _camRafId = null;
-  let _camLastTick = 0;
   let _camDetector = null;
   let _camDecodeMode = null;
   let _camCanvas = null;
   let _camCtx = null;
   let _camRoi = null;
-  let _camRoiMissFrames = 0;
   let _camViewportBound = false;
+  let _lastTapAttemptTs = 0;
+  let _tapScanBusy = false;
   let _highlightTimer = null;
 
   function bucketEsc(s) {
@@ -486,7 +485,6 @@
     const nx = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
     const ny = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
     _camRoi = { x: nx, y: ny };
-    _camRoiMissFrames = 0;
     bucketShowFocusReticle(clientX, clientY, viewportEl);
 
     if (!_camStream) return;
@@ -504,6 +502,42 @@
     } catch (_) { /* ignore */ }
   }
 
+  async function bucketTapToScan(clientX, clientY, viewportEl) {
+    const now = Date.now();
+    if (now - _lastTapAttemptTs < TAP_DEBOUNCE_MS || _tapScanBusy) return;
+    _lastTapAttemptTs = now;
+
+    const video = document.getElementById('bucket-video');
+    if (!video || !_camStream) return;
+
+    _tapScanBusy = true;
+    bucketApplyTapFocus(clientX, clientY, viewportEl);
+
+    try {
+      if (video.readyState < 2) {
+        await new Promise(function (resolve) {
+          const onReady = function () {
+            video.removeEventListener('loadeddata', onReady);
+            resolve();
+          };
+          video.addEventListener('loadeddata', onReady);
+          setTimeout(resolve, 300);
+        });
+      }
+      const scannedValue = await bucketDecodeFrame(video);
+      if (scannedValue) {
+        await bucketHandleScan(scannedValue);
+      } else {
+        bucketSetScanStatus('No QR detected — tap again', 'warn');
+        bucketFlash('warn');
+      }
+    } catch (_) {
+      bucketSetScanStatus('Scan failed — tap again', 'err');
+    } finally {
+      _tapScanBusy = false;
+    }
+  }
+
   function bucketBindCameraViewport() {
     if (_camViewportBound) return;
     const viewport = document.getElementById('bucket-scan-viewport');
@@ -511,7 +545,7 @@
     _camViewportBound = true;
     viewport.addEventListener('pointerdown', function (e) {
       if (e.isPrimary === false) return;
-      bucketApplyTapFocus(e.clientX, e.clientY, viewport);
+      bucketTapToScan(e.clientX, e.clientY, viewport);
     });
   }
 
@@ -542,13 +576,7 @@
       const sy = Math.min(h - rh, Math.max(0, Math.floor(_camRoi.y * h - rh / 2)));
       const roiData = _camCtx.getImageData(sx, sy, rw, rh);
       const roiVal = bucketDecodeQrFromImageData(roiData, rw, rh);
-      if (roiVal) {
-        _camRoiMissFrames = 0;
-        return roiVal;
-      }
-      _camRoiMissFrames += 1;
-      if (_camRoiMissFrames < 12) return '';
-      _camRoi = null;
+      if (roiVal) return roiVal;
     }
 
     const fullData = _camCtx.getImageData(0, 0, w, h);
@@ -556,13 +584,9 @@
   }
 
   function bucketStopCamera() {
-    if (_camRafId) {
-      cancelAnimationFrame(_camRafId);
-      _camRafId = null;
-    }
-    _camLastTick = 0;
     _camRoi = null;
-    _camRoiMissFrames = 0;
+    _lastTapAttemptTs = 0;
+    _tapScanBusy = false;
     if (_camStream) {
       _camStream.getTracks().forEach(function (t) { t.stop(); });
       _camStream = null;
@@ -607,22 +631,8 @@
         audio: false
       });
       video.srcObject = _camStream;
-
-      const tick = async function (ts) {
-        if (!_camStream) return;
-        if (!ts) ts = performance.now();
-        if (ts - _camLastTick < SCAN_TICK_MS) {
-          _camRafId = requestAnimationFrame(tick);
-          return;
-        }
-        _camLastTick = ts;
-        try {
-          const scannedValue = await bucketDecodeFrame(video);
-          if (scannedValue) await bucketHandleScan(scannedValue);
-        } catch (_) { /* frame */ }
-        _camRafId = requestAnimationFrame(tick);
-      };
-      _camRafId = requestAnimationFrame(tick);
+      await video.play().catch(function () { /* autoplay */ });
+      bucketSetScanStatus('', '');
     } catch (err) {
       bucketStopCamera();
       bucketSetScanStatus(err.message || 'Camera failed', 'err');

@@ -968,19 +968,39 @@ body.cosmos-app-shell .sidebar {
   aspect-ratio: 4 / 3;
   object-fit: cover;
 }
-#modal-bucket-scan .bucket-scan-line {
+#modal-bucket-scan .bucket-scan-frame {
   position: absolute;
-  left: 8%;
-  right: 8%;
-  height: 2px;
-  background: var(--acc2);
-  box-shadow: 0 0 8px var(--acc2);
-  animation: bucketScanLine 2s ease-in-out infinite;
+  inset: 10% 8%;
   pointer-events: none;
+  z-index: 1;
 }
-@keyframes bucketScanLine {
-  0%, 100% { top: 18%; opacity: 0.6; }
-  50% { top: 78%; opacity: 1; }
+#modal-bucket-scan .bucket-scan-frame__c {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-color: var(--acc2);
+  border-style: solid;
+  box-sizing: border-box;
+}
+#modal-bucket-scan .bucket-scan-frame__c--tl {
+  top: 0;
+  left: 0;
+  border-width: 3px 0 0 3px;
+}
+#modal-bucket-scan .bucket-scan-frame__c--tr {
+  top: 0;
+  right: 0;
+  border-width: 3px 3px 0 0;
+}
+#modal-bucket-scan .bucket-scan-frame__c--bl {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 3px 3px;
+}
+#modal-bucket-scan .bucket-scan-frame__c--br {
+  bottom: 0;
+  right: 0;
+  border-width: 0 3px 3px 0;
 }
 #modal-bucket-scan .bucket-scan-flash {
   position: absolute;
@@ -988,6 +1008,7 @@ body.cosmos-app-shell .sidebar {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s ease;
+  z-index: 3;
 }
 #modal-bucket-scan .bucket-scan-flash--ok { background: rgba(5, 150, 105, 0.35); }
 #modal-bucket-scan .bucket-scan-flash--warn { background: rgba(217, 119, 6, 0.35); }
@@ -1048,4 +1069,131 @@ body.cosmos-app-shell .sidebar {
 @keyframes bucketRowPulse {
   0%, 100% { background: var(--goldL); }
   50% { background: var(--gold); opacity: 0.35; }
+}
+
+/* ═══ Extended detail panel (transfer / request — not footer card) ═══ */
+.cosmos-extended-detail__backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  background: rgba(15, 23, 42, 0.45);
+  -webkit-tap-highlight-color: transparent;
+}
+.cosmos-extended-detail__backdrop.is-open {
+  display: block;
+}
+.cosmos-extended-detail__panel {
+  display: none;
+  position: fixed;
+  z-index: 250;
+  flex-direction: column;
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+  min-height: 0;
+}
+.cosmos-extended-detail__panel.is-open {
+  display: flex;
+}
+body.cosmos-extended-detail-open {
+  overflow: hidden;
+}
+.cosmos-extended-detail__toolbar {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  background: var(--card, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cosmos-extended-detail__head {
+  min-width: 0;
+}
+.cosmos-extended-detail__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text1, #0f172a);
+  line-height: 1.35;
+  word-break: break-word;
+}
+.cosmos-extended-detail__meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text2, #64748b);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.cosmos-extended-detail__actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.cosmos-extended-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cosmos-extended-detail__actions .btn {
+  min-height: 44px;
+}
+.cosmos-extended-detail__msg {
+  flex-shrink: 0;
+  padding: 0 16px 8px;
+  font-size: 12px;
+  min-height: 0;
+}
+.cosmos-extended-detail__msg:not(:empty) {
+  min-height: 16px;
+}
+.cosmos-extended-detail__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.cosmos-extended-detail__chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.cosmos-extended-detail__chip label {
+  display: block;
+  font-size: 11px;
+  color: var(--text3, #94a3b8);
+  margin-bottom: 2px;
+}
+.cosmos-extended-detail__chip span {
+  font-size: 13px;
+  color: var(--text1, #0f172a);
+}
+@media (max-width: 768px) {
+  .cosmos-extended-detail__panel.is-open {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: max(52px, env(safe-area-inset-top, 0px));
+    max-height: min(96dvh, calc(var(--cosmos-vvh, 100dvh) * 0.96));
+    border-radius: 16px 16px 0 0;
+    width: auto;
+  }
+}
+@media (min-width: 769px) {
+  .cosmos-extended-detail__panel.is-open {
+    top: 72px;
+    right: 16px;
+    bottom: 16px;
+    width: min(560px, calc(100vw - 32px));
+    max-height: calc(100dvh - 88px);
+    border-radius: 12px;
+  }
 }
