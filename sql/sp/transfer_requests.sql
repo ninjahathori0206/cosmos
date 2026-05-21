@@ -70,7 +70,8 @@ BEGIN
     rvu.username  AS reviewed_by_name,
     rdu.username  AS dispatched_by_name,
     rcv.username  AS received_by_name,
-    (SELECT COUNT(*) FROM dbo.transfer_request_lines WHERE request_id = r.request_id) AS line_count
+    (SELECT COUNT(*) FROM dbo.transfer_request_lines WHERE request_id = r.request_id) AS line_count,
+    (SELECT ISNULL(SUM(requested_qty), 0) FROM dbo.transfer_request_lines WHERE request_id = r.request_id) AS total_requested_qty
   FROM dbo.transfer_requests r
   JOIN dbo.stores st    ON st.store_id  = r.store_id
   JOIN dbo.users  ru    ON ru.user_id   = r.requested_by
@@ -78,7 +79,11 @@ BEGIN
   LEFT JOIN dbo.users rdu ON rdu.user_id = r.dispatched_by
   LEFT JOIN dbo.users rcv ON rcv.user_id = r.received_by
   WHERE (@store_id IS NULL OR r.store_id = @store_id)
-    AND (@status   IS NULL OR r.status   = @status)
+    AND (
+      @status IS NULL
+      OR (@status = 'APPROVED' AND r.status IN ('APPROVED', 'PARTIALLY_DISPATCHED'))
+      OR (@status <> 'APPROVED' AND r.status = @status)
+    )
   ORDER BY r.created_at DESC;
 END;
 GO
@@ -187,9 +192,9 @@ BEGIN
     reviewed_by    = CASE WHEN @status IN ('APPROVED','REJECTED') THEN @user_id    ELSE reviewed_by    END,
     reviewed_at    = CASE WHEN @status IN ('APPROVED','REJECTED') THEN DATEADD(MINUTE, 330, SYSUTCDATETIME())   ELSE reviewed_at    END,
     review_notes   = CASE WHEN @status IN ('APPROVED','REJECTED') AND @notes IS NOT NULL THEN @notes ELSE review_notes END,
-    -- DISPATCHED: stamp dispatcher
-    dispatched_by  = CASE WHEN @status = 'DISPATCHED' THEN @user_id  ELSE dispatched_by  END,
-    dispatched_at  = CASE WHEN @status = 'DISPATCHED' THEN DATEADD(MINUTE, 330, SYSUTCDATETIME()) ELSE dispatched_at  END,
+    -- DISPATCHED / PARTIALLY_DISPATCHED: stamp dispatcher on first shipment only
+    dispatched_by  = CASE WHEN @status IN ('DISPATCHED','PARTIALLY_DISPATCHED') AND dispatched_by IS NULL THEN @user_id ELSE dispatched_by END,
+    dispatched_at  = CASE WHEN @status IN ('DISPATCHED','PARTIALLY_DISPATCHED') AND dispatched_at IS NULL THEN DATEADD(MINUTE, 330, SYSUTCDATETIME()) ELSE dispatched_at END,
     -- RECEIVED: stamp receiver
     received_by    = CASE WHEN @status = 'RECEIVED'   THEN @user_id  ELSE received_by    END,
     received_at    = CASE WHEN @status = 'RECEIVED'   THEN DATEADD(MINUTE, 330, SYSUTCDATETIME()) ELSE received_at    END
@@ -216,6 +221,25 @@ BEGIN
     approved_qty   = COALESCE(@approved_qty,   approved_qty),
     dispatched_qty = COALESCE(@dispatched_qty, dispatched_qty),
     received_qty   = COALESCE(@received_qty,   received_qty)
+  WHERE line_id = @line_id;
+END;
+GO
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- sp_TransferRequest_AddDispatchedQty
+-- Increments dispatched_qty on a line (multi-shipment dispatch).
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR ALTER PROCEDURE dbo.sp_TransferRequest_AddDispatchedQty
+  @line_id INT,
+  @add_qty INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  IF @add_qty IS NULL OR @add_qty < 1
+    RETURN;
+  UPDATE dbo.transfer_request_lines
+  SET dispatched_qty = ISNULL(dispatched_qty, 0) + @add_qty
   WHERE line_id = @line_id;
 END;
 GO

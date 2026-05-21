@@ -898,6 +898,67 @@ body.cosmos-app-shell .sidebar {
   overflow: hidden;
   background: #000;
   border: 1px solid var(--border);
+  touch-action: manipulation;
+}
+#modal-bucket-scan .bucket-focus-reticle {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  margin-left: -28px;
+  margin-top: -28px;
+  border: 2px solid var(--acc2);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--card);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 2;
+}
+#modal-bucket-scan .bucket-focus-reticle.is-visible {
+  opacity: 1;
+}
+#modal-bucket-scan .bucket-scan-focus-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text3);
+  text-align: center;
+}
+#modal-bucket-scan .bucket-scan-status {
+  min-height: 0;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 0;
+}
+#modal-bucket-scan .bucket-scan-status:not(:empty) {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+#modal-bucket-scan .bucket-scan-status--warn {
+  color: var(--gold);
+  background: var(--goldL);
+  border-color: var(--gold);
+}
+#modal-bucket-scan .bucket-scan-status--err {
+  color: var(--red);
+  background: var(--redL);
+  border-color: var(--red);
+}
+#modal-bucket-scan .bucket-scan-status--ok {
+  color: var(--green);
+  background: var(--greenL);
+  border-color: var(--green);
+}
+#modal-bucket-scan .bucket-show-qr-row {
+  margin-top: 8px;
+}
+#modal-bucket-scan .bucket-scanned-list-wrap.is-collapsed {
+  display: none;
+}
+#modal-bucket-scan .bucket-scanned-list-wrap:not(.is-collapsed) {
+  display: block;
+  margin-top: 8px;
 }
 #modal-bucket-scan #bucket-video {
   width: 100%;
@@ -979,3 +1040,12 @@ body.cosmos-app-shell .sidebar {
   font-size: 12px;
 }
 #modal-bucket-scan .bucket-scanned-row:last-child { border-bottom: none; }
+#modal-bucket-scan .bucket-scanned-row--pulse {
+  background: var(--goldL);
+  border-radius: 6px;
+  animation: bucketRowPulse 0.9s ease-out 2;
+}
+@keyframes bucketRowPulse {
+  0%, 100% { background: var(--goldL); }
+  50% { background: var(--gold); opacity: 0.35; }
+}

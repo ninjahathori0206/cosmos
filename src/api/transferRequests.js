@@ -25,6 +25,32 @@ const transferModAndRaise = [
   requirePermission('foundry.transfers.create', 'storepilot.transfers.create')
 ];
 
+function transferLineCap(line) {
+  if (line.approved_qty != null && Number(line.approved_qty) > 0) {
+    return Number(line.approved_qty);
+  }
+  return Math.max(0, Number(line.requested_qty) || 0);
+}
+
+function computeDispatchHeaderStatus(lines) {
+  if (!lines || !lines.length) return 'APPROVED';
+  let anyDispatched = false;
+  let allComplete = true;
+  for (const l of lines) {
+    const cap = transferLineCap(l);
+    const disp = Math.max(0, Number(l.dispatched_qty) || 0);
+    if (disp > 0) anyDispatched = true;
+    if (disp < cap) allComplete = false;
+  }
+  if (allComplete && anyDispatched) return 'DISPATCHED';
+  if (anyDispatched) return 'PARTIALLY_DISPATCHED';
+  return 'APPROVED';
+}
+
+function requestHasAnyDispatched(lines) {
+  return (lines || []).some((l) => Math.max(0, Number(l.dispatched_qty) || 0) > 0);
+}
+
 // ── GET /api/transfer-requests ────────────────────────────────────────────────
 // Store-scoped (permissions + store_id) → own store only. HQ (foundry.transfers.edit) → all.
 // Optional ?status= and ?top_n= filters.
@@ -101,6 +127,42 @@ router.post('/', ...transferModAndRaise, async (req, res, next) => {
   }
 });
 
+// ── GET /api/transfer-requests/:id/shipments ─────────────────────────────────
+router.get('/:id/shipments', ...transferModAndView, async (req, res, next) => {
+  try {
+    const requestId = Number(req.params.id);
+    if (!Number.isFinite(requestId) || requestId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid request id.' });
+    }
+
+    const detail = await executeStoredProcedure('sp_TransferRequest_GetById', {
+      request_id: { type: sql.Int, value: requestId }
+    });
+    const header = detail.recordsets?.[0]?.[0];
+    if (!header) {
+      return res.status(404).json({ success: false, message: 'Transfer request not found.' });
+    }
+    if (
+      shouldScopeTransferRequestsToUserStore(req)
+      && Number(header.store_id) !== Number(req.user.store_id)
+    ) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const { top_n = 50 } = req.query;
+    const result = await executeStoredProcedure('sp_StockTransferDoc_List', {
+      to_store_id:       { type: sql.Int, value: null },
+      status:            { type: sql.VarChar(12), value: null },
+      source_request_id: { type: sql.Int, value: requestId },
+      top_n:             { type: sql.Int, value: Math.min(Number(top_n) || 50, 200) }
+    });
+
+    return res.json({ success: true, data: result.recordset || [] });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // ── GET /api/transfer-requests/:id ───────────────────────────────────────────
 // Returns header + lines for one request (two recordsets from the SP).
 router.get('/:id', ...transferModAndView, async (req, res, next) => {
@@ -137,7 +199,7 @@ router.get('/:id', ...transferModAndView, async (req, res, next) => {
 // ── PUT /api/transfer-requests/:id/status ────────────────────────────────────
 // Allowed transitions (enforced at API level):
 //   SUBMITTED  → APPROVED | REJECTED    (foundry.transfers.edit or super_admin)
-//   APPROVED   → DISPATCHED             (foundry.transfers.edit or super_admin)
+//   APPROVED / PARTIALLY_DISPATCHED → shipment (body status DISPATCHED) → PARTIALLY_DISPATCHED or DISPATCHED
 //   DISPATCHED → RECEIVED               (storepilot.transfers.edit + store; super_admin)
 //
 // Optional body:
@@ -176,6 +238,23 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
     const user      = req.user;
     const requestId = Number(req.params.id);
 
+    if (value.status === 'REJECTED') {
+      const rejectDetail = await executeStoredProcedure('sp_TransferRequest_GetById', {
+        request_id: { type: sql.Int, value: requestId }
+      });
+      const rejectHeader = rejectDetail.recordsets?.[0]?.[0];
+      const rejectLines  = rejectDetail.recordsets?.[1] || [];
+      if (!rejectHeader) {
+        return res.status(404).json({ success: false, message: 'Transfer request not found.' });
+      }
+      if (requestHasAnyDispatched(rejectLines)) {
+        return res.status(422).json({
+          success: false,
+          message: 'Cannot reject a request after stock has been dispatched. Ship the remainder or contact support.'
+        });
+      }
+    }
+
     // Permission check
     const hqAction    = ['APPROVED', 'REJECTED', 'DISPATCHED'].includes(value.status);
     const storeAction = value.status === 'RECEIVED';
@@ -193,27 +272,39 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
       });
     }
 
-    // RECEIVED: must be for this user's store (store roles are scoped; super_admin may act for any)
-    if (storeAction && !isSuperAdmin(req)) {
+    // RECEIVED: fully dispatched only; must be for this user's store when scoped
+    if (storeAction) {
       const recvDetail = await executeStoredProcedure('sp_TransferRequest_GetById', {
         request_id: { type: sql.Int, value: requestId }
       });
       const recvHeader = recvDetail.recordsets?.[0]?.[0];
+      const recvLines  = recvDetail.recordsets?.[1] || [];
       if (!recvHeader) {
         return res.status(404).json({ success: false, message: 'Transfer request not found.' });
       }
-      const userStore = user.store_id != null ? Number(user.store_id) : null;
-      const reqStore  = Number(recvHeader.store_id);
-      if (userStore == null || userStore !== reqStore) {
-        return res.status(403).json({
+      if (recvHeader.status !== 'DISPATCHED') {
+        return res.status(422).json({
           success: false,
-          message: 'Only staff at the requesting store can confirm receipt.'
+          message: recvHeader.status === 'PARTIALLY_DISPATCHED'
+            ? 'Request is only partially dispatched. Receive each shipment under Incoming Goods, then confirm when HQ has shipped the full approved quantity.'
+            : 'Request must be fully dispatched before confirming receipt.'
         });
+      }
+      if (!isSuperAdmin(req)) {
+        const userStore = user.store_id != null ? Number(user.store_id) : null;
+        const reqStore  = Number(recvHeader.store_id);
+        if (userStore == null || userStore !== reqStore) {
+          return res.status(403).json({
+            success: false,
+            message: 'Only staff at the requesting store can confirm receipt.'
+          });
+        }
       }
     }
 
-    // ── DISPATCHED: create a Transfer Document (decrement WAREHOUSE; store accepts/stocks later) ──
+    // ── Shipment dispatch (body status DISPATCHED): create transfer doc; cumulative line qty ──
     let createdDocId = null;
+    let computedHeaderStatus = value.status;
     if (value.status === 'DISPATCHED') {
       const detail = await executeStoredProcedure('sp_TransferRequest_GetById', {
         request_id: { type: sql.Int, value: requestId }
@@ -225,6 +316,16 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
         return res.status(404).json({ success: false, message: 'Transfer request not found.' });
       }
 
+      const headerStatus = String(reqHeader.status || '');
+      if (!['APPROVED', 'PARTIALLY_DISPATCHED'].includes(headerStatus)) {
+        return res.status(422).json({
+          success: false,
+          message: headerStatus === 'DISPATCHED'
+            ? 'Request is fully dispatched. No remaining quantity to ship on this request.'
+            : `Cannot dispatch shipment while request status is ${headerStatus}.`
+        });
+      }
+
       // Build dispatch lines from request rows.
       // If `lines` is provided, each listed line uses dispatched_qty (0 = omit); unlisted lines dispatch 0.
       // If `lines` is omitted, legacy: use body dispatched_qty > 0, else approved_qty, else requested_qty.
@@ -232,27 +333,44 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
       (value.lines || []).forEach((l) => { bodyLineMap[l.line_id] = l; });
       const linesProvided = Array.isArray(value.lines);
 
-      const dispatchLines = reqLines
-        .map((l) => {
-          const bodyLine = bodyLineMap[l.line_id];
-          let dispatchQty;
-          if (linesProvided) {
-            if (bodyLine && bodyLine.dispatched_qty != null) {
-              dispatchQty = Math.max(0, Number(bodyLine.dispatched_qty));
-            } else {
-              dispatchQty = 0;
-            }
+      const dispatchLines = [];
+      for (const l of reqLines) {
+        const bodyLine = bodyLineMap[l.line_id];
+        let shipmentQty;
+        if (linesProvided) {
+          if (bodyLine && bodyLine.dispatched_qty != null) {
+            shipmentQty = Math.max(0, Number(bodyLine.dispatched_qty));
           } else {
-            dispatchQty =
-              (bodyLine?.dispatched_qty != null && bodyLine.dispatched_qty > 0)
-                ? bodyLine.dispatched_qty
-                : (l.approved_qty != null && l.approved_qty > 0) ? l.approved_qty
-                : l.requested_qty;
+            shipmentQty = 0;
           }
-          const unitIds = bodyLine && Array.isArray(bodyLine.unit_ids) ? bodyLine.unit_ids : undefined;
-          return { sku_id: l.sku_id, qty: dispatchQty, line_id: l.line_id, unit_ids: unitIds };
-        })
-        .filter((l) => l.qty > 0);
+        } else {
+          shipmentQty =
+            (bodyLine?.dispatched_qty != null && bodyLine.dispatched_qty > 0)
+              ? bodyLine.dispatched_qty
+              : transferLineCap(l) - Math.max(0, Number(l.dispatched_qty) || 0);
+        }
+        if (shipmentQty < 1) continue;
+
+        const cap = transferLineCap(l);
+        const already = Math.max(0, Number(l.dispatched_qty) || 0);
+        const remaining = cap - already;
+        if (shipmentQty > remaining) {
+          const err = new Error(
+            `SKU ${l.sku_code || l.sku_id}: shipment qty ${shipmentQty} exceeds remaining ${remaining} (approved ${cap}, already dispatched ${already}).`
+          );
+          err.statusCode = 422;
+          throw err;
+        }
+
+        const unitIds = bodyLine && Array.isArray(bodyLine.unit_ids) ? bodyLine.unit_ids : undefined;
+        dispatchLines.push({
+          sku_id: l.sku_id,
+          qty: shipmentQty,
+          line_id: l.line_id,
+          unit_ids: unitIds,
+          sku_code: l.sku_code
+        });
+      }
 
       const extraLines = (value.extra_lines || []).filter((e) => e.sku_id && e.qty > 0);
 
@@ -290,24 +408,48 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
 
       createdDocId = docResult.recordset?.[0]?.doc_id || null;
 
-      // Update dispatched_qty on each request line
       for (const l of dispatchLines) {
+        await executeStoredProcedure('sp_TransferRequest_AddDispatchedQty', {
+          line_id: { type: sql.Int, value: l.line_id },
+          add_qty: { type: sql.Int, value: l.qty }
+        });
+      }
+
+      const afterDetail = await executeStoredProcedure('sp_TransferRequest_GetById', {
+        request_id: { type: sql.Int, value: requestId }
+      });
+      const afterLines = afterDetail.recordsets?.[1] || [];
+      computedHeaderStatus = computeDispatchHeaderStatus(afterLines);
+    }
+
+    const statusToWrite = value.status === 'DISPATCHED' ? computedHeaderStatus : value.status;
+
+    await executeStoredProcedure('sp_TransferRequest_UpdateStatus', {
+      request_id: { type: sql.Int,           value: requestId },
+      status:     { type: sql.VarChar(20),   value: statusToWrite },
+      user_id:    { type: sql.Int,           value: user.user_id },
+      notes:      { type: sql.NVarChar(500), value: value.notes || null }
+    });
+
+    // Quick approve (no lines body): default approved_qty = requested_qty per line
+    if (value.status === 'APPROVED' && !value.lines?.length) {
+      const approveDetail = await executeStoredProcedure('sp_TransferRequest_GetById', {
+        request_id: { type: sql.Int, value: requestId }
+      });
+      const approveLines = approveDetail.recordsets?.[1] || [];
+      for (const line of approveLines) {
+        const reqQty = Math.max(0, Number(line.requested_qty) || 0);
+        if (reqQty < 1) continue;
+        const curApproved = line.approved_qty != null ? Number(line.approved_qty) : null;
+        if (curApproved != null && curApproved > 0) continue;
         await executeStoredProcedure('sp_TransferRequest_SetLineQty', {
-          line_id:        { type: sql.Int, value: l.line_id },
-          approved_qty:   { type: sql.Int, value: null },
-          dispatched_qty: { type: sql.Int, value: l.qty },
+          line_id:        { type: sql.Int, value: line.line_id },
+          approved_qty:   { type: sql.Int, value: reqQty },
+          dispatched_qty: { type: sql.Int, value: null },
           received_qty:   { type: sql.Int, value: null }
         });
       }
     }
-
-    // Advance the lifecycle status
-    await executeStoredProcedure('sp_TransferRequest_UpdateStatus', {
-      request_id: { type: sql.Int,           value: requestId },
-      status:     { type: sql.VarChar(20),   value: value.status },
-      user_id:    { type: sql.Int,           value: user.user_id },
-      notes:      { type: sql.NVarChar(500), value: value.notes || null }
-    });
 
     // Update remaining per-line quantities (APPROVED / RECEIVED phases)
     if (value.status !== 'DISPATCHED' && value.lines?.length) {
@@ -321,7 +463,16 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
       }
     }
 
-    return res.json({ success: true, data: { request_id: requestId, status: value.status, doc_id: createdDocId } });
+    const fullyDispatched = statusToWrite === 'DISPATCHED';
+    return res.json({
+      success: true,
+      data: {
+        request_id: requestId,
+        status: statusToWrite,
+        doc_id: createdDocId,
+        fully_dispatched: fullyDispatched
+      }
+    });
   } catch (err) {
     if (err.statusCode === 422) {
       return res.status(422).json({ success: false, message: err.message });

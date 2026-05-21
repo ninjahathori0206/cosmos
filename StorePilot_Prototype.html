@@ -27,6 +27,8 @@
     --redL:    #FEE2E2;
     --blue:    #1D6FD4;
     --blueL:   #DBEAFE;
+    --teal:    #0D9488;
+    --tealL:   #CCFBF1;
     --bg:      #F4F7FB;
     --card:    #FFFFFF;
     --border:  #D8E4F0;
@@ -102,6 +104,7 @@
   .b-blue   { background:var(--blueL);  color:var(--blue); }
   .b-gray   { background:#F1F5F9;       color:var(--text2); }
   .b-orange { background:var(--accL);   color:var(--accD); }
+  .b-teal   { background:var(--tealL);  color:#164E63; }
 
   /* ── SEARCH BAR ───────────────────────────────────────────────────────────── */
   .sw { position:relative; }
@@ -809,14 +812,22 @@
           <button type="button" class="btn primary" style="width:100%" onclick="bucketStartScanning()">Start scanning</button>
         </div>
         <div id="bucket-screen-scan" style="display:none">
-          <div class="bucket-scan-viewport">
+          <div class="bucket-scan-viewport" id="bucket-scan-viewport">
             <video id="bucket-video" autoplay playsinline muted></video>
             <div class="bucket-scan-line"></div>
+            <div id="bucket-focus-reticle" class="bucket-focus-reticle" aria-hidden="true"></div>
             <div id="bucket-scan-flash" class="bucket-scan-flash"></div>
           </div>
+          <p class="bucket-scan-focus-hint">Tap on the label to focus</p>
           <div style="margin-top:12px;font-size:14px;font-weight:600;color:var(--text1)" id="bucket-score-label">0 / 0 units verified</div>
           <div class="bucket-score-bar"><div id="bucket-score-bar-fill" class="bucket-score-bar-fill"></div></div>
-          <div id="bucket-scanned-list" class="bucket-scanned-list"></div>
+          <div id="bucket-scan-status" class="bucket-scan-status" role="status" aria-live="polite"></div>
+          <div class="bucket-show-qr-row">
+            <button type="button" class="btn sm" id="bucket-show-qr-btn" aria-expanded="false" onclick="bucketToggleScannedList()">Show QR</button>
+          </div>
+          <div id="bucket-scanned-list-wrap" class="bucket-scanned-list-wrap is-collapsed" hidden>
+            <div id="bucket-scanned-list" class="bucket-scanned-list"></div>
+          </div>
           <div class="bucket-manual-row">
             <input id="bucket-manual-input" type="text" style="flex:1;min-width:140px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px" placeholder="Unit code + Enter" onkeydown="bucketManualKeydown(event)">
             <button type="button" class="btn sm" onclick="bucketManualScan()">Add</button>

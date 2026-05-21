@@ -346,9 +346,10 @@ GO
 --   @status      NULL  → all statuses
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR ALTER PROCEDURE dbo.sp_StockTransferDoc_List
-  @to_store_id INT         = NULL,
-  @status      VARCHAR(12) = NULL,
-  @top_n       INT         = 50
+  @to_store_id         INT         = NULL,
+  @status              VARCHAR(12) = NULL,
+  @source_request_id   INT         = NULL,
+  @top_n               INT         = 50
 AS
 BEGIN
   SET NOCOUNT ON;
@@ -376,6 +377,7 @@ BEGIN
   LEFT JOIN dbo.users stk        ON stk.user_id  = d.stocked_by
   WHERE (@to_store_id IS NULL OR d.to_store_id = @to_store_id)
     AND (@status      IS NULL OR d.status       = @status)
+    AND (@source_request_id IS NULL OR d.source_request_id = @source_request_id)
   ORDER BY d.created_at DESC;
 END;
 GO

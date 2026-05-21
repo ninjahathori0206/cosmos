@@ -1274,11 +1274,21 @@ window.loadStoreCatalogue = async function (q = '') {
 // ── Transfers: History (Transfer Requests lifecycle) ───────────────────────────
 
 const TR_STATUS_BADGE = {
-  SUBMITTED:  'b-gold',
-  APPROVED:   'b-blue',
-  DISPATCHED: 'b-orange',
-  RECEIVED:   'b-green',
-  REJECTED:   'b-red'
+  SUBMITTED:            'b-gold',
+  APPROVED:             'b-blue',
+  PARTIALLY_DISPATCHED: 'b-teal',
+  DISPATCHED:           'b-orange',
+  RECEIVED:             'b-green',
+  REJECTED:             'b-red'
+};
+
+const TR_STATUS_LABEL = {
+  SUBMITTED:            'Submitted',
+  APPROVED:             'Approved',
+  PARTIALLY_DISPATCHED: 'Partially dispatched',
+  DISPATCHED:           'Dispatched',
+  RECEIVED:             'Received',
+  REJECTED:             'Rejected'
 };
 
 let _spTrFilter = '';
@@ -1325,7 +1335,7 @@ window.loadTransferHistory = async function () {
                 <td class="mono" style="font-weight:600;color:var(--acc)">#${r.request_id}</td>
                 <td>${fmtDate(r.created_at)}</td>
                 <td><span class="b b-gray">${r.line_count} SKU${r.line_count !== 1 ? 's' : ''}</span></td>
-                <td><span class="b ${TR_STATUS_BADGE[r.status] || 'b-gray'}">${r.status}</span></td>
+                <td><span class="b ${TR_STATUS_BADGE[r.status] || 'b-gray'}">${TR_STATUS_LABEL[r.status] || r.status}</span></td>
                 <td style="font-size:12px;color:var(--text3)">${fmtDate(r.updated_at)}</td>
                 <td>
                   ${r.status === 'DISPATCHED'
@@ -1368,7 +1378,7 @@ window.expandSpTrRequest = async function (requestId) {
     body.innerHTML = `
       <div style="padding:16px 20px">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
-          <span class="b ${TR_STATUS_BADGE[req.status] || 'b-gray'}">${req.status}</span>
+          <span class="b ${TR_STATUS_BADGE[req.status] || 'b-gray'}">${TR_STATUS_LABEL[req.status] || req.status}</span>
           ${req.reviewed_at  ? `<span style="font-size:12px;color:var(--text2)">Reviewed: ${fmtDate(req.reviewed_at)}</span>` : ''}
           ${req.dispatched_at ? `<span style="font-size:12px;color:var(--text2)">Dispatched: ${fmtDate(req.dispatched_at)}</span>` : ''}
           ${req.received_at  ? `<span style="font-size:12px;color:var(--text2)">Received: ${fmtDate(req.received_at)}</span>` : ''}
@@ -1388,6 +1398,8 @@ window.expandSpTrRequest = async function (requestId) {
             <tbody>${linesHtml}</tbody>
           </table>
         </div>
+        ${req.status === 'PARTIALLY_DISPATCHED' ? `
+          <p style="margin-top:14px;font-size:13px;color:var(--text2)">HQ is still shipping the rest of this request. Receive each arrival under <strong>Incoming Goods</strong> (per transfer document).</p>` : ''}
         ${req.status === 'DISPATCHED' ? `
           <div style="margin-top:14px">
             <button class="btn primary" onclick="spConfirmReceipt(${req.request_id})">✓ Confirm Receipt</button>
@@ -1407,12 +1419,13 @@ window.closeSpTrDetail = function () {
 window.spConfirmReceipt = async function (requestId) {
   const msgEl = document.getElementById('sp-tr-detail-msg');
   try {
-    await apiPost(`/api/transfer-requests/${requestId}/status`, { status: 'RECEIVED' });
+    await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'RECEIVED' });
     if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Receipt confirmed.'; }
+    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Receipt confirmed.');
     setTimeout(() => { loadTransferHistory(); window.closeSpTrDetail(); }, 1200);
   } catch (err) {
     if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
-    else        { alert('Error: ' + err.message); }
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
   }
 };
 

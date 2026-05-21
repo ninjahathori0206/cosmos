@@ -29,12 +29,14 @@ Loaded on **Foundry** and **StorePilot** prototypes with `#modal-bucket-scan`.
 
 - Modal uses class `modal--bucket-scan`: bottom sheet on viewports ≤768px, height from `100dvh` / `visualViewport` (`--cosmos-vvh`, `--cosmos-vv-bottom` in [`cosmos-ui-polish.js`](../../src/public/js/cosmos-ui-polish.js)).
 - **Primary actions** (Stop, Review & submit, Back, Submit) live in `#bucket-modal-foot` — fixed above the browser bottom bar with `env(safe-area-inset-bottom)`.
-- Scrollable body: camera, score, scanned list, manual entry only.
-- Toasts (`cosmosToast*`) appear **below the modal header**, not at the screen bottom (shared polish behaviour).
+- **Scan screen (default):** camera, total count + progress bar, inline `#bucket-scan-status` for errors only, manual entry. Unit code list is **hidden** until **Show QR** is tapped (`#bucket-scanned-list-wrap`).
+- **Show QR:** toggles list of scanned unit codes; button shows count when collapsed, e.g. `Show QR (3)`.
+- Success adds use one success toast at a time (replaces previous). Duplicate/wrong-unit feedback uses amber flash + inline status (with unit code), not stacked warn toasts.
+- **Review screen:** full verified/missing lists unchanged.
 
 ## Camera
 
-`BarcodeDetector` (QR) → fallback `jsQR.min.js` — same pattern as StorePilot incoming camera (not Html5Qrcode).
+`BarcodeDetector` (QR) → fallback `jsQR.min.js` — decode throttled ~10 fps. **Tap viewport** to set focus reticle; Android uses `pointsOfInterest` / `single-shot` when supported; iOS uses ROI crop around tap for jsQR. Hint: “Tap on the label to focus”.
 
 ## Glue
 

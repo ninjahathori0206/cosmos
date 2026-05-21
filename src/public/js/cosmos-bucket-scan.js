@@ -5,7 +5,9 @@
 (function () {
   'use strict';
 
-  const DEBOUNCE_MS = 1500;
+  const DEBOUNCE_MS = 2000;
+  const SCAN_TICK_MS = 100;
+  const ROI_SIZE = 0.42;
   const MODAL_ID = 'modal-bucket-scan';
 
   const _bucket = {
@@ -21,12 +23,19 @@
     _lastScanTs: 0
   };
 
+  const _scanCooldown = {};
+  let _bucketActiveSuccessToast = null;
   let _camStream = null;
   let _camRafId = null;
+  let _camLastTick = 0;
   let _camDetector = null;
   let _camDecodeMode = null;
   let _camCanvas = null;
   let _camCtx = null;
+  let _camRoi = null;
+  let _camRoiMissFrames = 0;
+  let _camViewportBound = false;
+  let _highlightTimer = null;
 
   function bucketEsc(s) {
     return String(s == null ? '' : s)
@@ -37,6 +46,20 @@
     const s = String(bc || '').trim();
     if (/^\d+$/.test(s)) return s.padStart(7, '0');
     return s;
+  }
+
+  function bucketCooldownKey(raw) {
+    return bucketNormUnitBarcode(window.bucketNormalizeScan(raw));
+  }
+
+  function bucketInCooldown(key) {
+    if (!key) return false;
+    const ts = _scanCooldown[key];
+    return ts != null && Date.now() - ts < DEBOUNCE_MS;
+  }
+
+  function bucketRecordCooldown(key) {
+    if (key) _scanCooldown[key] = Date.now();
   }
 
   window.bucketNormalizeScan = function bucketNormalizeScan(raw) {
@@ -144,12 +167,94 @@
     }
   }
 
+  function bucketSetScanStatus(message, kind) {
+    const el = document.getElementById('bucket-scan-status');
+    if (!el) return;
+    const text = message == null ? '' : String(message);
+    if (!text) {
+      el.textContent = '';
+      el.className = 'bucket-scan-status';
+      return;
+    }
+    const k = kind === 'warn' || kind === 'err' || kind === 'ok' ? kind : 'warn';
+    el.className = 'bucket-scan-status bucket-scan-status--' + k;
+    el.textContent = text;
+  }
+
+  function bucketClearScanStatus() {
+    bucketSetScanStatus('', '');
+  }
+
+  function bucketIsListOpen() {
+    const wrap = document.getElementById('bucket-scanned-list-wrap');
+    return wrap && !wrap.classList.contains('is-collapsed') && !wrap.hidden;
+  }
+
+  function bucketSetListOpen(open) {
+    const wrap = document.getElementById('bucket-scanned-list-wrap');
+    const btn = document.getElementById('bucket-show-qr-btn');
+    if (wrap) {
+      wrap.classList.toggle('is-collapsed', !open);
+      wrap.hidden = !open;
+    }
+    if (btn) {
+      const n = _bucket.scanned.length;
+      btn.textContent = open ? 'Hide QR' : (n ? 'Show QR (' + n + ')' : 'Show QR');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+  }
+
+  function bucketUpdateShowQrBtn() {
+    const btn = document.getElementById('bucket-show-qr-btn');
+    if (!btn) return;
+    const open = bucketIsListOpen();
+    const n = _bucket.scanned.length;
+    btn.textContent = open ? 'Hide QR' : (n ? 'Show QR (' + n + ')' : 'Show QR');
+  }
+
+  window.bucketToggleScannedList = function bucketToggleScannedList() {
+    bucketSetListOpen(!bucketIsListOpen());
+    if (bucketIsListOpen()) bucketRenderScannedList();
+  };
+
   function bucketFlash(kind) {
     const el = document.getElementById('bucket-scan-flash');
     if (!el) return;
     el.className = 'bucket-scan-flash bucket-scan-flash--' + (kind === 'ok' ? 'ok' : kind === 'warn' ? 'warn' : 'err');
     el.style.opacity = '1';
     setTimeout(function () { el.style.opacity = '0'; }, 220);
+  }
+
+  function bucketToastSuccessOnce(msg) {
+    if (_bucketActiveSuccessToast && typeof window.cosmosToastDismiss === 'function') {
+      window.cosmosToastDismiss(_bucketActiveSuccessToast);
+    }
+    _bucketActiveSuccessToast = null;
+    if (typeof window.cosmosToastSuccess === 'function') {
+      _bucketActiveSuccessToast = window.cosmosToastSuccess(msg);
+    }
+  }
+
+  function bucketHighlightScannedRow(unitBarcode) {
+    if (!bucketIsListOpen()) return;
+    const norm = bucketNormUnitBarcode(unitBarcode);
+    const listEl = document.getElementById('bucket-scanned-list');
+    if (!listEl) return;
+    const row = listEl.querySelector('[data-unit="' + norm + '"]');
+    if (!row) return;
+    row.classList.add('bucket-scanned-row--pulse');
+    row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (_highlightTimer) clearTimeout(_highlightTimer);
+    _highlightTimer = setTimeout(function () {
+      row.classList.remove('bucket-scanned-row--pulse');
+      _highlightTimer = null;
+    }, 1400);
+  }
+
+  function bucketDuplicateFeedback(unitBarcode, message) {
+    bucketFlash('warn');
+    bucketSetScanStatus(message, 'warn');
+    bucketHighlightScannedRow(unitBarcode);
   }
 
   function bucketFindExpectedMatch(scannedNorm, scannedRaw) {
@@ -207,6 +312,7 @@
     }
     const submitBtn = document.getElementById('bucket-review-submit-btn');
     if (submitBtn) submitBtn.disabled = !bucketCanSubmit();
+    bucketUpdateShowQrBtn();
   }
 
   function bucketRenderScannedList() {
@@ -217,8 +323,9 @@
       return;
     }
     listEl.innerHTML = _bucket.scanned.map(function (s) {
-      return '<div class="bucket-scanned-row">' +
-        '<span class="mono" style="font-weight:600;color:var(--acc2)">' + bucketEsc(s.unit_barcode) + '</span>' +
+      const bc = bucketNormUnitBarcode(s.unit_barcode);
+      return '<div class="bucket-scanned-row" data-unit="' + bucketEsc(bc) + '">' +
+        '<span class="mono" style="font-weight:600;color:var(--acc2)">' + bucketEsc(bc) + '</span>' +
         '<span style="font-size:12px;color:var(--text2)">' + bucketEsc(s.sku_code) + '</span>' +
         '</div>';
     }).join('');
@@ -275,31 +382,30 @@
     const norm = window.bucketNormalizeScan(rawValue);
     if (!norm) return;
 
+    const cdKey = bucketCooldownKey(rawValue);
+    if (bucketInCooldown(cdKey)) return;
+
     const now = Date.now();
-    if (norm === _bucket._lastScanKey && now - _bucket._lastScanTs < DEBOUNCE_MS) {
-      if (typeof window.cosmosToastWarn === 'function') window.cosmosToastWarn('Already scanned');
-      return;
-    }
 
     if (_bucket.mode === 'RECEIVE') {
       const match = bucketFindExpectedMatch(bucketNormUnitBarcode(norm), norm);
       if (!match) {
+        bucketRecordCooldown(cdKey);
         bucketFlash('err');
-        if (typeof window.cosmosToastError === 'function') {
-          window.cosmosToastError('This unit is not on the transfer document from Foundry.');
-        }
+        bucketSetScanStatus('Not on this transfer document', 'err');
         return;
       }
+      const unitBc = bucketNormUnitBarcode(match.expected.unit_barcode);
       if (_bucket.verifiedSlots[match.index]) {
-        bucketFlash('warn');
-        if (typeof window.cosmosToastWarn === 'function') window.cosmosToastWarn('Unit already verified');
+        bucketRecordCooldown(cdKey);
+        bucketDuplicateFeedback(unitBc, unitBc + ' already verified');
         return;
       }
       _bucket.verifiedSlots[match.index] = true;
       const e = match.expected;
       if (!bucketAlreadyScanned(e.unit_barcode, e.unit_id)) {
         _bucket.scanned.push({
-          unit_barcode: bucketNormUnitBarcode(e.unit_barcode),
+          unit_barcode: unitBc,
           unit_id: e.unit_id,
           sku_code: e.sku_code || '',
           sku_id: e.sku_id,
@@ -308,13 +414,13 @@
       }
       _bucket._lastScanKey = norm;
       _bucket._lastScanTs = now;
+      bucketRecordCooldown(cdKey);
       bucketFlash('ok');
+      bucketClearScanStatus();
       bucketRenderScannedList();
       bucketRenderScore();
       const sc = bucketScore();
-      if (sc.verified === sc.total && typeof window.cosmosToastSuccess === 'function') {
-        window.cosmosToastSuccess('All units verified');
-      }
+      if (sc.verified === sc.total) bucketToastSuccessOnce('All units verified');
       return;
     }
 
@@ -323,21 +429,21 @@
       try {
         sku = await bucketTransferLookup(rawValue);
       } catch (err) {
+        bucketRecordCooldown(cdKey);
         bucketFlash('err');
-        if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message || 'Lookup failed');
+        bucketSetScanStatus(err.message || 'Lookup failed', 'err');
         return;
       }
       if (!sku || sku.unit_id == null) {
+        bucketRecordCooldown(cdKey);
         bucketFlash('err');
-        if (typeof window.cosmosToastError === 'function') {
-          window.cosmosToastError('Scan the 7-digit unit barcode on each piece.');
-        }
+        bucketSetScanStatus('Scan the 7-digit unit barcode on each piece', 'err');
         return;
       }
       const unitBc = bucketNormUnitBarcode(sku.unit_barcode || norm);
       if (bucketAlreadyScanned(unitBc, sku.unit_id)) {
-        bucketFlash('warn');
-        if (typeof window.cosmosToastWarn === 'function') window.cosmosToastWarn('Unit already in bucket');
+        bucketRecordCooldown(cdKey);
+        bucketDuplicateFeedback(unitBc, unitBc + ' already in bucket');
         return;
       }
       _bucket.scanned.push({
@@ -352,13 +458,101 @@
       });
       _bucket._lastScanKey = unitBc;
       _bucket._lastScanTs = now;
+      bucketRecordCooldown(cdKey);
       bucketFlash('ok');
+      bucketClearScanStatus();
       bucketRenderScannedList();
       bucketRenderScore();
-      if (typeof window.cosmosToastSuccess === 'function') {
-        window.cosmosToastSuccess('Added ' + unitBc + ' · ' + (sku.sku_code || ''));
-      }
+      bucketToastSuccessOnce('Added ' + unitBc + ' · ' + (sku.sku_code || ''));
     }
+  }
+
+  function bucketShowFocusReticle(clientX, clientY, viewportEl) {
+    const reticle = document.getElementById('bucket-focus-reticle');
+    if (!reticle || !viewportEl) return;
+    const r = viewportEl.getBoundingClientRect();
+    const x = clientX - r.left;
+    const y = clientY - r.top;
+    reticle.style.left = x + 'px';
+    reticle.style.top = y + 'px';
+    reticle.classList.add('is-visible');
+    setTimeout(function () { reticle.classList.remove('is-visible'); }, 900);
+  }
+
+  function bucketApplyTapFocus(clientX, clientY, viewportEl) {
+    if (!viewportEl) return;
+    const r = viewportEl.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return;
+    const nx = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    const ny = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    _camRoi = { x: nx, y: ny };
+    _camRoiMissFrames = 0;
+    bucketShowFocusReticle(clientX, clientY, viewportEl);
+
+    if (!_camStream) return;
+    const track = _camStream.getVideoTracks()[0];
+    if (!track || typeof track.applyConstraints !== 'function') return;
+    try {
+      const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {};
+      const advanced = { pointsOfInterest: [{ x: nx, y: ny }] };
+      if (caps.focusMode && caps.focusMode.indexOf('single-shot') >= 0) {
+        advanced.focusMode = 'single-shot';
+      } else if (caps.focusMode && caps.focusMode.indexOf('continuous') >= 0) {
+        advanced.focusMode = 'continuous';
+      }
+      track.applyConstraints({ advanced: [advanced] }).catch(function () { /* unsupported */ });
+    } catch (_) { /* ignore */ }
+  }
+
+  function bucketBindCameraViewport() {
+    if (_camViewportBound) return;
+    const viewport = document.getElementById('bucket-scan-viewport');
+    if (!viewport) return;
+    _camViewportBound = true;
+    viewport.addEventListener('pointerdown', function (e) {
+      if (e.isPrimary === false) return;
+      bucketApplyTapFocus(e.clientX, e.clientY, viewport);
+    });
+  }
+
+  function bucketDecodeQrFromImageData(imageData, w, h) {
+    if (!window.jsQR) return '';
+    const code = window.jsQR(imageData.data, w, h, { inversionAttempts: 'attemptBoth' });
+    return code && code.data ? code.data : '';
+  }
+
+  async function bucketDecodeFrame(video) {
+    if (_camDecodeMode === 'native' && _camDetector) {
+      const codes = await _camDetector.detect(video);
+      return codes && codes.length && codes[0].rawValue ? codes[0].rawValue : '';
+    }
+    if (_camDecodeMode !== 'jsqr' || !_camCtx || !window.jsQR || video.readyState < 2) return '';
+    const w = video.videoWidth || 0;
+    const h = video.videoHeight || 0;
+    if (w < 16 || h < 16) return '';
+
+    _camCanvas.width = w;
+    _camCanvas.height = h;
+    _camCtx.drawImage(video, 0, 0, w, h);
+
+    if (_camRoi) {
+      const rw = Math.max(64, Math.floor(w * ROI_SIZE));
+      const rh = Math.max(64, Math.floor(h * ROI_SIZE));
+      const sx = Math.min(w - rw, Math.max(0, Math.floor(_camRoi.x * w - rw / 2)));
+      const sy = Math.min(h - rh, Math.max(0, Math.floor(_camRoi.y * h - rh / 2));
+      const roiData = _camCtx.getImageData(sx, sy, rw, rh);
+      const roiVal = bucketDecodeQrFromImageData(roiData, rw, rh);
+      if (roiVal) {
+        _camRoiMissFrames = 0;
+        return roiVal;
+      }
+      _camRoiMissFrames += 1;
+      if (_camRoiMissFrames < 12) return '';
+      _camRoi = null;
+    }
+
+    const fullData = _camCtx.getImageData(0, 0, w, h);
+    return bucketDecodeQrFromImageData(fullData, w, h);
   }
 
   function bucketStopCamera() {
@@ -366,6 +560,9 @@
       cancelAnimationFrame(_camRafId);
       _camRafId = null;
     }
+    _camLastTick = 0;
+    _camRoi = null;
+    _camRoiMissFrames = 0;
     if (_camStream) {
       _camStream.getTracks().forEach(function (t) { t.stop(); });
       _camStream = null;
@@ -381,11 +578,13 @@
   async function bucketStartCamera() {
     const blocked = bucketCameraBlockedReason();
     if (blocked) {
-      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(blocked);
+      bucketSetScanStatus(blocked, 'err');
       return;
     }
     const video = document.getElementById('bucket-video');
     if (!video) return;
+
+    bucketBindCameraViewport();
 
     try {
       bucketStopCamera();
@@ -400,30 +599,25 @@
         _camCtx = _camCanvas.getContext('2d', { willReadFrequently: true });
       }
       _camStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
         audio: false
       });
       video.srcObject = _camStream;
 
-      const tick = async function () {
+      const tick = async function (ts) {
         if (!_camStream) return;
+        if (!ts) ts = performance.now();
+        if (ts - _camLastTick < SCAN_TICK_MS) {
+          _camRafId = requestAnimationFrame(tick);
+          return;
+        }
+        _camLastTick = ts;
         try {
-          let scannedValue = '';
-          if (_camDecodeMode === 'native' && _camDetector) {
-            const codes = await _camDetector.detect(video);
-            scannedValue = codes && codes.length && codes[0].rawValue ? codes[0].rawValue : '';
-          } else if (_camDecodeMode === 'jsqr' && _camCtx && window.jsQR && video.readyState >= 2) {
-            const w = video.videoWidth || 0;
-            const h = video.videoHeight || 0;
-            if (w > 0 && h > 0) {
-              _camCanvas.width = w;
-              _camCanvas.height = h;
-              _camCtx.drawImage(video, 0, 0, w, h);
-              const imageData = _camCtx.getImageData(0, 0, w, h);
-              const code = window.jsQR(imageData.data, w, h, { inversionAttempts: 'dontInvert' });
-              scannedValue = code && code.data ? code.data : '';
-            }
-          }
+          const scannedValue = await bucketDecodeFrame(video);
           if (scannedValue) await bucketHandleScan(scannedValue);
         } catch (_) { /* frame */ }
         _camRafId = requestAnimationFrame(tick);
@@ -431,7 +625,7 @@
       _camRafId = requestAnimationFrame(tick);
     } catch (err) {
       bucketStopCamera();
-      if (typeof window.cosmosToastError === 'function') window.cosmosToastError(err.message || 'Camera failed');
+      bucketSetScanStatus(err.message || 'Camera failed', 'err');
     }
   }
 
@@ -454,6 +648,8 @@
 
   window.bucketStartScanning = function bucketStartScanning() {
     bucketShowScreen('scan');
+    bucketSetListOpen(false);
+    bucketClearScanStatus();
     bucketRenderScannedList();
     bucketRenderScore();
     bucketStartCamera();
@@ -533,6 +729,9 @@
       return;
     }
 
+    Object.keys(_scanCooldown).forEach(function (k) { delete _scanCooldown[k]; });
+    _bucketActiveSuccessToast = null;
+
     _bucket.mode = mode;
     _bucket.sessionId = opts.sessionId != null ? opts.sessionId : null;
     _bucket.label = opts.label || (mode === 'TRANSFER' ? 'Transfer dispatch' : 'Receive transfer');
@@ -551,6 +750,8 @@
     }
     if (titleEl) titleEl.textContent = _bucket.label;
 
+    bucketSetListOpen(false);
+    bucketClearScanStatus();
     bucketShowScreen('idle');
     bucketRenderScannedList();
     bucketRenderScore();

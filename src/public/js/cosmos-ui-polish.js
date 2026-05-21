@@ -245,6 +245,10 @@
     return toast
   }
 
+  window.cosmosToastDismiss = function(toastEl) {
+    removeToastNode(toastEl)
+  }
+
   window.cosmosToastSuccess = function(msg) { return window.cosmosToast(msg, 'success', 3500) }
   window.cosmosToastError = function(msg) { return window.cosmosToast(msg, 'error', 0) }
   window.cosmosToastWarn = function(msg) { return window.cosmosToast(msg, 'warn', 5000) }

@@ -6,41 +6,49 @@
 
 ## Purpose
 
-HQ reviews store transfer requests and, when **APPROVED**, dispatches warehouse stock via a Goods Transfer document. Dispatch must match **Goods Transfer** unit-barcode rules: unit-tracked product types require `unit_ids`; bulk types use quantity only.
+HQ reviews store transfer requests and, when **APPROVED**, ships warehouse stock in one or more **shipments** (Goods Transfer documents). Dispatch must match **Goods Transfer** unit-barcode rules: unit-tracked product types require `unit_ids`; bulk types use quantity only.
 
 ## User flows
 
 ### List
 
-- Filter tabs: All, Pending, Approved, Dispatched, Received, Rejected.
+- Filter tabs: All, Pending, Approved, **Partial**, Dispatched, Received, Rejected.
+- **Approved** tab includes `APPROVED` and `PARTIALLY_DISPATCHED` (open requests).
 - Table: #, Store, Requested by, Date (IST), Items, Status, Actions.
 - Pending: inline Approve / Reject (with confirm strip, no `alert`).
 - Approved: **Preview & Dispatch** opens detail panel.
+- Partial: **Dispatch remainder** opens same dispatch panel.
 - Loading: skeleton table (no raw "Loading…").
 
 ### Approve (SUBMITTED)
 
 - Expand row → line table with **Set approved qty** per SKU (qty only; stores request in SKU quantities).
 - Optional review note; Approve / Reject.
+- **Reject blocked** after any quantity has been dispatched.
 
-### Dispatch (APPROVED) — primary change
+### Dispatch shipment (APPROVED or PARTIALLY_DISPATCHED)
 
-- Hint: *Scan each 7-digit unit barcode — camera or wedge. Multiple scans in sequence; no manual qty.*
+- Banner when partially shipped: *N of M pcs already shipped — scan up to R more in this shipment.*
+- **Previous shipments** list: doc #, date (IST), status (from `GET /api/transfer-requests/:id/shipments`).
 - Per request line:
-  - SKU (mono), description, brand, requested, approved.
-  - **Scanned** column: `n / approved` (read-only).
-  - **Unit codes** list (mono 7-digit) with remove per unit.
-  - **Strict:** every dispatched piece must be a scanned unit; no +/- qty, no server auto-pick.
-- **Scan panel:**
-  - **Open scan bucket** popup ([`cosmos-bucket-scan.md`](cosmos-bucket-scan.md) — TRANSFER mode, BarcodeDetector/jsQR).
-  - Manual unit entry inside bucket (wedge + Enter).
-- **Extras:** created only when a scanned unit belongs to a SKU not on the request (same scan flow).
-- Note on transfer document (optional).
-- **Confirm dispatch** → creates transfer doc; success → link to Movement List.
+  - Requested, approved, **(X sent)** if partial.
+  - **This shipment** column: `scanned / remaining` (remaining = approved − already dispatched).
+  - Unit codes list with remove per unit.
+  - Lines with remaining 0 are omitted from cart.
+- **Scan panel:** Open scan bucket ([`cosmos-bucket-scan.md`](cosmos-bucket-scan.md) — TRANSFER mode).
+- **Confirm shipment** → creates transfer doc; cumulative `dispatched_qty` on request lines.
+- Header status after shipment:
+  - `PARTIALLY_DISPATCHED` if any line still short of approved qty.
+  - `DISPATCHED` when all lines fully shipped.
+
+### Store (StorePilot)
+
+- `PARTIALLY_DISPATCHED`: label *Partially dispatched*; hint to use **Incoming Goods** per doc; no request-level Confirm Receipt.
+- `DISPATCHED` (fully shipped): **Confirm Receipt** available (`PUT` status RECEIVED).
 
 ### Read-only states
 
-- Other statuses: line table without dispatch controls.
+- SUBMITTED, RECEIVED, REJECTED, fully DISPATCHED (no remainder): readonly line table.
 
 ## States
 
@@ -48,24 +56,21 @@ HQ reviews store transfer requests and, when **APPROVED**, dispatches warehouse 
 |-------|-----|
 | List loading | Skeleton table in `#ftr-list-wrap` |
 | Detail loading | Skeleton rows in `#ftr-detail-body` |
-| Dispatch empty cart | All lines qty 0, no extras → validation message on confirm |
-| Dispatch partial | Some units scanned / qty set |
-| Dispatch ready | At least one line or extra with qty > 0 |
+| Shipment empty cart | Validation on confirm |
+| Shipment partial scan | Scanned &lt; remaining for line |
+| Shipment ready | At least one unit in cart |
+| Request PARTIALLY_DISPATCHED | Dispatch remainder + shipments list |
 | Error | `cosmosToastError` / inline `#ftr-detail-msg` |
 
 ## Copy
 
-- Search placeholder: `7-digit unit, SKU, or keyword…`
-- Unit-tracked toast: `Scan the 7-digit unit barcode for each piece.`
-- Extra unit-tracked from search: `Scan unit barcodes to add this SKU — quantity alone is not enough.`
-- Confirm button: `✓ Confirm dispatch (create Goods Transfer)`
+- Confirm button: `✓ Confirm shipment (create Goods Transfer)`
+- Success (partial): *Shipment #doc created. Dispatch remainder when ready.*
+- Success (full): *Shipment #doc — request fully dispatched.*
 
-## Accessibility
+## API contract
 
-- Scan/search inputs: Enter to submit; `event.stopPropagation()` on panel clicks.
-- Buttons use `cosmosBtnLoading` on async confirm.
-
-## API contract (dispatch)
+### Shipment dispatch
 
 `PUT /api/transfer-requests/:id/status`
 
@@ -73,17 +78,18 @@ HQ reviews store transfer requests and, when **APPROVED**, dispatches warehouse 
 {
   "status": "DISPATCHED",
   "notes": "optional",
-  "lines": [{ "line_id": 1, "dispatched_qty": 3, "unit_ids": [101, 102] }],
+  "lines": [{ "line_id": 1, "dispatched_qty": 1, "unit_ids": [101] }],
   "extra_lines": [{ "sku_id": 9, "qty": 1, "unit_ids": [205] }]
 }
 ```
 
-Server uses `strictUnitOnly: true` — `unit_ids.length` must equal `dispatched_qty`; no auto-pick.
+- `dispatched_qty` on each line = **this shipment only** (not cumulative).
+- Response: `{ request_id, status, doc_id, fully_dispatched }` where `status` is `PARTIALLY_DISPATCHED` or `DISPATCHED`.
 
-## Parity reference
+### Shipments list
 
-- **Goods Transfer** (`page-stock-transfer`): `stInit`, lookup `/api/stock-transfers/lookup`, cart `units[]`, submit `unit_ids`.
+`GET /api/transfer-requests/:id/shipments`
 
 ## Design source
 
-- Pencil frame `FY — Goods Requests` — update when Pencil MCP is available; implementation follows this spec.
+- Pencil frame `FY — Goods Requests` — update for Partial tab and remainder banner when using Pencil MCP.

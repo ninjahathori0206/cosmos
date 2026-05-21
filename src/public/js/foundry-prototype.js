@@ -7692,12 +7692,45 @@ ${initScript}
   // ═══════════════════════════════════════════════════════════════════════════
 
   const TR_STATUS_BADGE = {
-    SUBMITTED:  'b-gold',
-    APPROVED:   'b-blue',
-    DISPATCHED: 'b-orange',
-    RECEIVED:   'b-green',
-    REJECTED:   'b-red'
+    SUBMITTED:            'b-gold',
+    APPROVED:             'b-blue',
+    PARTIALLY_DISPATCHED: 'b-teal',
+    DISPATCHED:           'b-orange',
+    RECEIVED:             'b-green',
+    REJECTED:             'b-red'
   };
+
+  function ftrRequestQtySummary(req) {
+    const lines = req.lines || [];
+    let totalRequested = 0;
+    let totalCap = 0;
+    let totalDisp = 0;
+    lines.forEach(function (l) {
+      totalRequested += Math.max(0, Number(l.requested_qty) || 0);
+      totalCap += ftrApprovedCap(l);
+      totalDisp += Math.max(0, Number(l.dispatched_qty) || 0);
+    });
+    return {
+      skuCount: lines.length,
+      totalRequested: totalRequested,
+      totalCap: totalCap,
+      totalDisp: totalDisp,
+      remaining: Math.max(0, totalCap - totalDisp)
+    };
+  }
+
+  function ftrQtySummaryHtml(summary) {
+    if (!summary || summary.skuCount < 1) return '';
+    const skuLabel = summary.skuCount + ' SKU' + (summary.skuCount !== 1 ? 's' : '');
+    const parts = [
+      skuLabel,
+      '<strong>' + summary.totalRequested + '</strong> pcs requested',
+      '<strong>' + summary.totalCap + '</strong> pcs approved',
+      '<strong>' + summary.totalDisp + '</strong> shipped',
+      '<strong>' + summary.remaining + '</strong> remaining'
+    ];
+    return '<div class="hint" style="margin-bottom:12px;font-size:13px">' + parts.join(' · ') + '</div>';
+  }
 
   function trEsc(s) {
     return String(s == null ? '—' : s)
@@ -7724,6 +7757,8 @@ ${initScript}
       requestId: req.request_id,
       lines: (req.lines || []).map(function (l) {
         const cap = ftrApprovedCap(l);
+        const already = Math.max(0, Number(l.dispatched_qty) || 0);
+        const remaining = Math.max(0, cap - already);
         return {
           line_id: l.line_id,
           sku_id: l.sku_id,
@@ -7732,11 +7767,13 @@ ${initScript}
           brand_name: l.brand_name || '',
           requested_qty: l.requested_qty,
           approved_cap: cap,
+          already_dispatched: already,
+          remaining_cap: remaining,
           requires_unit_barcode: window.transferSkuRequiresUnit(l),
           warehouse_qty: Math.max(0, Number(l.warehouse_qty) || 0),
           units: [],
           qty: 0,
-          omitted: false
+          omitted: remaining < 1
         };
       }),
       extras: []
@@ -7780,6 +7817,25 @@ ${initScript}
     };
   }
 
+  window.ftrLoadRequestShipments = async function ftrLoadRequestShipments(requestId) {
+    const wrap = document.getElementById('ftr-shipments-wrap');
+    if (!wrap) return;
+    try {
+      const list = await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50') || [];
+      if (!list.length) {
+        wrap.innerHTML = '<span style="color:var(--text3)">No transfer documents yet.</span>';
+        return;
+      }
+      wrap.innerHTML = '<ul style="margin:0;padding-left:18px">' + list.map(function (d) {
+        return '<li style="margin-bottom:6px">Doc <span class="mono">#' + d.doc_id + '</span> · ' +
+          fmtDate(d.dispatched_at || d.created_at) + ' · ' + trEsc(d.status || '') +
+          ' · ' + (d.line_count || 0) + ' line(s)</li>';
+      }).join('') + '</ul>';
+    } catch (err) {
+      wrap.innerHTML = '<span style="color:var(--red)">' + trEsc(err.message) + '</span>';
+    }
+  };
+
   window.ftrRenderDispatchTable = function ftrRenderDispatchTable() {
     const linesTb = document.getElementById('ftr-dispatch-lines-tbody');
     const extraTb = document.getElementById('ftr-dispatch-extra-tbody');
@@ -7787,13 +7843,15 @@ ${initScript}
 
     linesTb.innerHTML = _ftrDispatchCart.lines.filter(function (r) { return !r.omitted; }).map(function (r) {
       const scanned = (r.units || []).length;
-      const qtyCell = '<span class="b ' + (scanned > 0 && scanned <= r.approved_cap ? 'b-green' : 'b-gray') + '">' + scanned + ' / ' + r.approved_cap + '</span>';
+      const rem = r.remaining_cap != null ? r.remaining_cap : r.approved_cap;
+      const qtyCell = '<span class="b ' + (scanned > 0 && scanned <= rem ? 'b-green' : 'b-gray') + '">' + scanned + ' / ' + rem + '</span>';
       return '<tr class="ftr-dispatch-req-row" data-line-id="' + r.line_id + '">' +
         '<td class="mono xs">' + trEsc(r.sku_code) + '<span class="b b-blue" style="font-size:10px;margin-left:6px">Unit scan</span></td>' +
         '<td>' + trEsc(r.description) + '</td>' +
         '<td>' + trEsc(r.brand_name) + '</td>' +
         '<td style="text-align:right"><span class="b b-gray">' + r.requested_qty + '</span></td>' +
-        '<td style="text-align:right"><span class="b b-blue">' + r.approved_cap + '</span></td>' +
+        '<td style="text-align:right"><span class="b b-blue">' + r.approved_cap + '</span>' +
+        (r.already_dispatched > 0 ? ' <span style="font-size:10px;color:var(--text3)">(' + r.already_dispatched + ' sent)</span>' : '') + '</td>' +
         '<td style="text-align:right">' + qtyCell + '</td>' +
         '<td style="min-width:120px">' + window.transferRenderUnitChips(r.units, r.sku_id, 'ftrRemoveUnitFromLine') + '</td>' +
         '<td><button type="button" class="btn sm" onclick="event.stopPropagation();ftrOmitLine(' + r.line_id + ')">Remove</button></td></tr>';
@@ -7856,8 +7914,9 @@ ${initScript}
       return false;
     }
     row.units = row.units || [];
-    if (row.approved_cap != null && row.approved_cap > 0 && row.units.length >= row.approved_cap) {
-      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Cannot exceed approved quantity (' + row.approved_cap + ').');
+    const shipCap = row.remaining_cap != null ? row.remaining_cap : row.approved_cap;
+    if (shipCap > 0 && row.units.length >= shipCap) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Cannot exceed remaining quantity for this shipment (' + shipCap + ').');
       return false;
     }
     if (row.warehouse_qty > 0 && row.units.length >= row.warehouse_qty) {
@@ -8088,7 +8147,7 @@ ${initScript}
                   <td>${trEsc(r.store_name || r.store_id)}</td>
                   <td>${trEsc(r.requested_by_fullname || r.requested_by_name)}</td>
                   <td class="xs">${fmtDate(r.created_at)}</td>
-                  <td><span class="b b-gray">${r.line_count} SKU${r.line_count !== 1 ? 's' : ''}</span></td>
+                  <td><span class="b b-gray">${r.line_count} SKU${r.line_count !== 1 ? 's' : ''}${r.total_requested_qty != null ? ' · ' + r.total_requested_qty + ' pcs' : ''}</span></td>
                   <td><span class="b ${TR_STATUS_BADGE[r.status] || 'b-gray'}">${r.status}</span></td>
                   <td>
                     ${r.status === 'SUBMITTED' ? `
@@ -8097,6 +8156,9 @@ ${initScript}
                     ` : ''}
                     ${r.status === 'APPROVED' ? `
                       <button class="btn sm primary" onclick="event.stopPropagation();expandTrRequest(${r.request_id})">🚚 Preview &amp; Dispatch</button>
+                    ` : ''}
+                    ${r.status === 'PARTIALLY_DISPATCHED' ? `
+                      <button class="btn sm primary" onclick="event.stopPropagation();expandTrRequest(${r.request_id})">🚚 Dispatch remainder</button>
                     ` : ''}
                   </td>
                 </tr>`).join('')}
@@ -8140,7 +8202,9 @@ ${initScript}
       _trExpanded = req;
 
       const canApprove  = req.status === 'SUBMITTED';
-      const canDispatch = req.status === 'APPROVED';
+      const canDispatch = req.status === 'APPROVED' || req.status === 'PARTIALLY_DISPATCHED';
+      const qtySummary = ftrRequestQtySummary(req);
+      const qtySummaryBlock = ftrQtySummaryHtml(qtySummary);
 
       const inpStyle = 'width:64px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center;outline:none';
 
@@ -8193,16 +8257,23 @@ ${initScript}
             </table>
           </div>`;
       } else if (canDispatch) {
+        const partialBanner = qtySummary.remaining > 0 && qtySummary.totalDisp > 0
+          ? `<div class="hint" style="margin-bottom:12px;background:var(--tealL);border-color:var(--teal)">
+              <strong>Partial dispatch:</strong> ${qtySummary.totalDisp} of ${qtySummary.totalCap} pcs already shipped on this request.
+              Scan up to <strong>${qtySummary.remaining}</strong> more in this shipment.
+            </div>`
+          : '';
         tableBlock = `
+          ${partialBanner}
           <div class="hint" style="margin-bottom:14px">
-            <strong>Goods Transfer preview:</strong> Scan each <strong>7-digit unit barcode</strong> (camera or wedge). Scan multiple units in sequence — dispatch count follows scans only (no manual qty).
+            <strong>Goods Transfer shipment:</strong> Scan each <strong>7-digit unit barcode</strong> (camera or wedge). This shipment only — count follows scans (no manual qty).
           </div>
           <div style="margin-bottom:14px;padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border)">
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
               <div style="font-weight:600;font-size:13px">Scan units · ${primaryWarehouseLabelHtml()}</div>
               <button type="button" class="btn sm primary" onclick="event.stopPropagation();openGoodsRequestDispatchBucket(${req.request_id})">📷 Open scan bucket</button>
             </div>
-            <p style="margin:0;font-size:12px;color:var(--text3)">Use the scan bucket to add each unit, then confirm dispatch below.</p>
+            <p style="margin:0;font-size:12px;color:var(--text3)">Use the scan bucket to add units for <strong>this shipment</strong>, then confirm below.</p>
           </div>
           <div class="tw mb3">
             <table>
@@ -8211,13 +8282,17 @@ ${initScript}
                   <th>SKU</th><th>Description</th><th>Brand</th>
                   <th style="text-align:right">Requested</th>
                   <th style="text-align:right">Approved</th>
-                  <th style="text-align:right">Scanned</th>
+                  <th style="text-align:right">This shipment</th>
                   <th>Unit codes</th><th></th>
                 </tr>
               </thead>
               <tbody id="ftr-dispatch-lines-tbody"></tbody>
               <tbody id="ftr-dispatch-extra-tbody"></tbody>
             </table>
+          </div>
+          <div id="ftr-shipments-section" style="margin-bottom:14px${qtySummary.totalDisp > 0 ? '' : ';display:none'}">
+            <div style="font-weight:600;font-size:13px;margin-bottom:8px">Previous shipments</div>
+            <div id="ftr-shipments-wrap" style="font-size:13px;color:var(--text2)">Loading shipments…</div>
           </div>`;
       } else {
         tableBlock = `
@@ -8248,6 +8323,8 @@ ${initScript}
             ${req.review_notes ? `<span class="xs" style="color:var(--text2)">Review note: <em>${trEsc(req.review_notes)}</em></span>` : ''}
           </div>
 
+          ${qtySummaryBlock}
+
           ${tableBlock}
 
           ${canApprove ? `
@@ -8275,13 +8352,22 @@ ${initScript}
                   onclick="event.stopPropagation()">
               </div>
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <button type="button" class="btn primary" id="ftr-dispatch-confirm-btn" onclick="trDispatchConfirm(${req.request_id})">✓ Confirm dispatch (create Goods Transfer)</button>
+                <button type="button" class="btn primary" id="ftr-dispatch-confirm-btn" onclick="trDispatchConfirm(${req.request_id})">✓ Confirm shipment (create Goods Transfer)</button>
                 <span id="ftr-detail-msg" style="font-size:12px;min-height:16px"></span>
               </div>
             </div>
           ` : ''}
         </div>`;
-      if (canDispatch) ftrRenderDispatchTable();
+      if (canDispatch) {
+        ftrRenderDispatchTable();
+        if (qtySummary.totalDisp > 0) ftrLoadRequestShipments(req.request_id);
+      } else if (req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED') {
+        const shipBlock = document.createElement('div');
+        shipBlock.style.padding = '0 20px 16px';
+        shipBlock.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px">Shipments</div><div id="ftr-shipments-wrap">Loading…</div>';
+        body.appendChild(shipBlock);
+        ftrLoadRequestShipments(req.request_id);
+      }
     } catch (err) {
       if (body) body.innerHTML = `<div style="padding:16px;color:var(--red)">Error: ${trEsc(err.message)}</div>`;
     }
@@ -8444,7 +8530,8 @@ ${initScript}
       if (!unitIds.length || unitIds.length !== r.qty) {
         dispatchValid = false;
         if (typeof cosmosToastError === 'function') {
-          cosmosToastError('Request line ' + r.sku_code + ': scan unit barcode(s) — need ' + r.approved_cap + ', have ' + unitIds.length + '.');
+          const need = r.remaining_cap != null ? r.remaining_cap : r.approved_cap;
+          cosmosToastError('Request line ' + r.sku_code + ': scan unit barcode(s) for this shipment — need ' + need + ', have ' + unitIds.length + '.');
         }
         return;
       }
@@ -8493,19 +8580,28 @@ ${initScript}
     try {
       const data  = await apiPut(`/api/transfer-requests/${requestId}/status`, payload);
       const docId = data.doc_id;
+      const newStatus = data.status || 'DISPATCHED';
+      const fullyDone = data.fully_dispatched === true;
       _ftrDispatchCart = null;
       loadTransferRequests();
       const body = document.getElementById('ftr-detail-body');
+      const remainNote = fullyDone
+        ? 'This request is <strong>fully dispatched</strong>.'
+        : 'More units can be shipped later from <strong>Dispatch remainder</strong> on this request.';
       if (body) {
         body.innerHTML = `
           <div style="padding:20px 22px">
-            <div style="color:var(--green);font-weight:700;font-size:15px;margin-bottom:10px">Goods Transfer created</div>
-            <p style="margin:0 0 8px;font-size:13px;color:var(--text2)">Transfer document <strong class="mono">#${docId != null ? docId : '—'}</strong> is <strong>Dispatched</strong>. ${primaryWarehouseLabelHtml()} stock has been decremented.</p>
-            <p style="margin:0 0 16px;font-size:13px;color:var(--text2)">The store will see it under <strong>Incoming Goods</strong>, then <strong>Accept</strong> and <strong>Verify &amp; Stock</strong> to credit store balance.</p>
-            <button type="button" class="btn primary" onclick="ftrAfterDispatchNav()">Open Movement List</button>
+            <div style="color:var(--green);font-weight:700;font-size:15px;margin-bottom:10px">Shipment created</div>
+            <p style="margin:0 0 8px;font-size:13px;color:var(--text2)">Transfer document <strong class="mono">#${docId != null ? docId : '—'}</strong> is <strong>Dispatched</strong>. Request status: <strong>${trEsc(newStatus)}</strong>. ${primaryWarehouseLabelHtml()} stock has been decremented.</p>
+            <p style="margin:0 0 16px;font-size:13px;color:var(--text2)">${remainNote} Store receives under <strong>Incoming Goods</strong>.</p>
+            <button type="button" class="btn primary" onclick="${fullyDone ? 'ftrAfterDispatchNav()' : 'expandTrRequest(' + requestId + ')'}">${fullyDone ? 'Open Movement List' : 'Dispatch remainder'}</button>
           </div>`;
       }
-      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Goods Transfer #' + docId + ' dispatched.');
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess(fullyDone
+          ? 'Shipment #' + docId + ' — request fully dispatched.'
+          : 'Shipment #' + docId + ' created. Dispatch remainder when ready.');
+      }
     } catch (err) {
       if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = err.message; }
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message);

@@ -976,6 +976,7 @@
       <button class="btn sm active" id="ftr-tab-all"        onclick="setTrFilter('',this)">All</button>
       <button class="btn sm"        id="ftr-tab-submitted"  onclick="setTrFilter('SUBMITTED',this)">⏳ Pending</button>
       <button class="btn sm"        id="ftr-tab-approved"   onclick="setTrFilter('APPROVED',this)">✓ Approved</button>
+      <button class="btn sm"        id="ftr-tab-partial"    onclick="setTrFilter('PARTIALLY_DISPATCHED',this)">◐ Partial</button>
       <button class="btn sm"        id="ftr-tab-dispatched" onclick="setTrFilter('DISPATCHED',this)">🚚 Dispatched</button>
       <button class="btn sm"        id="ftr-tab-received"   onclick="setTrFilter('RECEIVED',this)">📦 Received</button>
       <button class="btn sm"        id="ftr-tab-rejected"   onclick="setTrFilter('REJECTED',this)">✕ Rejected</button>
@@ -1364,14 +1365,22 @@
         <button type="button" class="btn primary w100" onclick="bucketStartScanning()">Start scanning</button>
       </div>
       <div id="bucket-screen-scan" style="display:none">
-        <div class="bucket-scan-viewport">
+        <div class="bucket-scan-viewport" id="bucket-scan-viewport">
           <video id="bucket-video" autoplay playsinline muted></video>
           <div class="bucket-scan-line"></div>
+          <div id="bucket-focus-reticle" class="bucket-focus-reticle" aria-hidden="true"></div>
           <div id="bucket-scan-flash" class="bucket-scan-flash"></div>
         </div>
+        <p class="bucket-scan-focus-hint">Tap on the label to focus</p>
         <div style="margin-top:12px;font-size:14px;font-weight:600;color:var(--text1)" id="bucket-score-label">0 units</div>
         <div class="bucket-score-bar"><div id="bucket-score-bar-fill" class="bucket-score-bar-fill"></div></div>
-        <div id="bucket-scanned-list" class="bucket-scanned-list"></div>
+        <div id="bucket-scan-status" class="bucket-scan-status" role="status" aria-live="polite"></div>
+        <div class="bucket-show-qr-row">
+          <button type="button" class="btn sm" id="bucket-show-qr-btn" aria-expanded="false" onclick="bucketToggleScannedList()">Show QR</button>
+        </div>
+        <div id="bucket-scanned-list-wrap" class="bucket-scanned-list-wrap is-collapsed" hidden>
+          <div id="bucket-scanned-list" class="bucket-scanned-list"></div>
+        </div>
         <div class="bucket-manual-row">
           <input id="bucket-manual-input" type="text" class="qty-input" style="flex:1;min-width:140px;text-align:left" placeholder="Unit code + Enter" onkeydown="bucketManualKeydown(event)">
           <button type="button" class="btn sm" onclick="bucketManualScan()">Add</button>
