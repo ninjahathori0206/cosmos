@@ -1121,8 +1121,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         el.textContent = num;
       };
-      setV('dash-active', p.active_purchases);
-      setV('dash-pending-bill', p.pending_bill);
+      const activePurchases = Number(p.active_purchases || 0);
+      const donePurchases = Number(p.warehouse_ready || 0);
+      setV('dash-active-purchases', activePurchases);
+      const activeMeta = document.getElementById('dash-pending-bill');
+      if (activeMeta) {
+        activeMeta.textContent = `${activePurchases} to process · ${donePurchases} done`;
+      }
       setV('dash-branding', p.in_branding);
       setV('dash-digitisation', p.in_digitisation);
       setV('dash-warehouse', p.warehouse_ready);

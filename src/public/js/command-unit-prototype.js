@@ -490,6 +490,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     setStoreFormatHintFromSelect('new-store-format', 'new-store-format-hint');
   }
 
+  function getWarehouseHubStoreTypeKeys() {
+    return (storeTypesCatalogRows || [])
+      .filter((r) => Array.isArray(r.roles) && r.roles.includes('warehouse_hub'))
+      .map((r) => r.key);
+  }
+
+  function isWarehouseHubStore(store) {
+    const typeKey = String(store && store.store_type || '').trim();
+    if (typeKey.toUpperCase() === 'HQ') return true;
+    const hubKeys = new Set(getWarehouseHubStoreTypeKeys());
+    return hubKeys.has(typeKey);
+  }
+
+  function partitionStoresRetailAndHq(stores) {
+    const retail = [];
+    const hq = [];
+    (Array.isArray(stores) ? stores : []).forEach((s) => {
+      if (!s || typeof s !== 'object') return;
+      if (isWarehouseHubStore(s)) hq.push(s);
+      else retail.push(s);
+    });
+    return { retail, hq };
+  }
+
   async function ensureStoreTypesCatalogLoaded() {
     if (storeTypesCatalogRows && storeTypesCatalogRows.length) return;
     const data = await apiGet('/api/stores/store-types');
@@ -525,19 +549,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       const stores = await apiGet('/api/stores');
       cachedStores = stores;
 
+      const { retail, hq } = partitionStoresRetailAndHq(stores);
       const total = stores.length;
-      const active = stores.filter((s) => resolveStatus(s) === 'ACTIVE').length;
-      const comingSoon = stores.filter((s) => resolveStatus(s) === 'COMING_SOON').length;
-      const inactive = stores.filter((s) => resolveStatus(s) === 'INACTIVE').length;
+      const activeRetail = retail.filter((s) => resolveStatus(s) === 'ACTIVE').length;
+      const activeHq = hq.filter((s) => resolveStatus(s) === 'ACTIVE').length;
+      const comingSoon = retail.filter((s) => resolveStatus(s) === 'COMING_SOON').length;
+      const inactive = retail.filter((s) => resolveStatus(s) === 'INACTIVE').length;
 
       const statsCards = document.querySelectorAll('#page-stores .stats-grid .stat-card');
-      if (statsCards[0]) statsCards[0].querySelector('.stat-value').textContent = String(active);
+      if (statsCards[0]) statsCards[0].querySelector('.stat-value').textContent = String(activeRetail);
       if (statsCards[1]) statsCards[1].querySelector('.stat-value').textContent = String(comingSoon);
       if (statsCards[2]) statsCards[2].querySelector('.stat-value').textContent = String(inactive);
       if (statsCards[3]) statsCards[3].querySelector('.stat-value').textContent = String(total);
 
       const subtitle = document.querySelector('#page-stores .page-subtitle');
-      if (subtitle) subtitle.textContent = `${active} active · ${comingSoon} coming soon · ${inactive} inactive`;
+      if (subtitle) {
+        const hqPart = activeHq > 0 ? ` · ${activeHq} HQ` : '';
+        subtitle.textContent = `${activeRetail} active stores${hqPart} · ${comingSoon} coming soon · ${inactive} inactive`;
+      }
 
       // Module page user selector is populated by loadUsers()
 
@@ -3021,15 +3050,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         apiGet('/api/home-brands'),
         apiGet('/api/suppliers'),
         apiGet('/api/purchases'),
-        apiGet('/api/audit-logs?top=4').catch(() => [])
+        apiGet('/api/audit-logs?top=4').catch(() => []),
+        ensureStoreTypesCatalogLoaded()
       ]);
+
+      const { retail, hq } = partitionStoresRetailAndHq(stores);
+      const activeRetail = retail.filter((s) => resolveStatus(s) === 'ACTIVE').length;
+      const activeHq = hq.filter((s) => resolveStatus(s) === 'ACTIVE').length;
 
       const cards = document.querySelectorAll('#page-dashboard .stats-grid .stat-card');
       if (cards[0]) {
         cards[0].querySelector('.stat-label').textContent = 'Active Stores';
-        const activeCount = stores.filter((s) => resolveStatus(s) === 'ACTIVE').length;
-        cards[0].querySelector('.stat-value').textContent = String(activeCount);
-        cards[0].querySelector('.stat-meta').textContent = `${stores.length} total stores`;
+        cards[0].querySelector('.stat-value').textContent = String(activeRetail);
+        if (activeHq > 0) {
+          cards[0].querySelector('.stat-meta').textContent =
+            `${activeRetail} store${activeRetail !== 1 ? 's' : ''} · ${activeHq} HQ`;
+        } else {
+          cards[0].querySelector('.stat-meta').textContent =
+            `${activeRetail} active store${activeRetail !== 1 ? 's' : ''}`;
+        }
       }
       if (cards[1]) {
         cards[1].querySelector('.stat-label').textContent = 'Home Brands';
