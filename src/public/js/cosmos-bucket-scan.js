@@ -35,6 +35,9 @@
   let _lastTapAttemptTs = 0;
   let _tapScanBusy = false;
   let _highlightTimer = null;
+  let _camStartPromise = null;
+  let _camResumeTimer = null;
+  let _camIgnoreTrackEnd = false;
 
   function bucketEsc(s) {
     return String(s == null ? '' : s)
@@ -588,12 +591,69 @@
     return bucketDecodeQrFromImageData(fullData, w, h);
   }
 
+  function bucketIsModalOpen() {
+    const el = document.getElementById(MODAL_ID);
+    return !!(el && (el.classList.contains('open') || el.style.display === 'flex' || el.style.display === 'block'));
+  }
+
+  function bucketShouldResumeCamera() {
+    return _bucket.status === 'SCANNING' && bucketIsModalOpen() && document.visibilityState !== 'hidden';
+  }
+
+  function bucketScheduleCameraResume(message, delayMs) {
+    if (!bucketShouldResumeCamera()) return;
+    if (_camResumeTimer) clearTimeout(_camResumeTimer);
+    if (message) bucketSetScanStatus(message, 'warn');
+    _camResumeTimer = setTimeout(function () {
+      _camResumeTimer = null;
+      if (bucketShouldResumeCamera()) bucketStartCamera();
+    }, Number(delayMs) || 350);
+  }
+
+  function bucketHandleCameraTrackInterrupted() {
+    if (_camIgnoreTrackEnd) return;
+    if (!_camStream) return;
+    _camStream = null;
+    const video = document.getElementById('bucket-video');
+    if (video) video.srcObject = null;
+    _camDetector = null;
+    _camDecodeMode = null;
+    _camCanvas = null;
+    _camCtx = null;
+    bucketScheduleCameraResume('Camera interrupted. Resuming...', 650);
+  }
+
+  function bucketBindCameraTrackLifecycle(stream) {
+    if (!stream) return;
+    stream.getTracks().forEach(function (track) {
+      track.addEventListener('ended', bucketHandleCameraTrackInterrupted);
+      track.addEventListener('mute', function () {
+        bucketScheduleCameraResume('Camera paused. Waiting to resume...', 900);
+      });
+      track.addEventListener('unmute', function () {
+        if (_bucket.status === 'SCANNING') bucketClearScanStatus();
+      });
+    });
+  }
+
+  function bucketIsTransientCameraError(err) {
+    const name = String(err && err.name || '');
+    const message = String(err && err.message || '');
+    return /^(AbortError|NotReadableError)$/i.test(name) || /camera.*(busy|in use|starting)|could not start/i.test(message);
+  }
+
   function bucketStopCamera() {
+    if (_camResumeTimer) {
+      clearTimeout(_camResumeTimer);
+      _camResumeTimer = null;
+    }
     _camRoi = null;
     _lastTapAttemptTs = 0;
     _tapScanBusy = false;
     if (_camStream) {
+      _camIgnoreTrackEnd = true;
       _camStream.getTracks().forEach(function (t) { t.stop(); });
+      _camIgnoreTrackEnd = false;
       _camStream = null;
     }
     const video = document.getElementById('bucket-video');
@@ -605,17 +665,22 @@
   }
 
   async function bucketStartCamera() {
+    if (_camStartPromise) return _camStartPromise;
+    if (document.visibilityState === 'hidden') {
+      bucketSetScanStatus('Camera paused while app is in background.', 'warn');
+      return Promise.resolve();
+    }
     const blocked = bucketCameraBlockedReason();
     if (blocked) {
       bucketSetScanStatus(blocked, 'err');
-      return;
+      return Promise.resolve();
     }
     const video = document.getElementById('bucket-video');
-    if (!video) return;
+    if (!video) return Promise.resolve();
 
     bucketBindCameraViewport();
 
-    try {
+    _camStartPromise = (async function () {
       bucketStopCamera();
       if ('BarcodeDetector' in window) {
         _camDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
@@ -635,13 +700,21 @@
         },
         audio: false
       });
+      bucketBindCameraTrackLifecycle(_camStream);
       video.srcObject = _camStream;
       await video.play().catch(function () { /* autoplay */ });
       bucketSetScanStatus('', '');
-    } catch (err) {
+    })().catch(function (err) {
       bucketStopCamera();
-      bucketSetScanStatus(err.message || 'Camera failed', 'err');
-    }
+      if (bucketIsTransientCameraError(err) && bucketShouldResumeCamera()) {
+        bucketScheduleCameraResume('Camera is coming back. Retrying...', 1400);
+      } else {
+        bucketSetScanStatus(err.message || 'Camera failed', 'err');
+      }
+    }).finally(function () {
+      _camStartPromise = null;
+    });
+    return _camStartPromise;
   }
 
   function bucketBuildResult() {
@@ -772,4 +845,26 @@
     bucketRenderScore();
     bucketModalOpen();
   };
+
+  document.addEventListener('visibilitychange', function () {
+    if (_bucket.status !== 'SCANNING') return;
+    if (document.visibilityState === 'hidden') {
+      bucketStopCamera();
+      bucketSetScanStatus('Camera paused while app is in background.', 'warn');
+      return;
+    }
+    bucketScheduleCameraResume('Resuming camera...', 300);
+  });
+
+  window.addEventListener('pagehide', function () {
+    if (_bucket.status === 'SCANNING') bucketStopCamera();
+  });
+
+  window.addEventListener('pageshow', function () {
+    bucketScheduleCameraResume('Resuming camera...', 350);
+  });
+
+  window.addEventListener('focus', function () {
+    bucketScheduleCameraResume('', 250);
+  });
 })();
