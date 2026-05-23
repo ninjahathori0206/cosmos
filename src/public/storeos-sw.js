@@ -2,7 +2,7 @@
    Scope: /storeos/ — caches Store OS shell + shared static assets under allowed paths.
    Strategy: network-only for /api/*; network-first for /storeos navigations; cache-first for allowed static GET. */
 
-var CACHE_NAME = 'storeos-v2';
+var CACHE_NAME = 'storeos-v4-unit-search';
 
 var SHELL_URLS = [
   '/storeos/login',
@@ -11,6 +11,8 @@ var SHELL_URLS = [
   '/css/lenskart-pos.css',
   '/css/fonts.css',
   '/js/cosmos-ui-polish.js',
+  '/js/cosmos-bucket-scan.js',
+  '/js/jsQR.min.js',
   '/js/pos-order-queue-catalog.js',
   '/js/pos.js',
   '/js/storeos-pwa.js',
@@ -86,6 +88,26 @@ self.addEventListener('fetch', function (e) {
   }
 
   if (!isAllowedStaticPath(url.pathname) && url.pathname.indexOf('/storeos') !== 0) {
+    return;
+  }
+
+  if (/\.(js|css)$/i.test(url.pathname)) {
+    e.respondWith(
+      fetch(e.request).then(function (res) {
+        if (res && res.status === 200 && e.request.method === 'GET' && isAllowedStaticPath(url.pathname)) {
+          var clone = res.clone();
+          caches.open(CACHE_NAME).then(function (cache) {
+            cache.put(e.request, clone);
+            cache.put(url.pathname, res.clone());
+          });
+        }
+        return res;
+      }).catch(function () {
+        return caches.match(e.request).then(function (cached) {
+          return cached || caches.match(url.pathname, { ignoreSearch: true });
+        });
+      })
+    );
     return;
   }
 

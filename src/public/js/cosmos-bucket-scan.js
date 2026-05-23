@@ -19,6 +19,8 @@
     verifiedSlots: {},
     status: 'IDLE',
     onSubmit: null,
+    onTransferScan: null,
+    maxTransferUnits: 0,
     _lastScanKey: '',
     _lastScanTs: 0
   };
@@ -453,6 +455,40 @@
         bucketDuplicateFeedback(unitBc, unitBc + ' already in bucket');
         return;
       }
+      if (_bucket.maxTransferUnits > 0 && _bucket.scanned.length >= _bucket.maxTransferUnits) {
+        bucketRecordCooldown(cdKey);
+        bucketFlash('err');
+        bucketSetScanStatus('All required units are already scanned', 'err');
+        return;
+      }
+      if (typeof _bucket.onTransferScan === 'function') {
+        let accepted = false;
+        let rejectMessage = 'Not needed on this cart';
+        try {
+          const verdict = await _bucket.onTransferScan(sku, {
+            scanned: _bucket.scanned.slice(),
+            count: _bucket.scanned.length,
+            maxTransferUnits: _bucket.maxTransferUnits,
+            mode: _bucket.mode
+          });
+          if (verdict === true) {
+            accepted = true;
+          } else if (verdict && typeof verdict === 'object') {
+            accepted = verdict.ok !== false;
+            rejectMessage = verdict.message || rejectMessage;
+          } else {
+            accepted = Boolean(verdict);
+          }
+        } catch (err) {
+          rejectMessage = err && err.message ? err.message : rejectMessage;
+        }
+        if (!accepted) {
+          bucketRecordCooldown(cdKey);
+          bucketFlash('err');
+          bucketSetScanStatus(rejectMessage, 'err');
+          return;
+        }
+      }
       _bucket.scanned.push({
         unit_barcode: unitBc,
         unit_id: Number(sku.unit_id),
@@ -789,6 +825,11 @@
     const inp = document.getElementById('bucket-manual-input');
     const v = inp ? String(inp.value || '').trim() : '';
     if (!v) return;
+    if (!/^\d{7}$/.test(v)) {
+      bucketFlash('err');
+      bucketSetScanStatus('Enter a 7-digit unit barcode.', 'err');
+      return;
+    }
     bucketHandleScan(v);
     if (inp) inp.value = '';
   };
@@ -801,7 +842,7 @@
   };
 
   /**
-   * @param {{ mode: 'TRANSFER'|'RECEIVE', sessionId?: *, label?: string, expected?: Array, onSubmit?: Function }} opts
+   * @param {{ mode: 'TRANSFER'|'RECEIVE', sessionId?: *, label?: string, expected?: Array, onSubmit?: Function, onTransferScan?: Function, maxTransferUnits?: number }} opts
    */
   window.openBucket = function openBucket(opts) {
     opts = opts || {};
@@ -827,6 +868,8 @@
     _bucket.scanned = [];
     _bucket.verifiedSlots = {};
     _bucket.onSubmit = typeof opts.onSubmit === 'function' ? opts.onSubmit : null;
+    _bucket.onTransferScan = typeof opts.onTransferScan === 'function' ? opts.onTransferScan : null;
+    _bucket.maxTransferUnits = Math.max(0, Number(opts.maxTransferUnits) || 0);
     _bucket._lastScanKey = '';
     _bucket._lastScanTs = 0;
 

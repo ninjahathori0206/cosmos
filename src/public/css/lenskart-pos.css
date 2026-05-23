@@ -960,7 +960,7 @@ body.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--header {
 
 body.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--with-scan {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 8px;
   align-items: stretch;
 }
@@ -996,9 +996,21 @@ body.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--header .pos-searc
   justify-content: center;
 }
 
+body.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--header .pos-search-btn--add-unit {
+  padding: 0 14px;
+  white-space: nowrap;
+  background: var(--lk-navy-cta);
+  border-color: var(--lk-navy-cta);
+  color: #fff;
+}
+
 body.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--header .pos-search-btn:hover {
   border-color: var(--lk-navy-cta);
   color: var(--lk-navy-cta);
+}
+
+body.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--header .pos-search-btn--add-unit:hover {
+  color: #fff;
 }
 
 /* Catalogue scan dialog */
@@ -5734,7 +5746,7 @@ body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-catalogu
 }
 
 body.pos-target-tablet-landscape.pos-lk-flow #screen-pos-catalogue .pos-search-input-wrap--topbar {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   min-height: 40px;
   border-radius: 10px;
   width: 100%;

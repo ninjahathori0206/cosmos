@@ -1189,19 +1189,54 @@ window.loadStoreCatalogue = async function (q = '') {
     const rows = data.data || [];
     const liveStockTotal = rows.reduce((sum, row) => sum + Math.max(0, Number(row.store_qty) || 0), 0);
     const brandTotals = {};
+    const brandMrpTotals = {};
     const categoryTotals = {};
 
     rows.forEach((row) => {
       const rowQty = Math.max(0, Number(row.store_qty) || 0);
       const brandKey = (row.brand_name || 'Unbranded').trim();
       const categoryKey = (row.product_type || 'Uncategorized').trim();
+      const mrpValue = Number(row.sale_price || 0);
+      const mrpKey = mrpValue > 0 ? String(Math.round(mrpValue)) : 'No MRP';
       brandTotals[brandKey] = (brandTotals[brandKey] || 0) + rowQty;
+      if (!brandMrpTotals[brandKey]) brandMrpTotals[brandKey] = {};
+      brandMrpTotals[brandKey][mrpKey] = (brandMrpTotals[brandKey][mrpKey] || 0) + rowQty;
       categoryTotals[categoryKey] = (categoryTotals[categoryKey] || 0) + rowQty;
     });
 
     const toSortedList = (totalsObj) => Object.entries(totalsObj)
       .sort((a, b) => b[1] - a[1])
       .map(([label, qty]) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">${escHtml(label)}</span><span class="b ${qty > 0 ? 'b-green' : 'b-gray'}">${qty}</span></div>`)
+      .join('');
+
+    const toBrandMrpList = () => Object.entries(brandTotals)
+      .sort((a, b) => b[1] - a[1])
+      .map(([brand, brandQty]) => {
+        const mrpRows = Object.entries(brandMrpTotals[brand] || {})
+          .sort((a, b) => {
+            const av = Number(a[0]);
+            const bv = Number(b[0]);
+            if (Number.isFinite(av) && Number.isFinite(bv)) return av - bv;
+            if (Number.isFinite(av)) return -1;
+            if (Number.isFinite(bv)) return 1;
+            return String(a[0]).localeCompare(String(b[0]));
+          })
+          .map(([mrp, qty]) => `
+            <div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0 3px 12px">
+              <span class="mono" style="color:var(--text2)">${escHtml(mrp)}</span>
+              <span class="mono" style="font-weight:700;color:var(--text1)">${qty}</span>
+            </div>`)
+          .join('');
+        return `
+          <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;gap:10px">
+              <span style="color:var(--text2);font-weight:700">${escHtml(brand)}</span>
+              <span class="b ${brandQty > 0 ? 'b-green' : 'b-gray'}">${brandQty}</span>
+            </div>
+            <div style="margin-top:6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Sale Price (MRP) Wise</div>
+            <div style="margin-top:3px">${mrpRows}</div>
+          </div>`;
+      })
       .join('');
 
     if (summary) {
@@ -1219,7 +1254,7 @@ window.loadStoreCatalogue = async function (q = '') {
         <div class="sc" style="--sc-color:var(--gold)">
           <div class="sl">Brand Wise Stock</div>
           <div class="sm" style="margin:0">
-            ${toSortedList(brandTotals) || '<span style="color:var(--text3)">No brand stock found</span>'}
+            ${toBrandMrpList() || '<span style="color:var(--text3)">No brand stock found</span>'}
           </div>
         </div>
         <div class="sc" style="--sc-color:var(--blue)">

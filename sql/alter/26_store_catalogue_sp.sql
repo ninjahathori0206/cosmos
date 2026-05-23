@@ -31,6 +31,7 @@ BEGIN
     ISNULL(pm.ew_collection,'') + ' · ' + ISNULL(pm.style_model,'') AS product_name,
     pm.product_type,
     ISNULL(pic.colour_name, '')                    AS colour_name,
+    ISNULL(sk.sale_price, 0)                       AS sale_price,
     sb.qty                                          AS store_qty
   FROM dbo.stock_balances sb
   JOIN  dbo.skus                  sk  ON sk.sku_id          = sb.sku_id

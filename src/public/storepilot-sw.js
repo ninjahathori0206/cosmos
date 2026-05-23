@@ -2,7 +2,7 @@
    Scope: registered at / — only caches Store Pilot shell + shared static assets + login.
    Strategy: network-only for /api/*; network-first for /storepilot navigations; cache-first for allowed static GET. */
 
-var CACHE_NAME = 'storepilot-v2-camera-resume';
+var CACHE_NAME = 'storepilot-v3-brand-mrp-stock';
 
 var SHELL_URLS = [
   '/',

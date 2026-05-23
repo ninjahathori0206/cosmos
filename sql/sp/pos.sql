@@ -837,6 +837,7 @@ BEGIN
     u.status,
     u.location_type,
     u.location_id,
+    pm.product_id,
     sk.sku_code,
     sk.barcode AS batch_barcode,
     sk.pid,
@@ -848,7 +849,11 @@ BEGIN
       NULLIF(LTRIM(RTRIM(ISNULL(mm.maker_name, ''))), ''),
       ''
     ))) AS brand_name,
+    ISNULL(pm.ew_collection, '') AS collection_name,
+    ISNULL(pm.style_model, '') AS model_number,
     pic.colour_name,
+    ISNULL(pic.colour_code, '') AS colour_code,
+    ISNULL(sk.image_url, '') AS image_url,
     ISNULL(pm.ew_collection, '') + N' · ' + ISNULL(pm.style_model, '') AS product_name,
     ISNULL(sb.qty, 0) AS store_qty
   FROM dbo.sku_units u

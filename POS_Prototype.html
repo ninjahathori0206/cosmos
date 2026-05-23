@@ -16,7 +16,8 @@
 <script src="/js/cosmos-ui-polish.js?v=20260524-lock-zoom" defer></script>
 <script src="/js/storeos-pwa.js?v=20260521-pwa" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
-<script src="/js/pos.js?v=storeos-20260520-order-queues" defer></script>
+<script src="/js/cosmos-bucket-scan.js?v=20260522-camera-resume" defer></script>
+<script src="/js/pos.js?v=storeos-20260523-unit-search" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -357,6 +358,7 @@
           <button type="button" id="btn-pos-catalogue-scan" class="pos-search-btn pos-search-btn--scan" aria-label="Scan QR code or barcode" tabindex="0">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 012-2h2"/><path d="M17 3h2a2 2 0 012 2v2"/><path d="M21 17v2a2 2 0 01-2 2h-2"/><path d="M7 21H5a2 2 0 01-2-2v-2"/><path d="M9 12h6"/><path d="M12 9v6"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>
           </button>
+          <button type="button" id="btn-pos-catalogue-add-unit" class="pos-search-btn pos-search-btn--add-unit" hidden disabled tabindex="0">Add to Cart</button>
           <button type="button" id="btn-pos-search" class="pos-search-btn pos-search-btn--catalogue-submit" aria-label="Run search" tabindex="0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg></button>
         </div>
       </div>
@@ -1075,7 +1077,73 @@
   </div>
 </div>
 
-<!-- Catalogue — QR / barcode scanner (camera) -->
+<!-- Cart - Bucket Scanner for unit barcodes -->
+<div class="overlay" id="modal-bucket-scan">
+  <div class="modal modal--bucket-scan">
+    <div class="modal-head bucket-modal-head" style="flex-shrink:0;display:flex;align-items:center;gap:10px">
+      <div style="flex:1;min-width:0">
+        <div class="modal-title" id="bucket-header-label">Cart unit bucket</div>
+        <span id="bucket-mode-badge" class="b b-blue" style="margin-top:6px">TRANSFER</span>
+      </div>
+      <button class="modal-close" onclick="bucketClose()">x</button>
+    </div>
+    <div class="modal-body bucket-modal-body" style="padding:16px 20px">
+      <div id="bucket-screen-idle">
+        <p style="font-size:13px;color:var(--text2);margin:0 0 16px">Scan each 7-digit unit barcode needed for this cart. Units are linked to matching cart lines.</p>
+        <button type="button" class="btn primary" style="width:100%" onclick="bucketStartScanning()">Start scanning</button>
+      </div>
+      <div id="bucket-screen-scan" style="display:none">
+        <div class="bucket-scan-viewport" id="bucket-scan-viewport">
+          <video id="bucket-video" autoplay playsinline muted></video>
+          <div class="bucket-scan-frame" aria-hidden="true">
+            <span class="bucket-scan-frame__c bucket-scan-frame__c--tl"></span>
+            <span class="bucket-scan-frame__c bucket-scan-frame__c--tr"></span>
+            <span class="bucket-scan-frame__c bucket-scan-frame__c--bl"></span>
+            <span class="bucket-scan-frame__c bucket-scan-frame__c--br"></span>
+          </div>
+          <div id="bucket-focus-reticle" class="bucket-focus-reticle" aria-hidden="true"></div>
+          <div id="bucket-scan-flash" class="bucket-scan-flash"></div>
+        </div>
+        <p class="bucket-scan-focus-hint">Aim QR in frame - tap to scan</p>
+        <div style="margin-top:12px;font-size:14px;font-weight:600;color:var(--text1)" id="bucket-score-label">0 units scanned</div>
+        <div class="bucket-score-bar"><div id="bucket-score-bar-fill" class="bucket-score-bar-fill"></div></div>
+        <div id="bucket-scan-status" class="bucket-scan-status" role="status" aria-live="polite"></div>
+        <div class="bucket-show-qr-row">
+          <button type="button" class="btn sm" id="bucket-show-qr-btn" aria-expanded="false" onclick="bucketToggleScannedList()">Show QR</button>
+        </div>
+        <div id="bucket-scanned-list-wrap" class="bucket-scanned-list-wrap is-collapsed" hidden>
+          <div id="bucket-scanned-list" class="bucket-scanned-list"></div>
+        </div>
+        <div class="bucket-manual-row">
+          <input id="bucket-manual-input" type="text" style="flex:1;min-width:140px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px" placeholder="Unit code + Enter" onkeydown="bucketManualKeydown(event)">
+          <button type="button" class="btn sm" onclick="bucketManualScan()">Add</button>
+        </div>
+      </div>
+      <div id="bucket-screen-review" style="display:none">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px" id="bucket-review-title">Review</div>
+        <div id="bucket-review-score-text" style="font-size:13px;color:var(--text2);margin-bottom:12px"></div>
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">Scanned</div>
+        <div id="bucket-review-verified" style="margin-bottom:12px"></div>
+        <div id="bucket-review-missing-wrap" style="display:none">
+          <div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:6px">Missing</div>
+          <div id="bucket-review-missing"></div>
+        </div>
+      </div>
+    </div>
+    <div id="bucket-modal-foot" class="bucket-modal-foot cosmos-modal-actions">
+      <div id="bucket-foot-scan" class="bucket-foot-row" style="display:none">
+        <button type="button" class="btn sm" onclick="bucketStopScanning()">Stop</button>
+        <button type="button" class="btn sm primary" onclick="bucketGoReview()">Review &amp; submit</button>
+      </div>
+      <div id="bucket-foot-review" class="bucket-foot-row" style="display:none">
+        <button type="button" class="btn sm" onclick="bucketBackToScan()">Back</button>
+        <button type="button" class="btn sm primary" id="bucket-review-submit-btn" onclick="bucketSubmit()" disabled>Submit bucket</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Catalogue - QR / barcode scanner (camera) -->
 <div id="overlay-pos-catalogue-scan" class="pos-lens-newcust-overlay pos-catalogue-scan-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-catalogue-scan-title">
   <div class="pos-lens-newcust-backdrop" id="pos-catalogue-scan-backdrop" tabindex="-1"></div>
   <div class="pos-lens-newcust-sheet pos-catalogue-scan-sheet">

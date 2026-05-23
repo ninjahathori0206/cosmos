@@ -1,7 +1,7 @@
 const express = require('express');
 const sql = require('mssql');
 const Joi = require('joi');
-const { executeStoredProcedure } = require('../config/db');
+const { executeStoredProcedure, getPool } = require('../config/db');
 const {
   requireModule,
   requirePermission,
@@ -78,6 +78,31 @@ function maskStockDistributionPayload(payload) {
     };
   });
   return { sku: maskedSku, locations: maskedLocations };
+}
+
+async function enrichStoreCatalogueSalePrices(rows) {
+  if (!Array.isArray(rows) || !rows.length) return rows;
+  const needsPrice = rows.some((row) => row && !(Number(row.sale_price) > 0));
+  if (!needsPrice) return rows;
+
+  const skuIds = [...new Set(rows.map((row) => Number(row && row.sku_id)).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!skuIds.length) return rows;
+
+  const values = skuIds.map((id) => `(${id})`).join(',');
+  const pool = await getPool();
+  const result = await pool.request().query(`
+    SELECT sk.sku_id, ISNULL(sk.sale_price, 0) AS sale_price
+    FROM dbo.skus sk
+    INNER JOIN (VALUES ${values}) v(sku_id) ON v.sku_id = sk.sku_id
+  `);
+  const priceBySku = new Map((result.recordset || []).map((row) => [Number(row.sku_id), Number(row.sale_price) || 0]));
+
+  return rows.map((row) => {
+    const existing = Number(row && row.sale_price) || 0;
+    if (existing > 0) return row;
+    const salePrice = priceBySku.get(Number(row && row.sku_id)) || 0;
+    return { ...row, sale_price: salePrice };
+  });
 }
 
 function maskAvailableStockRows(rows) {
@@ -230,7 +255,8 @@ router.get('/store-catalogue', ...storeCatalogueViewAccess, async (req, res, nex
       store_id: { type: sql.Int,          value: storeId },
       q:        { type: sql.NVarChar(200), value: q || null }
     });
-    return res.json({ success: true, data: result.recordset || [] });
+    const rows = await enrichStoreCatalogueSalePrices(result.recordset || []);
+    return res.json({ success: true, data: rows });
   } catch (err) {
     return next(err);
   }
