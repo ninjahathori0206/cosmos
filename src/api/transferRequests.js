@@ -476,6 +476,35 @@ router.put('/:id/status', requireAnyModule(['foundry', 'storepilot']), requirePe
 
     // Update remaining per-line quantities (APPROVED / RECEIVED phases)
     if (value.status !== 'DISPATCHED' && value.lines?.length) {
+      if (value.status === 'APPROVED') {
+        const approveDetail = await executeStoredProcedure('sp_TransferRequest_GetById', {
+          request_id: { type: sql.Int, value: requestId }
+        });
+        const requestLines = approveDetail.recordsets?.[1] || [];
+        const requestedByLine = new Map(
+          requestLines.map((line) => [
+            Number(line.line_id),
+            Math.max(0, Number(line.requested_qty) || 0)
+          ])
+        );
+
+        for (const line of value.lines) {
+          if (line.approved_qty == null) continue;
+          const requestedQty = requestedByLine.get(Number(line.line_id));
+          if (requestedQty == null) {
+            return res.status(422).json({
+              success: false,
+              message: `Transfer request line ${line.line_id} was not found on this request.`
+            });
+          }
+          if (Number(line.approved_qty) > requestedQty) {
+            return res.status(422).json({
+              success: false,
+              message: `Approved quantity cannot exceed requested quantity for line ${line.line_id} (requested ${requestedQty}, approved ${line.approved_qty}).`
+            });
+          }
+        }
+      }
       for (const line of value.lines) {
         await executeStoredProcedure('sp_TransferRequest_SetLineQty', {
           line_id:        { type: sql.Int, value: line.line_id },

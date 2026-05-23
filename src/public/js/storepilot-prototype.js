@@ -1468,22 +1468,23 @@ async function doTransferSearch(q) {
       const inCart    = _transferCart.some((c) => c.sku_id === r.sku_id);
       // API returns warehouse_qty from sp_StockTransfer_ListAvailable
       const hasWarehouseQty = r.warehouse_qty != null;
-      const warehouseQty = hasWarehouseQty ? Number(r.warehouse_qty) : (isStockAvailable(r, ['warehouse_qty']) ? 1 : 0);
+      const warehouseQty = hasWarehouseQty ? Number(r.warehouse_qty) : null;
+      const warehouseAvailable = hasWarehouseQty ? warehouseQty > 0 : isStockAvailable(r, ['warehouse_qty']);
       const displayName  = r.product_name  || r.description || r.brand_name || '';
       const colourPart   = r.colour_name   ? ` — ${r.colour_name}` : '';
-      const availLabel = hasWarehouseQty ? `${warehouseQty} in Warehouse` : (warehouseQty > 0 ? 'Warehouse Available' : 'Warehouse Unavailable');
+      const availLabel = hasWarehouseQty ? `${warehouseQty} in Warehouse` : (warehouseAvailable ? 'Warehouse Available' : 'Warehouse Unavailable');
       return `
         <div class="avail-row">
           <div style="flex:1;min-width:0">
             <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--acc)">${escHtml(r.sku_code)}</div>
             <div style="font-size:12.5px;color:var(--text2);margin-top:2px">${escHtml(displayName + colourPart)}</div>
           </div>
-          <span class="b ${warehouseQty > 0 ? 'b-green' : 'b-red'}" style="white-space:nowrap">${availLabel}</span>
+          <span class="b ${warehouseAvailable ? 'b-green' : 'b-red'}" style="white-space:nowrap">${availLabel}</span>
           <button class="btn sm ${inCart ? '' : 'primary'}" style="min-width:64px"
             data-sku-id="${r.sku_id}"
             data-sku-code="${escHtml(r.sku_code)}"
             data-sku-desc="${escHtml(displayName + colourPart)}"
-            data-avail="${warehouseQty}"
+            data-avail="${hasWarehouseQty ? warehouseQty : ''}"
             onclick="addToCartFromBtn(this)"
             ${inCart ? 'disabled' : ''}>
             ${inCart ? '✓ Added' : '+ Add'}
@@ -1502,7 +1503,7 @@ window.addToCartFromBtn = function (btn) {
   const skuId   = Number(btn.dataset.skuId);
   const skuCode = btn.dataset.skuCode || '';
   const desc    = btn.dataset.skuDesc || '';
-  const avail   = Number(btn.dataset.avail) || 9999;
+  const avail   = btn.dataset.avail === '' ? null : (Number(btn.dataset.avail) || 9999);
   if (_transferCart.some((c) => c.sku_id === skuId)) return;
   _transferCart.push({ sku_id: skuId, sku_code: skuCode, description: desc, avail_qty: avail, qty: 1 });
   renderTransferCart();
@@ -1544,8 +1545,9 @@ function renderTransferCart() {
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
         <input type="number" class="qty-input" min="1" max="${item.avail_qty || 9999}" value="${item.qty}"
+          data-sku-id="${item.sku_id}"
           onchange="updateCartQty(${item.sku_id}, this.value)" oninput="updateCartQty(${item.sku_id}, this.value)">
-        <span style="font-size:11px;color:var(--text3)" title="Available in ${primaryWarehouseTitleAttr()}">/ ${item.avail_qty} WH</span>
+        <span style="font-size:11px;color:var(--text3)" title="Available in ${primaryWarehouseTitleAttr()}">${item.avail_qty != null ? '/ ' + item.avail_qty + ' WH' : 'WH available'}</span>
         <button class="btn sm" style="color:var(--red);border-color:var(--red);padding:4px 8px"
           onclick="removeFromCart(${item.sku_id})">✕</button>
       </div>
@@ -1576,6 +1578,9 @@ window.submitTransfer = async function () {
   if (msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
 
   try {
+    document.querySelectorAll('#tc-cart-body .qty-input[data-sku-id]').forEach((inp) => {
+      updateCartQty(Number(inp.dataset.skuId), inp.value);
+    });
     const lines = _transferCart.map((c) => ({ sku_id: c.sku_id, qty: Math.max(1, Number(c.qty) || 1) }));
     await apiPost('/api/transfer-requests', { store_id: _storeId, lines, notes: notes || null });
 
