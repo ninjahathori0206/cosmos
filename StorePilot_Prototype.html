@@ -90,6 +90,20 @@
     flex-wrap:wrap;
     gap:12px;
   }
+  .sp-page-tools {
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .topbar-center {
+    flex:1;
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:2px;
+  }
   .sp-page-filters {
     display:flex;
     gap:8px;
@@ -315,7 +329,17 @@
     /* Show hamburger */
     .menu-toggle { display:flex; }
     /* Topbar compact */
-    .topbar { padding:0 14px; gap:10px; }
+    .topbar { padding:0 14px; gap:10px; height:auto; min-height:calc(52px + env(safe-area-inset-top, 0px)); align-items:flex-start; }
+    .topbar-center { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; padding:8px 0 6px; }
+    .breadcrumb { flex-wrap:wrap; line-height:1.35; white-space:normal; overflow:visible; }
+    .breadcrumb-prefix { display:none; }
+    .breadcrumb .cur { word-break:break-word; }
+    .topbar-updated { font-size:11px; }
+    .topbar-updated:empty { display:none; }
+    .sp-page-title-row { flex-direction:column; align-items:stretch; }
+    .sp-page-tools { width:100%; display:flex; flex-direction:column; gap:8px; align-items:stretch; }
+    .sp-page-tools .sw { width:100% !important; max-width:none !important; }
+    .sp-page-tools .btn { width:100%; justify-content:center; }
     /* Page padding */
     .page { padding:14px; }
     /* Page header text */
@@ -352,8 +376,8 @@
     .hint { display:none !important; }
   }
 </style>
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260524-lock-zoom">
-<script src="/js/cosmos-ui-polish.js?v=20260521-sp-scroll" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260523-sp-mobile-topbar">
+<script src="/js/cosmos-ui-polish.js?v=20260523-sp-mobile-topbar" defer></script>
 <script src="/js/storepilot-pwa.js?v=20260521-pwa" defer></script>
 </head>
 <body class="cosmos-app-shell">
@@ -403,8 +427,13 @@
     <button class="menu-toggle" id="sp-menu-toggle" onclick="openSidebar()" aria-label="Open menu">
       <span></span><span></span><span></span>
     </button>
-    <div class="breadcrumb">Store Pilot <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="sp-bc">Dashboard</span></div>
-    <span id="dash-last-updated" style="font-size:11.5px;color:var(--text3)"></span>
+    <div class="topbar-center">
+      <div class="breadcrumb" id="sp-breadcrumb">
+        <span class="breadcrumb-prefix">Store Pilot <span style="color:var(--text3);margin:0 4px">›</span></span>
+        <span class="cur" id="sp-bc">Dashboard</span>
+      </div>
+      <span id="dash-last-updated" class="topbar-updated" hidden></span>
+    </div>
   </div>
 
   <div id="sp-pwa-install-banner" class="sp-pwa-install-banner" hidden role="region" aria-label="Install app">
@@ -475,7 +504,7 @@
         <div>
           <div class="pt">Browse Catalogue</div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div class="sp-page-tools">
           <div class="sw" style="width:260px;max-width:100%">
             <input type="text" id="bc-q" placeholder="Brand, type, SKU code…" oninput="onBrowseCatalogueSearch(this.value)">
             <span class="sp-spin" id="bc-spin">…</span>
@@ -503,7 +532,7 @@
         <div>
           <div class="pt">Store Catalogue</div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div class="sp-page-tools">
           <div class="sw" style="width:260px;max-width:100%">
             <input type="text" id="sc-q" placeholder="Brand, type, SKU code…" oninput="onStoreCatalogueSearch(this.value)">
             <span class="sp-spin" id="sc-spin">…</span>
@@ -540,7 +569,7 @@
         <strong>Store Request flow:</strong>
         You submit a request (SUBMITTED) → HQ reviews and approves quantities (APPROVED) →
         HQ dispatches stock and inventory is updated automatically (DISPATCHED) →
-        Confirm goods received (RECEIVED). Use <strong>New Request</strong> to start one.
+        Track goods stocked at store (RECEIVED). Use <strong>New Request</strong> to start one.
       </div>
 
       <div class="sp-page-filters">
@@ -548,7 +577,7 @@
         <button class="btn sm"        id="sp-tr-tab-submitted"  onclick="setSpTrFilter('SUBMITTED',this)">Pending</button>
         <button class="btn sm"        id="sp-tr-tab-approved"   onclick="setSpTrFilter('APPROVED',this)">Approved</button>
         <button class="btn sm"        id="sp-tr-tab-dispatched" onclick="setSpTrFilter('DISPATCHED',this)">Dispatched</button>
-        <button class="btn sm"        id="sp-tr-tab-received"   onclick="setSpTrFilter('RECEIVED',this)">Received</button>
+        <button class="btn sm"        id="sp-tr-tab-received"   onclick="setSpTrFilter('RECEIVED',this)">Stocked at Store</button>
         <button class="btn sm"        id="sp-tr-tab-rejected"   onclick="setSpTrFilter('REJECTED',this)">Rejected</button>
       </div>
 
@@ -954,6 +983,6 @@
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260522-camera-resume" defer></script>
-<script src="/js/storepilot-prototype.js?v=20260523-brand-mrp-stock-b2" defer></script>
+<script src="/js/storepilot-prototype.js?v=20260523-sp-mobile-topbar" defer></script>
 </body>
 </html>

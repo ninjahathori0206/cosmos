@@ -337,6 +337,73 @@ GO
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- sp_TransferRequest_SyncReceivedFromDocs
+-- Reconcile transfer_request_lines.received_qty from STOCKED transfer documents
+-- linked via source_request_id. Optionally advances header to RECEIVED when
+-- every dispatched line is fully received at the store.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR ALTER PROCEDURE dbo.sp_TransferRequest_SyncReceivedFromDocs
+  @request_id INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF NOT EXISTS (SELECT 1 FROM dbo.transfer_requests WHERE request_id = @request_id)
+    THROW 50001, 'Transfer request not found.', 1;
+
+  UPDATE l
+  SET received_qty = ISNULL(agg.total_recv, 0)
+  FROM dbo.transfer_request_lines l
+  LEFT JOIN (
+    SELECT
+      d.source_request_id AS request_id,
+      dl.sku_id,
+      SUM(ISNULL(dl.qty_received, 0)) AS total_recv
+    FROM dbo.stock_transfer_docs d
+    INNER JOIN dbo.stock_transfer_doc_lines dl ON dl.doc_id = d.doc_id
+    WHERE d.source_request_id = @request_id
+      AND d.status = N'STOCKED'
+    GROUP BY d.source_request_id, dl.sku_id
+  ) agg ON agg.request_id = l.request_id AND agg.sku_id = l.sku_id
+  WHERE l.request_id = @request_id;
+
+  DECLARE @cur_status VARCHAR(20);
+  SELECT @cur_status = status FROM dbo.transfer_requests WHERE request_id = @request_id;
+
+  DECLARE @fully_received BIT = 1;
+
+  IF EXISTS (
+    SELECT 1
+    FROM dbo.transfer_request_lines l
+    WHERE l.request_id = @request_id
+      AND ISNULL(l.dispatched_qty, 0) > 0
+      AND ISNULL(l.received_qty, 0) < ISNULL(l.dispatched_qty, 0)
+  )
+    SET @fully_received = 0;
+
+  IF @fully_received = 1
+     AND EXISTS (
+       SELECT 1
+       FROM dbo.transfer_request_lines
+       WHERE request_id = @request_id
+         AND ISNULL(dispatched_qty, 0) > 0
+     )
+     AND @cur_status IN ('DISPATCHED', 'PARTIALLY_DISPATCHED')
+  BEGIN
+    UPDATE dbo.transfer_requests
+    SET
+      status     = 'RECEIVED',
+      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+    WHERE request_id = @request_id;
+    SET @cur_status = 'RECEIVED';
+  END
+
+  SELECT @request_id AS request_id, @cur_status AS status;
+END;
+GO
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- sp_TransferRequest_DispatchShipment
 -- Atomic goods-request shipment: transfer document + sync lines/status from docs.
 -- Transfer documents are the source of truth for dispatched_qty.

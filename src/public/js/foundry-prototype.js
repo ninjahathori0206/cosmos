@@ -5815,9 +5815,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (id === 'sku-catalogue')    loadSkuCatalogue();
     if (id === 'master-catalogue') loadMasterCatalogue();
     if (id === 'stock-view')       loadStockView();
-    if (id === 'stock-transfer')   stInit();
-    if (id === 'transfer-requests') loadTransferRequests();
-    if (id === 'movement-list')     loadMovementList();
+    if (id === 'stock-transfer' && typeof window.stInit === 'function') window.stInit();
+    if (id === 'transfer-requests') {
+      void ftrInitStoreFilter();
+      if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
+    }
+    if (id === 'movement-list' && typeof window.loadMovementList === 'function') window.loadMovementList();
     if (id === 'lens-packages' && typeof window.loadLensPackagesPage === 'function') window.loadLensPackagesPage();
     if (id === 'lens-addons' && typeof window.loadLensAddonsPage === 'function') window.loadLensAddonsPage();
     if (id === 'lens-package-addons' && typeof window.loadLensMatrixPage === 'function') window.loadLensMatrixPage();
@@ -5845,8 +5848,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('popstate', () => {
     applyFoundryRouteFromPath();
   });
-
-  applyFoundryRouteFromPath();
 
   // ─────────────────────────────────────────────────────────────────────────
   // BARCODE PRINT (TSC P210 · TSPL2 · roll/label geometry is parameterized)
@@ -7719,21 +7720,36 @@ ${initScript}
     REJECTED:             'b-red'
   };
 
+  function ftrStatusLabel(status) {
+    const map = {
+      SUBMITTED: 'Pending',
+      APPROVED: 'Approved',
+      PARTIALLY_DISPATCHED: 'Partially Dispatched',
+      DISPATCHED: 'Dispatched',
+      RECEIVED: 'Stocked at Store',
+      REJECTED: 'Rejected'
+    };
+    return map[status] || status || '—';
+  }
+
   function ftrRequestQtySummary(req) {
     const lines = req.lines || [];
     let totalRequested = 0;
     let totalCap = 0;
     let totalDisp = 0;
+    let totalRecv = 0;
     lines.forEach(function (l) {
       totalRequested += Math.max(0, Number(l.requested_qty) || 0);
       totalCap += ftrApprovedCap(l);
       totalDisp += Math.max(0, Number(l.dispatched_qty) || 0);
+      if (l.received_qty != null) totalRecv += Math.max(0, Number(l.received_qty) || 0);
     });
     return {
       skuCount: lines.length,
       totalRequested: totalRequested,
       totalCap: totalCap,
       totalDisp: totalDisp,
+      totalRecv: totalRecv,
       remaining: Math.max(0, totalCap - totalDisp)
     };
   }
@@ -7745,9 +7761,14 @@ ${initScript}
       skuLabel,
       '<strong>' + summary.totalRequested + '</strong> pcs requested',
       '<strong>' + summary.totalCap + '</strong> pcs approved',
-      '<strong>' + summary.totalDisp + '</strong> shipped',
-      '<strong>' + summary.remaining + '</strong> remaining'
+      '<strong>' + summary.totalDisp + '</strong> shipped'
     ];
+    if (summary.totalRecv > 0) {
+      parts.push('<strong>' + summary.totalRecv + '</strong> stocked at store');
+    }
+    if (summary.remaining > 0) {
+      parts.push('<strong>' + summary.remaining + '</strong> remaining to ship');
+    }
     return '<div class="hint" style="margin-bottom:12px;font-size:13px">' + parts.join(' · ') + '</div>';
   }
 
@@ -7757,7 +7778,104 @@ ${initScript}
   }
 
   let _trFilter    = '';
+  let _trStoreFilter = '';
+  let _ftrStoreFilterReady = false;
   let _trExpanded  = null;
+
+  /** Matches backend shouldScopeTransferRequestsToUserStore — store staff never see HQ store filter. */
+  function ftrShouldScopeToUserStore() {
+    if (user && String(user.role || '') === 'super_admin') return false;
+    if (userPermissions.includes('foundry.transfers.edit')) return false;
+    const us = user && user.store_id != null ? Number(user.store_id) : null;
+    if (!us) return false;
+    return userPermissions.includes('storepilot.transfers.view');
+  }
+
+  function ftrCanFilterByStore() {
+    return !ftrShouldScopeToUserStore();
+  }
+
+  function ftrSyncStoreChipActive() {
+    const chips = document.getElementById('ftr-store-chips');
+    if (!chips) return;
+    chips.querySelectorAll('[data-ftr-store-chip]').forEach(function (b) {
+      const id = b.getAttribute('data-store-id') || '';
+      const active = id === (_trStoreFilter || '');
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  window.setFtrStoreFilter = function setFtrStoreFilter(storeId) {
+    _trStoreFilter = storeId ? String(storeId) : '';
+    ftrSyncStoreChipActive();
+    if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
+  };
+
+  async function ftrInitStoreFilter() {
+    const row = document.getElementById('ftr-store-filter-row');
+    const chips = document.getElementById('ftr-store-chips');
+    if (!row || !chips) return;
+    if (!ftrCanFilterByStore()) {
+      row.hidden = true;
+      row.style.display = 'none';
+      _trStoreFilter = '';
+      return;
+    }
+    row.hidden = false;
+    row.style.display = 'flex';
+    if (_ftrStoreFilterReady) {
+      ftrSyncStoreChipActive();
+      return;
+    }
+    const prev = _trStoreFilter;
+    chips.innerHTML = '';
+    const allBtn = document.createElement('button');
+    allBtn.type = 'button';
+    allBtn.className = 'btn sm';
+    allBtn.textContent = 'All stores';
+    allBtn.setAttribute('data-ftr-store-chip', '1');
+    allBtn.setAttribute('data-store-id', '');
+    allBtn.onclick = function () { window.setFtrStoreFilter(''); };
+    chips.appendChild(allBtn);
+    try {
+      const raw = await apiGetFirst([
+        '/api/stock-transfers/destination-stores',
+        '/api/foundry/destination-stores'
+      ]);
+      const rows = Array.isArray(raw) ? raw : [];
+      const seen = new Set();
+      const list = [];
+      rows.forEach(function (s) {
+        if (!s || typeof s !== 'object') return;
+        const sid = Number(s.store_id);
+        if (!Number.isFinite(sid) || sid < 1 || seen.has(sid)) return;
+        const status = String(s.status || '').trim().toUpperCase();
+        if (status && status !== 'ACTIVE') return;
+        seen.add(sid);
+        list.push(s);
+      });
+      list.sort(function (a, b) {
+        return String(a.store_name || '').localeCompare(String(b.store_name || ''), undefined, { sensitivity: 'base' });
+      });
+      list.forEach(function (s) {
+        const sid = String(s.store_id);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn sm';
+        btn.textContent = s.store_name || ('Store #' + s.store_id);
+        btn.setAttribute('data-ftr-store-chip', '1');
+        btn.setAttribute('data-store-id', sid);
+        btn.onclick = function () { window.setFtrStoreFilter(sid); };
+        chips.appendChild(btn);
+      });
+      _ftrStoreFilterReady = true;
+      ftrSyncStoreChipActive();
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not load stores.');
+    }
+  }
+
   let _ftrDispatchSearchResults = [];
   let _ftrDispatchCart = null;
   let _trRejectPendingId = null;
@@ -7851,7 +7969,7 @@ ${initScript}
     }
     banner.style.display = 'block';
     banner.innerHTML =
-      '<strong>Shipments on file:</strong> Transfer document(s) exist for this request but shipped quantities on the request are out of sync. ' +
+      '<strong>Shipments on file:</strong> Transfer document(s) exist for this request but shipped or stocked quantities on the request are out of sync. ' +
       '<button type="button" class="btn sm" style="margin-left:8px" onclick="ftrReconcileRequest(' + requestId + ')">Sync from documents</button>';
     const confirmBtn = document.getElementById('ftr-dispatch-confirm-btn');
     if (confirmBtn) confirmBtn.style.display = 'none';
@@ -7872,7 +7990,7 @@ ${initScript}
       }
       ftrHideShipmentSyncBanner();
       expandTrRequest(requestId);
-      loadTransferRequests();
+      if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
     } catch (err) {
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
     }
@@ -8167,28 +8285,67 @@ ${initScript}
     await ftrDispatchLookupAndAdd(code.trim());
   }
 
+  function ftrRequestCardActionLabel(status) {
+    if (status === 'SUBMITTED') return 'Review';
+    if (status === 'APPROVED' || status === 'PARTIALLY_DISPATCHED') return 'Dispatch';
+    return 'Open';
+  }
+
+  function ftrRenderRequestCard(r, showStoreName) {
+    const skuPart = (r.line_count || 0) + ' SKU' + ((r.line_count || 0) !== 1 ? 's' : '');
+    const qtyPart = r.total_requested_qty != null ? ' · ' + r.total_requested_qty + ' pcs' : '';
+    const storeBlock = showStoreName
+      ? '<div class="ftr-request-card__store">' + trEsc(r.store_name || r.store_id) + '</div>'
+      : '';
+    return (
+      '<article class="ftr-request-card" role="button" tabindex="0" aria-label="Open request #' + r.request_id + '"' +
+      ' onclick="expandTrRequest(' + r.request_id + ')"' +
+      ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();expandTrRequest(' + r.request_id + ')}">' +
+      '<div class="ftr-request-card__head">' +
+      '<span class="ftr-request-card__id">#' + r.request_id + '</span>' +
+      '<span class="b ' + (TR_STATUS_BADGE[r.status] || 'b-gray') + '">' + trEsc(ftrStatusLabel(r.status)) + '</span>' +
+      '</div>' +
+      storeBlock +
+      '<div class="ftr-request-card__meta">' + trEsc(fmtDate(r.created_at)) + ' · ' + skuPart + qtyPart + '</div>' +
+      '<div class="ftr-request-card__foot">' +
+      '<span>' + trEsc(r.requested_by_fullname || r.requested_by_name || '') + '</span>' +
+      '<span class="ftr-request-card__action">' + trEsc(ftrRequestCardActionLabel(r.status)) + ' ›</span>' +
+      '</div>' +
+      '</article>'
+    );
+  }
+
+  function ftrRenderRequestCards(rows) {
+    const showStoreOnCard = ftrCanFilterByStore() && !_trStoreFilter;
+    return '<div class="ftr-request-cards">' + rows.map(function (r) {
+      return ftrRenderRequestCard(r, showStoreOnCard);
+    }).join('') + '</div>';
+  }
+
   window.setTrFilter = function (status, btn) {
     _trFilter = status;
     document.querySelectorAll('#page-transfer-requests .btn.sm[id^="ftr-tab-"]').forEach((b) => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
-    loadTransferRequests();
+    if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
   };
 
   window.loadTransferRequests = async function () {
-    const wrap  = document.getElementById('ftr-list-wrap');
+    const wrap  = document.getElementById('ftr-cards-wrap');
+    const skel  = document.getElementById('ftr-cards-skeleton');
     const errEl = document.getElementById('ftr-err');
     if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-    if (wrap) {
-      wrap.innerHTML = '<div class="tw"><table><thead><tr><th>#</th><th>Store</th><th>Date</th><th>Items</th><th>Status</th></tr></thead><tbody id="ftr-list-tbody"></tbody></table></div>';
-      if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('ftr-list-tbody', 5);
+    if (skel) {
+      skel.style.display = '';
+      if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('ftr-cards-skeleton', 6);
+      else skel.innerHTML = '';
     }
 
     try {
       const qs = new URLSearchParams({ top_n: 100 });
       if (_trFilter) qs.set('status', _trFilter);
+      if (_trStoreFilter && ftrCanFilterByStore()) qs.set('store_id', _trStoreFilter);
       const rows = await apiGet('/api/transfer-requests?' + qs.toString());
 
-      // Update nav badge with pending count
       const pending = rows.filter((r) => r.status === 'SUBMITTED').length;
       const badge   = document.getElementById('tr-nav-badge');
       if (badge) {
@@ -8196,34 +8353,25 @@ ${initScript}
         badge.style.display = pending ? '' : 'none';
       }
 
+      if (!wrap) return;
       if (!rows.length) {
-        wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">No transfer requests</div>';
+        const storeHint = _trStoreFilter && ftrCanFilterByStore()
+          ? ' for the selected store'
+          : (_trFilter ? ' with this status' : '');
+        wrap.innerHTML =
+          '<div class="empty" style="padding:32px 16px">' +
+          '<div class="empty-ic">📋</div>' +
+          '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No goods requests' + storeHint + '</div>' +
+          '<div style="font-size:13px;color:var(--text2)">Try another status tab' +
+          (ftrCanFilterByStore() ? ' or choose a different store.' : '.') + '</div>' +
+          '</div>';
         return;
       }
 
-      wrap.innerHTML = `
-        <div class="tw">
-          <table>
-            <thead>
-              <tr>
-                <th>#</th><th>Store</th><th>Date</th><th>Items</th><th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map((r) => `
-                <tr class="tr-link" onclick="expandTrRequest(${r.request_id})">
-                  <td class="mono fw6" style="color:var(--acc)">#${r.request_id}</td>
-                  <td>${trEsc(r.store_name || r.store_id)}</td>
-                  <td class="xs">${fmtDate(r.created_at)}</td>
-                  <td><span class="b b-gray">${r.line_count} SKU${r.line_count !== 1 ? 's' : ''}${r.total_requested_qty != null ? ' · ' + r.total_requested_qty + ' pcs' : ''}</span></td>
-                  <td><span class="b ${TR_STATUS_BADGE[r.status] || 'b-gray'}">${r.status}</span></td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>`;
+      wrap.innerHTML = ftrRenderRequestCards(rows);
     } catch (err) {
       if (errEl) { errEl.textContent = 'Failed to load: ' + err.message; errEl.style.display = 'block'; }
-      if (wrap)  wrap.innerHTML = '';
+      if (wrap) wrap.innerHTML = '';
     }
   };
 
@@ -8232,7 +8380,7 @@ ${initScript}
     const metaEl = document.getElementById('ftr-detail-meta');
     if (!actionsEl) return;
     if (metaEl) {
-      metaEl.innerHTML = '<span class="b ' + (TR_STATUS_BADGE[req.status] || 'b-gray') + '">' + trEsc(req.status) + '</span>' +
+      metaEl.innerHTML = '<span class="b ' + (TR_STATUS_BADGE[req.status] || 'b-gray') + '">' + trEsc(ftrStatusLabel(req.status)) + '</span>' +
         '<span>' + trEsc(req.store_name || req.store_id) + '</span>' +
         '<span>' + fmtDate(req.created_at) + '</span>';
     }
@@ -8277,7 +8425,22 @@ ${initScript}
     }
 
     try {
-      const req  = await apiGet(`/api/transfer-requests/${requestId}`);
+      let req  = await apiGet(`/api/transfer-requests/${requestId}`);
+      const needsDocSync = (req.lines || []).some(function (l) {
+        return Number(l.dispatched_qty) > 0 && (l.received_qty == null || l.received_qty === undefined);
+      });
+      if (
+        needsDocSync
+        && (req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED' || req.status === 'RECEIVED')
+      ) {
+        try {
+          const synced = await apiPost('/api/transfer-requests/' + requestId + '/reconcile', {});
+          if (synced && synced.data) {
+            if (Array.isArray(synced.data.lines)) req.lines = synced.data.lines;
+            if (synced.data.status) req.status = synced.data.status;
+          }
+        } catch (_syncErr) { /* keep unsynced view if SP not deployed yet */ }
+      }
       _trExpanded = req;
       if (title) {
         title.textContent = 'Request #' + requestId + (req.store_name ? ' — ' + req.store_name : '');
@@ -8332,7 +8495,7 @@ ${initScript}
                   <th style="text-align:right">Requested</th>
                   <th style="text-align:right">Approved</th>
                   <th style="text-align:right">Dispatched</th>
-                  <th style="text-align:right">Received</th>
+                  <th style="text-align:right">Stocked at Store</th>
                   <th style="min-width:80px">Set approved qty</th>
                 </tr>
               </thead>
@@ -8381,7 +8544,7 @@ ${initScript}
                   <th style="text-align:right">Requested</th>
                   <th style="text-align:right">Approved</th>
                   <th style="text-align:right">Dispatched</th>
-                  <th style="text-align:right">Received</th>
+                  <th style="text-align:right">Stocked at Store</th>
                 </tr>
               </thead>
               <tbody>${linesHtmlReadonly}</tbody>
@@ -8392,7 +8555,7 @@ ${initScript}
       body.innerHTML = `
         <div style="padding:16px 20px">
           <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
-            <span class="b ${TR_STATUS_BADGE[req.status] || 'b-gray'}">${req.status}</span>
+            <span class="b ${TR_STATUS_BADGE[req.status] || 'b-gray'}">${trEsc(ftrStatusLabel(req.status))}</span>
             <span class="xs" style="color:var(--text2)">Store: <strong>${trEsc(req.store_name || req.store_id)}</strong></span>
             <span class="xs" style="color:var(--text2)">By: <strong>${trEsc(req.requested_by_fullname || req.requested_by_name)}</strong></span>
             <span class="xs" style="color:var(--text2)">Submitted: ${fmtDate(req.created_at)}</span>
@@ -8481,7 +8644,7 @@ ${initScript}
     try {
       await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'APPROVED' });
       if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Request #' + requestId + ' approved.');
-      loadTransferRequests();
+      if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
       closeTrDetail();
     } catch (err) {
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
@@ -8504,7 +8667,10 @@ ${initScript}
       await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'APPROVED', lines, notes: note || null });
       if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = 'Approved.'; }
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
-      setTimeout(function () { loadTransferRequests(); closeTrDetail(); }, 900);
+      setTimeout(function () {
+        if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
+        closeTrDetail();
+      }, 900);
     } catch (err) {
       if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
@@ -8532,7 +8698,7 @@ ${initScript}
     try {
       await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'REJECTED', notes: note });
       if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Request #' + requestId + ' rejected.');
-      loadTransferRequests();
+      if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
       closeTrDetail();
     } catch (err) {
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
@@ -8584,7 +8750,7 @@ ${initScript}
   window.ftrAfterDispatchNav = function () {
     const navEl = document.querySelector('.sidebar-nav .nav-item[onclick*="movement-list"]');
     if (typeof nav === 'function') nav('movement-list', navEl || null);
-    if (typeof loadMovementList === 'function') loadMovementList();
+    if (typeof window.loadMovementList === 'function') window.loadMovementList();
     closeTrDetail();
   };
 
@@ -8658,7 +8824,7 @@ ${initScript}
       const newStatus = data.status || 'DISPATCHED';
       const fullyDone = data.fully_dispatched === true;
       _ftrDispatchCart = null;
-      loadTransferRequests();
+      if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
       if (typeof cosmosToastSuccess === 'function') {
         cosmosToastSuccess(fullyDone
           ? 'Shipment #' + docId + ' — request fully dispatched.'
@@ -8698,7 +8864,7 @@ ${initScript}
     _mlFilter = status;
     document.querySelectorAll('#page-movement-list .btn.sm[id^="ml-tab-"]').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
-    loadMovementList();
+    if (typeof window.loadMovementList === 'function') window.loadMovementList();
   };
 
   function mlStatusBadge(s) {
@@ -8838,7 +9004,7 @@ ${initScript}
             <th style="text-align:left">SKU</th>
             <th style="text-align:left">Description</th>
             <th style="text-align:center">Sent</th>
-            <th style="text-align:center">Received</th>
+            <th style="text-align:center">Stocked at Store</th>
           </tr></thead>
           <tbody>${lines}</tbody>
         </table>`;
@@ -9299,8 +9465,6 @@ ${initScript}
   loadFormData();
   loadDashboard();
   loadPurchases();
-  // Deep link / hard refresh on /foundry/lab-orders: lab loader runs only after assignment above in this file.
-  if (getFoundryPageFromPath(window.location.pathname) === 'lab-orders' && typeof window.loadLabOrders === 'function') {
-    window.loadLabOrders();
-  }
+  // Deep link / hard refresh: route loaders are assigned later in this file — apply after all are on window.
+  applyFoundryRouteFromPath();
 });

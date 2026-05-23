@@ -14,7 +14,7 @@
 >
 <link rel="preload" href="/js/cosmos-modules-catalog.js" as="script">
 <link rel="preload" href="/js/cosmos-module-switch.js" as="script">
-<link rel="preload" href="/js/foundry-prototype.js?v=20260522-active-purchases-kpi" as="script">
+<link rel="preload" href="/js/foundry-prototype.js?v=20260523-store-chips" as="script">
 <link rel="preload" href="/css/cosmos-ui.css" as="style">
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/foundry-prototype.css">
@@ -969,6 +969,11 @@
       <div class="pt">Goods Request</div>
     </div>
 
+    <div id="ftr-store-filter-row" hidden style="display:none;flex-direction:column;gap:8px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">Store</div>
+      <div id="ftr-store-chips" class="ftr-store-chips" role="toolbar" aria-label="Filter goods requests by store"></div>
+    </div>
+
     <!-- Status filter tabs -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
       <button class="btn sm active" id="ftr-tab-all"        onclick="setTrFilter('',this)">All</button>
@@ -976,7 +981,7 @@
       <button class="btn sm"        id="ftr-tab-approved"   onclick="setTrFilter('APPROVED',this)">✓ Approved</button>
       <button class="btn sm"        id="ftr-tab-partial"    onclick="setTrFilter('PARTIALLY_DISPATCHED',this)">◐ Partial</button>
       <button class="btn sm"        id="ftr-tab-dispatched" onclick="setTrFilter('DISPATCHED',this)">🚚 Dispatched</button>
-      <button class="btn sm"        id="ftr-tab-received"   onclick="setTrFilter('RECEIVED',this)">📦 Received</button>
+      <button class="btn sm"        id="ftr-tab-received"   onclick="setTrFilter('RECEIVED',this)">🏪 Stocked at Store</button>
       <button class="btn sm"        id="ftr-tab-rejected"   onclick="setTrFilter('REJECTED',this)">✕ Rejected</button>
       <button class="btn sm mla"    onclick="loadTransferRequests()">↻ Refresh</button>
     </div>
@@ -984,8 +989,8 @@
     <div id="ftr-err" class="err-msg mb3"></div>
 
     <div class="card">
-      <div id="ftr-list-wrap">
-        <div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>
+      <div id="ftr-cards-wrap" class="cb">
+        <div id="ftr-cards-skeleton" style="padding:8px 0"></div>
       </div>
     </div>
 
@@ -1536,7 +1541,7 @@ function addColour() {
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260522-camera-resume" defer></script>
-<script src="/js/foundry-prototype.js?v=20260522-active-purchases-kpi" defer></script>
+<script src="/js/foundry-prototype.js?v=20260523-store-chips" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)
 document.addEventListener('DOMContentLoaded', function() {

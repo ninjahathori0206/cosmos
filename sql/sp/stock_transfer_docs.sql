@@ -359,6 +359,14 @@ BEGIN
         stocked_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
     WHERE doc_id = @doc_id;
 
+    DECLARE @source_request_id INT;
+    SELECT @source_request_id = source_request_id
+    FROM dbo.stock_transfer_docs
+    WHERE doc_id = @doc_id;
+
+    IF @source_request_id IS NOT NULL
+      EXEC dbo.sp_TransferRequest_SyncReceivedFromDocs @request_id = @source_request_id;
+
     COMMIT TRANSACTION;
 
     SELECT doc_id, status, stocked_at FROM dbo.stock_transfer_docs WHERE doc_id = @doc_id;

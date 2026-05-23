@@ -154,6 +154,41 @@ const spBcMap = {
   'lab-orders':           'Lab Orders'
 };
 
+const spBcShortMap = {
+  dashboard:              'Dashboard',
+  'stock-browse':         'Browse Catalogue',
+  'store-catalogue':      'Store Catalogue',
+  'transfers-history':    'My Requests',
+  'transfers-create':     'Request Goods',
+  'incoming-transfers':   'Incoming Goods',
+  'movement-list':        'Movement List',
+  reports:                'Store Reports',
+  'lab-orders':           'Lab Orders'
+};
+
+function spIsMobileChrome() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function spSetBreadcrumb(pageId) {
+  const bc = document.getElementById('sp-bc');
+  if (!bc) return;
+  const full = spBcMap[pageId] || pageId;
+  const short = spBcShortMap[pageId] || full;
+  bc.textContent = spIsMobileChrome() ? short : full;
+}
+
+function spSyncTopbarMeta(pageId) {
+  const lastEl = document.getElementById('dash-last-updated');
+  if (!lastEl) return;
+  if (pageId === 'dashboard') {
+    lastEl.hidden = false;
+    return;
+  }
+  lastEl.textContent = '';
+  lastEl.hidden = true;
+}
+
 const SP_PAGE_PATHS = {
   dashboard: '/storepilot/dashboard',
   'stock-browse': '/storepilot/stock-browse',
@@ -191,8 +226,9 @@ window.spNav = function (id, el, options) {
   const page = document.getElementById('page-' + id);
   if (page) page.classList.add('active');
   if (el) el.classList.add('active');
-  const bc = document.getElementById('sp-bc');
-  if (bc) bc.textContent = spBcMap[id] || id;
+  document.body.setAttribute('data-sp-page', id);
+  spSetBreadcrumb(id);
+  spSyncTopbarMeta(id);
   const nextPath = SP_PAGE_PATHS[id] || '/storepilot/dashboard';
   if (!navOptions.fromHistory && window.location.pathname !== nextPath) {
     window.history.pushState({ module: 'storepilot', page: id }, '', nextPath);
@@ -746,6 +782,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadUser();
   if (_spNoAccess) return;
   await refreshWarehouseContext();
+  document.body.setAttribute('data-sp-page', 'dashboard');
+  spSetBreadcrumb('dashboard');
+  spSyncTopbarMeta('dashboard');
+  window.addEventListener('resize', function spOnChromeResize() {
+    const pageId = document.body.getAttribute('data-sp-page');
+    if (pageId) spSetBreadcrumb(pageId);
+  });
   loadDashboard();
   startDashRefresh();
 });
@@ -812,7 +855,10 @@ function loadUser() {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function loadDashboard() {
   const lastEl = document.getElementById('dash-last-updated');
-  if (lastEl) lastEl.textContent = 'Loading…';
+  if (lastEl) {
+    lastEl.hidden = false;
+    lastEl.textContent = 'Loading…';
+  }
 
   const qs = new URLSearchParams({ top_n: 200 });
   if (_storeId) qs.set('to_store_id', _storeId);
@@ -1323,7 +1369,7 @@ const TR_STATUS_LABEL = {
   APPROVED:             'Approved',
   PARTIALLY_DISPATCHED: 'Partially dispatched',
   DISPATCHED:           'Dispatched',
-  RECEIVED:             'Received',
+  RECEIVED:             'Stocked at Store',
   REJECTED:             'Rejected'
 };
 
@@ -1414,7 +1460,7 @@ window.expandSpTrRequest = async function (requestId) {
           <span class="b ${TR_STATUS_BADGE[req.status] || 'b-gray'}">${TR_STATUS_LABEL[req.status] || req.status}</span>
           ${req.reviewed_at  ? `<span style="font-size:12px;color:var(--text2)">Reviewed: ${fmtDate(req.reviewed_at)}</span>` : ''}
           ${req.dispatched_at ? `<span style="font-size:12px;color:var(--text2)">Dispatched: ${fmtDate(req.dispatched_at)}</span>` : ''}
-          ${req.received_at  ? `<span style="font-size:12px;color:var(--text2)">Received: ${fmtDate(req.received_at)}</span>` : ''}
+          ${req.received_at  ? `<span style="font-size:12px;color:var(--text2)">Stocked at store: ${fmtDate(req.received_at)}</span>` : ''}
           ${req.review_notes ? `<span style="font-size:12px;color:var(--text2)">Note: <em>${escHtml(req.review_notes)}</em></span>` : ''}
         </div>
         <div class="tw">
@@ -1425,7 +1471,7 @@ window.expandSpTrRequest = async function (requestId) {
                 <th style="text-align:right">Requested</th>
                 <th style="text-align:right">Approved</th>
                 <th style="text-align:right">Dispatched</th>
-                <th style="text-align:right">Received</th>
+                <th style="text-align:right">Stocked at Store</th>
               </tr>
             </thead>
             <tbody>${linesHtml}</tbody>
@@ -2597,7 +2643,7 @@ window.expandSpMlDoc = async function (docId) {
           <th style="text-align:left;padding:6px 8px;font-size:11px;color:var(--text3)">SKU</th>
           <th style="text-align:left;padding:6px 8px;font-size:11px;color:var(--text3)">Description</th>
           <th style="text-align:center;padding:6px 8px;font-size:11px;color:var(--text3)">Sent</th>
-          <th style="text-align:center;padding:6px 8px;font-size:11px;color:var(--text3)">Received</th>
+          <th style="text-align:center;padding:6px 8px;font-size:11px;color:var(--text3)">Stocked at Store</th>
         </tr></thead>
         <tbody>${lines}</tbody>
       </table>`;

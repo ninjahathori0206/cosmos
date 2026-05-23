@@ -37,21 +37,39 @@ function requestHasAnyDispatched(lines) {
 }
 
 async function syncTransferRequestFromDocs(requestId) {
-  const result = await executeStoredProcedure('sp_TransferRequest_SyncDispatchedFromDocs', {
+  const dispatchResult = await executeStoredProcedure('sp_TransferRequest_SyncDispatchedFromDocs', {
     request_id: { type: sql.Int, value: requestId }
   });
-  return result.recordset?.[0]?.status || null;
+  const dispatchStatus = dispatchResult.recordset?.[0]?.status || null;
+  try {
+    const receivedResult = await executeStoredProcedure('sp_TransferRequest_SyncReceivedFromDocs', {
+      request_id: { type: sql.Int, value: requestId }
+    });
+    return receivedResult.recordset?.[0]?.status || dispatchStatus;
+  } catch (err) {
+    if (err.message && /sp_TransferRequest_SyncReceivedFromDocs/i.test(err.message)) {
+      return dispatchStatus;
+    }
+    throw err;
+  }
 }
 
 // ── GET /api/transfer-requests ────────────────────────────────────────────────
 // Store-scoped (permissions + store_id) → own store only. HQ (foundry.transfers.edit) → all.
-// Optional ?status= and ?top_n= filters.
+// Optional ?status=, ?store_id= (HQ only), and ?top_n= filters.
 router.get('/', ...transferModAndView, async (req, res, next) => {
   try {
-    const user    = req.user;
-    const storeId = shouldScopeTransferRequestsToUserStore(req)
-      ? Number(user.store_id)
-      : null;
+    const user = req.user;
+    let storeId = null;
+    if (shouldScopeTransferRequestsToUserStore(req)) {
+      storeId = Number(user.store_id);
+    } else if (req.query.store_id != null && String(req.query.store_id).trim() !== '') {
+      const qStore = Number(req.query.store_id);
+      if (!Number.isFinite(qStore) || qStore <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid store_id.' });
+      }
+      storeId = qStore;
+    }
     const { status, top_n = 50 } = req.query;
 
     const result = await executeStoredProcedure('sp_TransferRequest_List', {
@@ -156,7 +174,7 @@ router.get('/:id/shipments', ...transferModAndView, async (req, res, next) => {
 });
 
 // ── POST /api/transfer-requests/:id/reconcile ────────────────────────────────
-// Sync line dispatched_qty from transfer docs and recompute header status.
+// Sync line dispatched_qty and received_qty from transfer docs; recompute header status.
 router.post(
   '/:id/reconcile',
   requireAnyModule(['foundry']),
