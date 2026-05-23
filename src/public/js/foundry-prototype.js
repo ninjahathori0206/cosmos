@@ -5105,9 +5105,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   function lcRenderCategoryRows() {
     const tb = document.getElementById('lc-cat-tbody');
     if (!tb || !_lcData) return;
+    const table = tb.closest && tb.closest('table');
+    if (table && !table.dataset.lcCategoryBrandHidden) {
+      const firstHead = table.querySelector('thead th:first-child');
+      if (firstHead && /pos\s*brand/i.test(firstHead.textContent || '')) {
+        firstHead.remove();
+      }
+      table.dataset.lcCategoryBrandHidden = '1';
+    }
     const cats = _lcData.categories || [];
     if (!cats.length) {
-      tb.innerHTML = '<tr><td colspan="2" class="td2 p12" style="color:var(--text3)">No categories</td></tr>';
+      tb.innerHTML = '<tr><td class="td2 p12" style="color:var(--text3)">No categories</td></tr>';
       return;
     }
     tb.innerHTML = cats
@@ -5118,9 +5126,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const btn = lcCanEdit
           ? `<button type="button" class="btn xs" onclick="event.stopPropagation();window.lcEditCategory && window.lcEditCategory(${Number(c.id)})">Edit</button>`
           : '';
-        const brand = lcEsc(String(c.pos_brand || '').trim() || '—');
         const name = lcEsc(String(c.pos_name || c.name || '').trim() || '—');
-        return `<tr class="tr-link${sel ? ' lc-cat-sel' : ''}" data-lc-cat="${Number(c.id)}" style="${sel ? 'background:var(--accL);' : ''}"><td class="td2 xs">${brand}</td><td class="td2"><div class="fw6">${name}</div><div class="xs td2">${dot} ${btn}</div></td></tr>`;
+        return `<tr class="tr-link${sel ? ' lc-cat-sel' : ''}" data-lc-cat="${Number(c.id)}" style="${sel ? 'background:var(--accL);' : ''}"><td class="td2"><div class="fw6">${name}</div><div class="xs td2">${dot} ${btn}</div></td></tr>`;
       })
       .join('');
     tb.querySelectorAll('tr[data-lc-cat]').forEach((tr) => {

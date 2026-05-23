@@ -105,8 +105,12 @@ self.addEventListener('fetch', function (e) {
           });
         }
         return res;
+      }).catch(function () {
+        return caches.match(url.pathname, { ignoreSearch: true });
       });
-      return cached || networkFetch;
+      return cached || caches.match(e.request, { ignoreSearch: true }).then(function (pathCached) {
+        return pathCached || networkFetch;
+      });
     })
   );
 });

@@ -3,6 +3,30 @@ const LS_PASS = 'cosmos_login_password';
 
 let resolvedApiKey = '';
 
+function loginBtnLoading(btn) {
+  if (btn && typeof window.cosmosBtnLoading === 'function') {
+    window.cosmosBtnLoading(btn);
+  } else if (btn) {
+    btn.disabled = true;
+  }
+}
+
+function loginBtnDone(btn) {
+  if (btn && typeof window.cosmosBtnDone === 'function') {
+    window.cosmosBtnDone(btn);
+  } else if (btn) {
+    btn.disabled = false;
+  }
+}
+
+function loginBtnSuccess(btn) {
+  if (btn && typeof window.cosmosBtnSuccess === 'function') {
+    window.cosmosBtnSuccess(btn);
+  } else {
+    loginBtnDone(btn);
+  }
+}
+
 /** Fetch failed before HTTP — not auth/CORS body; usually server down, wrong URL, or file:// page. */
 function isConnectionLayerFailure(err) {
   if (!err) return false;
@@ -128,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     errorEl.textContent = '';
 
-    cosmosBtnLoading(btn);
+    loginBtnLoading(btn);
 
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value;
@@ -140,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
           await fetchBootstrap();
         }
       } catch (bootErr) {
-        cosmosBtnDone(btn);
+        loginBtnDone(btn);
         errorEl.textContent = isConnectionLayerFailure(bootErr)
           ? connectionFailureMessage()
           : bootErr.message || 'Configuration load failed.';
@@ -160,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = parseJsonResponse(raw);
 
       if (!res.ok || !data.success) {
-        cosmosBtnDone(btn);
+        loginBtnDone(btn);
         errorEl.textContent = data.message || 'Login failed';
         return;
       }
@@ -202,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const dest = pickLanding();
       if (!dest) {
-        cosmosBtnDone(btn);
+        loginBtnDone(btn);
         throw new Error(
           'No web module is enabled for your account (Command Unit, Foundry, Finance, StorePilot, Store OS are all off). ' +
             'Ask an administrator to turn on at least one module for your role in Roles → Module access, then try again.'
@@ -213,10 +237,10 @@ document.addEventListener('DOMContentLoaded', () => {
       sessionStorage.setItem('cosmos_user', JSON.stringify(data.data.user));
       sessionStorage.setItem('cosmos_api_key', resolvedApiKey);
 
-      cosmosBtnSuccess(btn);
+      loginBtnSuccess(btn);
       window.location.href = dest;
     } catch (err) {
-      cosmosBtnDone(btn);
+      loginBtnDone(btn);
       if (isConnectionLayerFailure(err)) {
         errorEl.textContent = connectionFailureMessage();
         return;
