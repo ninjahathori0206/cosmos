@@ -52,10 +52,9 @@ function istToday() {
 }
 
 function fmtDate(v) {
+  if (typeof window.cosmosFmtDate === 'function') return window.cosmosFmtDate(v);
   if (!v) return '—';
-  const d = new Date(v);
-  if (isNaN(d)) return String(v);
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  return String(v);
 }
 
 function escHtml(s) {

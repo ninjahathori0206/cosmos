@@ -20,6 +20,11 @@ AS BEGIN
   IF @wh IS NULL
     RAISERROR('Primary warehouse is not configured.', 16, 1);
 
+  DECLARE @trim VARCHAR(200) = LTRIM(RTRIM(ISNULL(@q, '')));
+  DECLARE @unit_code CHAR(7) = NULL;
+  IF LEN(@trim) > 0 AND @trim NOT LIKE '%[^0-9]%' AND LEN(@trim) <= 7
+    SET @unit_code = RIGHT(REPLICATE('0', 7) + @trim, 7);
+
   SELECT
     sk.sku_id,
     sk.sku_code,
@@ -63,6 +68,18 @@ AS BEGIN
       OR ISNULL(pm.source_collection,'') LIKE '%'+@q+'%'
       OR ISNULL(pm.source_model_number,'') LIKE '%'+@q+'%'
       OR ISNULL(pic.colour_name,'') LIKE '%'+@q+'%'
+      OR (
+        @unit_code IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM dbo.sku_units u
+          WHERE u.sku_id = sk.sku_id
+            AND u.unit_barcode = @unit_code
+            AND u.status = N'AVAILABLE'
+            AND u.location_type = N'WAREHOUSE'
+            AND u.location_id = @wh
+        )
+      )
     )
   ORDER BY brand_name, pm.ew_collection, pic.colour_name;
 END;

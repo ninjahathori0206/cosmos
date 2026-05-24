@@ -376,8 +376,9 @@
     .hint { display:none !important; }
   }
 </style>
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260523-sp-mobile-topbar">
-<script src="/js/cosmos-ui-polish.js?v=20260523-sp-mobile-topbar" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260525-toast-date">
+<script src="/js/cosmos-ui-polish.js?v=20260528-polish-load-defer" defer></script>
+<script src="/js/cosmos-record-list.js?v=20260526-detail-qty-remainder" defer></script>
 <script src="/js/storepilot-pwa.js?v=20260521-pwa" defer></script>
 </head>
 <body class="cosmos-app-shell">
@@ -392,14 +393,7 @@
     <div class="nav-item" data-storepilot-menu="store-catalogue" data-storepilot-permission="storepilot.catalogue.view,foundry.catalogue.view" onclick="spNav('store-catalogue',this)"><span class="ic">🏪</span> Store Catalogue</div>
 
     <div class="nav-group">Foundry Connect</div>
-    <div class="nav-item" data-storepilot-menu="transfers-create" data-storepilot-permission="storepilot.transfers.create,foundry.transfers.create" onclick="spNav('transfers-create',this)"><span class="ic">📦</span> Request Goods</div>
-    <div class="nav-item" data-storepilot-menu="incoming-transfers" data-storepilot-permission="storepilot.transfers.view,foundry.transfers.view" onclick="spNav('incoming-transfers',this)">
-      <span class="ic">📥</span> Incoming Goods
-      <span id="sp-inc-badge" class="b b-orange" style="font-size:10px;margin-left:auto;display:none"></span>
-    </div>
-    <div class="nav-item" data-storepilot-menu="movement-list" data-storepilot-permission="storepilot.transfers.view,foundry.transfers.view" onclick="spNav('movement-list',this)"><span class="ic">📋</span> Movement List</div>
-    <div class="nav-item" data-storepilot-menu="transfers-history" data-storepilot-permission="storepilot.transfers.view,foundry.transfers.view" onclick="spNav('transfers-history',this)" style="display:none"><span class="ic">📋</span> My Requests</div>
-
+    <div class="nav-item" data-storepilot-menu="transfers-history" data-storepilot-permission="storepilot.transfers.view,foundry.transfers.view" onclick="spNav('transfers-history',this)"><span class="ic">📋</span> My Requests</div>
     <div class="nav-group">Reports</div>
     <div class="nav-item" data-storepilot-menu="reports" data-storepilot-permission="storepilot.reports.view" onclick="spNav('reports',this)"><span class="ic">📊</span> Store Reports</div>
     <div class="nav-item" data-storepilot-menu="lab-orders" data-storepilot-permission="storepilot.lab.view,storepilot.dashboard.view" onclick="spNav('lab-orders',this)"><span class="ic">🧪</span> Lab Orders</div>
@@ -555,30 +549,34 @@
   </div>
 
   <!-- ═══════════════ TRANSFERS: HISTORY ═══════════════ -->
-  <div class="page" id="page-transfers-history">
+  <div class="page" id="page-transfers-history" style="padding-bottom:0">
     <div class="sp-page-head">
       <div class="ph sp-page-title-row">
         <div>
           <div class="pt">My Transfer Requests</div>
           <div class="ps">Stock requests submitted by your store to HQ Foundry for approval and dispatch.</div>
         </div>
-        <button class="btn sm" onclick="loadTransferHistory()">↻ Refresh</button>
+        <div class="sp-page-tools" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button type="button" class="btn sm primary" id="sp-tr-create-btn" style="display:none" onclick="openSpCreateRequestModal()">+ Create Request</button>
+          <button type="button" class="btn sm" onclick="loadTransferHistory()">↻ Refresh</button>
+        </div>
       </div>
 
       <div class="hint" style="margin-bottom:18px">
         <strong>Store Request flow:</strong>
         You submit a request (SUBMITTED) → HQ reviews and approves quantities (APPROVED) →
-        HQ dispatches stock and inventory is updated automatically (DISPATCHED) →
-        Track goods stocked at store (RECEIVED). Use <strong>New Request</strong> to start one.
+        HQ dispatches stock (DISPATCHED / PARTIALLY DISPATCHED) → open the request and use <strong>Shipments</strong> to accept and stock each arrival (PARTIALLY RECEIVED until complete).
+        Use <strong>Create Request</strong> above to submit a new goods request.
       </div>
 
-      <div class="sp-page-filters">
-        <button class="btn sm active" id="sp-tr-tab-all"        onclick="setSpTrFilter('',this)">All</button>
-        <button class="btn sm"        id="sp-tr-tab-submitted"  onclick="setSpTrFilter('SUBMITTED',this)">Pending</button>
-        <button class="btn sm"        id="sp-tr-tab-approved"   onclick="setSpTrFilter('APPROVED',this)">Approved</button>
-        <button class="btn sm"        id="sp-tr-tab-dispatched" onclick="setSpTrFilter('DISPATCHED',this)">Dispatched</button>
-        <button class="btn sm"        id="sp-tr-tab-received"   onclick="setSpTrFilter('RECEIVED',this)">Stocked at Store</button>
-        <button class="btn sm"        id="sp-tr-tab-rejected"   onclick="setSpTrFilter('REJECTED',this)">Rejected</button>
+      <div class="sp-page-filters" id="sp-tr-filters" role="toolbar" aria-label="Filter transfer requests">
+        <button type="button" class="btn sm active" id="sp-tr-tab-all"        data-filter-key="" onclick="setSpTrFilter('')" aria-pressed="true">All</button>
+        <button type="button" class="btn sm"        id="sp-tr-tab-submitted"  data-filter-key="SUBMITTED" onclick="setSpTrFilter('SUBMITTED')" aria-pressed="false">Pending</button>
+        <button type="button" class="btn sm"        id="sp-tr-tab-approved"   data-filter-key="APPROVED" onclick="setSpTrFilter('APPROVED')" aria-pressed="false">Approved</button>
+        <button type="button" class="btn sm"        id="sp-tr-tab-dispatched" data-filter-key="DISPATCHED" onclick="setSpTrFilter('DISPATCHED')" aria-pressed="false">Dispatched</button>
+        <button type="button" class="btn sm"        id="sp-tr-tab-partial"    data-filter-key="PARTIALLY_RECEIVED" onclick="setSpTrFilter('PARTIALLY_RECEIVED')" aria-pressed="false">Partial stock</button>
+        <button type="button" class="btn sm"        id="sp-tr-tab-received"   data-filter-key="RECEIVED" onclick="setSpTrFilter('RECEIVED')" aria-pressed="false">Stocked at Store</button>
+        <button type="button" class="btn sm"        id="sp-tr-tab-rejected"   data-filter-key="REJECTED" onclick="setSpTrFilter('REJECTED')" aria-pressed="false">Rejected</button>
       </div>
 
       <div id="fmov-err" class="err-msg"></div>
@@ -586,99 +584,7 @@
 
     <div class="sp-page-body">
     <div class="card">
-      <div id="tr-history-wrap">
-        <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
-      </div>
-    </div>
-
-    <!-- Inline detail panel for a selected request -->
-    <div id="sp-tr-detail" class="card" style="display:none">
-      <div class="ch" style="justify-content:space-between">
-        <div class="ct" id="sp-tr-detail-title">Request details</div>
-        <button class="btn sm" onclick="closeSpTrDetail()">✕ Close</button>
-      </div>
-      <div id="sp-tr-detail-body"></div>
-    </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════ TRANSFERS: REQUEST TRANSFER ═══════════════ -->
-  <div class="page" id="page-transfers-create">
-    <div class="sp-page-head">
-      <div class="ph sp-page-title-row">
-        <div class="pt">Request Goods</div>
-      </div>
-    </div>
-    <div class="sp-page-body">
-
-    <!-- Shown only when user has no store assignment -->
-    <div id="transfer-create-no-store" style="display:none">
-      <div class="card">
-        <div class="cb" style="color:var(--text3)">
-          Transfer requests are only available for store-scoped accounts. Your account does not have a store
-          assignment — contact your administrator.
-        </div>
-      </div>
-    </div>
-
-    <!-- Main form (store-scoped users only) -->
-    <div id="transfer-create-form">
-      <div class="two-col" style="align-items:start">
-
-        <!-- Left: SKU search -->
-        <div class="card">
-          <div class="ch">
-            <div class="ct">Search primary warehouse stock</div>
-            <div class="sw" style="flex:1;max-width:280px;margin-left:auto">
-              <input type="text" id="tc-search" placeholder="Brand, type, or SKU code…" oninput="onTransferSearch(this.value)">
-              <span class="sp-spin" id="tc-spin">…</span>
-            </div>
-          </div>
-          <div id="tc-err" class="err-msg" style="margin:12px 18px 0"></div>
-          <div id="tc-results">
-            <div class="empty-state">
-              <div class="ei">🔍</div>
-              <div class="et">Search to see stock available at HQ warehouse</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right: cart + submit -->
-        <div>
-          <div class="card" style="margin-bottom:14px">
-            <div class="ch">
-              <div class="ct">Request cart</div>
-              <span id="tc-cart-count" class="b b-orange" style="font-size:11px">0 items</span>
-            </div>
-            <div id="tc-cart-body">
-              <div class="empty-state" style="padding:28px 20px">
-                <div class="ei">🛒</div>
-                <div class="et">Add items from search results</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="ch"><div class="ct">Destination &amp; notes</div></div>
-            <div style="padding:16px 20px 0">
-              <div style="margin-bottom:14px">
-                <div style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Destination store</div>
-                <div id="tc-dest-store" style="font-size:13px;color:var(--text1);padding:8px 12px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px">Loading…</div>
-              </div>
-              <div style="margin-bottom:16px">
-                <div style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Notes (optional)</div>
-                <textarea id="tc-notes" rows="2" class="form-textarea" placeholder="Reason, urgency, or delivery deadline…"></textarea>
-              </div>
-            </div>
-            <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <button class="btn primary" id="tc-submit-btn" onclick="submitTransfer()">Submit request</button>
-              <button class="btn sm" onclick="clearTransferCart()">Clear cart</button>
-              <span id="tc-submit-msg" style="font-size:12px;min-height:16px"></span>
-            </div>
-          </div>
-        </div>
-
-      </div>
+      <div id="tr-history-wrap" class="cosmos-record-list"></div>
     </div>
     </div>
   </div>
@@ -800,66 +706,93 @@
     </div>
   </div>
 
-  <!-- ═══════════════ INCOMING TRANSFERS ═══════════════ -->
-  <div class="page" id="page-incoming-transfers">
-    <div class="sp-page-head">
-      <div class="ph sp-page-title-row">
-        <div>
-          <div class="pt">Incoming Goods</div>
-        </div>
-        <button class="btn sm" onclick="loadIncomingTransfers()">↻ Refresh</button>
-      </div>
-      <div class="sp-page-filters">
-        <button class="btn sm active" id="sp-inc-tab-all"        onclick="setIncFilter('',this)">All</button>
-        <button class="btn sm"        id="sp-inc-tab-dispatched" onclick="setIncFilter('DISPATCHED',this)">📦 Dispatched</button>
-        <button class="btn sm"        id="sp-inc-tab-accepted"   onclick="setIncFilter('ACCEPTED',this)">✓ Accepted</button>
-        <button class="btn sm"        id="sp-inc-tab-stocked"    onclick="setIncFilter('STOCKED',this)">🏪 Stocked</button>
-      </div>
-      <div id="sp-inc-err" class="err-msg"></div>
-    </div>
-    <div class="sp-page-body">
-      <div class="card">
-        <div id="sp-inc-list">
-          <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══ MOVEMENT LIST ═══ -->
-  <div class="page" id="page-movement-list">
-    <div class="sp-page-head">
-      <div class="ph sp-page-title-row">
-        <div>
-          <div class="pt">Movement List</div>
-        </div>
-        <button class="btn sm" onclick="loadSpMovementList()">↻ Refresh</button>
-      </div>
-      <div class="sp-page-filters">
-        <button class="btn sm active" id="sp-ml-tab-all"        onclick="setSpMlFilter('',this)">All</button>
-        <button class="btn sm"        id="sp-ml-tab-dispatched" onclick="setSpMlFilter('DISPATCHED',this)">📦 Dispatched</button>
-        <button class="btn sm"        id="sp-ml-tab-accepted"   onclick="setSpMlFilter('ACCEPTED',this)">✓ Accepted</button>
-        <button class="btn sm"        id="sp-ml-tab-stocked"    onclick="setSpMlFilter('STOCKED',this)">🏪 Stocked</button>
-      </div>
-      <div id="sp-ml-err" class="err-msg"></div>
-    </div>
-    <div class="sp-page-body">
-      <div class="card">
-        <div id="sp-ml-list">
-          <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
-        </div>
-      </div>
-      <div id="sp-ml-detail" class="card" style="display:none;margin-top:16px">
-        <div class="ch" style="justify-content:space-between">
-          <div class="ct" id="sp-ml-detail-title">Transfer document</div>
-          <button class="btn sm" onclick="closeSpMlDetail()">✕ Close</button>
-        </div>
-        <div id="sp-ml-detail-body"></div>
-      </div>
-    </div>
-  </div>
-
   </div><!-- /.cosmos-app-scroll -->
+
+  <!-- Create goods request — full-screen bottom sheet on mobile -->
+  <div class="overlay overlay--sheet" id="overlay-sp-create-request" role="dialog" aria-modal="true" aria-labelledby="sp-create-request-title" style="display:none" onclick="if(event.target===this) closeSpCreateRequestModal()">
+    <div class="modal modal--create-request" onclick="event.stopPropagation()">
+      <div class="modal-header sp-create-request-head">
+        <div class="sp-create-request-grabber" aria-hidden="true"></div>
+        <div class="sp-create-request-head-row">
+          <div class="modal-title" id="sp-create-request-title">Create goods request</div>
+          <button type="button" class="modal-close sp-create-request-close" onclick="closeSpCreateRequestModal()" aria-label="Close">&times;</button>
+        </div>
+      </div>
+      <button type="button" class="sp-create-request-cart-strip" id="sp-create-request-cart-strip" hidden onclick="spScrollCreateRequestToCart()" aria-label="Jump to request cart">
+        <span class="sp-create-request-cart-strip__icon" aria-hidden="true">🛒</span>
+        <span class="sp-create-request-cart-strip__label" id="sp-create-request-cart-strip-label">0 items</span>
+        <span class="sp-create-request-cart-strip__cta">Review cart ↓</span>
+      </button>
+      <div class="modal-body sp-create-request-body">
+        <div id="transfer-create-no-store" style="display:none">
+          <div class="card">
+            <div class="cb" style="color:var(--text3)">
+              Transfer requests are only available for store-scoped accounts. Your account does not have a store
+              assignment — contact your administrator.
+            </div>
+          </div>
+        </div>
+        <div id="transfer-create-form">
+          <div class="two-col sp-create-request-layout" style="align-items:start">
+            <div class="sp-create-request-search-wrap">
+              <div class="card sp-create-request-search-card">
+                <div class="ch sp-create-request-search-ch">
+                  <div class="ct">Search SKU</div>
+                  <div class="sw sp-create-request-search-sw">
+                    <input type="search" id="tc-search" class="sp-create-request-search-input" placeholder="Brand, type, SKU, or unit code…" oninput="onTransferSearch(this.value)" autocomplete="off" inputmode="search" enterkeyhint="search" aria-label="Search warehouse stock by brand, SKU, or 7-digit unit code">
+                    <span class="sp-spin" id="tc-spin" aria-hidden="true">…</span>
+                  </div>
+                </div>
+                <div id="tc-err" class="err-msg sp-create-request-err"></div>
+                <div id="tc-results" class="sp-create-request-results">
+                  <div class="empty-state">
+                    <div class="empty-ic">🔍</div>
+                    <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">Search SKU catalogue</div>
+                    <div style="font-size:13px;color:var(--text2)">Brand, SKU code, or 7-digit unit code to find the product — not where the unit is stocked.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="sp-create-request-cart-col" id="sp-cr-cart-section">
+              <div class="card sp-create-request-cart-card" style="margin-bottom:14px">
+                <div class="ch">
+                  <div class="ct">Request cart</div>
+                  <span id="tc-cart-count" class="b b-orange" style="font-size:11px">0 items</span>
+                </div>
+                <div id="tc-cart-body">
+                  <div class="empty-state" style="padding:28px 20px">
+                    <div class="empty-ic">🛒</div>
+                    <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">Cart is empty</div>
+                    <div style="font-size:13px;color:var(--text2)">Add items from search results.</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card sp-create-request-meta-card">
+                <div class="ch"><div class="ct">Destination &amp; notes</div></div>
+                <div class="sp-create-request-meta-inner">
+                  <div class="sp-create-request-field">
+                    <label class="sp-create-request-label" for="tc-dest-store">Destination store</label>
+                    <div id="tc-dest-store" class="sp-create-request-dest">Loading…</div>
+                  </div>
+                  <div class="sp-create-request-field">
+                    <label class="sp-create-request-label" for="tc-notes">Notes (optional)</label>
+                    <textarea id="tc-notes" rows="2" class="form-textarea sp-create-request-notes" placeholder="Reason, urgency, or delivery deadline…"></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cosmos-modal-actions sp-create-request-foot">
+        <span id="tc-submit-msg" class="sp-create-request-msg" role="status" aria-live="polite"></span>
+        <div class="sp-create-request-foot-btns">
+          <button type="button" class="btn sp-create-request-clear-btn" onclick="clearTransferCart()">Clear cart</button>
+          <button type="button" class="btn primary sp-create-request-submit-btn" id="tc-submit-btn" onclick="submitTransfer()">Submit request</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ═══════════════ HANDOVER MODAL ═══════════════ -->
   <div class="overlay" id="overlay-sp-handover" role="dialog" aria-modal="true" aria-labelledby="sp-handover-modal-title" style="display:none">
@@ -889,6 +822,22 @@
     </div>
     <div id="sp-inc-action-msg" class="cosmos-extended-detail__msg" role="status" aria-live="polite"></div>
     <div id="sp-inc-detail-body" class="cosmos-extended-detail__body"></div>
+  </div>
+
+  <!-- My transfer request — extended detail -->
+  <div id="sp-tr-detail-backdrop" class="cosmos-extended-detail__backdrop" hidden aria-hidden="true" onclick="closeSpTrDetail()"></div>
+  <div id="sp-tr-detail" class="cosmos-extended-detail__panel" role="dialog" aria-modal="true" aria-labelledby="sp-tr-detail-title" hidden>
+    <div class="cosmos-extended-detail__toolbar">
+      <div class="cosmos-extended-detail__head">
+        <div id="sp-tr-detail-title" class="cosmos-extended-detail__title">Request details</div>
+        <div id="sp-tr-detail-meta" class="cosmos-extended-detail__meta"></div>
+      </div>
+      <div class="cosmos-extended-detail__actions-row">
+        <div id="sp-tr-detail-actions" class="cosmos-extended-detail__actions"></div>
+        <button type="button" class="btn sm" onclick="closeSpTrDetail()" aria-label="Close request details">Close</button>
+      </div>
+    </div>
+    <div id="sp-tr-detail-body" class="cosmos-extended-detail__body"></div>
   </div>
 
   <!-- ═══════════════ BUCKET SCAN (RECEIVE) ═══════════════ -->
@@ -983,6 +932,6 @@
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260522-camera-resume" defer></script>
-<script src="/js/storepilot-prototype.js?v=20260523-sp-mobile-topbar" defer></script>
+<script src="/js/storepilot-prototype.js?v=20260528-nav-consolidate" defer></script>
 </body>
 </html>

@@ -14,12 +14,13 @@
 >
 <link rel="preload" href="/js/cosmos-modules-catalog.js" as="script">
 <link rel="preload" href="/js/cosmos-module-switch.js" as="script">
-<link rel="preload" href="/js/foundry-prototype.js?v=20260523-store-chips" as="script">
+<link rel="preload" href="/js/foundry-prototype.js?v=20260528-hq-create-transfer" as="script">
 <link rel="preload" href="/css/cosmos-ui.css" as="style">
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/foundry-prototype.css">
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260524-sidebar-minimal">
-<script src="/js/cosmos-ui-polish.js?v=20260524-sidebar-minimal" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260525-toast-date">
+<script src="/js/cosmos-ui-polish.js?v=20260528-polish-load-defer" defer></script>
+<script src="/js/cosmos-record-list.js?v=20260526-detail-qty-remainder" defer></script>
 
 
 </head>
@@ -34,7 +35,7 @@
     <div class="nav-group" data-foundry-nav-group="procurement">Procurement</div>
     <div class="nav-item" data-foundry-permission="foundry.purchases.view" onclick="nav('purchases',this)"><span class="ic">📋</span> Purchases <span id="purchases-nav-badge" class="nav-badge" style="display:none"></span></div>
     <div class="nav-item" data-foundry-permission="foundry.purchases.create" onclick="nav('new-purchase',this)"><span class="ic">＋</span> New Purchase</div>
-    <div class="nav-item" 
+    <div class="nav-item" data-foundry-permission="foundry.bill_verification.view" onclick="nav('bill-verify',this)"><span class="ic">🧾</span> Bill Verification</div>
     <div class="nav-item" data-foundry-permission="foundry.branding.view" onclick="nav('branding',this)"><span class="ic">🏷️</span> Branding <span id="branding-nav-badge" class="nav-badge gold" style="display:none"></span></div>
     <div class="nav-item" data-foundry-permission="foundry.digitisation.view" onclick="nav('digitisation',this)"><span class="ic">📸</span> Digitisation <span id="digi-nav-badge" class="nav-badge gold" style="display:none"></span></div>
 
@@ -49,8 +50,7 @@
 
     <div class="nav-group" data-foundry-nav-group="store-connect">Store Connect</div>
     <div class="nav-item" data-foundry-permission="foundry.transfers.view" onclick="nav('transfer-requests',this)" id="nav-transfer-requests"><span class="ic">📬</span> Goods Request <span id="tr-nav-badge" class="nav-badge gold" style="display:none"></span></div>
-    <div class="nav-item" data-foundry-permission="foundry.stock.view" onclick="nav('stock-transfer',this)"><span class="ic">🚚</span> Goods Transfer</div>
-    <div class="nav-item" data-foundry-permission="foundry.transfers.view" onclick="nav('movement-list',this)"><span class="ic">📋</span> Movement List</div>
+    <div class="nav-item" data-foundry-permission="foundry.transfers.view" onclick="nav('stock-transfer',this)"><span class="ic">🚚</span> Goods Transfer</div>
 
     <div class="nav-group" data-foundry-nav-group="intelligence">Intelligence</div>
     <div class="nav-item" data-foundry-permission="foundry.purchases.view" onclick="nav('rate-intelligence',this)"><span class="ic">💰</span> Rate Intelligence</div>
@@ -964,72 +964,165 @@
        TRANSFER REQUESTS — PRD §8.3 store-to-HQ lifecycle
        Approve, set quantities, and dispatch requests submitted by stores.
   ════════════════════════════════════════════════════════════════════════ -->
-  <div class="page" id="page-transfer-requests">
-    <div class="ph">
-      <div class="pt">Goods Request</div>
-    </div>
-
-    <div id="ftr-store-filter-row" hidden style="display:none;flex-direction:column;gap:8px;margin-bottom:14px">
-      <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">Store</div>
-      <div id="ftr-store-chips" class="ftr-store-chips" role="toolbar" aria-label="Filter goods requests by store"></div>
-    </div>
-
-    <!-- Status filter tabs -->
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
-      <button class="btn sm active" id="ftr-tab-all"        onclick="setTrFilter('',this)">All</button>
-      <button class="btn sm"        id="ftr-tab-submitted"  onclick="setTrFilter('SUBMITTED',this)">⏳ Pending</button>
-      <button class="btn sm"        id="ftr-tab-approved"   onclick="setTrFilter('APPROVED',this)">✓ Approved</button>
-      <button class="btn sm"        id="ftr-tab-partial"    onclick="setTrFilter('PARTIALLY_DISPATCHED',this)">◐ Partial</button>
-      <button class="btn sm"        id="ftr-tab-dispatched" onclick="setTrFilter('DISPATCHED',this)">🚚 Dispatched</button>
-      <button class="btn sm"        id="ftr-tab-received"   onclick="setTrFilter('RECEIVED',this)">🏪 Stocked at Store</button>
-      <button class="btn sm"        id="ftr-tab-rejected"   onclick="setTrFilter('REJECTED',this)">✕ Rejected</button>
-      <button class="btn sm mla"    onclick="loadTransferRequests()">↻ Refresh</button>
-    </div>
-
-    <div id="ftr-err" class="err-msg mb3"></div>
-
-    <div class="card">
-      <div id="ftr-cards-wrap" class="cb">
-        <div id="ftr-cards-skeleton" style="padding:8px 0"></div>
+  <div class="page" id="page-transfer-requests" style="padding-bottom:0">
+    <div class="cosmos-page-head sp-page-head">
+      <div class="ph sp-page-title-row">
+        <div>
+          <div class="pt">Goods Request</div>
+          <div class="ps">Review store requests, approve quantities, and dispatch stock.</div>
+        </div>
+        <div class="sp-page-tools">
+          <button type="button" class="btn sm primary" id="ftr-create-transfer-btn" data-foundry-permission="foundry.transfers.create" style="display:none" onclick="openFtrCreateTransferModal()">+ Create Transfer</button>
+          <button type="button" class="btn sm" onclick="openFtrHistoryModal()" aria-label="Search request history">History</button>
+          <button type="button" class="btn sm" onclick="loadTransferRequests()" aria-label="Refresh goods requests">↻ Refresh</button>
+        </div>
       </div>
+
+    <div id="ftr-store-filter-row" class="ftr-store-filter-row" hidden>
+      <div class="ftr-store-filter-label">Store</div>
+      <div id="ftr-store-chips" class="ftr-store-chips cosmos-page-filters" role="toolbar" aria-label="Filter goods requests by store"></div>
     </div>
 
-  </div>
+    <div class="cosmos-page-filters sp-page-filters ftr-status-tabs" id="ftr-status-filters" role="toolbar" aria-label="Filter goods requests by workflow"></div>
 
-  <!-- ═══ MOVEMENT LIST ═══ -->
-  <div class="page" id="page-movement-list">
-    <div class="ph">
-      <div class="pt">Movement List</div>
+      <div id="ftr-err" class="err-msg mb3"></div>
     </div>
 
-    <!-- Filter row -->
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
-      <button class="btn sm active" id="ml-tab-all"        onclick="setMlFilter('',this)">All</button>
-      <button class="btn sm"        id="ml-tab-dispatched" onclick="setMlFilter('DISPATCHED',this)">📦 Dispatched</button>
-      <button class="btn sm"        id="ml-tab-accepted"   onclick="setMlFilter('ACCEPTED',this)">✓ Accepted</button>
-      <button class="btn sm"        id="ml-tab-stocked"    onclick="setMlFilter('STOCKED',this)">🏪 Stocked</button>
-      <button class="btn sm"        style="margin-left:auto" onclick="loadMovementList()">↻ Refresh</button>
-    </div>
-
-    <div id="ml-err" class="err-msg mb3"></div>
-
-    <div class="card">
-      <div id="ml-list">
-        <div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>
+    <div class="sp-page-body">
+      <div class="card ftr-request-list-card">
+        <div id="ftr-cards-wrap" class="cb">
+          <div id="ftr-cards-skeleton" style="padding:8px 0"></div>
+          <div id="ftr-request-list-mobile" class="ftr-request-list-mobile cosmos-record-list" hidden></div>
+        </div>
       </div>
-    </div>
-
-    <!-- Detail panel -->
-    <div id="ml-detail" class="card" style="display:none;margin-top:16px">
-      <div class="ch" style="justify-content:space-between">
-        <div class="ct" id="ml-detail-title">Transfer document</div>
-        <button class="btn sm" onclick="closeMlDetail()">✕ Close</button>
-      </div>
-      <div id="ml-detail-body"></div>
     </div>
   </div>
 
   </div><!-- /.cosmos-app-scroll -->
+
+  <!-- Create HQ transfer (same sheet pattern as StorePilot create request) -->
+  <div class="overlay overlay--sheet" id="overlay-ftr-create-transfer" role="dialog" aria-modal="true" aria-labelledby="ftr-create-transfer-title" style="display:none" onclick="if(event.target===this) closeFtrCreateTransferModal()">
+    <div class="modal modal--create-request" onclick="event.stopPropagation()">
+      <div class="modal-header sp-create-request-head">
+        <div class="sp-create-request-grabber" aria-hidden="true"></div>
+        <div class="sp-create-request-head-row">
+          <div class="modal-title" id="ftr-create-transfer-title">Create transfer — HQ Initiated</div>
+          <button type="button" class="modal-close sp-create-request-close" onclick="closeFtrCreateTransferModal()" aria-label="Close">&times;</button>
+        </div>
+        <p class="ps" style="margin:8px 0 0;font-size:13px;color:var(--text2)">Dispatch stock to a store without a store request. Appears in Fulfilled.</p>
+      </div>
+      <div class="modal-body sp-create-request-body">
+        <div class="two-col sp-create-request-layout" style="align-items:start">
+          <div class="sp-create-request-search-wrap">
+            <div class="card sp-create-request-search-card">
+              <div class="ch sp-create-request-search-ch">
+                <div class="ct">Search SKU</div>
+                <div class="sw sp-create-request-search-sw">
+                  <input type="search" id="ftr-ct-search" class="sp-create-request-search-input" placeholder="SKU, brand, or unit code…" oninput="ftrCtSearchDebounce()" autocomplete="off" aria-label="Search warehouse stock">
+                  <span class="sp-spin" id="ftr-ct-spin" aria-hidden="true" style="display:none">…</span>
+                </div>
+              </div>
+              <div id="ftr-ct-err" class="err-msg sp-create-request-err"></div>
+              <div id="ftr-ct-results" class="sp-create-request-results">
+                <div class="empty-state">
+                  <div class="empty-ic">🔍</div>
+                  <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">Search warehouse stock</div>
+                  <div style="font-size:13px;color:var(--text2)">SKU code or 7-digit unit barcode.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="sp-create-request-cart-col">
+            <div class="card sp-create-request-cart-card" style="margin-bottom:14px">
+              <div class="ch">
+                <div class="ct">Transfer cart</div>
+                <span id="ftr-ct-cart-count" class="b b-orange" style="font-size:11px">0 items</span>
+              </div>
+              <div id="ftr-ct-cart-body">
+                <div class="empty-state" style="padding:28px 20px">
+                  <div class="empty-ic">🛒</div>
+                  <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">Cart is empty</div>
+                  <div style="font-size:13px;color:var(--text2)">Add items from search.</div>
+                </div>
+              </div>
+            </div>
+            <div class="card sp-create-request-meta-card">
+              <div class="ch"><div class="ct">Destination &amp; notes</div></div>
+              <div class="sp-create-request-meta-inner">
+                <div class="sp-create-request-field">
+                  <label class="sp-create-request-label" for="ftr-ct-store-sel">Destination store</label>
+                  <select id="ftr-ct-store-sel" class="inp" style="width:100%"></select>
+                </div>
+                <div class="sp-create-request-field">
+                  <label class="sp-create-request-label" for="ftr-ct-notes">Notes (optional)</label>
+                  <textarea id="ftr-ct-notes" rows="2" class="form-textarea sp-create-request-notes" placeholder="Reason or delivery note…"></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cosmos-modal-actions sp-create-request-foot">
+        <span id="ftr-ct-submit-msg" class="sp-create-request-msg" role="status" aria-live="polite"></span>
+        <div class="sp-create-request-foot-btns">
+          <button type="button" class="btn sp-create-request-clear-btn" onclick="ftrCtClearCart()">Clear cart</button>
+          <button type="button" class="btn primary sp-create-request-submit-btn" id="ftr-ct-submit-btn" onclick="submitFtrCreateTransfer()">Dispatch to store</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Goods request — history search -->
+  <div class="overlay" id="overlay-ftr-history" aria-hidden="true">
+    <div class="modal modal--ftr-history" role="dialog" aria-modal="true" aria-labelledby="ftr-history-title">
+      <div class="sp-ftr-history-head">
+        <div class="sp-ftr-history-grabber" aria-hidden="true"></div>
+        <div class="sp-ftr-history-head-row">
+          <div id="ftr-history-title" class="pt" style="margin:0">Request history</div>
+          <button type="button" class="btn sm sp-ftr-history-close" onclick="closeFtrHistoryModal()" aria-label="Close history search">✕</button>
+        </div>
+      </div>
+      <div class="modal-body sp-ftr-history-body">
+        <div id="ftr-history-err" class="err-msg mb3" style="display:none" role="alert"></div>
+        <div class="ftr-history-form">
+          <div id="ftr-history-store-row" class="ftr-history-store-row" hidden>
+            <div class="ftr-store-filter-label">Store</div>
+            <div id="ftr-history-store-chips" class="ftr-store-chips cosmos-page-filters" role="toolbar" aria-label="Filter history by store"></div>
+          </div>
+          <div class="ftr-history-dates-row">
+            <div class="fg">
+              <label class="ftr-history-label ftr-history-label--date" for="ftr-history-date-from">From</label>
+              <input type="text" id="ftr-history-date-from" class="inp ftr-history-datepicker" placeholder="dd/MM/yyyy" readonly autocomplete="off" aria-label="From date">
+            </div>
+            <div class="fg">
+              <label class="ftr-history-label ftr-history-label--date" for="ftr-history-date-to">To</label>
+              <input type="text" id="ftr-history-date-to" class="inp ftr-history-datepicker" placeholder="dd/MM/yyyy" readonly autocomplete="off" aria-label="To date">
+            </div>
+          </div>
+          <p class="ftr-history-hint">Stocked or rejected only · dates IST · phone/tablet uses device date picker · optional: ID, SKU, unit.</p>
+          <div class="ftr-history-optional-row">
+            <div class="fg">
+              <label class="ftr-history-label" for="ftr-history-request-id">Request ID <span class="ftr-history-optional">(optional)</span></label>
+              <input type="text" id="ftr-history-request-id" class="inp" inputmode="numeric" placeholder="e.g. 19" autocomplete="off">
+            </div>
+            <div class="fg">
+              <label class="ftr-history-label" for="ftr-history-sku">SKU <span class="ftr-history-optional">(optional)</span></label>
+              <input type="text" id="ftr-history-sku" class="inp" placeholder="SKU code" autocomplete="off">
+            </div>
+            <div class="fg ftr-history-optional-full">
+              <label class="ftr-history-label" for="ftr-history-unit">Unit ID <span class="ftr-history-optional">(optional)</span></label>
+              <input type="text" id="ftr-history-unit" class="inp" placeholder="Unit barcode" autocomplete="off">
+            </div>
+          </div>
+        </div>
+        <div id="ftr-history-results" class="ftr-history-results"></div>
+      </div>
+      <div class="modal-foot sp-ftr-history-foot">
+        <button type="button" class="btn" onclick="closeFtrHistoryModal()">Cancel</button>
+        <button type="button" class="btn primary" id="ftr-history-search-btn" onclick="searchFtrHistory()">Search</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Goods request — extended detail (overlay, not footer card) -->
   <div id="ftr-detail-backdrop" class="cosmos-extended-detail__backdrop" hidden aria-hidden="true" onclick="closeTrDetail()"></div>
@@ -1046,6 +1139,22 @@
     </div>
     <div id="ftr-detail-msg" class="cosmos-extended-detail__msg" role="status" aria-live="polite"></div>
     <div id="ftr-detail-body" class="cosmos-extended-detail__body"></div>
+  </div>
+
+  <!-- Movement list — extended detail -->
+  <div id="ml-detail-backdrop" class="cosmos-extended-detail__backdrop" hidden aria-hidden="true" onclick="closeMlDetail()"></div>
+  <div id="ml-detail" class="cosmos-extended-detail__panel" role="dialog" aria-modal="true" aria-labelledby="ml-detail-title" hidden>
+    <div class="cosmos-extended-detail__toolbar">
+      <div class="cosmos-extended-detail__head">
+        <div id="ml-detail-title" class="cosmos-extended-detail__title">Transfer document</div>
+        <div id="ml-detail-meta" class="cosmos-extended-detail__meta"></div>
+      </div>
+      <div class="cosmos-extended-detail__actions-row">
+        <div id="ml-detail-actions" class="cosmos-extended-detail__actions"></div>
+        <button type="button" class="btn sm" onclick="closeMlDetail()" aria-label="Close document details">Close</button>
+      </div>
+    </div>
+    <div id="ml-detail-body" class="cosmos-extended-detail__body"></div>
   </div>
 
 </main>
@@ -1474,7 +1583,6 @@ const bcMap = {
   'master-catalogue':'Master Catalogue', 'rate-intelligence':'Rate Intelligence',
   'transfer-requests':'Store Connect — Goods Request',
   'stock-transfer':   'Store Connect — Goods Transfer',
-  'movement-list':    'Store Connect — Movement List',
   'lab-orders':       'Lab Orders'
 };
 
@@ -1541,7 +1649,7 @@ function addColour() {
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260522-camera-resume" defer></script>
-<script src="/js/foundry-prototype.js?v=20260523-store-chips" defer></script>
+<script src="/js/foundry-prototype.js?v=20260528-hq-create-transfer" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)
 document.addEventListener('DOMContentLoaded', function() {

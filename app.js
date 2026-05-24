@@ -509,10 +509,21 @@ protectedApiRouter.use('/skus', skusRouter);
 protectedApiRouter.use('/uploads', uploadsRouter);
 protectedApiRouter.use('/finance', financeRouter);
 protectedApiRouter.use('/stock-transfers', stockTransfersRouter);
+/* History before sub-router so /history is never captured by GET /:id (id=history) */
+protectedApiRouter.get(
+  '/transfer-requests/history',
+  ...transferRequestsRouter.transferModAndView,
+  transferRequestsRouter.handleTransferRequestHistoryGet
+);
 protectedApiRouter.use('/transfer-requests', transferRequestsRouter);
 protectedApiRouter.use('/stock-transfer-docs', stockTransferDocsRouter);
 protectedApiRouter.use('/cx', cxRouter);
 protectedApiRouter.use('/orders', ordersRouter);
+/* Meta: explicit mount so new catalogue routes work without stale sub-router cache */
+protectedApiRouter.get(
+  '/meta/transfer-request-list-views',
+  ...metaRouter.transferRequestListViewsMiddleware
+);
 protectedApiRouter.use('/meta', metaRouter);
 protectedApiRouter.use('/tablets', tabletsRouter);
 app.use('/api', protectedApiRouter);

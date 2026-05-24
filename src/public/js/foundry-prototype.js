@@ -336,20 +336,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     return `${y}-${m}-${d}`;
   }
 
-  // dd/MM/yyyy (IST)
   function fmtDate(d) {
+    if (typeof window.cosmosFmtDate === 'function') return window.cosmosFmtDate(d);
     if (!d) return '—';
-    const dt = new Date(d);
-    if (isNaN(dt)) return String(d);
-    return dt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' });
+    return String(d);
   }
 
-  // dd/MM/yyyy HH:mm:ss (IST)
   function fmtDateTime(d) {
+    if (typeof window.cosmosFmtDateTime === 'function') return window.cosmosFmtDateTime(d);
     if (!d) return '—';
-    const dt = new Date(d);
-    if (isNaN(dt)) return String(d);
-    return dt.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+    return String(d);
   }
 
   const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
@@ -973,7 +969,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? `<span style="background:#e3f2fd;color:#1565c0;padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:4px">${r.total_purchases} purchase${r.total_purchases !== 1 ? 's' : ''}</span>`
         : '';
       const lastDate = r.last_purchase_date
-        ? `<span style="color:var(--text3);font-size:11px;margin-left:4px">· last ${new Date(r.last_purchase_date).toLocaleDateString('en-GB', { month:'short', year:'numeric', timeZone: 'Asia/Kolkata' })}</span>`
+        ? `<span style="color:var(--text3);font-size:11px;margin-left:4px">· last ${fmtDate(r.last_purchase_date)}</span>`
         : '';
       const rateBadge = r.last_purchase_rate != null
         ? `<span style="background:#f3e5f5;color:#6a1b9a;padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:600;margin-left:4px">₹${Number(r.last_purchase_rate).toLocaleString('en-IN')}/unit</span>`
@@ -5769,6 +5765,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function getFoundryPageFromPath(pathname) {
     const normalized = String(pathname || '').replace(/\/+$/, '') || '/foundry';
+    if (normalized === '/foundry/movement-list') return 'transfer-requests';
     if (normalized === '/foundry/lens-portfolio') return 'lens-packages';
     const exact = Object.entries(FOUNDRY_PAGE_PATHS).find(([, route]) => route === normalized);
     if (exact) return exact[0];
@@ -5817,10 +5814,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (id === 'stock-view')       loadStockView();
     if (id === 'stock-transfer' && typeof window.stInit === 'function') window.stInit();
     if (id === 'transfer-requests') {
-      void ftrInitStoreFilter();
-      if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
+      void Promise.all([
+        typeof ftrInitViewTabs === 'function' ? ftrInitViewTabs() : Promise.resolve(),
+        typeof ftrInitStoreFilter === 'function' ? ftrInitStoreFilter() : Promise.resolve()
+      ]).then(function () {
+        if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
+      });
     }
-    if (id === 'movement-list' && typeof window.loadMovementList === 'function') window.loadMovementList();
     if (id === 'lens-packages' && typeof window.loadLensPackagesPage === 'function') window.loadLensPackagesPage();
     if (id === 'lens-addons' && typeof window.loadLensAddonsPage === 'function') window.loadLensAddonsPage();
     if (id === 'lens-package-addons' && typeof window.loadLensMatrixPage === 'function') window.loadLensMatrixPage();
@@ -7665,11 +7665,7 @@ ${initScript}
     }
 
     window.stOpenDispatchDoc = function stOpenDispatchDoc(docId) {
-      const navEl = document.querySelector('.sidebar-nav .nav-item[onclick*="movement-list"]');
-      if (typeof nav === 'function') nav('movement-list', navEl || null);
-      setTimeout(function () {
-        if (typeof expandMlDoc === 'function') expandMlDoc(docId);
-      }, 80);
+      if (typeof expandMlDoc === 'function') expandMlDoc(docId);
     };
 
     window.stLoadHistory = async function stLoadHistory() {
@@ -7716,6 +7712,7 @@ ${initScript}
     APPROVED:             'b-blue',
     PARTIALLY_DISPATCHED: 'b-teal',
     DISPATCHED:           'b-orange',
+    PARTIALLY_RECEIVED:   'b-teal',
     RECEIVED:             'b-green',
     REJECTED:             'b-red'
   };
@@ -7726,6 +7723,7 @@ ${initScript}
       APPROVED: 'Approved',
       PARTIALLY_DISPATCHED: 'Partially Dispatched',
       DISPATCHED: 'Dispatched',
+      PARTIALLY_RECEIVED: 'Partially stocked at store',
       RECEIVED: 'Stocked at Store',
       REJECTED: 'Rejected'
     };
@@ -7750,26 +7748,37 @@ ${initScript}
       totalCap: totalCap,
       totalDisp: totalDisp,
       totalRecv: totalRecv,
-      remaining: Math.max(0, totalCap - totalDisp)
+      remainingToShip: Math.max(0, totalCap - totalDisp),
+      remainingToStock: Math.max(0, totalCap - totalRecv)
     };
   }
 
+  /** Shown above the line table only when totals are not already visible per row (remainders). */
   function ftrQtySummaryHtml(summary) {
     if (!summary || summary.skuCount < 1) return '';
-    const skuLabel = summary.skuCount + ' SKU' + (summary.skuCount !== 1 ? 's' : '');
-    const parts = [
-      skuLabel,
-      '<strong>' + summary.totalRequested + '</strong> pcs requested',
-      '<strong>' + summary.totalCap + '</strong> pcs approved',
-      '<strong>' + summary.totalDisp + '</strong> shipped'
-    ];
-    if (summary.totalRecv > 0) {
-      parts.push('<strong>' + summary.totalRecv + '</strong> stocked at store');
+    const parts = [];
+    if (summary.remainingToShip > 0) {
+      parts.push('<strong>' + summary.remainingToShip + '</strong> remaining to ship');
     }
-    if (summary.remaining > 0) {
-      parts.push('<strong>' + summary.remaining + '</strong> remaining to ship');
+    if (summary.remainingToStock > 0) {
+      parts.push('<strong>' + summary.remainingToStock + '</strong> remaining to stock');
     }
-    return '<div class="hint" style="margin-bottom:12px;font-size:13px">' + parts.join(' · ') + '</div>';
+    if (!parts.length) return '';
+    return '<div class="hint cosmos-detail-qty-bar" style="margin-bottom:12px;font-size:13px">' + parts.join(' · ') + '</div>';
+  }
+
+  function ftrComputeRemainderLines(lines) {
+    const out = [];
+    (lines || []).forEach(function (l) {
+      const cap = ftrApprovedCap(l);
+      const progressed = Math.max(
+        Math.max(0, Number(l.dispatched_qty) || 0),
+        Math.max(0, Number(l.received_qty) || 0)
+      );
+      const rem = cap - progressed;
+      if (rem > 0) out.push({ sku_id: l.sku_id, qty: rem });
+    });
+    return out;
   }
 
   function trEsc(s) {
@@ -7777,10 +7786,341 @@ ${initScript}
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  let _trFilter    = '';
+  let _trView = 'need_attention';
   let _trStoreFilter = '';
   let _ftrStoreFilterReady = false;
+  let _ftrViewsReady = false;
+  let _ftrHistoryDefaultDays = 90;
+  let _ftrHistoryStoreFilter = '';
+  let _ftrHistoryStoresCache = null;
   let _trExpanded  = null;
+  let _ftrCtCart = [];
+  let _ftrCtSearchTimer = null;
+
+  const FTR_DOC_STATUS_BADGE = {
+    DISPATCHED: 'b-orange',
+    ACCEPTED: 'b-blue',
+    STOCKED: 'b-green'
+  };
+
+  function ftrDocStatusLabel(status) {
+    const map = { DISPATCHED: 'Dispatched', ACCEPTED: 'At store', STOCKED: 'Stocked at store' };
+    return map[status] || status || '—';
+  }
+
+  window.ftrOpenListRow = function ftrOpenListRow(r) {
+    if (!r) return;
+    if (ftrIsHqDocRow(r)) {
+      if (typeof window.expandMlDoc === 'function') window.expandMlDoc(r.doc_id);
+      return;
+    }
+    if (r.request_id) expandTrRequest(r.request_id);
+  };
+
+  function ftrIsHqDocRow(r) {
+    return String(r.record_kind || '').toUpperCase() === 'HQ_DOC' || (r.doc_id && !r.request_id);
+  }
+
+  function ftrListRowBadgeHtml(r) {
+    if (ftrIsHqDocRow(r)) {
+      return '<span class="b b-purple">HQ Initiated</span> <span class="b ' + (FTR_DOC_STATUS_BADGE[r.status] || 'b-gray') + '">' + trEsc(ftrDocStatusLabel(r.status)) + '</span>';
+    }
+    return '<span class="b ' + (TR_STATUS_BADGE[r.status] || 'b-gray') + '">' + trEsc(ftrStatusLabel(r.status)) + '</span>';
+  }
+
+  function ftrCtWhQty(sku) {
+    return Math.max(0, Number(sku && (sku.warehouse_qty != null ? sku.warehouse_qty : sku.stock_qty)) || 0);
+  }
+
+  function ftrCtCartUnitIds() {
+    const ids = [];
+    _ftrCtCart.forEach(function (r) {
+      (r.units || []).forEach(function (u) { if (u.unit_id) ids.push(Number(u.unit_id)); });
+    });
+    return ids;
+  }
+
+  function ftrCtSkuRequiresUnit(sku) {
+    return typeof window.transferSkuRequiresUnit === 'function' && window.transferSkuRequiresUnit(sku);
+  }
+
+  function ftrCtCartHasInsufficientStock() {
+    return _ftrCtCart.some(function (r) {
+      const wh = Number(r.warehouse_qty) || 0;
+      if (ftrCtSkuRequiresUnit(r)) {
+        const n = (r.units || []).length;
+        return n > wh || n < 1;
+      }
+      return r.qty > wh;
+    });
+  }
+
+  function ftrCtAddSku(sku) {
+    const whQty = ftrCtWhQty(sku);
+    if (whQty < 1) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('No warehouse stock for this SKU.');
+      return;
+    }
+    const needsUnit = ftrCtSkuRequiresUnit(sku);
+    const unitId = sku.unit_id != null ? Number(sku.unit_id) : null;
+    if (needsUnit) {
+      if (!unitId) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Scan the 7-digit unit barcode for this SKU.');
+        return;
+      }
+      if (ftrCtCartUnitIds().includes(unitId)) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Unit already in cart.');
+        return;
+      }
+      let row = _ftrCtCart.find(function (x) { return x.sku_id === sku.sku_id; });
+      if (!row) {
+        row = {
+          sku_id: sku.sku_id,
+          sku_code: sku.sku_code,
+          product_name: sku.product_name,
+          brand_name: sku.brand_name || '',
+          colour_name: sku.colour_name || '',
+          warehouse_qty: whQty,
+          units: [],
+          qty: 0
+        };
+        _ftrCtCart.push(row);
+      }
+      if ((row.units || []).length >= row.warehouse_qty) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Max warehouse stock reached.');
+        return;
+      }
+      row.units.push({ unit_id: unitId, unit_barcode: sku.unit_barcode || '', unit_no: sku.unit_no });
+      row.qty = row.units.length;
+    } else {
+      let row = _ftrCtCart.find(function (x) { return x.sku_id === sku.sku_id; });
+      if (row) {
+        if (row.qty >= row.warehouse_qty) {
+          if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Max warehouse stock reached.');
+          return;
+        }
+        row.qty += 1;
+      } else {
+        _ftrCtCart.push({
+          sku_id: sku.sku_id,
+          sku_code: sku.sku_code,
+          product_name: sku.product_name,
+          brand_name: sku.brand_name || '',
+          colour_name: sku.colour_name || '',
+          warehouse_qty: whQty,
+          qty: 1,
+          units: []
+        });
+      }
+    }
+    ftrCtRenderCart();
+  }
+
+  async function ftrCtLoadStores() {
+    const sel = document.getElementById('ftr-ct-store-sel');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Loading stores…</option>';
+    try {
+      const raw = await apiGetFirst(['/api/stock-transfers/destination-stores', '/api/foundry/destination-stores']);
+      const rows = Array.isArray(raw) ? raw : [];
+      sel.innerHTML = '';
+      const ph = document.createElement('option');
+      ph.value = '';
+      ph.textContent = '— Select destination store —';
+      ph.disabled = true;
+      ph.selected = true;
+      sel.appendChild(ph);
+      rows.filter(function (s) { return s && String(s.status || '').toUpperCase() === 'ACTIVE'; }).forEach(function (st) {
+        const o = document.createElement('option');
+        o.value = String(st.store_id);
+        o.textContent = (st.store_name || 'Store') + ' (' + (st.store_code || '—') + ')';
+        sel.appendChild(o);
+      });
+    } catch (err) {
+      sel.innerHTML = '<option value="">Could not load stores</option>';
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    }
+  }
+
+  function ftrCtRenderCart() {
+    const body = document.getElementById('ftr-ct-cart-body');
+    const countEl = document.getElementById('ftr-ct-cart-count');
+    const submitBtn = document.getElementById('ftr-ct-submit-btn');
+    const total = _ftrCtCart.reduce(function (sum, r) { return sum + (Number(r.qty) || 0); }, 0);
+    if (countEl) {
+      countEl.textContent = _ftrCtCart.length + ' item' + (_ftrCtCart.length !== 1 ? 's' : '') +
+        (total ? ' · ' + total + ' units' : '');
+    }
+    if (submitBtn) submitBtn.disabled = _ftrCtCart.length > 0 && ftrCtCartHasInsufficientStock();
+    if (!body) return;
+    if (!_ftrCtCart.length) {
+      body.innerHTML = '<div class="empty-state" style="padding:28px 20px"><div class="empty-ic">🛒</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">Cart is empty</div><div style="font-size:13px;color:var(--text2)">Add items from search.</div></div>';
+      return;
+    }
+    body.innerHTML = _ftrCtCart.map(function (r) {
+      const unitMode = typeof window.transferSkuRequiresUnit === 'function' && window.transferSkuRequiresUnit(r);
+      const unitList = (r.units || []).map(function (u) {
+        return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:4px"><span class="mono">' + trEsc(u.unit_barcode || String(u.unit_id)) + '</span><button type="button" class="btn xs" onclick="ftrCtRemoveUnit(' + r.sku_id + ',' + u.unit_id + ')">✕</button></div>';
+      }).join('');
+      const qtyControls = unitMode
+        ? '<span class="b b-blue">' + (r.units || []).length + ' unit(s)</span>'
+        : '<div style="display:flex;align-items:center;gap:6px"><button type="button" class="btn xs" onclick="ftrCtChangeQty(' + r.sku_id + ',-1)">−</button><span class="mono" style="min-width:24px;text-align:center">' + r.qty + '</span><button type="button" class="btn xs" onclick="ftrCtChangeQty(' + r.sku_id + ',1)">+</button></div>';
+      return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)"><div style="flex:1;min-width:0"><div class="mono" style="font-size:12px;font-weight:600;color:var(--acc2)">' + trEsc(r.sku_code) + '</div><div style="font-size:12px;color:var(--text2)">' + trEsc(r.product_name || '') + '</div>' + unitList + '</div>' + qtyControls + '<button type="button" class="btn xs" onclick="ftrCtRemoveSku(' + r.sku_id + ')">Remove</button></div>';
+    }).join('');
+  }
+
+  window.ftrCtChangeQty = function (skuId, delta) {
+    const item = _ftrCtCart.find(function (r) { return r.sku_id === skuId; });
+    if (!item || ftrCtSkuRequiresUnit(item)) return;
+    const next = item.qty + delta;
+    if (next <= 0) {
+      _ftrCtCart = _ftrCtCart.filter(function (r) { return r.sku_id !== skuId; });
+    } else if (next > item.warehouse_qty) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Cannot exceed warehouse stock.');
+      return;
+    } else {
+      item.qty = next;
+    }
+    ftrCtRenderCart();
+  };
+
+  window.ftrCtRemoveUnit = function (skuId, unitId) {
+    const item = _ftrCtCart.find(function (r) { return r.sku_id === skuId; });
+    if (!item || !item.units) return;
+    item.units = item.units.filter(function (u) { return Number(u.unit_id) !== Number(unitId); });
+    item.qty = item.units.length;
+    if (!item.qty) _ftrCtCart = _ftrCtCart.filter(function (r) { return r.sku_id !== skuId; });
+    ftrCtRenderCart();
+  };
+
+  window.ftrCtRemoveSku = function (skuId) {
+    _ftrCtCart = _ftrCtCart.filter(function (r) { return r.sku_id !== skuId; });
+    ftrCtRenderCart();
+  };
+
+  window.ftrCtClearCart = function () {
+    _ftrCtCart = [];
+    ftrCtRenderCart();
+  };
+
+  window.ftrCtSearchDebounce = function () {
+    clearTimeout(_ftrCtSearchTimer);
+    _ftrCtSearchTimer = setTimeout(ftrCtDoSearch, 350);
+  };
+
+  async function ftrCtDoSearch() {
+    const inp = document.getElementById('ftr-ct-search');
+    const results = document.getElementById('ftr-ct-results');
+    const spin = document.getElementById('ftr-ct-spin');
+    const q = inp ? String(inp.value || '').trim() : '';
+    if (!results) return;
+    if (!q) {
+      results.innerHTML = '';
+      return;
+    }
+    if (spin) spin.style.display = '';
+    try {
+      const rows = await apiGet('/api/stock-transfers/available?q=' + encodeURIComponent(q));
+      const list = Array.isArray(rows) ? rows : (rows.data || []);
+      if (!list.length) {
+        results.innerHTML = '<div style="padding:16px;color:var(--text2);font-size:13px">No SKUs found for "' + trEsc(q) + '"</div>';
+        return;
+      }
+      results.innerHTML = list.slice(0, 12).map(function (r) {
+        const wh = ftrCtWhQty(r);
+        const payload = JSON.stringify(r).replace(/'/g, '&#39;');
+        return '<div class="avail-row tr-link" style="cursor:pointer;padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px" onclick="ftrCtPickSku(' + payload + ')"><div style="flex:1;min-width:0"><div class="mono" style="font-size:12px;font-weight:600;color:var(--acc2)">' + trEsc(r.sku_code) + '</div><div style="font-size:12px;color:var(--text2)">' + trEsc(r.product_name || '') + '</div></div><span class="b b-green">' + wh + ' avail.</span></div>';
+      }).join('');
+    } catch (err) {
+      results.innerHTML = '<div style="padding:12px;color:var(--red)">' + trEsc(err.message) + '</div>';
+    } finally {
+      if (spin) spin.style.display = 'none';
+    }
+  }
+
+  window.ftrCtPickSku = function (sku) {
+    ftrCtAddSku(sku || {});
+    const inp = document.getElementById('ftr-ct-search');
+    const results = document.getElementById('ftr-ct-results');
+    if (inp) inp.value = '';
+    if (results) {
+      results.innerHTML = '';
+    }
+  };
+
+  window.openFtrCreateTransferModal = async function () {
+    const overlay = document.getElementById('overlay-ftr-create-transfer');
+    if (!overlay) return;
+    if (typeof window.cosmosEnsureApiKey === 'function') {
+      window.cosmosEnsureApiKey().catch(function () {});
+    }
+    _ftrCtCart = [];
+    ftrCtRenderCart();
+    const notes = document.getElementById('ftr-ct-notes');
+    const search = document.getElementById('ftr-ct-search');
+    if (notes) notes.value = '';
+    if (search) search.value = '';
+    const results = document.getElementById('ftr-ct-results');
+    if (results) {
+      results.innerHTML = '';
+    }
+    overlay.style.display = 'flex';
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    await ftrCtLoadStores();
+    setTimeout(function () { if (search) search.focus(); }, 120);
+  };
+
+  window.closeFtrCreateTransferModal = function () {
+    const overlay = document.getElementById('overlay-ftr-create-transfer');
+    if (overlay) {
+      overlay.classList.remove('open');
+      setTimeout(function () { overlay.style.display = 'none'; }, 200);
+    }
+    document.body.style.overflow = '';
+  };
+
+  window.submitFtrCreateTransfer = async function () {
+    const storeSel = document.getElementById('ftr-ct-store-sel');
+    const btn = document.getElementById('ftr-ct-submit-btn');
+    const storeId = storeSel ? Number(storeSel.value) : 0;
+    if (!storeId) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a destination store.');
+      return;
+    }
+    if (!_ftrCtCart.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Add at least one SKU to the cart.');
+      return;
+    }
+    if (ftrCtCartHasInsufficientStock()) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Cart quantity exceeds warehouse stock.');
+      return;
+    }
+    const notes = ((document.getElementById('ftr-ct-notes') || {}).value || '').trim() || null;
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      const lines = _ftrCtCart.map(function (r) {
+        const line = { sku_id: r.sku_id, qty: Math.max(1, Number(r.qty) || 1) };
+        if (ftrCtSkuRequiresUnit(r) && r.units && r.units.length) {
+          line.unit_ids = r.units.map(function (u) { return u.unit_id; });
+        }
+        return line;
+      });
+      const resp = await apiPost('/api/stock-transfer-docs', { to_store_id: storeId, lines: lines, notes: notes });
+      const docId = resp && (resp.doc_id != null ? resp.doc_id : (resp.data && resp.data.doc_id));
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess(docId ? 'Transfer #' + docId + ' dispatched (HQ Initiated).' : 'Transfer dispatched.');
+      }
+      window.closeFtrCreateTransferModal();
+      if (typeof window.setTrView === 'function') window.setTrView('fulfilled');
+      else if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
+      if (docId && typeof window.expandMlDoc === 'function') window.expandMlDoc(docId);
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    } finally {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+    }
+  };
 
   /** Matches backend shouldScopeTransferRequestsToUserStore — store staff never see HQ store filter. */
   function ftrShouldScopeToUserStore() {
@@ -7812,18 +8152,27 @@ ${initScript}
     if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
   };
 
+  function ftrStoreChipLabel(store) {
+    if (!store || typeof store !== 'object') return '';
+    const code = String(store.store_code || '').trim();
+    if (code) return code;
+    const sid = Number(store.store_id);
+    if (Number.isFinite(sid) && sid > 0) return 'Store #' + sid;
+    return '';
+  }
+
   async function ftrInitStoreFilter() {
     const row = document.getElementById('ftr-store-filter-row');
     const chips = document.getElementById('ftr-store-chips');
     if (!row || !chips) return;
     if (!ftrCanFilterByStore()) {
       row.hidden = true;
-      row.style.display = 'none';
+      row.style.display = '';
       _trStoreFilter = '';
       return;
     }
     row.hidden = false;
-    row.style.display = 'flex';
+    row.style.display = '';
     if (_ftrStoreFilterReady) {
       ftrSyncStoreChipActive();
       return;
@@ -7856,14 +8205,21 @@ ${initScript}
         list.push(s);
       });
       list.sort(function (a, b) {
-        return String(a.store_name || '').localeCompare(String(b.store_name || ''), undefined, { sensitivity: 'base' });
+        return String(a.store_code || a.store_name || '').localeCompare(
+          String(b.store_code || b.store_name || ''),
+          undefined,
+          { sensitivity: 'base' }
+        );
       });
       list.forEach(function (s) {
         const sid = String(s.store_id);
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'btn sm';
-        btn.textContent = s.store_name || ('Store #' + s.store_id);
+        btn.textContent = ftrStoreChipLabel(s) || ('Store #' + s.store_id);
+        const titleParts = [s.store_name, s.store_code].map(function (v) { return String(v || '').trim(); }).filter(Boolean);
+        if (titleParts.length) btn.title = titleParts.join(' · ');
+        btn.setAttribute('aria-label', 'Filter by store ' + (ftrStoreChipLabel(s) || sid));
         btn.setAttribute('data-ftr-store-chip', '1');
         btn.setAttribute('data-store-id', sid);
         btn.onclick = function () { window.setFtrStoreFilter(sid); };
@@ -8008,7 +8364,7 @@ ${initScript}
         return [];
       }
       wrap.innerHTML = '<ul style="margin:0;padding-left:18px">' + list.map(function (d) {
-        return '<li style="margin-bottom:6px">Doc <span class="mono">#' + d.doc_id + '</span> · ' +
+        return '<li class="tr-link" style="margin-bottom:6px;cursor:pointer" onclick="expandMlDoc(' + d.doc_id + ')">Doc <span class="mono">#' + d.doc_id + '</span> · ' +
           fmtDate(d.dispatched_at || d.created_at) + ' · ' + trEsc(d.status || '') +
           ' · ' + (d.line_count || 0) + ' line(s)</li>';
       }).join('') + '</ul>';
@@ -8291,11 +8647,182 @@ ${initScript}
     return 'Open';
   }
 
+  function ftrRequestCardListQty(r) {
+    const cap = Math.max(0, Number(r.total_approved_cap) || Number(r.total_requested_qty) || 0);
+    const recv = Math.max(0, Number(r.total_received_qty) || 0);
+    const disp = Math.max(0, Number(r.total_dispatched_qty) || 0);
+    return { cap: cap, recv: recv, disp: disp, remainingToStock: Math.max(0, cap - recv), remainingToShip: Math.max(0, cap - disp) };
+  }
+
+  function ftrRequestCardProgressHtml(r) {
+    const q = ftrRequestCardListQty(r);
+    if (q.cap < 1) return '';
+    if (r.status === 'PARTIALLY_RECEIVED' || (q.recv > 0 && q.remainingToStock > 0)) {
+      return (
+        '<div class="ftr-request-card__progress">' +
+        '<strong>' + q.recv + '</strong> of <strong>' + q.cap + '</strong> stocked' +
+        ' · <span class="ftr-request-card__progress-rem">' + q.remainingToStock + ' remaining to receive</span>' +
+        '</div>'
+      );
+    }
+    if (r.status === 'PARTIALLY_DISPATCHED' && q.remainingToShip > 0) {
+      return (
+        '<div class="ftr-request-card__progress">' +
+        '<strong>' + q.disp + '</strong> of <strong>' + q.cap + '</strong> shipped' +
+        ' · <span class="ftr-request-card__progress-rem">' + q.remainingToShip + ' remaining to ship</span>' +
+        '</div>'
+      );
+    }
+    return '';
+  }
+
+  function ftrSyncTrViewTabActive() {
+    const tabs = document.querySelector('#page-transfer-requests .ftr-status-tabs');
+    const activeKey = _trView || 'need_attention';
+    if (tabs && window.cosmosFilterTabs) {
+      window.cosmosFilterTabs.sync(tabs, activeKey, { attr: 'data-ftr-view' });
+      return;
+    }
+    document.querySelectorAll('#page-transfer-requests .ftr-status-tabs [data-ftr-view]').forEach(function (b) {
+      const key = b.getAttribute('data-ftr-view') || '';
+      const active = key === activeKey;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  async function ftrInitViewTabs() {
+    const container = document.getElementById('ftr-status-filters');
+    if (!container) return;
+    if (_ftrViewsReady) {
+      ftrSyncTrViewTabActive();
+      return;
+    }
+    let views = [
+      { key: 'need_attention', label: 'Need Attention' },
+      { key: 'partial', label: 'Partial' },
+      { key: 'fulfilled', label: 'Fulfilled' }
+    ];
+    try {
+      const meta = await apiGet('/api/meta/transfer-request-list-views');
+      if (meta && Array.isArray(meta.views) && meta.views.length) views = meta.views;
+      if (meta && meta.default_view) _trView = String(meta.default_view);
+      if (meta && meta.history_default_days) _ftrHistoryDefaultDays = Number(meta.history_default_days) || 90;
+    } catch (e) { /* fallback views */ }
+    container.innerHTML = '';
+    views.forEach(function (v) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn sm';
+      btn.textContent = v.label || v.key;
+      btn.setAttribute('data-ftr-view', v.key);
+      btn.setAttribute('aria-pressed', 'false');
+      btn.onclick = function () { window.setTrView(v.key); };
+      container.appendChild(btn);
+    });
+    _ftrViewsReady = true;
+    ftrSyncTrViewTabActive();
+  }
+
+  window.setTrView = function setTrView(viewKey) {
+    _trView = viewKey ? String(viewKey) : 'need_attention';
+    ftrSyncTrViewTabActive();
+    if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
+  };
+
+  function ftrIstDateAddDays(isoDate, deltaDays) {
+    const parts = String(isoDate || '').split('-').map(Number);
+    if (parts.length < 3 || !parts.every(function (n) { return Number.isFinite(n); })) return isoDate;
+    const anchor = new Date(
+      parts[0] + '-' + String(parts[1]).padStart(2, '0') + '-' + String(parts[2]).padStart(2, '0') + 'T12:00:00+05:30'
+    );
+    anchor.setDate(anchor.getDate() + deltaDays);
+    return anchor.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  }
+
+  function ftrParseIsoYmdToIstDate(isoYmd) {
+    const parts = String(isoYmd || '').split('-').map(Number);
+    if (parts.length !== 3 || !parts.every(function (n) { return Number.isFinite(n); })) return null;
+    return new Date(
+      parts[0] + '-' + String(parts[1]).padStart(2, '0') + '-' + String(parts[2]).padStart(2, '0') + 'T12:00:00+05:30'
+    );
+  }
+
+  function ftrIsoYmdFromDate(d) {
+    if (!d || !(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  }
+
+  function ftrSyncHistoryDateHidden(inputId, isoYmd) {
+    const el = document.getElementById(inputId);
+    if (!el) return '';
+    let hidden = document.getElementById(inputId + '_iso');
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.dataset.fp = '1';
+      hidden.id = inputId + '_iso';
+      (el.parentElement || el).appendChild(hidden);
+    }
+    hidden.value = isoYmd || '';
+    return hidden.value;
+  }
+
+  function ftrEmptyStateHtml() {
+    const storeHint = _trStoreFilter && ftrCanFilterByStore() ? ' for the selected store' : '';
+    let headline = 'No goods requests' + storeHint;
+    let sub = 'Try another tab';
+    if (_trView === 'need_attention') {
+      headline = 'No requests need attention' + storeHint;
+      sub = 'Try another store or open History for older requests.';
+    } else if (_trView === 'partial') {
+      headline = 'No partially shipped requests' + storeHint;
+      sub = 'Nothing is waiting for more dispatch from HQ.';
+    } else if (_trView === 'fulfilled') {
+      headline = 'No fulfilled transfers' + storeHint;
+      sub = 'Shows the last 10 dispatched or stocked requests and HQ-initiated transfers. Older ones are in History.';
+    }
+    if (ftrCanFilterByStore() && !_trStoreFilter) {
+      sub = sub.replace('Try another store or ', 'Try ');
+    }
+    return (
+      '<div class="empty" style="padding:32px 16px">' +
+      '<div class="empty-ic">📋</div>' +
+      '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">' + headline + '</div>' +
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:16px">' + sub + '</div>' +
+      '<button type="button" class="btn sm" onclick="openFtrHistoryModal()">Open History</button>' +
+      '</div>'
+    );
+  }
+
   function ftrRenderRequestCard(r, showStoreName) {
+    if (ftrIsHqDocRow(r)) {
+      const linePart = (r.line_count || 0) + ' line' + ((r.line_count || 0) !== 1 ? 's' : '');
+      const storeBlock = showStoreName
+        ? '<div class="ftr-request-card__store">' + trEsc(r.store_code || r.store_name || r.store_id) + '</div>'
+        : '';
+      return (
+        '<article class="ftr-request-card tr-link" role="button" tabindex="0" aria-label="Open transfer doc #' + r.doc_id + '"' +
+        ' onclick="expandMlDoc(' + r.doc_id + ')"' +
+        ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();expandMlDoc(' + r.doc_id + ')}">' +
+        '<div class="ftr-request-card__head">' +
+        '<span class="ftr-request-card__id">Doc #' + r.doc_id + '</span>' +
+        ftrListRowBadgeHtml(r) +
+        '</div>' +
+        storeBlock +
+        '<div class="ftr-request-card__meta">' + trEsc(fmtDate(r.dispatched_at || r.created_at)) + ' · ' + linePart + '</div>' +
+        '<div class="ftr-request-card__foot">' +
+        '<span>' + trEsc(r.dispatched_by_name || r.dispatched_by_fullname || '') + '</span>' +
+        '<span class="ftr-request-card__action">View transfer ›</span>' +
+        '</div>' +
+        '</article>'
+      );
+    }
     const skuPart = (r.line_count || 0) + ' SKU' + ((r.line_count || 0) !== 1 ? 's' : '');
-    const qtyPart = r.total_requested_qty != null ? ' · ' + r.total_requested_qty + ' pcs' : '';
+    const qtyPart = r.total_requested_qty != null ? ' · ' + r.total_requested_qty + ' pcs requested' : '';
+    const progressBlock = ftrRequestCardProgressHtml(r);
     const storeBlock = showStoreName
-      ? '<div class="ftr-request-card__store">' + trEsc(r.store_name || r.store_id) + '</div>'
+      ? '<div class="ftr-request-card__store">' + trEsc(r.store_code || r.store_name || r.store_id) + '</div>'
       : '';
     return (
       '<article class="ftr-request-card" role="button" tabindex="0" aria-label="Open request #' + r.request_id + '"' +
@@ -8307,6 +8834,7 @@ ${initScript}
       '</div>' +
       storeBlock +
       '<div class="ftr-request-card__meta">' + trEsc(fmtDate(r.created_at)) + ' · ' + skuPart + qtyPart + '</div>' +
+      progressBlock +
       '<div class="ftr-request-card__foot">' +
       '<span>' + trEsc(r.requested_by_fullname || r.requested_by_name || '') + '</span>' +
       '<span class="ftr-request-card__action">' + trEsc(ftrRequestCardActionLabel(r.status)) + ' ›</span>' +
@@ -8315,34 +8843,134 @@ ${initScript}
     );
   }
 
-  function ftrRenderRequestCards(rows) {
-    const showStoreOnCard = ftrCanFilterByStore() && !_trStoreFilter;
-    return '<div class="ftr-request-cards">' + rows.map(function (r) {
-      return ftrRenderRequestCard(r, showStoreOnCard);
-    }).join('') + '</div>';
+  function ftrFormatHistoryScoreDays(n) {
+    if (n == null || n === '') return '—';
+    const num = Number(n);
+    if (!Number.isFinite(num) || num < 0) return '—';
+    return String(num);
   }
 
-  window.setTrFilter = function (status, btn) {
-    _trFilter = status;
-    document.querySelectorAll('#page-transfer-requests .btn.sm[id^="ftr-tab-"]').forEach((b) => b.classList.remove('active'));
-    if (btn) btn.classList.add('active');
-    if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
-  };
+  function ftrHistoryScoreFromRow(r, key) {
+    if (!r) return null;
+    if (r[key] != null && r[key] !== '') return r[key];
+    const camel = key.replace(/_([a-z])/g, function (_m, c) { return c.toUpperCase(); });
+    if (r[camel] != null && r[camel] !== '') return r[camel];
+    return null;
+  }
+
+  function ftrBuildHistoryRequestRows(rows, showStoreOnCard) {
+    return rows.map(function (r) {
+      const storeSuffix = showStoreOnCard
+        ? ' · ' + trEsc(r.store_code || r.store_name || '')
+        : '';
+      const primary = '#' + r.request_id + storeSuffix;
+      const requested = trEsc(fmtDate(r.created_at));
+      const shipped = r.dispatched_at ? trEsc(fmtDate(r.dispatched_at)) : '—';
+      const hq = ftrFormatHistoryScoreDays(ftrHistoryScoreFromRow(r, 'hq_score_days'));
+      const fulfillment = ftrFormatHistoryScoreDays(ftrHistoryScoreFromRow(r, 'fulfillment_score_days'));
+      const datesLine = 'Requested ' + requested + ' · Shipped ' + shipped;
+      const scoresLine =
+        '<span class="ftr-history-row__score" title="Total calendar days from request to shipped (IST)">HQ ' +
+        '<span class="ftr-history-row__score-num">' + trEsc(hq) + '</span></span>' +
+        ' · ' +
+        '<span class="ftr-history-row__score" title="Total calendar days from request to stocked at store (IST)">Fulfillment ' +
+        '<span class="ftr-history-row__score-num">' + trEsc(fulfillment) + '</span></span>';
+      const onClick = 'expandTrRequest(' + r.request_id + ')';
+      return (
+        '<div class="cosmos-record-row tr-link ftr-history-row" role="button" tabindex="0"' +
+        ' onclick="' + onClick + '"' +
+        ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();' + onClick + '}"' +
+        ' aria-label="Open request ' + r.request_id + '">' +
+        '<div class="cosmos-record-row__main">' +
+        '<div class="cosmos-record-row__primary">' + primary + '</div>' +
+        '<div class="ftr-history-row__meta">' +
+        '<div class="ftr-history-row__dates">' + datesLine + '</div>' +
+        '<div class="ftr-history-row__scores">' + scoresLine + '</div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="cosmos-record-row__badge">' +
+        '<span class="b ' + (TR_STATUS_BADGE[r.status] || 'b-gray') + '">' + trEsc(ftrStatusLabel(r.status)) + '</span>' +
+        '</div>' +
+        '</div>'
+      );
+    }).join('');
+  }
+
+  function ftrBuildMobileRequestRows(rows, showStoreOnCard) {
+    return rows.map(function (r) {
+      if (ftrIsHqDocRow(r)) {
+        const linePart = (r.line_count || 0) + ' line' + ((r.line_count || 0) !== 1 ? 's' : '');
+        const secondary = trEsc(fmtDate(r.dispatched_at || r.created_at)) + ' · ' + linePart +
+          (showStoreOnCard ? ' · ' + trEsc(r.store_code || r.store_name || '') : '');
+        if (window.cosmosRecordRow) {
+          return window.cosmosRecordRow.html({
+            primary: 'Doc #' + r.doc_id,
+            secondary: secondary,
+            badgeHtml: ftrListRowBadgeHtml(r),
+            onClick: 'expandMlDoc(' + r.doc_id + ')',
+            ariaLabel: 'Open transfer ' + r.doc_id
+          });
+        }
+        return ftrRenderRequestCard(r, showStoreOnCard);
+      }
+      const skuPart = (r.line_count || 0) + ' SKU' + ((r.line_count || 0) !== 1 ? 's' : '');
+      const qtyPart = r.total_requested_qty != null ? ' · ' + r.total_requested_qty + ' pcs requested' : '';
+      const cap = Math.max(0, Number(r.total_approved_cap) || Number(r.total_requested_qty) || 0);
+      const recv = Math.max(0, Number(r.total_received_qty) || 0);
+      const rem = Math.max(0, cap - recv);
+      let progress = '';
+      if (r.status === 'PARTIALLY_RECEIVED' || (recv > 0 && rem > 0)) {
+        progress = '<strong>' + recv + '</strong> of <strong>' + cap + '</strong> stocked · <span class="cosmos-record-row__progress-rem">' + rem + ' remaining to receive</span>';
+      }
+      const secondary = trEsc(fmtDate(r.created_at)) + ' · ' + skuPart + qtyPart +
+        (showStoreOnCard ? ' · ' + trEsc(r.store_code || r.store_name || '') : '');
+      if (window.cosmosRecordRow) {
+        return window.cosmosRecordRow.html({
+          primary: '#' + r.request_id,
+          secondary: secondary,
+          progressHtml: progress,
+          badgeHtml: '<span class="b ' + (TR_STATUS_BADGE[r.status] || 'b-gray') + '">' + trEsc(ftrStatusLabel(r.status)) + '</span>',
+          onClick: 'expandTrRequest(' + r.request_id + ')',
+          ariaLabel: 'Open request ' + r.request_id
+        });
+      }
+      return ftrRenderRequestCard(r, showStoreOnCard);
+    }).join('');
+  }
+
+  function ftrRenderRequestCards(rows, opts) {
+    const o = opts || {};
+    const showStoreOnCard = o.showStoreOnCard != null
+      ? o.showStoreOnCard
+      : (ftrCanFilterByStore() && !_trStoreFilter);
+    /* History modal is narrow on all viewports — one list style only (avoids duplicate desktop+mobile rows). */
+    if (o.context === 'history') {
+      const historyHtml = ftrBuildHistoryRequestRows(rows, showStoreOnCard);
+      return '<div class="ftr-history-list cosmos-record-list">' + historyHtml + '</div>';
+    }
+    const mobileHtml = ftrBuildMobileRequestRows(rows, showStoreOnCard);
+    const desktopCards = rows.map(function (r) {
+      return ftrRenderRequestCard(r, showStoreOnCard);
+    }).join('');
+    return (
+      '<div class="ftr-request-cards ftr-request-cards--desktop">' + desktopCards + '</div>' +
+      '<div id="ftr-request-list-mobile" class="ftr-request-list-mobile cosmos-record-list">' + mobileHtml + '</div>'
+    );
+  }
 
   window.loadTransferRequests = async function () {
+    ftrSyncTrViewTabActive();
     const wrap  = document.getElementById('ftr-cards-wrap');
-    const skel  = document.getElementById('ftr-cards-skeleton');
     const errEl = document.getElementById('ftr-err');
     if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-    if (skel) {
-      skel.style.display = '';
+    if (wrap) {
+      wrap.innerHTML = '<div id="ftr-cards-skeleton" style="padding:8px 0"></div>';
       if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('ftr-cards-skeleton', 6);
-      else skel.innerHTML = '';
     }
 
     try {
-      const qs = new URLSearchParams({ top_n: 100 });
-      if (_trFilter) qs.set('status', _trFilter);
+      const topN = (_trView === 'fulfilled') ? 10 : 100;
+      const qs = new URLSearchParams({ top_n: String(topN), view: _trView || 'need_attention' });
       if (_trStoreFilter && ftrCanFilterByStore()) qs.set('store_id', _trStoreFilter);
       const rows = await apiGet('/api/transfer-requests?' + qs.toString());
 
@@ -8355,16 +8983,7 @@ ${initScript}
 
       if (!wrap) return;
       if (!rows.length) {
-        const storeHint = _trStoreFilter && ftrCanFilterByStore()
-          ? ' for the selected store'
-          : (_trFilter ? ' with this status' : '');
-        wrap.innerHTML =
-          '<div class="empty" style="padding:32px 16px">' +
-          '<div class="empty-ic">📋</div>' +
-          '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No goods requests' + storeHint + '</div>' +
-          '<div style="font-size:13px;color:var(--text2)">Try another status tab' +
-          (ftrCanFilterByStore() ? ' or choose a different store.' : '.') + '</div>' +
-          '</div>';
+        wrap.innerHTML = ftrEmptyStateHtml();
         return;
       }
 
@@ -8372,10 +8991,531 @@ ${initScript}
     } catch (err) {
       if (errEl) { errEl.textContent = 'Failed to load: ' + err.message; errEl.style.display = 'block'; }
       if (wrap) wrap.innerHTML = '';
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
     }
   };
 
-  function ftrRenderDetailToolbar(req, canApprove, canDispatch) {
+  function ftrHistoryEmptyHtml() {
+    return (
+      '<div class="empty" style="padding:24px 12px">' +
+      '<div class="empty-ic">📋</div>' +
+      '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No completed requests found</div>' +
+      '<div style="font-size:13px;color:var(--text2)">History shows stocked-at-store and rejected requests only. Try a wider date range or different filters.</div>' +
+      '</div>'
+    );
+  }
+
+  function ftrHistoryIsoFromInput(inputId) {
+    const hidden = document.getElementById(inputId + '_iso');
+    if (hidden && /^\d{4}-\d{2}-\d{2}$/.test(String(hidden.value || '').trim())) {
+      return String(hidden.value).trim();
+    }
+    const el = document.getElementById(inputId);
+    if (el && el.type === 'date') {
+      const v = String(el.value || '').trim();
+      return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
+    }
+    if (el && el._flatpickr && el._flatpickr.selectedDates && el._flatpickr.selectedDates[0]) {
+      return ftrIsoYmdFromDate(el._flatpickr.selectedDates[0]);
+    }
+    if (!el || !el.value) return '';
+    const parts = String(el.value).trim().split('/');
+    if (parts.length !== 3) return '';
+    return parts[2] + '-' + String(parts[1]).padStart(2, '0') + '-' + String(parts[0]).padStart(2, '0');
+  }
+
+  /** Use OS date sheet on phones/tablets; Flatpickr on desktop/wide + mouse. */
+  function ftrHistoryPreferNativeDatePicker() {
+    if (typeof window.matchMedia !== 'function') return false;
+    try {
+      if (window.matchMedia('(max-width: 768px)').matches) return true;
+      if (
+        window.matchMedia('(pointer: coarse)').matches
+        && window.matchMedia('(max-width: 1024px)').matches
+      ) return true;
+    } catch (_e) {
+      /* ignore */
+    }
+    return false;
+  }
+
+  let _ftrHistoryDateUIMode = '';
+
+  function _ftrOnNativeHistoryDateInput(ev) {
+    const el = ev.target;
+    if (!el || !el.id) return;
+    const v = String(el.value || '').trim();
+    ftrSyncHistoryDateHidden(el.id, /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+  }
+
+  function ftrUnbindHistoryDateInputGuards(el) {
+    if (!el || el.dataset.ftrDateGuard !== '1') return;
+    el.removeEventListener('mousedown', ftrStopHistoryDateEvent, true);
+    el.removeEventListener('click', ftrStopHistoryDateEvent, true);
+    el.removeEventListener('touchstart', ftrStopHistoryDateEvent, true);
+    delete el.dataset.ftrDateGuard;
+  }
+
+  function ftrDetachNativeHistoryDateListeners() {
+    ['ftr-history-date-from', 'ftr-history-date-to'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (!el || !el._ftrNativeHistoryDateListener) return;
+      const handler = el._ftrNativeHistoryDateListener;
+      el.removeEventListener('change', handler);
+      el.removeEventListener('input', handler);
+      el._ftrNativeHistoryDateListener = null;
+    });
+  }
+
+  function ftrDestroyHistoryDateUI() {
+    ftrDetachNativeHistoryDateListeners();
+    ['ftr-history-date-from', 'ftr-history-date-to'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      ftrUnbindHistoryDateInputGuards(el);
+      if (el._flatpickr) {
+        try { el._flatpickr.destroy(); } catch (_e) { /* ignore */ }
+      }
+      delete el.dataset.ftrHistoryFp;
+      el.classList.remove('ftr-history-date-native', 'flatpickr-input');
+      el.type = 'text';
+      el.setAttribute('readonly', 'readonly');
+      el.placeholder = 'dd/MM/yyyy';
+      el.removeAttribute('inputmode');
+      el.style.fontSize = '';
+    });
+  }
+
+  function ftrSetupNativeHistoryDateInputs() {
+    ftrDetachNativeHistoryDateListeners();
+    ['ftr-history-date-from', 'ftr-history-date-to'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      ftrUnbindHistoryDateInputGuards(el);
+      if (el._flatpickr) {
+        try { el._flatpickr.destroy(); } catch (_e) { /* ignore */ }
+      }
+      delete el.dataset.ftrHistoryFp;
+      el.classList.remove('flatpickr-input');
+      el.classList.add('ftr-history-datepicker', 'ftr-history-date-native');
+
+      el.type = 'date';
+      el.removeAttribute('readonly');
+      el.readOnly = false;
+      el.placeholder = '';
+      el.setAttribute('autocomplete', 'off');
+      el.setAttribute('inputmode', 'none');
+      /* 16px+ avoids unwanted zoom on focus (iOS) */
+      el.style.fontSize = '16px';
+
+      el._ftrNativeHistoryDateListener = _ftrOnNativeHistoryDateInput;
+      el.addEventListener('change', el._ftrNativeHistoryDateListener);
+      el.addEventListener('input', el._ftrNativeHistoryDateListener);
+    });
+  }
+
+  function ftrCloseAllHistoryDatePickers() {
+    ['ftr-history-date-from', 'ftr-history-date-to'].forEach(function (id) {
+      const other = document.getElementById(id);
+      if (other && other._flatpickr) other._flatpickr.close();
+    });
+  }
+
+  function ftrCloseOtherHistoryDatePicker(activeEl) {
+    ['ftr-history-date-from', 'ftr-history-date-to'].forEach(function (id) {
+      if (activeEl && activeEl.id === id) return;
+      const other = document.getElementById(id);
+      if (other && other._flatpickr) other._flatpickr.close();
+    });
+  }
+
+  function ftrHistoryDatePickerAppendTo() {
+    return document.querySelector('#overlay-ftr-history .sp-ftr-history-body')
+      || document.getElementById('overlay-ftr-history')
+      || document.body;
+  }
+
+  function ftrStopHistoryDateEvent(e) {
+    e.stopPropagation();
+  }
+
+  function ftrBindHistoryDateInputGuards(el) {
+    if (!el || el.dataset.ftrDateGuard === '1') return;
+    el.dataset.ftrDateGuard = '1';
+    ['mousedown', 'click', 'touchstart'].forEach(function (ev) {
+      const opts = ev === 'touchstart' ? { capture: true, passive: true } : true;
+      el.addEventListener(ev, ftrStopHistoryDateEvent, opts);
+    });
+  }
+
+  function ftrGuardHistoryCalendarEl(cal) {
+    if (!cal || cal.dataset.ftrCalGuard === '1') return;
+    cal.dataset.ftrCalGuard = '1';
+    ['mousedown', 'click', 'touchstart'].forEach(function (ev) {
+      const opts = ev === 'touchstart' ? { capture: true, passive: true } : true;
+      cal.addEventListener(ev, ftrStopHistoryDateEvent, opts);
+    });
+  }
+
+  function ftrAlignHistoryFlatpickr(fp) {
+    const cal = fp && fp.calendarContainer;
+    const modal = document.querySelector('#overlay-ftr-history .modal.modal--ftr-history');
+    if (!cal || !modal) return;
+    const pad = 14;
+    const mr = modal.getBoundingClientRect();
+    const maxW = Math.max(240, Math.min(280, mr.width - pad * 2));
+    cal.style.width = maxW + 'px';
+    cal.style.maxWidth = maxW + 'px';
+    cal.querySelectorAll('.dayContainer').forEach(function (dc) {
+      dc.style.width = maxW + 'px';
+      dc.style.minWidth = '0';
+      dc.style.maxWidth = maxW + 'px';
+    });
+  }
+
+  function ftrHistoryForceStaticMonthHeader(fp) {
+    const wrap = fp && fp.calendarContainer
+      ? fp.calendarContainer.querySelector('.flatpickr-current-month')
+      : null;
+    if (!wrap) return;
+    const sel = wrap.querySelector('select.flatpickr-monthDropdown-months');
+    if (!sel) return;
+    const monthIdx = sel.selectedIndex >= 0 ? sel.selectedIndex : (fp.currentMonth || 0);
+    const longhand = (fp.l10n && fp.l10n.months && fp.l10n.months.longhand) || [];
+    const label = longhand[monthIdx] || (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].text) || '';
+    const span = document.createElement('span');
+    span.className = 'cur-month';
+    span.textContent = label;
+    sel.replaceWith(span);
+  }
+
+  function ftrEnsureHistoryDatePicker(el) {
+    if (!el || typeof flatpickr === 'undefined') return;
+    if (el.type === 'date' || el.classList.contains('ftr-history-date-native')) return;
+    if (el._flatpickr && el.dataset.ftrHistoryFp === '1') {
+      ftrBindHistoryDateInputGuards(el);
+      return;
+    }
+    if (el._flatpickr) {
+      try { el._flatpickr.destroy(); } catch (e) { /* ignore */ }
+    }
+    el.parentElement.querySelectorAll('input[type=hidden][data-fp]').forEach(function (h) {
+      if (h.id === el.id + '_iso') h.remove();
+    });
+    ftrBindHistoryDateInputGuards(el);
+    flatpickr(el, {
+      dateFormat: 'd/m/Y',
+      allowInput: false,
+      disableMobile: true,
+      closeOnSelect: true,
+      clickOpens: true,
+      shorthandCurrentMonth: false,
+      monthSelectorType: 'static',
+      position: 'below',
+      locale: { firstDayOfWeek: 1 },
+      appendTo: ftrHistoryDatePickerAppendTo(),
+      onReady: function (selectedDates, _dateStr, fp) {
+        el.dataset.ftrHistoryFp = '1';
+        if (fp.calendarContainer) {
+          fp.calendarContainer.classList.add('ftr-history-flatpickr');
+          ftrGuardHistoryCalendarEl(fp.calendarContainer);
+        }
+        ftrHistoryForceStaticMonthHeader(fp);
+        if (selectedDates[0]) {
+          ftrSyncHistoryDateHidden(el.id, ftrIsoYmdFromDate(selectedDates[0]));
+        }
+      },
+      onOpen: function (_selectedDates, _dateStr, fp) {
+        ftrCloseOtherHistoryDatePicker(el);
+        ftrHistoryForceStaticMonthHeader(fp);
+        if (fp.calendarContainer) ftrGuardHistoryCalendarEl(fp.calendarContainer);
+        ftrAlignHistoryFlatpickr(fp);
+      },
+      onMonthChange: function (_selectedDates, _dateStr, fp) {
+        ftrHistoryForceStaticMonthHeader(fp);
+        ftrAlignHistoryFlatpickr(fp);
+      },
+      onYearChange: function (_selectedDates, _dateStr, fp) {
+        ftrAlignHistoryFlatpickr(fp);
+      },
+      onChange: function (selectedDates) {
+        ftrSyncHistoryDateHidden(el.id, selectedDates[0] ? ftrIsoYmdFromDate(selectedDates[0]) : '');
+      }
+    });
+  }
+
+  function ftrBindHistoryOverlayInteractionGuards() {
+    const overlay = document.getElementById('overlay-ftr-history');
+    if (!overlay || overlay.dataset.ftrInteractionGuard === '1') return;
+    overlay.dataset.ftrInteractionGuard = '1';
+    overlay.addEventListener('mousedown', function (e) {
+      if (
+        e.target.closest('.ftr-history-flatpickr')
+        || e.target.closest('.ftr-history-datepicker')
+        || e.target.closest('input[type="date"].ftr-history-date-native')
+        || e.target.closest('.flatpickr-calendar')
+      ) {
+        e.stopPropagation();
+      }
+    }, true);
+    overlay.addEventListener('click', function (e) {
+      if (e.target !== overlay) return;
+      closeFtrHistoryModal();
+    });
+  }
+
+  function ftrEnsureHistoryDatePickers() {
+    ftrBindHistoryOverlayInteractionGuards();
+    const prefersNative = ftrHistoryPreferNativeDatePicker();
+    const skipFlatpickr = prefersNative || typeof flatpickr === 'undefined';
+    const mode = skipFlatpickr ? 'native' : 'flatpickr';
+    if (_ftrHistoryDateUIMode !== mode) {
+      ftrDestroyHistoryDateUI();
+      _ftrHistoryDateUIMode = mode;
+    }
+
+    if (skipFlatpickr) {
+      ftrSetupNativeHistoryDateInputs();
+      return;
+    }
+
+    ['ftr-history-date-from', 'ftr-history-date-to'].forEach(function (id) {
+      ftrEnsureHistoryDatePicker(document.getElementById(id));
+    });
+  }
+
+  function ftrSetHistoryDatePickerValue(inputId, isoYmd) {
+    const el = document.getElementById(inputId);
+    if (!el || !isoYmd) return;
+    if (el.type === 'date') {
+      el.value = isoYmd;
+      ftrSyncHistoryDateHidden(inputId, isoYmd);
+      return;
+    }
+    const istDate = ftrParseIsoYmdToIstDate(isoYmd);
+    if (el._flatpickr && istDate) {
+      el._flatpickr.setDate(istDate, true);
+      ftrSyncHistoryDateHidden(inputId, isoYmd);
+      return;
+    }
+    ftrSyncHistoryDateHidden(inputId, isoYmd);
+    if (istDate) {
+      const [y, m, d] = isoYmd.split('-');
+      el.value = String(d).padStart(2, '0') + '/' + String(m).padStart(2, '0') + '/' + y;
+    }
+  }
+
+  function ftrSyncHistoryStoreChipActive() {
+    const chips = document.getElementById('ftr-history-store-chips');
+    if (!chips) return;
+    chips.querySelectorAll('[data-ftr-history-store-chip]').forEach(function (b) {
+      const id = b.getAttribute('data-store-id') || '';
+      const active = id === (_ftrHistoryStoreFilter || '');
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  async function ftrEnsureHistoryStores() {
+    if (_ftrHistoryStoresCache) return _ftrHistoryStoresCache;
+    const raw = await apiGetFirst([
+      '/api/stock-transfers/destination-stores',
+      '/api/foundry/destination-stores'
+    ]);
+    const rows = Array.isArray(raw) ? raw : [];
+    const seen = new Set();
+    const list = [];
+    rows.forEach(function (s) {
+      if (!s || typeof s !== 'object') return;
+      const sid = Number(s.store_id);
+      if (!Number.isFinite(sid) || sid < 1 || seen.has(sid)) return;
+      const status = String(s.status || '').trim().toUpperCase();
+      if (status && status !== 'ACTIVE') return;
+      seen.add(sid);
+      list.push(s);
+    });
+    list.sort(function (a, b) {
+      return String(a.store_code || a.store_name || '').localeCompare(
+        String(b.store_code || b.store_name || ''),
+        undefined,
+        { sensitivity: 'base' }
+      );
+    });
+    _ftrHistoryStoresCache = list;
+    return list;
+  }
+
+  async function ftrInitHistoryStoreChips() {
+    const row = document.getElementById('ftr-history-store-row');
+    const chips = document.getElementById('ftr-history-store-chips');
+    if (!row || !chips) return;
+    if (!ftrCanFilterByStore()) {
+      row.hidden = true;
+      _ftrHistoryStoreFilter = '';
+      return;
+    }
+    row.hidden = false;
+    chips.innerHTML = '';
+    const allBtn = document.createElement('button');
+    allBtn.type = 'button';
+    allBtn.className = 'btn sm';
+    allBtn.textContent = 'All stores';
+    allBtn.setAttribute('data-ftr-history-store-chip', '1');
+    allBtn.setAttribute('data-store-id', '');
+    allBtn.onclick = function () {
+      _ftrHistoryStoreFilter = '';
+      ftrSyncHistoryStoreChipActive();
+    };
+    chips.appendChild(allBtn);
+    try {
+      const list = await ftrEnsureHistoryStores();
+      list.forEach(function (s) {
+        const sid = String(s.store_id);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn sm';
+        btn.textContent = ftrStoreChipLabel(s) || ('Store #' + s.store_id);
+        const titleParts = [s.store_name, s.store_code].map(function (v) { return String(v || '').trim(); }).filter(Boolean);
+        if (titleParts.length) btn.title = titleParts.join(' · ');
+        btn.setAttribute('data-ftr-history-store-chip', '1');
+        btn.setAttribute('data-store-id', sid);
+        btn.onclick = function () {
+          _ftrHistoryStoreFilter = sid;
+          ftrSyncHistoryStoreChipActive();
+        };
+        chips.appendChild(btn);
+      });
+      ftrSyncHistoryStoreChipActive();
+    } catch (e) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(e.message || 'Could not load stores');
+    }
+  }
+
+  function ftrSetHistoryDefaultDates() {
+    const today = typeof istToday === 'function' ? istToday() : '';
+    if (!today) return;
+    const fromIso = ftrIstDateAddDays(today, -(_ftrHistoryDefaultDays - 1));
+    ftrSetHistoryDatePickerValue('ftr-history-date-to', today);
+    ftrSetHistoryDatePickerValue('ftr-history-date-from', fromIso);
+  }
+
+  window.openFtrHistoryModal = async function openFtrHistoryModal() {
+    const overlay = document.getElementById('overlay-ftr-history');
+    if (!overlay) return;
+    const errEl = document.getElementById('ftr-history-err');
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+    const results = document.getElementById('ftr-history-results');
+    if (results) results.innerHTML = '';
+    ['ftr-history-request-id', 'ftr-history-sku', 'ftr-history-unit'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    ftrEnsureHistoryDatePickers();
+    ftrSetHistoryDefaultDates();
+    _ftrHistoryStoreFilter = _trStoreFilter || '';
+    await ftrInitHistoryStoreChips();
+    if (typeof openM === 'function') openM('overlay-ftr-history');
+    else overlay.classList.add('open');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  };
+
+  window.closeFtrHistoryModal = function closeFtrHistoryModal() {
+    ftrCloseAllHistoryDatePickers();
+    const overlay = document.getElementById('overlay-ftr-history');
+    if (!overlay) return;
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  };
+
+  window.searchFtrHistory = async function searchFtrHistory() {
+    const btn = document.getElementById('ftr-history-search-btn');
+    const errEl = document.getElementById('ftr-history-err');
+    const results = document.getElementById('ftr-history-results');
+    const fromEl = document.getElementById('ftr-history-date-from');
+    const toEl = document.getElementById('ftr-history-date-to');
+    const reqEl = document.getElementById('ftr-history-request-id');
+    const skuEl = document.getElementById('ftr-history-sku');
+    const unitEl = document.getElementById('ftr-history-unit');
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+    [fromEl, toEl, reqEl, skuEl, unitEl].forEach(function (el) {
+      if (el && typeof cosmosFieldClear === 'function') cosmosFieldClear(el);
+    });
+
+    const requestIdRaw = reqEl ? String(reqEl.value || '').trim() : '';
+    const skuQ = skuEl ? String(skuEl.value || '').trim() : '';
+    const unitQ = unitEl ? String(unitEl.value || '').trim() : '';
+    let dateFrom = ftrHistoryIsoFromInput('ftr-history-date-from');
+    let dateTo = ftrHistoryIsoFromInput('ftr-history-date-to');
+    const hasRequestId = requestIdRaw && /^\d+$/.test(requestIdRaw);
+
+    if (requestIdRaw && !hasRequestId) {
+      if (reqEl && typeof cosmosFieldError === 'function') cosmosFieldError(reqEl, 'Enter a valid request ID');
+      return;
+    }
+    const hasOptionalLookup = hasRequestId || !!skuQ || !!unitQ;
+    let searchDateFrom = dateFrom;
+    let searchDateTo = dateTo;
+    if (!hasOptionalLookup && (!searchDateFrom || !searchDateTo)) {
+      searchDateTo = typeof istToday === 'function' ? istToday() : searchDateTo;
+      searchDateFrom = searchDateTo ? ftrIstDateAddDays(searchDateTo, -(_ftrHistoryDefaultDays - 1)) : searchDateFrom;
+      ftrSetHistoryDatePickerValue('ftr-history-date-to', searchDateTo);
+      ftrSetHistoryDatePickerValue('ftr-history-date-from', searchDateFrom);
+    }
+    if (!hasOptionalLookup && (!searchDateFrom || !searchDateTo)) {
+      if (!searchDateFrom && fromEl && typeof cosmosFieldError === 'function') {
+        cosmosFieldError(fromEl, 'Select From date');
+      }
+      if (!searchDateTo && toEl && typeof cosmosFieldError === 'function') {
+        cosmosFieldError(toEl, 'Select To date');
+      }
+      return;
+    }
+    if (searchDateFrom && searchDateTo && searchDateFrom > searchDateTo) {
+      if (fromEl && typeof cosmosFieldError === 'function') cosmosFieldError(fromEl, 'From date must be before To');
+      if (toEl && typeof cosmosFieldError === 'function') cosmosFieldError(toEl, ' ');
+      return;
+    }
+
+    const qs = new URLSearchParams({ top_n: '200' });
+    if (hasRequestId) qs.set('request_id', requestIdRaw);
+    if (searchDateFrom) qs.set('date_from', searchDateFrom);
+    if (searchDateTo) qs.set('date_to', searchDateTo);
+    if (skuQ) qs.set('sku_q', skuQ);
+    if (unitQ) qs.set('unit_barcode', unitQ);
+    if (_ftrHistoryStoreFilter && ftrCanFilterByStore()) qs.set('store_id', _ftrHistoryStoreFilter);
+
+    if (results) {
+      results.innerHTML = '<div id="ftr-history-skeleton" style="padding:8px 0"></div>';
+      if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('ftr-history-skeleton', 5);
+    }
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+
+    try {
+      const rows = await apiGet('/api/transfer-requests/history?' + qs.toString());
+      if (!results) return;
+      if (!rows.length) {
+        results.innerHTML = ftrHistoryEmptyHtml();
+        if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+        return;
+      }
+      results.innerHTML = ftrRenderRequestCards(rows, {
+        context: 'history',
+        showStoreOnCard: ftrCanFilterByStore() && !_ftrHistoryStoreFilter
+      });
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (errEl) {
+        errEl.textContent = err.message || 'Search failed';
+        errEl.style.display = 'block';
+      }
+      if (results) results.innerHTML = '';
+    }
+  };
+
+  function ftrRenderDetailToolbar(req, canApprove, canDispatch, canSuperRejectApproved) {
     const actionsEl = document.getElementById('ftr-detail-actions');
     const metaEl = document.getElementById('ftr-detail-meta');
     if (!actionsEl) return;
@@ -8388,6 +9528,8 @@ ${initScript}
     if (canApprove) {
       html += '<button type="button" class="btn sm primary" id="ftr-approve-btn" onclick="trApproveFromDetail(' + req.request_id + ')">Approve</button>';
       html += '<button type="button" class="btn sm" style="color:var(--red);border-color:var(--red)" id="ftr-reject-btn" onclick="trReject(' + req.request_id + ', this)">Reject</button>';
+    } else if (canSuperRejectApproved) {
+      html += '<button type="button" class="btn sm" style="color:var(--red);border-color:var(--red)" id="ftr-reject-btn" onclick="trReject(' + req.request_id + ', this)">Reject after approval…</button>';
     }
     if (canDispatch) {
       html += '<button type="button" class="btn sm primary" onclick="event.stopPropagation();openGoodsRequestDispatchBucket(' + req.request_id + ')">Open bucket</button>';
@@ -8426,18 +9568,23 @@ ${initScript}
 
     try {
       let req  = await apiGet(`/api/transfer-requests/${requestId}`);
+      const qtyPre = ftrRequestQtySummary(req);
       const needsDocSync = (req.lines || []).some(function (l) {
         return Number(l.dispatched_qty) > 0 && (l.received_qty == null || l.received_qty === undefined);
       });
+      const needsStatusReconcile =
+        (req.status === 'RECEIVED' || req.status === 'PARTIALLY_RECEIVED') &&
+        qtyPre.totalRecv === 0 &&
+        qtyPre.totalDisp === 0;
       if (
-        needsDocSync
-        && (req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED' || req.status === 'RECEIVED')
+        needsStatusReconcile
+        || (needsDocSync && (req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED' || req.status === 'RECEIVED'))
       ) {
         try {
           const synced = await apiPost('/api/transfer-requests/' + requestId + '/reconcile', {});
-          if (synced && synced.data) {
-            if (Array.isArray(synced.data.lines)) req.lines = synced.data.lines;
-            if (synced.data.status) req.status = synced.data.status;
+          if (synced) {
+            if (Array.isArray(synced.lines)) req.lines = synced.lines;
+            if (synced.status) req.status = synced.status;
           }
         } catch (_syncErr) { /* keep unsynced view if SP not deployed yet */ }
       }
@@ -8448,8 +9595,13 @@ ${initScript}
 
       const canApprove  = req.status === 'SUBMITTED';
       const canDispatch = req.status === 'APPROVED' || req.status === 'PARTIALLY_DISPATCHED';
-      ftrRenderDetailToolbar(req, canApprove, canDispatch);
       const qtySummary = ftrRequestQtySummary(req);
+      const canSuperRejectApproved = !!(
+        user && String(user.role || '') === 'super_admin'
+        && req.status === 'APPROVED'
+        && qtySummary.totalDisp === 0
+      );
+      ftrRenderDetailToolbar(req, canApprove, canDispatch, canSuperRejectApproved);
       const qtySummaryBlock = ftrQtySummaryHtml(qtySummary);
 
       const inpStyle = 'width:64px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center;outline:none';
@@ -8503,10 +9655,10 @@ ${initScript}
             </table>
           </div>`;
       } else if (canDispatch) {
-        const partialBanner = qtySummary.remaining > 0 && qtySummary.totalDisp > 0
+        const partialBanner = qtySummary.remainingToShip > 0 && qtySummary.totalDisp > 0
           ? `<div class="hint" style="margin-bottom:12px;background:var(--tealL);border-color:var(--teal)">
               <strong>Partial dispatch:</strong> ${qtySummary.totalDisp} of ${qtySummary.totalCap} pcs already shipped on this request.
-              Scan up to <strong>${qtySummary.remaining}</strong> more in this shipment.
+              Scan up to <strong>${qtySummary.remainingToShip}</strong> more in this shipment.
             </div>`
           : '';
         tableBlock = `
@@ -8567,17 +9719,18 @@ ${initScript}
 
           ${tableBlock}
 
-          ${canApprove ? `
+          ${(canApprove || canSuperRejectApproved) ? `
             <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:14px">
+              ${canApprove ? `
               <div style="flex:1;min-width:200px">
                 <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">Review note (optional)</label>
                 <input type="text" id="ftr-review-note" placeholder="Note to store manager…"
                   style="width:100%;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
                   onclick="event.stopPropagation()">
-              </div>
+              </div>` : ''}
               <div style="flex:1;min-width:200px">
-                <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">Reject reason</label>
-                <input type="text" id="ftr-reject-note" placeholder="Required to reject…"
+                <label style="font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.5px">${canSuperRejectApproved && !canApprove ? 'Admin reject reason' : 'Reject reason'}</label>
+                <input type="text" id="ftr-reject-note" placeholder="${canSuperRejectApproved && !canApprove ? 'Reason (required)' : 'Required to reject…'}"
                   style="width:100%;padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;outline:none"
                   onclick="event.stopPropagation()">
               </div>
@@ -8591,11 +9744,19 @@ ${initScript}
                 onclick="event.stopPropagation()">
             </div>
           ` : ''}
+          ${(function () {
+            const rem = ftrComputeRemainderLines(req.lines);
+            if (!rem.length) return '';
+            const remPcs = rem.reduce(function (s, x) { return s + x.qty; }, 0);
+            return '<div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">' +
+              '<button type="button" class="btn sm primary" onclick="ftrCreateRemainderRequest(' + req.request_id + ', this)">Create remainder request (' + remPcs + ' pc' + (remPcs !== 1 ? 's' : '') + ')</button>' +
+              '<span style="font-size:12px;color:var(--text2)">Or ship balance via Goods Transfer (direct doc).</span></div>';
+          })()}
         </div>`;
       if (canDispatch) {
         ftrRenderDispatchTable();
         ftrLoadRequestShipments(req.request_id, { qtySummary: qtySummary });
-      } else if (req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED') {
+      } else if (req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED' || req.status === 'PARTIALLY_RECEIVED') {
         const shipBlock = document.createElement('div');
         shipBlock.style.padding = '0 20px 16px';
         shipBlock.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px">Shipments</div><div id="ftr-shipments-wrap">Loading…</div>';
@@ -8604,6 +9765,23 @@ ${initScript}
       }
     } catch (err) {
       if (body) body.innerHTML = `<div style="padding:16px;color:var(--red)">Error: ${trEsc(err.message)}</div>`;
+    }
+  };
+
+  window.ftrCreateRemainderRequest = async function (requestId, btn) {
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      const result = await apiPost('/api/transfer-requests/' + requestId + '/remainder', {});
+      const newId = result.data && result.data.request_id;
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess(newId ? 'Remainder request #' + newId + ' created.' : 'Remainder request created.');
+      }
+      if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
+      if (newId) expandTrRequest(newId);
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    } finally {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
     }
   };
 
@@ -8748,9 +9926,9 @@ ${initScript}
   };
 
   window.ftrAfterDispatchNav = function () {
-    const navEl = document.querySelector('.sidebar-nav .nav-item[onclick*="movement-list"]');
-    if (typeof nav === 'function') nav('movement-list', navEl || null);
-    if (typeof window.loadMovementList === 'function') window.loadMovementList();
+    const navEl = getFoundryNavEl('transfer-requests');
+    if (typeof nav === 'function') nav('transfer-requests', navEl || null);
+    if (typeof window.loadTransferRequests === 'function') window.loadTransferRequests();
     closeTrDetail();
   };
 
@@ -8856,160 +10034,51 @@ ${initScript}
   // ─────────────────────────────────────────────────────────────────────────
   // MOVEMENT LIST  (Store Connect › Movement List)
   // ─────────────────────────────────────────────────────────────────────────
-  let _mlFilter = '';
-  let _mlSearch = '';
-  let _mlDocsCache = [];
-
-  window.setMlFilter = function (status, btn) {
-    _mlFilter = status;
-    document.querySelectorAll('#page-movement-list .btn.sm[id^="ml-tab-"]').forEach(b => b.classList.remove('active'));
-    if (btn) btn.classList.add('active');
-    if (typeof window.loadMovementList === 'function') window.loadMovementList();
-  };
-
-  function mlStatusBadge(s) {
-    const map = { DISPATCHED:'<span class="badge blue">Dispatched</span>', ACCEPTED:'<span class="badge gold">Accepted</span>', STOCKED:'<span class="badge green">Stocked</span>' };
-    return map[s] || `<span class="badge">${s}</span>`;
-  }
-
-  function filterMovementDocs(docs, query) {
-    const q = String(query || '').trim().toLowerCase();
-    if (!q) return docs;
-    return docs.filter((d) => {
-      const hay = [
-        d.doc_id,
-        d.doc_type,
-        d.source_request_id,
-        d.store_name,
-        d.to_store_id,
-        d.status
-      ].join(' ').toLowerCase();
-      return hay.includes(q);
-    });
-  }
-
-  function renderMovementList(docs) {
-    const wrap = document.getElementById('ml-list');
-    if (!wrap) return;
-
-    const filtered = filterMovementDocs(docs, _mlSearch);
-    const toolbarHtml = `
-      <div class="ml-toolbar">
-        <input id="ml-search" class="ml-search" placeholder="Search doc id, store, type, status..." value="${trEsc(_mlSearch)}">
-        <div class="ml-count">${filtered.length} document${filtered.length !== 1 ? 's' : ''}</div>
-      </div>`;
-
-    if (!docs.length) {
-      wrap.innerHTML = `${toolbarHtml}<div class="empty-state"><div class="ei">📋</div><div class="et">No transfer documents found</div><div class="es">Dispatch a Goods Transfer to see records here.</div></div>`;
-    } else if (!filtered.length) {
-      wrap.innerHTML = `${toolbarHtml}<div class="empty-state"><div class="ei">🔎</div><div class="et">No matching movement documents</div><div class="es">Try a different search term.</div></div>`;
-    } else {
-      wrap.innerHTML = `${toolbarHtml}<div class="ml-rows" id="ml-rows">
-        ${filtered.map(d => `
-          <div class="ml-row-dense" onclick="expandMlDoc(${d.doc_id})">
-            <div style="flex:1;min-width:0">
-              <div class="ml-pri">Doc #${d.doc_id} — ${d.doc_type === 'DIRECT' ? 'Goods Transfer' : 'From Request #' + d.source_request_id}</div>
-              <div class="ml-sec">To ${trEsc(d.store_name || 'Store #' + d.to_store_id)} · ${fmtDateTime(d.dispatched_at)}</div>
-            </div>
-            <div>${mlStatusBadge(d.status)}</div>
-          </div>`).join('')}
-      </div>`;
-    }
-
-    const searchEl = document.getElementById('ml-search');
-    if (searchEl) {
-      searchEl.addEventListener('input', (e) => {
-        _mlSearch = e.target.value || '';
-        renderMovementList(_mlDocsCache);
-      });
-    }
-  }
-
-  window.closeMlDetail = function () {
-    const d = document.getElementById('ml-detail');
-    if (d) d.style.display = 'none';
-
-    // On mobile, the hamburger is controlled by the off-canvas sidebar overlay.
-    // If it's still open when Doc Details closes, it can hide the topbar/hamburger.
-    const overlayEl = document.getElementById('fy-sidebar-overlay')
-    const sidebarEl = document.querySelector('.sidebar')
-    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
-    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
-    const isBodyLocked = document.body.style.overflow === 'hidden'
-    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
-  };
-
-  window.loadMovementList = async function () {
-    const wrap  = document.getElementById('ml-list');
-    const errEl = document.getElementById('ml-err');
-    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-    if (wrap)  wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>';
-    closeMlDetail();
-    try {
-      const qs   = _mlFilter ? `?status=${_mlFilter}` : '';
-      const docs = await apiGet('/api/stock-transfer-docs' + qs);
-      _mlDocsCache = docs || [];
-      renderMovementList(_mlDocsCache);
-    } catch (e) {
-      if (errEl) { errEl.textContent = 'Failed to load: ' + e.message; errEl.style.display = ''; }
-      if (wrap)  wrap.innerHTML = '';
-    }
-  };
-
   window.expandMlDoc = async function (docId) {
     const titleEl = document.getElementById('ml-detail-title');
     const bodyEl  = document.getElementById('ml-detail-body');
-    const panEl   = document.getElementById('ml-detail');
-    if (!panEl) return;
+    const metaEl  = document.getElementById('ml-detail-meta');
+    const actionsEl = document.getElementById('ml-detail-actions');
+    if (!bodyEl) return;
 
-    // Ensure the off-canvas sidebar isn't covering the header/hamburger.
-    const overlayEl = document.getElementById('fy-sidebar-overlay')
-    const sidebarEl = document.querySelector('.sidebar')
-    const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
-    const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
-    const isBodyLocked = document.body.style.overflow === 'hidden'
-    if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
+    if (window.cosmosDetailPanel) window.cosmosDetailPanel.prepareOpen('ml-detail', 'ml-detail-backdrop');
+    if (titleEl) titleEl.textContent = 'Transfer Document #' + docId;
+    if (metaEl) metaEl.innerHTML = '';
+    if (actionsEl) actionsEl.innerHTML = '';
+    if (window.cosmosDetailPanel) window.cosmosDetailPanel.skeletonBody(bodyEl, 4);
 
-    panEl.style.display = '';
-    titleEl.textContent = `Transfer Document #${docId}`;
-    bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>';
-    // Chrome/mobile has an issue where `position: sticky` headers can "disappear"
-    // when `scrollIntoView()` runs inside an overflow scrolling container.
-    // Safari works fine, so skip auto-scroll for Chrome and let the user scroll naturally.
-    const ua = navigator.userAgent || ''
-    const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
-    if (!isChromeLike) panEl.scrollIntoView({ behavior: 'auto', block: 'nearest' });
     try {
-      const doc = await apiGet(`/api/stock-transfer-docs/${docId}`);
+      const res = await apiGet('/api/stock-transfer-docs/' + docId);
+      const doc = res.data || res;
+      if (titleEl) titleEl.textContent = 'Transfer #' + doc.doc_id + (doc.store_name ? ' — ' + doc.store_name : '');
       const fmtDt = dt => dt ? fmtDateTime(dt) : '—';
-      const lines = (doc.lines || []).map(l => `
-        <tr>
-          <td>${l.sku_code || l.sku_id}</td>
-          <td>${[l.product_name, l.colour_name].filter(Boolean).join(' · ')}</td>
-          <td style="text-align:center">${l.qty_sent}</td>
-          <td style="text-align:center">${l.qty_received != null ? l.qty_received : '—'}</td>
-        </tr>`).join('');
-      bodyEl.innerHTML = `
-        <div class="ml-meta-grid">
-          <div class="ml-meta-card"><div class="ml-meta-k">Type</div><div class="ml-meta-v">${doc.doc_type === 'DIRECT' ? 'Goods Transfer (Direct)' : 'From Request #' + doc.source_request_id}</div></div>
-          <div class="ml-meta-card"><div class="ml-meta-k">Status</div><div class="ml-meta-v">${mlStatusBadge(doc.status)}</div></div>
-          <div class="ml-meta-card"><div class="ml-meta-k">To Store</div><div class="ml-meta-v">${doc.store_name || 'Store #' + doc.to_store_id}</div></div>
-          <div class="ml-meta-card"><div class="ml-meta-k">Dispatched</div><div class="ml-meta-v">${fmtDt(doc.dispatched_at)}</div></div>
-          ${doc.accepted_at ? `<div class="ml-meta-card"><div class="ml-meta-k">Accepted</div><div class="ml-meta-v">${fmtDt(doc.accepted_at)}</div></div>` : ''}
-          ${doc.stocked_at  ? `<div class="ml-meta-card"><div class="ml-meta-k">Stocked</div><div class="ml-meta-v">${fmtDt(doc.stocked_at)}</div></div>` : ''}
-        </div>
-        ${doc.notes ? `<div style="margin-bottom:14px;color:var(--text2);font-size:13px">📝 ${doc.notes}</div>` : ''}
-        <table class="ml-lines-table" style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr>
-            <th style="text-align:left">SKU</th>
-            <th style="text-align:left">Description</th>
-            <th style="text-align:center">Sent</th>
-            <th style="text-align:center">Stocked at Store</th>
-          </tr></thead>
-          <tbody>${lines}</tbody>
-        </table>`;
+      if (metaEl) metaEl.innerHTML = mlStatusBadge(doc.status) + '<span>' + trEsc(fmtDt(doc.dispatched_at)) + '</span>';
+      if (actionsEl && doc.source_request_id) {
+        actionsEl.innerHTML = '<button type="button" class="btn sm primary" onclick="closeMlDetail();expandTrRequest(' + doc.source_request_id + ')">View request #' + doc.source_request_id + '</button>';
+      }
+      const lines = (doc.lines || []).map(function (l) {
+        const sent = Number(l.qty_sent) || 0;
+        const recv = l.qty_received != null ? Number(l.qty_received) : null;
+        const rem = recv != null ? Math.max(0, sent - recv) : null;
+        const recvCell = recv != null
+          ? '<span class="b ' + (rem > 0 ? 'b-gold' : 'b-green') + '">' + recv + (rem > 0 ? ' (' + rem + ' left)' : '') + '</span>'
+          : '—';
+        return '<tr><td class="mono">' + trEsc(l.sku_code || l.sku_id) + '</td><td>' + trEsc([l.product_name, l.colour_name].filter(Boolean).join(' · ')) + '</td><td style="text-align:right">' + sent + '</td><td style="text-align:right">' + recvCell + '</td></tr>';
+      }).join('');
+      const chips = window.cosmosDetailChips ? window.cosmosDetailChips.html([
+        { label: 'Type', value: doc.doc_type === 'DIRECT' ? 'Goods Transfer' : 'From Request' },
+        { label: 'Request #', value: doc.source_request_id ? String(doc.source_request_id) : '—' },
+        { label: 'To store', value: doc.store_name || ('Store #' + doc.to_store_id) },
+        { label: 'Dispatched', value: fmtDt(doc.dispatched_at) }
+      ]) : '';
+      const tableBlock = window.cosmosDetailLinesTable
+        ? window.cosmosDetailLinesTable.wrap('<thead><tr><th>SKU</th><th>Description</th><th style="text-align:right">Sent</th><th style="text-align:right">Stocked</th></tr></thead><tbody>' + lines + '</tbody>')
+        : '<table><tbody>' + lines + '</tbody></table>';
+      bodyEl.innerHTML = '<div style="padding:16px 20px">' + chips +
+        (doc.notes ? '<div style="margin-bottom:14px;font-size:13px;color:var(--text2)">' + trEsc(doc.notes) + '</div>' : '') +
+        '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">Line items</div>' + tableBlock + '</div>';
     } catch (e) {
-      bodyEl.innerHTML = `<div class="err-msg">Failed to load document: ${e.message}</div>`;
+      bodyEl.innerHTML = '<div style="padding:16px;color:var(--red)">' + trEsc(e.message) + '</div>';
     }
   };
 

@@ -3,6 +3,8 @@
  * Usage:
  *   node scripts/repair-transfer-request-line-qty.js --request-id=1 --requested=56
  *   node scripts/repair-transfer-request-line-qty.js --request-id=1 --sync-dispatched-only
+ *   node scripts/repair-transfer-request-line-qty.js --request-id=12 --sync-received-only
+ *   node scripts/repair-transfer-request-line-qty.js --request-id=12 --sync-all
  */
 require('dotenv').config();
 const sql = require('mssql');
@@ -13,6 +15,8 @@ function parseArgs(argv) {
     const m = /^--([^=]+)=(.*)$/.exec(a);
     if (m) out[m[1]] = m[2];
     else if (a === '--sync-dispatched-only') out.syncDispatchedOnly = true;
+    else if (a === '--sync-received-only') out.syncReceivedOnly = true;
+    else if (a === '--sync-all') out.syncAll = true;
   });
   return out;
 }
@@ -22,6 +26,8 @@ const requestId = Number(args['request-id'] || args.requestId);
 const requestedQty = args.requested != null ? Number(args.requested) : null;
 const approvedQty = args.approved != null ? Number(args.approved) : requestedQty;
 const syncDispatchedOnly = !!args.syncDispatchedOnly;
+const syncReceivedOnly = !!args.syncReceivedOnly;
+const syncAll = !!args.syncAll;
 
 const config = {
   server: process.env.DB_HOST || 'localhost',
@@ -31,6 +37,17 @@ const config = {
   password: process.env.DB_PASSWORD,
   options: { encrypt: false, trustServerCertificate: true }
 };
+
+async function syncReceived(pool, rid) {
+  try {
+    await pool.request()
+      .input('request_id', sql.Int, rid)
+      .execute('sp_TransferRequest_SyncReceivedFromDocs');
+    return;
+  } catch (e) {
+    if (e.number !== 2812) throw e;
+  }
+}
 
 async function syncDispatched(pool, rid) {
   try {
@@ -76,9 +93,24 @@ async function main() {
     process.exit(1);
   }
 
-  if (!syncDispatchedOnly) {
+  if (syncReceivedOnly) {
+    await syncReceived(pool, requestId);
+    const header = await pool.request().input('request_id', sql.Int, requestId).query(`
+      SELECT request_id, status FROM dbo.transfer_requests WHERE request_id = @request_id
+    `);
+    const afterLines = await pool.request().input('request_id', sql.Int, requestId).query(`
+      SELECT line_id, requested_qty, approved_qty, dispatched_qty, received_qty
+      FROM dbo.transfer_request_lines WHERE request_id = @request_id
+    `);
+    console.log('Header:', JSON.stringify(header.recordset[0]));
+    console.log('Lines:', JSON.stringify(afterLines.recordset, null, 2));
+    await pool.close();
+    return;
+  }
+
+  if (!syncDispatchedOnly && !syncAll) {
     if (!Number.isFinite(requestedQty) || requestedQty < 1) {
-      console.error('Provide --requested=N (positive integer) unless --sync-dispatched-only');
+      console.error('Provide --requested=N (positive integer) unless --sync-dispatched-only / --sync-received-only / --sync-all');
       process.exit(1);
     }
     const appr = Number.isFinite(approvedQty) && approvedQty >= 0 ? approvedQty : requestedQty;
@@ -97,6 +129,7 @@ async function main() {
   }
 
   await syncDispatched(pool, requestId);
+  if (syncAll) await syncReceived(pool, requestId);
 
   const header = await pool.request().input('request_id', sql.Int, requestId).query(`
     SELECT request_id, status FROM dbo.transfer_requests WHERE request_id = @request_id

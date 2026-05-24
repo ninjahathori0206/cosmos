@@ -34,10 +34,9 @@ function getCommandUnitNavEl(id) {
 }
 
 function fmtIstDateTime(v) {
+  if (typeof window.cosmosFmtDateTime === 'function') return window.cosmosFmtDateTime(v);
   if (!v) return '—';
-  const d = new Date(v);
-  if (isNaN(d)) return String(v);
-  return d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+  return String(v);
 }
 
 function fmtIstTime(v) {

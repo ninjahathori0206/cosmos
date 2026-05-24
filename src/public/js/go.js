@@ -106,12 +106,14 @@ var GO = (function () {
 
   /* ── IST helpers ── */
   function fmtDate(v) {
+    if (typeof window.cosmosFmtDate === 'function') return window.cosmosFmtDate(v);
     if (!v) return '—';
-    return new Date(v).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
+    return String(v);
   }
   function fmtDateTime(v) {
+    if (typeof window.cosmosFmtDateTime === 'function') return window.cosmosFmtDateTime(v);
     if (!v) return '—';
-    return new Date(v).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+    return String(v);
   }
   function fmtMoney(v) { return '₹' + Number(v || 0).toLocaleString('en-IN'); }
   function daysLeft(d) {
@@ -596,7 +598,7 @@ var GO = (function () {
         return '<div class="hist-row">'
           + '<div style="width:46px;flex-shrink:0;text-align:center">'
           + '<div class="test-date-day">' + d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit' }) + '</div>'
-          + '<div class="test-date-mon">' + d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', year: '2-digit' }) + '</div>'
+          + '<div class="test-date-mon">' + fmtDate(d) + '</div>'
           + '</div>'
           + '<div style="flex:1">'
           + '<div style="font-size:13px;font-weight:500;color:var(--text)">' + (t.source === 'STAFF' ? 'Store Examination' : 'Self-entered') + '</div>'

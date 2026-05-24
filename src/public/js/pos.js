@@ -903,12 +903,9 @@
   }
 
   function fmtOfferDateIso(v) {
+    if (typeof window.cosmosFmtDate === 'function') return window.cosmosFmtDate(v)
     if (!v) return '—'
-    try {
-      return new Date(v).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
-    } catch (_e) {
-      return '—'
-    }
+    return String(v)
   }
 
   /** Normalise SQL/driver discount_value (number, string, or rare object shapes) to a finite number. */
@@ -4664,7 +4661,7 @@
       const refPart = receipt.external_ref ? (' · Ref: ' + receipt.external_ref) : ''
       const inv = receipt.invoice_no ? (' · Invoice: ' + receipt.invoice_no) : ''
       const delPart = receipt.delivery_date
-        ? ' · ' + (receipt.delivery_mode === 'HOME' ? 'Home delivery' : 'Pickup') + ' by ' + new Date(receipt.delivery_date).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' })
+        ? ' · ' + (receipt.delivery_mode === 'HOME' ? 'Home delivery' : 'Pickup') + ' by ' + fmtOfferDateIso(receipt.delivery_date)
         : ''
       mEl.textContent = 'Paid via ' + methodLabel + refPart + inv + delPart
     }
@@ -5594,14 +5591,7 @@
         ban.innerHTML = ''
         return
       }
-      const updated = d.updated_at ? new Date(d.updated_at).toLocaleString('en-GB', {
-        timeZone: 'Asia/Kolkata',
-        day: '2-digit',
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      }) : ''
+      const updated = d.updated_at ? posFormatIstDateTime(d.updated_at) : ''
       ban.hidden = false
       ban.innerHTML =
         '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between">' +
@@ -5828,16 +5818,9 @@
   }
 
   function posFormatIstDateTime(iso) {
+    if (typeof window.cosmosFmtDateTime === 'function') return window.cosmosFmtDateTime(iso)
     if (!iso) return '—'
-    return new Date(iso).toLocaleString('en-GB', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    })
+    return String(iso)
   }
 
   function posFormatRxBlockHtml(rx) {
@@ -6190,16 +6173,7 @@
       }
 
       listEl.innerHTML = orders.map(o => {
-        const d = new Date(o.created_at)
-        const dateStr = d.toLocaleString('en-GB', {
-          timeZone: 'Asia/Kolkata',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        })
+        const dateStr = posFormatIstDateTime(o.created_at)
         const statusCss = posOrderStatusCssClass(o)
         const statusLabel = posOrderStatusLabel(o)
         const labStatus = String(o.lab_workflow_status || '')
@@ -6734,15 +6708,7 @@
     const order = detail && detail.order ? detail.order : {}
     const p = prefs && typeof prefs === 'object' ? prefs : {}
     const displayStore = String(storeName || 'Store outlet').trim() || 'Store outlet'
-    const dt = new Date().toLocaleString('en-GB', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    })
+    const dt = posFormatIstDateTime(new Date())
     const rows = flattenPosOrderItemsForPreview(detail)
     let bodyRows = ''
     for (let r = 0; r < rows.length; r++) {

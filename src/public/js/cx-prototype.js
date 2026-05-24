@@ -112,29 +112,15 @@ function fmtCxRs (v) {
 }
 
 function fmtCxDateTime (v) {
+  if (typeof window.cosmosFmtDateTime === 'function') return window.cosmosFmtDateTime(v)
   if (!v) return '\u2014'
-  var d = new Date(v)
-  if (isNaN(d.getTime())) return String(v)
-  return d.toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  return String(v)
 }
 
 function fmtCxDateOnly (v) {
+  if (typeof window.cosmosFmtDate === 'function') return window.cosmosFmtDate(v)
   if (!v) return '\u2014'
-  var d = new Date(v)
-  if (isNaN(d.getTime())) return String(v)
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    timeZone: 'Asia/Kolkata'
-  })
+  return String(v)
 }
 
 function cxOrderStatusBadge (status) {

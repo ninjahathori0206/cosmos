@@ -67,10 +67,15 @@ function istToday() {
 }
 
 function fmtDate(v) {
+  if (typeof window.cosmosFmtDate === 'function') return window.cosmosFmtDate(v);
   if (!v) return '—';
-  const d = new Date(v);
-  if (isNaN(d)) return String(v);
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  return String(v);
+}
+
+function fmtDateTime(v) {
+  if (typeof window.cosmosFmtDateTime === 'function') return window.cosmosFmtDateTime(v);
+  if (!v) return '—';
+  return String(v);
 }
 
 function showErr(id, msg) {
@@ -97,6 +102,8 @@ let _bcDebounce      = null;
 let _scDebounce      = null;
 let _dashTimer       = null;
 let _tcDebounce      = null;
+let _tcSearchSeq     = 0;
+const _tcSearchCache = Object.create(null);
 let _transferCart    = [];
 let _spPermissions   = [];
 let _spNoAccess      = false;
@@ -135,8 +142,6 @@ const SP_MENU_PERM_MAP = {
   'stock-browse': ['storepilot.catalogue.view', 'foundry.catalogue.view'],
   'store-catalogue': ['storepilot.catalogue.view', 'foundry.catalogue.view'],
   'transfers-create': ['storepilot.transfers.create', 'foundry.transfers.create'],
-  'incoming-transfers': ['storepilot.transfers.view', 'foundry.transfers.view'],
-  'movement-list': ['storepilot.transfers.view', 'foundry.transfers.view'],
   'transfers-history': ['storepilot.transfers.view', 'foundry.transfers.view'],
   reports: ['storepilot.reports.view']
 };
@@ -148,8 +153,6 @@ const spBcMap = {
   'store-catalogue':      'Stock View — Store Catalogue',
   'transfers-history':    'Foundry Connect — My Requests',
   'transfers-create':     'Foundry Connect — Request Goods',
-  'incoming-transfers':   'Foundry Connect — Incoming Goods',
-  'movement-list':        'Foundry Connect — Movement List',
   reports:                'Store Reports',
   'lab-orders':           'Lab Orders'
 };
@@ -160,8 +163,6 @@ const spBcShortMap = {
   'store-catalogue':      'Store Catalogue',
   'transfers-history':    'My Requests',
   'transfers-create':     'Request Goods',
-  'incoming-transfers':   'Incoming Goods',
-  'movement-list':        'Movement List',
   reports:                'Store Reports',
   'lab-orders':           'Lab Orders'
 };
@@ -196,17 +197,66 @@ const SP_PAGE_PATHS = {
   'transfers-history': '/storepilot/transfers-history',
   'transfers-create': '/storepilot/transfers-create',
   reports: '/storepilot/reports',
-  'incoming-transfers': '/storepilot/incoming-transfers',
-  'movement-list': '/storepilot/movement-list',
   'lab-orders': '/storepilot/lab-orders'
 };
 
+let _spOpenCreateRequestOnLoad = false;
+
 function getStorepilotPageFromPath(pathname) {
   const normalized = String(pathname || '').replace(/\/+$/, '') || '/storepilot';
-  const exact = Object.entries(SP_PAGE_PATHS).find(([, route]) => route === normalized);
+  if (normalized === '/storepilot/incoming-transfers' || normalized === '/storepilot/movement-list') {
+    return 'transfers-history';
+  }
+  if (normalized === SP_PAGE_PATHS['transfers-create']) {
+    _spOpenCreateRequestOnLoad = true;
+    return 'transfers-history';
+  }
+  const exact = Object.entries(SP_PAGE_PATHS).find(([pageId, route]) => route === normalized && pageId !== 'transfers-create');
   if (exact) return exact[0];
   if (normalized === '/storepilot') return 'dashboard';
   return 'dashboard';
+}
+
+function spHydrateUserFromSession() {
+  try {
+    const stored = sessionStorage.getItem('cosmos_user');
+    if (!stored) return;
+    const u = JSON.parse(stored);
+    _spPermissions = Array.isArray(u.permissions) ? u.permissions.map((x) => String(x).toLowerCase()) : [];
+    _storeId   = u.store_id   || null;
+    _storeName = u.store_name || null;
+  } catch (_) {}
+}
+
+function spPrimeTransfersHistoryPage() {
+  document.querySelectorAll('.main .page').forEach((p) => p.classList.remove('active'));
+  const page = document.getElementById('page-transfers-history');
+  if (page) page.classList.add('active');
+  document.querySelectorAll('.sidebar-nav .nav-item').forEach((n) => n.classList.remove('active'));
+  const navEl = getStorepilotNavEl('transfers-history');
+  if (navEl) navEl.classList.add('active');
+  document.body.setAttribute('data-sp-page', 'transfers-history');
+  spSetBreadcrumb('transfers-history');
+  spSyncTopbarMeta('transfers-history');
+  spSyncCreateRequestBtn();
+  if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('tr-history-wrap', 6);
+}
+
+function canSpCreateTransferRequest() {
+  return hasAnyPermission(['storepilot.transfers.create', 'foundry.transfers.create']);
+}
+
+function spSyncCreateRequestBtn() {
+  const btn = document.getElementById('sp-tr-create-btn');
+  if (!btn) return;
+  if (canSpCreateTransferRequest()) {
+    btn.style.display = '';
+    btn.removeAttribute('hidden');
+    btn.disabled = false;
+  } else {
+    btn.style.display = 'none';
+    btn.setAttribute('hidden', '');
+  }
 }
 
 function getStorepilotNavEl(id) {
@@ -217,6 +267,12 @@ function getStorepilotNavEl(id) {
 window.spNav = function (id, el, options) {
   const navOptions = options || {};
   if (_spNoAccess) return;
+  if (id === 'transfers-create') {
+    const histEl = getStorepilotNavEl('transfers-history');
+    window.spNav('transfers-history', histEl || el, navOptions);
+    if (canSpCreateTransferRequest()) window.openSpCreateRequestModal();
+    return;
+  }
   if (!canAccessSpView(id)) {
     renderNoAccessState('menu_access_denied');
     return;
@@ -251,11 +307,15 @@ function loadStorePilotPage(id) {
   if (id === 'dashboard')          loadDashboard();
   if (id === 'stock-browse')       window.loadBrowseCatalogue();
   if (id === 'store-catalogue')    window.loadStoreCatalogue();
-  if (id === 'transfers-history')  window.loadTransferHistory();
-  if (id === 'transfers-create')   initTransferCreate();
+  if (id === 'transfers-history') {
+    spSyncCreateRequestBtn();
+    window.loadTransferHistory();
+    if (_spOpenCreateRequestOnLoad && canSpCreateTransferRequest()) {
+      _spOpenCreateRequestOnLoad = false;
+      setTimeout(function () { window.openSpCreateRequestModal(); }, 0);
+    }
+  }
   if (id === 'reports')            loadReports();
-  if (id === 'incoming-transfers') loadIncomingTransfers();
-  if (id === 'movement-list')      loadSpMovementList();
   if (id === 'lab-orders')         loadSpLabOrders();
 }
 
@@ -776,21 +836,48 @@ function renderNoAccessState(reasonKey) {
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-  if (typeof window.cosmosLoadRbacBootstrap === 'function') {
-    await window.cosmosLoadRbacBootstrap()
+  spHydrateUserFromSession();
+
+  const routeFromPath = getStorepilotPageFromPath(window.location.pathname);
+  if (routeFromPath === 'transfers-history') {
+    spPrimeTransfersHistoryPage();
   }
+
+  const bootstrapP = typeof window.cosmosLoadRbacBootstrap === 'function'
+    ? window.cosmosLoadRbacBootstrap()
+    : Promise.resolve();
+
   loadUser();
+  spSyncCreateRequestBtn();
   if (_spNoAccess) return;
-  await refreshWarehouseContext();
-  document.body.setAttribute('data-sp-page', 'dashboard');
-  spSetBreadcrumb('dashboard');
-  spSyncTopbarMeta('dashboard');
+
+  await Promise.all([bootstrapP, refreshWarehouseContext()]);
+
+  const activeSpPage = document.body.getAttribute('data-sp-page') || routeFromPath;
+  if (activeSpPage === 'transfers-history') {
+    spSyncCreateRequestBtn();
+    window.loadTransferHistory();
+    if (_spOpenCreateRequestOnLoad && canSpCreateTransferRequest()) {
+      _spOpenCreateRequestOnLoad = false;
+      setTimeout(function () { window.openSpCreateRequestModal(); }, 0);
+    }
+  } else {
+    document.body.setAttribute('data-sp-page', 'dashboard');
+    spSetBreadcrumb('dashboard');
+    spSyncTopbarMeta('dashboard');
+    const dashPage = document.getElementById('page-dashboard');
+    if (dashPage && !document.querySelector('.main .page.active')) {
+      document.querySelectorAll('.main .page').forEach((p) => p.classList.remove('active'));
+      dashPage.classList.add('active');
+    }
+    loadDashboard();
+    startDashRefresh();
+  }
+
   window.addEventListener('resize', function spOnChromeResize() {
     const pageId = document.body.getAttribute('data-sp-page');
     if (pageId) spSetBreadcrumb(pageId);
   });
-  loadDashboard();
-  startDashRefresh();
 });
 
 const ROLE_LABELS = {
@@ -828,6 +915,7 @@ function loadUser() {
     _spPermissions = Array.isArray(u.permissions) ? u.permissions.map((x) => String(x).toLowerCase()) : [];
     _storeId   = u.store_id   || null;
     _storeName = u.store_name || null;
+    spSyncCreateRequestBtn();
     if (typeof window.initCosmosModuleSwitchFooter === 'function') {
       window.initCosmosModuleSwitchFooter(u);
     }
@@ -1052,10 +1140,23 @@ window.requestTransferFromDetail = function (btn) {
   const skuId   = Number(btn.dataset.skuId);
   const skuCode = btn.dataset.skuCode || '';
   const desc    = btn.dataset.skuDesc || '';
-  const navItem = document.querySelector('.sidebar-nav .nav-item[onclick*="transfers-create"]');
-  window.spNav('transfers-create', navItem || null);
-  setTimeout(() => window.prefillTransferSku(skuId, skuCode, desc), 50);
+  spOpenCreateRequestWithPrefill(skuId, skuCode, desc);
 };
+
+function spOpenCreateRequestWithPrefill(skuId, skuCode, desc) {
+  const onHistory = document.body.getAttribute('data-sp-page') === 'transfers-history';
+  if (!onHistory) {
+    const navItem = getStorepilotNavEl('transfers-history');
+    window.spNav('transfers-history', navItem || null);
+    setTimeout(function () {
+      window.openSpCreateRequestModal();
+      window.prefillTransferSku(skuId, skuCode, desc);
+    }, 50);
+    return;
+  }
+  window.openSpCreateRequestModal();
+  window.prefillTransferSku(skuId, skuCode, desc);
+}
 
 // ── Shared SKU card helpers ────────────────────────────────────────────────────
 
@@ -1102,8 +1203,83 @@ window.addToRequestCartFromCard = function (btn) {
 };
 
 window.goToRequestGoods = function () {
-  const navItem = document.querySelector('.sidebar-nav .nav-item[onclick*="transfers-create"]');
-  window.spNav('transfers-create', navItem || null);
+  const onHistory = document.body.getAttribute('data-sp-page') === 'transfers-history';
+  if (!onHistory) {
+    const navItem = getStorepilotNavEl('transfers-history');
+    window.spNav('transfers-history', navItem || null);
+    setTimeout(function () { window.openSpCreateRequestModal(); }, 50);
+    return;
+  }
+  window.openSpCreateRequestModal();
+};
+
+function spIsCreateRequestMobile() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
+window.spSyncCreateRequestCartStrip = function () {
+  const strip = document.getElementById('sp-create-request-cart-strip');
+  const label = document.getElementById('sp-create-request-cart-strip-label');
+  if (!strip) return;
+  const n = _transferCart.length;
+  if (!n) {
+    strip.hidden = true;
+    return;
+  }
+  strip.hidden = false;
+  if (label) {
+    label.textContent = n + ' item' + (n !== 1 ? 's' : '') + ' in cart';
+  }
+};
+
+window.spScrollCreateRequestToCart = function () {
+  const section = document.getElementById('sp-cr-cart-section');
+  const body = document.querySelector('#overlay-sp-create-request .sp-create-request-body');
+  if (section && section.scrollIntoView) {
+    section.scrollIntoView({ behavior: spIsCreateRequestMobile() ? 'smooth' : 'auto', block: 'start' });
+  } else if (body) {
+    body.scrollTop = body.scrollHeight;
+  }
+};
+
+window.openSpCreateRequestModal = function () {
+  if (!canSpCreateTransferRequest()) {
+    if (typeof cosmosToastWarn === 'function') {
+      cosmosToastWarn('No permission to create transfer requests.');
+    }
+    return;
+  }
+  const overlay = document.getElementById('overlay-sp-create-request');
+  if (!overlay) return;
+  initTransferCreate();
+  spSyncCreateRequestCartStrip();
+  if (typeof window.cosmosEnsureApiKey === 'function') {
+    window.cosmosEnsureApiKey().catch(function () {});
+  }
+  overlay.style.display = 'flex';
+  overlay.classList.add('open');
+  document.body.classList.add('sp-create-request-open');
+  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll();
+  const body = overlay.querySelector('.sp-create-request-body');
+  if (body) body.scrollTop = 0;
+  if (!spIsCreateRequestMobile()) {
+    setTimeout(function () {
+      const search = document.getElementById('tc-search');
+      if (search) search.focus();
+    }, 120);
+  }
+};
+
+window.closeSpCreateRequestModal = function () {
+  const overlay = document.getElementById('overlay-sp-create-request');
+  if (overlay) {
+    overlay.classList.remove('open');
+    setTimeout(function () { overlay.style.display = 'none'; }, 200);
+  }
+  document.body.classList.remove('sp-create-request-open');
+  if (document.body.classList.contains('cosmos-app-shell')) {
+    document.body.style.overflow = '';
+  }
 };
 
 window.toggleSkuLocations = async function (btn, skuId) {
@@ -1360,6 +1536,7 @@ const TR_STATUS_BADGE = {
   APPROVED:             'b-blue',
   PARTIALLY_DISPATCHED: 'b-teal',
   DISPATCHED:           'b-orange',
+  PARTIALLY_RECEIVED:   'b-teal',
   RECEIVED:             'b-green',
   REJECTED:             'b-red'
 };
@@ -1369,26 +1546,141 @@ const TR_STATUS_LABEL = {
   APPROVED:             'Approved',
   PARTIALLY_DISPATCHED: 'Partially dispatched',
   DISPATCHED:           'Dispatched',
+  PARTIALLY_RECEIVED:   'Partially stocked at store',
   RECEIVED:             'Stocked at Store',
   REJECTED:             'Rejected'
 };
 
+function trLineCap(line) {
+  if (line.approved_qty != null && Number(line.approved_qty) > 0) return Number(line.approved_qty);
+  return Math.max(0, Number(line.requested_qty) || 0);
+}
+
+function trRequestQtySummary(req) {
+  const lines = req.lines || [];
+  let totalRequested = 0;
+  let totalCap = 0;
+  let totalDisp = 0;
+  let totalRecv = 0;
+  lines.forEach(function (l) {
+    totalRequested += Math.max(0, Number(l.requested_qty) || 0);
+    totalCap += trLineCap(l);
+    totalDisp += Math.max(0, Number(l.dispatched_qty) || 0);
+    if (l.received_qty != null) totalRecv += Math.max(0, Number(l.received_qty) || 0);
+  });
+  return {
+    skuCount: lines.length,
+    totalRequested: totalRequested,
+    totalCap: totalCap,
+    totalDisp: totalDisp,
+    totalRecv: totalRecv,
+    remainingToShip: Math.max(0, totalCap - totalDisp),
+    remainingToStock: Math.max(0, totalCap - totalRecv)
+  };
+}
+
+function spTrListProgressHtml(r) {
+  const cap = Math.max(0, Number(r.total_approved_cap) || Number(r.total_requested_qty) || 0);
+  const recv = Math.max(0, Number(r.total_received_qty) || 0);
+  const rem = Math.max(0, cap - recv);
+  if (cap < 1) return '';
+  if (r.status === 'PARTIALLY_RECEIVED' || (recv > 0 && rem > 0)) {
+    return '<strong>' + recv + '</strong> of <strong>' + cap + '</strong> stocked · <span class="cosmos-record-row__progress-rem">' + rem + ' remaining to receive</span>';
+  }
+  if (r.status === 'PARTIALLY_DISPATCHED') {
+    const disp = Math.max(0, Number(r.total_dispatched_qty) || 0);
+    const remShip = Math.max(0, cap - disp);
+    if (remShip > 0) {
+      return '<strong>' + disp + '</strong> of <strong>' + cap + '</strong> shipped · <span class="cosmos-record-row__progress-rem">' + remShip + ' remaining to ship</span>';
+    }
+  }
+  return '';
+}
+
+function spSyncFilterTabs(containerId, activeKey) {
+  const el = document.getElementById(containerId);
+  if (el && window.cosmosFilterTabs) window.cosmosFilterTabs.sync(el, activeKey);
+}
+
+async function spLoadRequestShipments(requestId, wrapId) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return [];
+  try {
+    const list = await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50') || [];
+    if (!list.length) {
+      wrap.innerHTML = '<span style="color:var(--text3)">No transfer documents yet.</span>';
+      return [];
+    }
+    const onClick = 'expandIncTransfer';
+    wrap.innerHTML = window.cosmosDetailShipments
+      ? window.cosmosDetailShipments.html(list.map(function (d) {
+        return {
+          doc_id: d.doc_id,
+          status: d.status,
+          line_count: d.line_count,
+          dateLabel: typeof fmtDate === 'function' ? fmtDate(d.dispatched_at || d.created_at) : ''
+        };
+      }), { onDocClick: onClick })
+      : '';
+    return list;
+  } catch (err) {
+    wrap.innerHTML = '<span style="color:var(--red)">' + escHtml(err.message) + '</span>';
+    return [];
+  }
+}
+
+window.spOpenFirstActionableShipment = async function (requestId) {
+  try {
+    const list = await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50') || [];
+    const actionable = list.find(function (d) {
+      return d.status === 'DISPATCHED' || d.status === 'ACCEPTED';
+    });
+    if (actionable && typeof window.expandIncTransfer === 'function') {
+      await window.expandIncTransfer(actionable.doc_id);
+      return;
+    }
+    if (typeof cosmosToastInfo === 'function') {
+      cosmosToastInfo('No shipments ready to stock yet.');
+    }
+  } catch (err) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+  }
+};
+
+function spRefreshAfterIncomingAction() {
+  if (typeof window.loadTransferHistory === 'function') window.loadTransferHistory();
+  if (_spOpenTrRequestId && document.getElementById('sp-tr-shipments-wrap')) {
+    spLoadRequestShipments(_spOpenTrRequestId, 'sp-tr-shipments-wrap');
+  }
+}
+
+function trComputeRemainderLines(lines) {
+  const out = [];
+  (lines || []).forEach(function (l) {
+    const cap = trLineCap(l);
+    const progressed = Math.max(
+      Math.max(0, Number(l.dispatched_qty) || 0),
+      Math.max(0, Number(l.received_qty) || 0)
+    );
+    const rem = cap - progressed;
+    if (rem > 0) out.push({ sku_id: l.sku_id, sku_code: l.sku_code, qty: rem });
+  });
+  return out;
+}
+
 let _spTrFilter = '';
 
-window.setSpTrFilter = function (status, btn) {
-  _spTrFilter = status;
-  document.querySelectorAll('#page-transfers-history .btn.sm[id^="sp-tr-tab-"]').forEach((b) => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
+window.setSpTrFilter = function (status) {
+  _spTrFilter = status == null ? '' : String(status);
+  spSyncFilterTabs('sp-tr-filters', _spTrFilter);
   loadTransferHistory();
 };
 
 window.loadTransferHistory = async function () {
   const wrap = document.getElementById('tr-history-wrap');
   showErr('fmov-err', '');
-  if (wrap) {
-    wrap.innerHTML = '<div class="tw"><table><thead><tr><th>#</th><th>Submitted</th><th>Items</th><th>Status</th><th>Updated</th></tr></thead><tbody id="sp-tr-history-tbody"></tbody></table></div>';
-    if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('sp-tr-history-tbody', 5);
-  }
+  spSyncFilterTabs('sp-tr-filters', _spTrFilter);
+  if (wrap && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('tr-history-wrap', 6);
 
   try {
     const qs = new URLSearchParams({ top_n: 100 });
@@ -1397,114 +1689,155 @@ window.loadTransferHistory = async function () {
     const rows = Array.isArray(data) ? data : (data.data || []);
 
     if (!rows.length) {
-      wrap.innerHTML = `<div class="empty-state"><div class="ei">📬</div><div class="et">No transfer requests${_spTrFilter ? ' with status ' + _spTrFilter : ''}</div><div class="es">Use <strong>New Request</strong> to submit a goods request to HQ.</div></div>`;
+      const createBtn = canSpCreateTransferRequest()
+        ? '<button type="button" class="btn primary" onclick="openSpCreateRequestModal()">+ Create Request</button>'
+        : '';
+      wrap.innerHTML = `<div class="empty-state"><div class="ei">📬</div><div class="et" style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No transfer requests</div><div class="es" style="font-size:13px;color:var(--text2);margin-bottom:16px">Use <strong>Create Request</strong> to submit a goods request to HQ.</div>${createBtn}</div>`;
       return;
     }
 
-    wrap.innerHTML = `
-      <div class="tw">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Submitted</th>
-              <th>Items</th>
-              <th>Status</th>
-              <th>Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map((r) => `
-              <tr class="tr-link" onclick="expandSpTrRequest(${r.request_id})">
-                <td class="mono" style="font-weight:600;color:var(--acc)">#${r.request_id}</td>
-                <td>${fmtDate(r.created_at)}</td>
-                <td><span class="b b-gray">${r.line_count} SKU${r.line_count !== 1 ? 's' : ''}${r.total_requested_qty != null ? ' · ' + r.total_requested_qty + ' pcs' : ''}</span></td>
-                <td><span class="b ${TR_STATUS_BADGE[r.status] || 'b-gray'}">${TR_STATUS_LABEL[r.status] || r.status}</span></td>
-                <td style="font-size:12px;color:var(--text3)">${fmtDate(r.updated_at)}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>`;
+    wrap.innerHTML = rows.map(function (r) {
+      const skuPart = (r.line_count || 0) + ' SKU' + ((r.line_count || 0) !== 1 ? 's' : '');
+      const qtyPart = r.total_requested_qty != null ? ' · ' + r.total_requested_qty + ' pcs requested' : '';
+      const progress = spTrListProgressHtml(r);
+      if (!window.cosmosRecordRow) {
+        return '<div class="cosmos-record-row tr-link" onclick="expandSpTrRequest(' + r.request_id + ')">#' + r.request_id + '</div>';
+      }
+      return window.cosmosRecordRow.html({
+        primary: 'Request #' + r.request_id,
+        secondary: fmtDate(r.created_at) + ' · ' + skuPart + qtyPart,
+        progressHtml: progress,
+        badgeHtml: '<span class="b ' + (TR_STATUS_BADGE[r.status] || 'b-gray') + '">' + escHtml(TR_STATUS_LABEL[r.status] || r.status) + '</span>',
+        onClick: 'expandSpTrRequest(' + r.request_id + ')',
+        ariaLabel: 'Open request ' + r.request_id
+      });
+    }).join('');
   } catch (err) {
     showErr('fmov-err', 'Failed to load transfer requests: ' + err.message);
     if (wrap) wrap.innerHTML = '';
   }
 };
 
+let _spOpenTrRequestId = null;
+
 window.expandSpTrRequest = async function (requestId) {
-  const panel = document.getElementById('sp-tr-detail');
+  _spOpenTrRequestId = requestId;
   const body  = document.getElementById('sp-tr-detail-body');
   const title = document.getElementById('sp-tr-detail-title');
-  if (!panel) return;
-  if (title) title.textContent = `Request #${requestId}`;
-  if (body)  body.innerHTML = '<div style="padding:16px;color:var(--text3)">Loading…</div>';
-  panel.style.display = '';
+  const metaEl = document.getElementById('sp-tr-detail-meta');
+  const actionsEl = document.getElementById('sp-tr-detail-actions');
+  if (!body) return;
+
+  if (window.cosmosDetailPanel) window.cosmosDetailPanel.prepareOpen('sp-tr-detail', 'sp-tr-detail-backdrop');
+  if (title) title.textContent = 'Request #' + requestId;
+  if (metaEl) metaEl.innerHTML = '';
+  if (actionsEl) actionsEl.innerHTML = '';
+  if (window.cosmosDetailPanel) window.cosmosDetailPanel.skeletonBody(body, 5);
 
   try {
-    const data = await apiGet(`/api/transfer-requests/${requestId}`);
-    const req  = data.data;
+    const data = await apiGet('/api/transfer-requests/' + requestId);
+    const req  = data.data || data;
 
-    const linesHtml = (req.lines || []).map((l) => `
+    if (title) title.textContent = 'Request #' + requestId + (req.store_name ? ' — ' + req.store_name : '');
+    if (metaEl) {
+      metaEl.innerHTML = '<span class="b ' + (TR_STATUS_BADGE[req.status] || 'b-gray') + '">' + escHtml(TR_STATUS_LABEL[req.status] || req.status) + '</span>' +
+        '<span>' + escHtml(fmtDate(req.created_at)) + '</span>';
+    }
+
+    const qtySum = trRequestQtySummary(req);
+    const remainderLines = trComputeRemainderLines(req.lines);
+    const partialStock = req.status === 'PARTIALLY_RECEIVED'
+      || (qtySum.totalRecv > 0 && qtySum.remainingToStock > 0);
+
+    const linesHtml = (req.lines || []).map((l) => {
+      const cap = trLineCap(l);
+      const recv = l.received_qty != null ? Number(l.received_qty) : null;
+      const recvShort = recv != null && recv < cap;
+      const recvBadge = recv != null
+        ? `<span class="b ${recvShort ? 'b-gold' : 'b-green'}">${recv}</span>`
+        : '<span style="color:var(--text3)">—</span>';
+      return `
       <tr>
         <td class="mono">${escHtml(l.sku_code)}</td>
         <td>${escHtml(l.description || '')}</td>
         <td style="text-align:right"><span class="b b-gray">${l.requested_qty}</span></td>
         <td style="text-align:right">${l.approved_qty   != null ? `<span class="b b-blue">${l.approved_qty}</span>`   : '<span style="color:var(--text3)">—</span>'}</td>
         <td style="text-align:right">${l.dispatched_qty != null ? `<span class="b b-orange">${l.dispatched_qty}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
-        <td style="text-align:right">${l.received_qty   != null ? `<span class="b b-green">${l.received_qty}</span>`   : '<span style="color:var(--text3)">—</span>'}</td>
-      </tr>`).join('');
+        <td style="text-align:right">${recvBadge}</td>
+      </tr>`;
+    }).join('');
+
+    const qtyBanner = window.cosmosDetailQtySummary
+      ? window.cosmosDetailQtySummary.html(qtySum, { showRemainingToStock: true, showRemainingToShip: true })
+      : '';
+
+    const chips = window.cosmosDetailChips ? window.cosmosDetailChips.html([
+      { label: 'Status', valueHtml: '<span class="b ' + (TR_STATUS_BADGE[req.status] || 'b-gray') + '">' + escHtml(TR_STATUS_LABEL[req.status] || req.status) + '</span>' },
+      { label: 'Submitted', value: fmtDate(req.created_at) },
+      { label: 'By', value: req.requested_by_fullname || req.requested_by_name || '—' }
+    ]) : '';
+
+    let actionHtml = '';
+    if (req.status === 'PARTIALLY_DISPATCHED' || (req.status === 'DISPATCHED' && qtySum.remainingToShip > 0)) {
+      actionHtml = `<p style="margin-top:14px;font-size:13px;color:var(--text2)">HQ is still shipping the rest of this request. Stock each arrival from <strong>Shipments</strong> below.</p>`;
+    }
+    if (partialStock) {
+      actionHtml += `<p style="margin-top:10px;font-size:13px;color:var(--text2)">Partially stocked vs approved quantity. Open a shipment below to stock more, or request the remainder.</p>`;
+    }
+    if (remainderLines.length) {
+      const remPcs = remainderLines.reduce((s, x) => s + x.qty, 0);
+      actionHtml += `<div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">` +
+        `<button type="button" class="btn primary" id="sp-tr-remainder-btn" onclick="spCreateRemainderRequest(${req.request_id}, this)">Request remainder (${remPcs} pc${remPcs !== 1 ? 's' : ''})</button>` +
+        `<button type="button" class="btn sm" onclick="spOpenFirstActionableShipment(${req.request_id})">Stock shipment</button>` +
+        `</div>`;
+    } else if (req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED' || req.status === 'PARTIALLY_RECEIVED') {
+      actionHtml += `<div style="margin-top:14px"><button type="button" class="btn sm primary" onclick="spOpenFirstActionableShipment(${req.request_id})">Stock shipment</button></div>`;
+    }
+
+    const tableBlock = window.cosmosDetailLinesTable
+      ? window.cosmosDetailLinesTable.wrap(
+        '<thead><tr><th>SKU</th><th>Description</th><th style="text-align:right">Requested</th><th style="text-align:right">Approved</th><th style="text-align:right">Dispatched</th><th style="text-align:right">Stocked</th></tr></thead><tbody>' + linesHtml + '</tbody>'
+      )
+      : '<div class="tw"><table><thead><tr><th>SKU</th><th>Description</th></tr></thead><tbody>' + linesHtml + '</tbody></table></div>';
+
+    const showShipments = req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED' ||
+      req.status === 'PARTIALLY_RECEIVED' || req.status === 'RECEIVED';
 
     body.innerHTML = `
       <div style="padding:16px 20px">
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
-          <span class="b ${TR_STATUS_BADGE[req.status] || 'b-gray'}">${TR_STATUS_LABEL[req.status] || req.status}</span>
-          ${req.reviewed_at  ? `<span style="font-size:12px;color:var(--text2)">Reviewed: ${fmtDate(req.reviewed_at)}</span>` : ''}
-          ${req.dispatched_at ? `<span style="font-size:12px;color:var(--text2)">Dispatched: ${fmtDate(req.dispatched_at)}</span>` : ''}
-          ${req.received_at  ? `<span style="font-size:12px;color:var(--text2)">Stocked at store: ${fmtDate(req.received_at)}</span>` : ''}
-          ${req.review_notes ? `<span style="font-size:12px;color:var(--text2)">Note: <em>${escHtml(req.review_notes)}</em></span>` : ''}
-        </div>
-        <div class="tw">
-          <table>
-            <thead>
-              <tr>
-                <th>SKU</th><th>Description</th>
-                <th style="text-align:right">Requested</th>
-                <th style="text-align:right">Approved</th>
-                <th style="text-align:right">Dispatched</th>
-                <th style="text-align:right">Stocked at Store</th>
-              </tr>
-            </thead>
-            <tbody>${linesHtml}</tbody>
-          </table>
-        </div>
-        ${req.status === 'PARTIALLY_DISPATCHED' ? `
-          <p style="margin-top:14px;font-size:13px;color:var(--text2)">HQ is still shipping the rest of this request. Receive each arrival under <strong>Incoming Goods</strong> (per transfer document).</p>` : ''}
-        ${req.status === 'DISPATCHED' ? `
-          <div style="margin-top:14px">
-            <button class="btn primary" onclick="spConfirmReceipt(${req.request_id})">✓ Confirm Receipt</button>
-            <span id="sp-tr-detail-msg" style="font-size:12px;margin-left:10px"></span>
-          </div>` : ''}
+        ${chips}
+        ${qtyBanner}
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">Line items</div>
+        ${tableBlock}
+        ${actionHtml}
+        ${showShipments ? '<div style="margin-top:16px"><div style="font-weight:600;font-size:13px;margin-bottom:8px">Shipments</div><div id="sp-tr-shipments-wrap">Loading…</div></div>' : ''}
       </div>`;
+
+    if (showShipments) spLoadRequestShipments(requestId, 'sp-tr-shipments-wrap');
   } catch (err) {
     if (body) body.innerHTML = `<div style="padding:16px;color:var(--red)">Error: ${escHtml(err.message)}</div>`;
   }
 };
 
 window.closeSpTrDetail = function () {
-  const panel = document.getElementById('sp-tr-detail');
-  if (panel) panel.style.display = 'none';
+  if (window.cosmosDetailPanel) window.cosmosDetailPanel.close('sp-tr-detail', 'sp-tr-detail-backdrop');
 };
 
-window.spConfirmReceipt = async function (requestId) {
-  const msgEl = document.getElementById('sp-tr-detail-msg');
+window.spCreateRemainderRequest = async function (requestId, btn) {
+  if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
   try {
-    await apiPut(`/api/transfer-requests/${requestId}/status`, { status: 'RECEIVED' });
-    if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Receipt confirmed.'; }
-    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Receipt confirmed.');
-    setTimeout(() => { loadTransferHistory(); window.closeSpTrDetail(); }, 1200);
+    const result = await apiPost(`/api/transfer-requests/${requestId}/remainder`, {});
+    const newId = result.data && result.data.request_id;
+    if (typeof cosmosToastSuccess === 'function') {
+      cosmosToastSuccess(newId ? `Remainder request #${newId} created.` : 'Remainder request created.');
+    }
+    loadTransferHistory();
+    if (newId) expandSpTrRequest(newId);
+    else closeSpTrDetail();
   } catch (err) {
-    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
     if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+  } finally {
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
   }
 };
 
@@ -1523,60 +1856,117 @@ function initTransferCreate() {
   if (destEl)    destEl.textContent = _storeName || `My store (Store #${_storeId})`;
 }
 
+function spNormalizeTransferSearchCode(raw) {
+  const s = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  if (typeof window.transferNormalizeScanPayload === 'function') {
+    return window.transferNormalizeScanPayload(s) || s;
+  }
+  return s;
+}
+
+function spIsLikelyUnitCode(raw) {
+  const t = spNormalizeTransferSearchCode(raw);
+  return /^\d{1,7}$/.test(t);
+}
+
+function spPaddedUnitCode(raw) {
+  const t = spNormalizeTransferSearchCode(raw).replace(/\D/g, '');
+  if (!t || t.length > 7) return '';
+  return t.padStart(7, '0');
+}
+
+async function spFetchTransferSearchRows(q) {
+  const norm = spNormalizeTransferSearchCode(q);
+  if (!norm) return { rows: [] };
+  const cacheKey = norm.toLowerCase();
+  if (_tcSearchCache[cacheKey]) return { rows: _tcSearchCache[cacheKey] };
+  const data = await apiGet('/api/transfer-requests/search-skus?q=' + encodeURIComponent(norm));
+  const rows = data.data || [];
+  if (rows.length) _tcSearchCache[cacheKey] = rows;
+  return { rows: rows };
+}
+
+function renderTransferSearchResultRow(r) {
+  const inCart    = _transferCart.some((c) => c.sku_id === r.sku_id);
+  const hasWarehouseQty = r.warehouse_qty != null;
+  const warehouseQty = hasWarehouseQty ? Number(r.warehouse_qty) : null;
+  const warehouseAvailable = hasWarehouseQty ? warehouseQty > 0 : isStockAvailable(r, ['warehouse_qty', 'is_available']);
+  const displayName  = r.product_name  || r.description || r.brand_name || '';
+  const colourPart   = r.colour_name   ? ` — ${r.colour_name}` : '';
+  const matchedUnit = r.unit_barcode ? String(r.unit_barcode).trim() : '';
+  const availLabel = hasWarehouseQty
+    ? `${warehouseQty} at HQ`
+    : (r.availability === 'AVAILABLE' || warehouseAvailable ? 'HQ stock' : 'HQ — check qty');
+  const availClass = warehouseAvailable ? 'b-green' : 'b-orange';
+  const unitLine = matchedUnit
+    ? `<div style="font-size:11px;color:var(--teal);font-weight:600;margin-top:4px">Matched unit ${escHtml(matchedUnit)}</div>`
+    : '';
+  const availCap = hasWarehouseQty && warehouseQty > 0 ? warehouseQty : 9999;
+  return `
+    <div class="avail-row">
+      <div style="flex:1;min-width:0">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--acc)">${escHtml(r.sku_code)}</div>
+        <div style="font-size:12.5px;color:var(--text2);margin-top:2px">${escHtml(displayName + colourPart)}</div>
+        ${unitLine}
+      </div>
+      <span class="b ${availClass}" style="white-space:nowrap" title="Informational only — request is not blocked">${availLabel}</span>
+      <button class="btn sm ${inCart ? '' : 'primary'}" style="min-width:64px"
+        data-sku-id="${r.sku_id}"
+        data-sku-code="${escHtml(r.sku_code)}"
+        data-sku-desc="${escHtml(displayName + colourPart)}"
+        data-avail="${availCap}"
+        onclick="addToCartFromBtn(this)"
+        ${inCart ? 'disabled' : ''}>
+        ${inCart ? '✓ Added' : '+ Add'}
+      </button>
+    </div>`;
+}
+
 window.onTransferSearch = function (q) {
   clearTimeout(_tcDebounce);
   const resultsEl = document.getElementById('tc-results');
-  if (!q.trim()) {
-    if (resultsEl) resultsEl.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Search to see stock available at ${primaryWarehouseLabelHtml()}</div></div>`;
+  const trimmed = String(q || '').trim();
+  if (!trimmed) {
+    if (resultsEl) resultsEl.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Search SKU by code, brand, or unit barcode</div></div>`;
     return;
   }
-  _tcDebounce = setTimeout(() => doTransferSearch(q.trim()), 350);
+  const norm = spNormalizeTransferSearchCode(trimmed);
+  const unitReady = spIsLikelyUnitCode(norm) && norm.length >= 7;
+  const delay = unitReady ? 0 : (norm.length < 3 ? 450 : 220);
+  if (unitReady) {
+    doTransferSearch(trimmed);
+    return;
+  }
+  _tcDebounce = setTimeout(function () { doTransferSearch(trimmed); }, delay);
 };
 
 async function doTransferSearch(q) {
   const spin      = document.getElementById('tc-spin');
   const resultsEl = document.getElementById('tc-results');
+  const seq = ++_tcSearchSeq;
   showErr('tc-err', '');
   if (spin) spin.style.display = 'inline';
+  if (resultsEl && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('tc-results', 3);
   try {
-    const data = await apiGet('/api/stock-transfers/available?q=' + encodeURIComponent(q));
-    const rows = data.data || [];
+    const fetched = await spFetchTransferSearchRows(q);
+    if (seq !== _tcSearchSeq) return;
+    const rows = fetched.rows || [];
     if (!rows.length) {
-      resultsEl.innerHTML = `<div class="empty-state"><div class="ei">📦</div><div class="et">No ${primaryWarehouseLabelHtml()} stock found for "${escHtml(q)}"</div></div>`;
+      const unitHint = spIsLikelyUnitCode(q) && spPaddedUnitCode(q)
+        ? `unit code <strong>${escHtml(spPaddedUnitCode(q))}</strong>`
+        : `"${escHtml(q)}"`;
+      resultsEl.innerHTML = `<div class="empty-state"><div class="ei">📦</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No SKU found</div><div style="font-size:13px;color:var(--text2)">No matching SKU for ${unitHint}. Try SKU code, brand, or a valid 7-digit unit code.</div></div>`;
       return;
     }
-    resultsEl.innerHTML = rows.map((r) => {
-      const inCart    = _transferCart.some((c) => c.sku_id === r.sku_id);
-      // API returns warehouse_qty from sp_StockTransfer_ListAvailable
-      const hasWarehouseQty = r.warehouse_qty != null;
-      const warehouseQty = hasWarehouseQty ? Number(r.warehouse_qty) : null;
-      const warehouseAvailable = hasWarehouseQty ? warehouseQty > 0 : isStockAvailable(r, ['warehouse_qty']);
-      const displayName  = r.product_name  || r.description || r.brand_name || '';
-      const colourPart   = r.colour_name   ? ` — ${r.colour_name}` : '';
-      const availLabel = hasWarehouseQty ? `${warehouseQty} in Warehouse` : (warehouseAvailable ? 'Warehouse Available' : 'Warehouse Unavailable');
-      return `
-        <div class="avail-row">
-          <div style="flex:1;min-width:0">
-            <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--acc)">${escHtml(r.sku_code)}</div>
-            <div style="font-size:12.5px;color:var(--text2);margin-top:2px">${escHtml(displayName + colourPart)}</div>
-          </div>
-          <span class="b ${warehouseAvailable ? 'b-green' : 'b-red'}" style="white-space:nowrap">${availLabel}</span>
-          <button class="btn sm ${inCart ? '' : 'primary'}" style="min-width:64px"
-            data-sku-id="${r.sku_id}"
-            data-sku-code="${escHtml(r.sku_code)}"
-            data-sku-desc="${escHtml(displayName + colourPart)}"
-            data-avail="${hasWarehouseQty ? warehouseQty : ''}"
-            onclick="addToCartFromBtn(this)"
-            ${inCart ? 'disabled' : ''}>
-            ${inCart ? '✓ Added' : '+ Add'}
-          </button>
-        </div>`;
-    }).join('');
+    resultsEl.innerHTML = rows.map((r) => renderTransferSearchResultRow(r)).join('');
   } catch (err) {
-    showErr('tc-err', 'Search failed: ' + err.message);
+    if (seq !== _tcSearchSeq) return;
+    const msg = err.message || 'Search failed';
+    showErr('tc-err', msg);
     if (resultsEl) resultsEl.innerHTML = '';
   } finally {
-    if (spin) spin.style.display = 'none';
+    if (seq === _tcSearchSeq && spin) spin.style.display = 'none';
   }
 }
 
@@ -1610,6 +2000,7 @@ function renderTransferCart() {
   const cartEl  = document.getElementById('tc-cart-body');
   const countEl = document.getElementById('tc-cart-count');
   _refreshCartBars();
+  if (typeof window.spSyncCreateRequestCartStrip === 'function') window.spSyncCreateRequestCartStrip();
   if (!cartEl) return;
   if (countEl) countEl.textContent = _transferCart.length + ' item' + (_transferCart.length !== 1 ? 's' : '');
 
@@ -1646,17 +2037,17 @@ window.submitTransfer = async function () {
   const msgEl     = document.getElementById('tc-submit-msg');
 
   if (!_storeId) {
-    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'No store assigned to your account.'; }
+    if (typeof cosmosToastError === 'function') cosmosToastError('No store assigned to your account.');
     return;
   }
   if (!_transferCart.length) {
-    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Add at least one item to the request.'; }
+    if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Add at least one item to the request.');
     return;
   }
 
   const notes = (document.getElementById('tc-notes') || {}).value || null;
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
   if (msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
+  if (submitBtn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(submitBtn);
 
   try {
     document.querySelectorAll('#tc-cart-body .qty-input[data-sku-id]').forEach((inp) => {
@@ -1669,15 +2060,19 @@ window.submitTransfer = async function () {
     renderTransferCart();
     const si = document.getElementById('tc-search');   if (si) si.value = '';
     const ri = document.getElementById('tc-results');
-    if (ri) ri.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Search to see stock available at ${primaryWarehouseLabelHtml()}</div></div>`;
+    if (ri) ri.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Search SKU by code, brand, or unit barcode</div></div>`;
     const ni = document.getElementById('tc-notes');     if (ni) ni.value = '';
 
-    if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = '✓ Request submitted — pending HQ approval.'; }
-    setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 5000);
+    if (submitBtn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(submitBtn);
+    if (typeof cosmosToastSuccess === 'function') {
+      cosmosToastSuccess('Request submitted — pending HQ approval.');
+    }
+    window.closeSpCreateRequestModal();
+    if (typeof window.setSpTrFilter === 'function') window.setSpTrFilter('SUBMITTED');
+    else window.loadTransferHistory();
   } catch (err) {
-    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
-  } finally {
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit request'; }
+    if (submitBtn && typeof cosmosBtnDone === 'function') cosmosBtnDone(submitBtn);
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
   }
 };
 
@@ -1791,325 +2186,6 @@ function loadReports() {
   });
 }
 
-// ── Incoming Transfers ─────────────────────────────────────────────────────────
-
-let _incFilter = '';
-/** @type {Record<number, { units: Record<number, boolean>, lines: Record<number, boolean> }>} */
-let _incQrVerificationByDoc = {};
-let _incDocLinesByDoc = {};
-
-function spNormUnitBarcode(bc) {
-  const s = String(bc || '').trim();
-  if (/^\d+$/.test(s)) return s.padStart(7, '0');
-  return s;
-}
-
-function spLineRequiresUnitScans(line) {
-  if (!line) return false;
-  const units = Array.isArray(line.units) ? line.units : [];
-  return units.length > 0;
-}
-
-function spFindUnitOnDocLines(lines, scanned) {
-  const norm = spNormUnitBarcode(scanned);
-  const scanRaw = String(scanned || '').trim();
-  for (const line of lines) {
-    for (const u of (line.units || [])) {
-      const bc = spNormUnitBarcode(u.unit_barcode);
-      if (bc === norm || String(u.unit_id) === scanRaw) return { line, unit: u };
-    }
-  }
-  return null;
-}
-
-function spNormalizeIncScan(raw) {
-  let s = String(raw || '').trim().replace(/\s+/g, ' ');
-  if (!s) return '';
-  if (/^https?:\/\//i.test(s)) {
-    try {
-      const u = new URL(s);
-      const qSku = u.searchParams.get('sku') || u.searchParams.get('code') || u.searchParams.get('unit');
-      if (qSku) return qSku.trim();
-      const parts = u.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
-      if (parts.length) return decodeURIComponent(parts[parts.length - 1]);
-    } catch (_) { /* ignore */ }
-  }
-  if (s.startsWith('{') && s.endsWith('}')) {
-    try {
-      const parsed = JSON.parse(s);
-      const unitBc = parsed.unit_barcode || parsed.unit || parsed.barcode;
-      if (unitBc) return String(unitBc).trim();
-      return String(parsed.sku_code || parsed.sku || parsed.code || '').trim() || s;
-    } catch (_) { /* ignore */ }
-  }
-  if (/^\d{1,7}$/.test(s)) return s.padStart(7, '0');
-  return s;
-}
-
-function spFreshIncVerification() {
-  return { units: {}, lines: {} };
-}
-
-function spIsLineQrVerified(docId, line) {
-  const v = _incQrVerificationByDoc[docId] || spFreshIncVerification();
-  if (spLineRequiresUnitScans(line)) {
-    const units = line.units || [];
-    return units.length > 0 && units.every((u) => v.units[Number(u.unit_id)]);
-  }
-  return !!v.lines[Number(line.line_id)];
-}
-
-function spIsDocQrVerified(docId, lines) {
-  if (!lines.length) return true;
-  return lines.every((line) => spIsLineQrVerified(docId, line));
-}
-
-function spUpdateIncStockBtn(docId, lines) {
-  const stockBtn = document.getElementById('sp-inc-stock-btn');
-  if (stockBtn) stockBtn.disabled = !spIsDocQrVerified(docId, lines);
-}
-
-function spIncVerifiedUnitCount(docId, line) {
-  const v = _incQrVerificationByDoc[docId] || spFreshIncVerification();
-  return (line.units || []).filter((u) => v.units[Number(u.unit_id)]).length;
-}
-
-function spLineUsesSkuScanOnly(line) {
-  if (!line) return true;
-  const units = Array.isArray(line.units) ? line.units : [];
-  return units.length === 0;
-}
-
-function spIncRefreshLineUi(docId, line) {
-  const lineId = line.line_id;
-  const verified = spIsLineQrVerified(docId, line);
-  const badgeEl = document.getElementById('sp-qr-v-' + lineId);
-  if (badgeEl) {
-    if (spLineRequiresUnitScans(line)) {
-      const n = spIncVerifiedUnitCount(docId, line);
-      const total = (line.units || []).length;
-      badgeEl.className = 'b ' + (verified ? 'b-green' : 'b-gray');
-      badgeEl.textContent = n + '/' + total + ' units';
-    } else {
-      badgeEl.className = 'b ' + (verified ? 'b-green' : 'b-gray');
-      badgeEl.textContent = verified ? 'QR Verified' : 'Pending QR';
-    }
-  }
-  (line.units || []).forEach((u) => {
-    const rowEl = document.getElementById('sp-qr-u-' + u.unit_id);
-    if (!rowEl) return;
-    const uv = !!((_incQrVerificationByDoc[docId] || spFreshIncVerification()).units[Number(u.unit_id)]);
-    const badge = rowEl.querySelector('.sp-unit-v-badge');
-    if (badge) {
-      badge.className = 'b sp-unit-v-badge ' + (uv ? 'b-green' : 'b-gray');
-      badge.textContent = uv ? 'Verified' : 'Pending';
-    }
-  });
-  const recvEl = document.getElementById('sp-recv-' + lineId);
-  if (recvEl && spLineRequiresUnitScans(line)) {
-    recvEl.value = String(spIncVerifiedUnitCount(docId, line));
-    recvEl.readOnly = true;
-  }
-}
-
-function spIncDocHasUnitScanLines(lines) {
-  return (lines || []).some((l) => spLineRequiresUnitScans(l));
-}
-
-function _spApplyBucketReceiveResult(docId, result) {
-  const lines = _incDocLinesByDoc[docId] || [];
-  _incQrVerificationByDoc[docId] = spFreshIncVerification();
-  (result.scanned || []).forEach((s) => {
-    const hit = spFindUnitOnDocLines(lines, s.unit_barcode || String(s.unit_id));
-    if (hit && hit.unit && hit.unit.unit_id) {
-      _incQrVerificationByDoc[docId].units[Number(hit.unit.unit_id)] = true;
-    }
-  });
-  lines.forEach((l) => {
-    spIncRefreshLineUi(docId, l);
-    const recvInp = document.getElementById('sp-recv-' + l.line_id);
-    if (recvInp && spLineRequiresUnitScans(l)) {
-      recvInp.value = spIncVerifiedUnitCount(docId, l);
-    }
-  });
-  spUpdateIncStockBtn(docId, lines);
-  const msgEl = document.getElementById('sp-inc-action-msg');
-  const sc = result.score || {};
-  if (msgEl) {
-    if (sc.total > 0 && sc.verified === sc.total) {
-      msgEl.style.color = 'var(--green)';
-      msgEl.textContent = '✓ All units verified. You can Verify & Stock.';
-    } else {
-      msgEl.style.color = 'var(--text2)';
-      msgEl.textContent = (sc.verified || 0) + ' / ' + (sc.total || 0) + ' units verified.';
-    }
-  }
-}
-
-window.openIncomingTransferBucket = function openIncomingTransferBucket(docId) {
-  const lines = _incDocLinesByDoc[docId] || [];
-  const expected = [];
-  lines.forEach((l) => {
-    (l.units || []).forEach((u) => {
-      expected.push({
-        unit_barcode: u.unit_barcode,
-        unit_id: u.unit_id,
-        sku_code: l.sku_code,
-        sku_id: l.sku_id,
-        line_id: l.line_id
-      });
-    });
-  });
-  if (!expected.length) {
-    if (typeof cosmosToastError === 'function') {
-      cosmosToastError('No units on this transfer document. Ask HQ to re-dispatch with unit scans.');
-    }
-    return;
-  }
-  if (typeof window.openBucket !== 'function') {
-    if (typeof cosmosToastError === 'function') cosmosToastError('Scan bucket is not loaded.');
-    return;
-  }
-  stopIncQrCamera();
-  window.openBucket({
-    mode: 'RECEIVE',
-    sessionId: docId,
-    label: 'Transfer #' + docId,
-    expected,
-    onSubmit(result) {
-      _spApplyBucketReceiveResult(docId, result);
-    }
-  });
-};
-let _incCameraStream = null;
-let _incCameraRafId = null;
-let _incCameraDocId = null;
-let _incCameraDetector = null;
-let _incCameraDecodeMode = null;
-let _incCameraCanvas = null;
-let _incCameraCanvasCtx = null;
-
-function _isCameraSecureOrigin() {
-  const host = window.location && window.location.hostname ? window.location.hostname.toLowerCase() : ''
-  const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
-  return !!window.isSecureContext || isLocalHost
-}
-
-function _getCameraStartBlockedReason() {
-  if (!_isCameraSecureOrigin()) {
-    return 'Camera requires HTTPS or localhost. Open this app on secure URL and retry. Use scanner input as fallback.'
-  }
-  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
-    return 'Camera API is unavailable in this browser. Use scanner input to verify SKUs.'
-  }
-  return ''
-}
-
-function _getCameraErrorMessage(err) {
-  const errName = err && err.name ? err.name : ''
-  if (errName === 'NotAllowedError' || errName === 'SecurityError') {
-    return 'Camera permission denied or blocked. Allow camera for this site and ensure you are on HTTPS or localhost.'
-  }
-  if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
-    return 'No camera device found. Connect a camera or use scanner input.'
-  }
-  if (errName === 'NotReadableError' || errName === 'TrackStartError') {
-    return 'Camera is busy in another app/tab. Close it there and retry.'
-  }
-  if (errName === 'OverconstrainedError' || errName === 'ConstraintNotSatisfiedError') {
-    return 'Requested camera settings are unsupported on this device. Try another browser/device or scanner input.'
-  }
-  return 'Unable to start camera scanner. Check permissions and secure origin (HTTPS/localhost).'
-}
-
-const INC_STATUS_BADGE = {
-  DISPATCHED: '<span class="b b-orange">Dispatched</span>',
-  ACCEPTED:   '<span class="b b-blue">Accepted</span>',
-  STOCKED:    '<span class="b b-green">Stocked</span>'
-};
-
-window.setIncFilter = function (status, btn) {
-  _incFilter = status;
-  document.querySelectorAll('[id^="sp-inc-tab-"]').forEach((b) => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  loadIncomingTransfers();
-};
-
-window.loadIncomingTransfers = async function () {
-  const listEl = document.getElementById('sp-inc-list');
-  const badge  = document.getElementById('sp-inc-badge');
-  showErr('sp-inc-err', '');
-  if (listEl && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('sp-inc-list', 6);
-  else if (listEl) listEl.innerHTML = '';
-
-  try {
-    const qs = new URLSearchParams({ top_n: 100 });
-    if (_incFilter) qs.set('status', _incFilter);
-    const data = await apiGet('/api/stock-transfer-docs?' + qs.toString());
-    const rows = data.data || [];
-
-    // Update nav badge with DISPATCHED count
-    const pendingCount = rows.filter((r) => r.status === 'DISPATCHED').length;
-    if (badge) {
-      badge.textContent = pendingCount || '';
-      badge.style.display = pendingCount ? '' : 'none';
-    }
-
-    if (!rows.length) {
-      if (listEl) listEl.innerHTML = '<div class="empty-state"><div class="ei">📭</div><div class="et">No incoming transfers</div></div>';
-      return;
-    }
-
-    if (listEl) {
-      listEl.innerHTML = rows.map((r) => `
-        <div class="inc-tr-row tr-link" onclick="expandIncTransfer(${r.doc_id})">
-          <div class="inc-tr-meta">
-            <div class="inc-tr-id">Transfer #${r.doc_id}
-              <span style="font-weight:400;color:var(--text3);font-size:11px;margin-left:6px">${r.doc_type === 'REQUEST' ? '(via request)' : '(direct)'}</span>
-            </div>
-            <div class="inc-tr-sub">${fmtDate(r.dispatched_at)} &middot; ${escHtml(r.line_count)} item${r.line_count !== 1 ? 's' : ''}${r.doc_type === 'REQUEST' && r.source_request_id ? ' &middot; Request #' + r.source_request_id : ''}</div>
-          </div>
-          ${INC_STATUS_BADGE[r.status] || r.status}
-        </div>`).join('');
-    }
-  } catch (err) {
-    showErr('sp-inc-err', 'Failed to load incoming transfers: ' + err.message);
-    if (listEl) listEl.innerHTML = '';
-  }
-};
-
-function spIncRenderDetailToolbar(doc, lines, lineIds) {
-  const actionsEl = document.getElementById('sp-inc-detail-actions');
-  const metaEl = document.getElementById('sp-inc-detail-meta');
-  if (!actionsEl) return;
-  const isDispatched = doc.status === 'DISPATCHED';
-  const isAccepted = doc.status === 'ACCEPTED';
-  const allQrVerified = isAccepted ? spIsDocQrVerified(doc.doc_id, lines) : true;
-  const hasUnitLines = spIncDocHasUnitScanLines(lines);
-  if (metaEl) {
-    metaEl.innerHTML = (INC_STATUS_BADGE[doc.status] || doc.status) +
-      '<span>' + escHtml(fmtDate(doc.dispatched_at)) + '</span>';
-  }
-  let html = '';
-  if (isDispatched) {
-    html += '<button type="button" class="btn sm primary" id="sp-inc-accept-btn" onclick="incAccept(' + doc.doc_id + ')">Accept</button>';
-  }
-  if (isAccepted) {
-    if (hasUnitLines) {
-      html += '<button type="button" class="btn sm primary" id="sp-inc-bucket-btn" onclick="openIncomingTransferBucket(' + doc.doc_id + ')">Open bucket</button>';
-    }
-    html += '<button type="button" class="btn sm primary" id="sp-inc-stock-btn" onclick="incStock(' + doc.doc_id + ',[' + lineIds.join(',') + '])"' +
-      (allQrVerified ? '' : ' disabled title="Verify all units first"') + '>Verify &amp; Stock</button>';
-    if (hasUnitLines) {
-      html += '<button type="button" class="btn sm" onclick="incResetQrVerification(' + doc.doc_id + ')">Reset</button>';
-    }
-  }
-  if (doc.status === 'STOCKED') {
-    html += '<span style="font-size:13px;font-weight:600;color:var(--green)">Stocked ' + escHtml(fmtDate(doc.stocked_at)) + '</span>';
-  }
-  actionsEl.innerHTML = html;
-}
-
 window.expandIncTransfer = async function (docId) {
   const detailEl = document.getElementById('sp-inc-detail');
   const titleEl  = document.getElementById('sp-inc-detail-title');
@@ -2192,11 +2268,24 @@ window.expandIncTransfer = async function (docId) {
       </div>`;
     }).join('');
 
+    let parentReqChip = '';
+    if (doc.source_request_id) {
+      try {
+        const pr = await apiGet('/api/transfer-requests/' + doc.source_request_id);
+        const ph = pr.data || pr;
+        if (ph && ph.status) {
+          parentReqChip = '<div class="cosmos-extended-detail__chip"><label>Request status</label><span class="b ' +
+            (TR_STATUS_BADGE[ph.status] || 'b-gray') + '">' + escHtml(TR_STATUS_LABEL[ph.status] || ph.status) + '</span></div>';
+        }
+      } catch (_) { /* optional */ }
+    }
+
     bodyEl.innerHTML = `
       <div style="padding:16px 20px">
         <div class="cosmos-extended-detail__chips">
           <div class="cosmos-extended-detail__chip"><label>Type</label><span>${doc.doc_type === 'REQUEST' ? 'Store Request' : 'Direct Transfer'}</span></div>
           ${doc.source_request_id ? '<div class="cosmos-extended-detail__chip"><label>Request #</label><span>' + doc.source_request_id + '</span></div>' : '<div class="cosmos-extended-detail__chip"><label>Request #</label><span>—</span></div>'}
+          ${parentReqChip}
           <div class="cosmos-extended-detail__chip"><label>Items</label><span>${lines.length}</span></div>
           <div class="cosmos-extended-detail__chip"><label>Dispatched</label><span>${escHtml(fmtDate(doc.dispatched_at))}</span></div>
         </div>
@@ -2243,7 +2332,7 @@ window.incAccept = async function (docId) {
     if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = 'Accepted. Scan units with Open bucket, then Verify & Stock.'; }
     if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
     await expandIncTransfer(docId);
-    loadIncomingTransfers();
+    spRefreshAfterIncomingAction();
   } catch (err) {
     if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
     if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
@@ -2518,7 +2607,7 @@ window.incStock = async function (docId, lineIds) {
     if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = 'Stock credited to your store balance.'; }
     if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
     await expandIncTransfer(docId);
-    loadIncomingTransfers();
+    spRefreshAfterIncomingAction();
   } catch (err) {
     if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Error: ' + err.message; }
     if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
@@ -2526,128 +2615,4 @@ window.incStock = async function (docId, lineIds) {
   }
 };
 
-// Incoming Transfers badge on startup
-document.addEventListener('DOMContentLoaded', async () => {
-  try {
-    const data  = await apiGet('/api/stock-transfer-docs?status=DISPATCHED&top_n=50');
-    const cnt   = (data.data || []).length;
-    const badge = document.getElementById('sp-inc-badge');
-    if (badge && cnt) { badge.textContent = cnt; badge.style.display = ''; }
-  } catch (_) {}
-});
-
-// ── Movement List ───────────────────────────────────────────────────────────────
-let _spMlFilter = '';
-
-window.setSpMlFilter = function (status, btn) {
-  _spMlFilter = status;
-  document.querySelectorAll('#page-movement-list .btn.sm[id^="sp-ml-tab-"]').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  loadSpMovementList();
-};
-
-window.closeSpMlDetail = function () {
-  const d = document.getElementById('sp-ml-detail');
-  if (d) d.style.display = 'none';
-
-  // On mobile, the hamburger is controlled by the off-canvas sidebar overlay.
-  // If it's still open when Doc Details closes, it can hide the topbar/hamburger.
-  const overlayEl = document.getElementById('sp-sidebar-overlay')
-  const sidebarEl = document.querySelector('.sidebar')
-  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
-  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
-  const isBodyLocked = document.body.style.overflow === 'hidden'
-  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
-};
-
-window.loadSpMovementList = async function () {
-  const wrap  = document.getElementById('sp-ml-list');
-  const errEl = document.getElementById('sp-ml-err');
-  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-  if (wrap)  wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>';
-  closeSpMlDetail();
-  try {
-    const qs   = _spMlFilter ? `?status=${_spMlFilter}` : '';
-    const docs = await apiGet('/api/stock-transfer-docs' + qs);
-    const list = Array.isArray(docs) ? docs : (docs.data || []);
-    if (!list.length) {
-      wrap.innerHTML = '<div class="empty-state"><div class="ei">📋</div><div class="et">No transfer documents found</div><div class="es">Stock dispatched from ' + primaryWarehouseLabelHtml() + ' will appear here.</div></div>';
-      return;
-    }
-    const statusBadge = s => {
-      const map = { DISPATCHED:'<span class="b b-blue">Dispatched</span>', ACCEPTED:'<span class="b b-orange">Accepted</span>', STOCKED:'<span class="b b-green">Stocked</span>' };
-      return map[s] || `<span class="b">${s}</span>`;
-    };
-    wrap.innerHTML = list.map(d => `
-      <div class="inc-tr-row" onclick="expandSpMlDoc(${d.doc_id})">
-        <div class="inc-tr-meta">
-          <div><span class="inc-tr-id">DOC-${d.doc_id}</span> &nbsp;${d.doc_type === 'DIRECT' ? '📦 Direct' : '📬 From Request #' + d.source_request_id}</div>
-          <div class="inc-tr-sub">${primaryWarehouseLabelHtml()} → ${d.store_name || 'Your Store'} &nbsp;·&nbsp; ${d.dispatched_at ? new Date(d.dispatched_at).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '—'}</div>
-        </div>
-        <div>${statusBadge(d.status)}</div>
-      </div>`).join('');
-  } catch (e) {
-    if (errEl) { errEl.textContent = 'Failed to load: ' + e.message; errEl.style.display = ''; }
-    if (wrap)  wrap.innerHTML = '';
-  }
-};
-
-window.expandSpMlDoc = async function (docId) {
-  const titleEl = document.getElementById('sp-ml-detail-title');
-  const bodyEl  = document.getElementById('sp-ml-detail-body');
-  const panEl   = document.getElementById('sp-ml-detail');
-  if (!panEl) return;
-
-  // Ensure the off-canvas sidebar isn't covering the header/hamburger.
-  const overlayEl = document.getElementById('sp-sidebar-overlay')
-  const sidebarEl = document.querySelector('.sidebar')
-  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
-  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
-  const isBodyLocked = document.body.style.overflow === 'hidden'
-  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
-
-  panEl.style.display = '';
-  titleEl.textContent = `Transfer Document DOC-${docId}`;
-  bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3)">Loading…</div>';
-  // Chrome/mobile has an issue with `position: sticky` headers when calling
-  // `scrollIntoView()` inside overflow containers. Safari works fine.
-  // Skip auto-scroll for Chrome-like user agents and let the user scroll.
-  const ua = navigator.userAgent || ''
-  const isChromeLike = (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) && !(/Edg\//i.test(ua) || /OPR\//i.test(ua))
-  if (!isChromeLike) panEl.scrollIntoView({ behavior: 'auto', block: 'nearest' });
-  try {
-    const doc = await apiGet(`/api/stock-transfer-docs/${docId}`);
-    const fmtDt = dt => dt ? new Date(dt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '—';
-    const statusBadge = s => {
-      const map = { DISPATCHED:'<span class="b b-blue">Dispatched</span>', ACCEPTED:'<span class="b b-orange">Accepted</span>', STOCKED:'<span class="b b-green">Stocked</span>' };
-      return map[s] || `<span class="b">${s}</span>`;
-    };
-    const lines = (doc.lines || []).map(l => `
-      <tr>
-        <td style="padding:6px 8px;font-family:monospace;font-size:12px">${l.sku_code || l.sku_id}</td>
-        <td style="padding:6px 8px;font-size:13px">${[l.product_name, l.colour_name].filter(Boolean).join(' · ')}</td>
-        <td style="padding:6px 8px;text-align:center">${l.qty_sent}</td>
-        <td style="padding:6px 8px;text-align:center">${l.qty_received != null ? l.qty_received : '—'}</td>
-      </tr>`).join('');
-    bodyEl.innerHTML = `
-      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
-        <div><div style="font-size:11px;color:var(--text3);margin-bottom:3px">Type</div>${doc.doc_type === 'DIRECT' ? 'Direct Transfer' : 'From Request #' + doc.source_request_id}</div>
-        <div><div style="font-size:11px;color:var(--text3);margin-bottom:3px">Status</div>${statusBadge(doc.status)}</div>
-        <div><div style="font-size:11px;color:var(--text3);margin-bottom:3px">Dispatched</div>${fmtDt(doc.dispatched_at)}</div>
-        ${doc.accepted_at ? `<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px">Accepted</div>${fmtDt(doc.accepted_at)}</div>` : ''}
-        ${doc.stocked_at  ? `<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px">Stocked</div>${fmtDt(doc.stocked_at)}</div>` : ''}
-      </div>
-      ${doc.notes ? `<div style="margin-bottom:14px;font-size:13px;color:var(--text2)">📝 ${doc.notes}</div>` : ''}
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr style="border-bottom:1px solid var(--border)">
-          <th style="text-align:left;padding:6px 8px;font-size:11px;color:var(--text3)">SKU</th>
-          <th style="text-align:left;padding:6px 8px;font-size:11px;color:var(--text3)">Description</th>
-          <th style="text-align:center;padding:6px 8px;font-size:11px;color:var(--text3)">Sent</th>
-          <th style="text-align:center;padding:6px 8px;font-size:11px;color:var(--text3)">Stocked at Store</th>
-        </tr></thead>
-        <tbody>${lines}</tbody>
-      </table>`;
-  } catch (e) {
-    bodyEl.innerHTML = `<div class="err-msg">Failed to load document: ${e.message}</div>`;
-  }
-};
+window.expandSpMlDoc = window.expandIncTransfer;

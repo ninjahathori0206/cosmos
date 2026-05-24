@@ -60,6 +60,54 @@
     setTimeout(function() { btn.classList.remove('btn-success') }, 700)
   }
 
+  var COSMOS_TOAST_DURATION_MS = 3000
+  var COSMOS_IST_TZ = 'Asia/Kolkata'
+
+  function cosmosIstPartsFromValue(v, withTime) {
+    if (v == null || v === '') return null
+    var dt = v instanceof Date ? v : new Date(v)
+    if (isNaN(dt.getTime())) return null
+    var opts = {
+      timeZone: COSMOS_IST_TZ,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }
+    if (withTime) {
+      opts.hour = '2-digit'
+      opts.minute = '2-digit'
+      opts.second = '2-digit'
+      opts.hour12 = false
+    }
+    var parts = new Intl.DateTimeFormat('en-GB', opts).formatToParts(dt)
+    var out = {}
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].type !== 'literal') out[parts[i].type] = parts[i].value
+    }
+    return out
+  }
+
+  /** Display date DD/MM/YYYY in IST */
+  window.cosmosFmtDate = function cosmosFmtDate(v) {
+    var p = cosmosIstPartsFromValue(v, false)
+    if (!p) return v == null || v === '' ? '—' : String(v)
+    return p.day + '/' + p.month + '/' + p.year
+  }
+
+  /** Display date-time DD/MM/YYYY, HH:mm:ss in IST */
+  window.cosmosFmtDateTime = function cosmosFmtDateTime(v) {
+    var p = cosmosIstPartsFromValue(v, true)
+    if (!p) return v == null || v === '' ? '—' : String(v)
+    return p.day + '/' + p.month + '/' + p.year + ', ' + p.hour + ':' + p.minute + ':' + p.second
+  }
+
+  /** ISO date YYYY-MM-DD for &lt;input type="date"&gt; values (IST) */
+  window.cosmosIstToday = function cosmosIstToday() {
+    var p = cosmosIstPartsFromValue(new Date(), false)
+    if (!p) return ''
+    return p.year + '-' + p.month + '-' + p.day
+  }
+
   function ensureToastContainer() {
     var existing = document.getElementById('cosmos-toast-container')
     if (existing) {
@@ -207,11 +255,29 @@
     window.cosmosResetAppScroll()
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', cosmosInitMobileChrome)
-  } else {
-    cosmosInitMobileChrome()
+  // Defer until after stylesheets (and fonts) have loaded — DOMContentLoaded can still
+  // precede CSS application in some paths, forcing layout reads (getBoundingClientRect)
+  // and triggering browser "layout forced before fully loaded" / FOUC warnings.
+  function cosmosScheduleInitMobileChrome() {
+    function start() {
+      cosmosInitMobileChrome()
+    }
+    function runDeferred() {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(start)
+      })
+    }
+    if (document.readyState === 'complete') {
+      runDeferred()
+    } else {
+      window.addEventListener('load', function cosmosPolishMobLoadOnce() {
+        window.removeEventListener('load', cosmosPolishMobLoadOnce)
+        runDeferred()
+      })
+    }
   }
+
+  cosmosScheduleInitMobileChrome()
 
   function removeToastNode(node) {
     if (!node || !node.parentElement) return
@@ -221,15 +287,20 @@
     }, 180)
   }
 
+  var _cosmosLastToastKey = ''
+  var _cosmosLastToastAt = 0
+
   window.cosmosToast = function(message, type, durationMs) {
     var toastType = type || 'info'
+    var msgKey = String(message == null ? '' : message) + '|' + toastType
+    var now = Date.now()
+    if (msgKey === _cosmosLastToastKey && now - _cosmosLastToastAt < 400) return null
+    _cosmosLastToastKey = msgKey
+    _cosmosLastToastAt = now
+
     var resolvedDuration = durationMs
-    if (resolvedDuration == null) {
-      if (toastType === 'error') resolvedDuration = 0
-      else if (toastType === 'warn') resolvedDuration = 5000
-      else if (toastType === 'success') resolvedDuration = 3500
-      else resolvedDuration = 3000
-    }
+    if (resolvedDuration == null) resolvedDuration = COSMOS_TOAST_DURATION_MS
+    else if (Number(resolvedDuration) <= 0) resolvedDuration = COSMOS_TOAST_DURATION_MS
     var container = ensureToastContainer()
     var toast = document.createElement('div')
     toast.className = 'cosmos-toast toast-' + toastType
@@ -274,10 +345,10 @@
     removeToastNode(toastEl)
   }
 
-  window.cosmosToastSuccess = function(msg) { return window.cosmosToast(msg, 'success', 3500) }
-  window.cosmosToastError = function(msg) { return window.cosmosToast(msg, 'error', 0) }
-  window.cosmosToastWarn = function(msg) { return window.cosmosToast(msg, 'warn', 5000) }
-  window.cosmosToastInfo = function(msg) { return window.cosmosToast(msg, 'info', 3000) }
+  window.cosmosToastSuccess = function(msg) { return window.cosmosToast(msg, 'success', COSMOS_TOAST_DURATION_MS) }
+  window.cosmosToastError = function(msg) { return window.cosmosToast(msg, 'error', COSMOS_TOAST_DURATION_MS) }
+  window.cosmosToastWarn = function(msg) { return window.cosmosToast(msg, 'warn', COSMOS_TOAST_DURATION_MS) }
+  window.cosmosToastInfo = function(msg) { return window.cosmosToast(msg, 'info', COSMOS_TOAST_DURATION_MS) }
 
   window.cosmosFieldError = function(inputEl, message) {
     if (!inputEl) return
@@ -414,14 +485,9 @@
   var FAIL_STATUSES = new Set(['QC_FAIL_LAB', 'QC_FAIL_STORE', 'STORE_QC_PARTIAL'])
 
   function fmtIST(raw) {
+    if (typeof window.cosmosFmtDateTime === 'function') return window.cosmosFmtDateTime(raw)
     if (!raw) return '—'
-    try {
-      return new Date(raw).toLocaleString('en-GB', {
-        timeZone: 'Asia/Kolkata',
-        day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: false
-      })
-    } catch (e) { return String(raw) }
+    return String(raw)
   }
 
   function statusLabel(key) {
@@ -592,6 +658,10 @@
    * then mirrored to sessionStorage. Session alone is not trusted so keys stay valid after .env changes.
    */
   window.cosmosEnsureApiKey = async function cosmosEnsureApiKey() {
+    try {
+      var cached = sessionStorage.getItem('cosmos_api_key')
+      if (cached && String(cached).trim()) return String(cached).trim()
+    } catch (_) {}
     try {
       var res = await fetch('/config/bootstrap.json', { cache: 'no-store' })
       var text = await res.text()

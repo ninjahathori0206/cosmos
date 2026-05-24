@@ -8,6 +8,7 @@ const {
   getSkuUnitStatusCatalog,
   getSkuUnitLocationTypeCatalog
 } = require('../config/skuUnitStatusCatalog');
+const { getTransferRequestListViewsForApi } = require('../config/transferRequestListViewsCatalog');
 
 const router = express.Router();
 
@@ -41,6 +42,21 @@ router.get(
   }
 );
 
+function handleTransferRequestListViewsGet(req, res) {
+  res.json({
+    success: true,
+    data: getTransferRequestListViewsForApi()
+  });
+}
+
+const transferRequestListViewsMiddleware = [
+  requireAnyModule(['foundry', 'storepilot']),
+  requirePermission('foundry.transfers.view', 'storepilot.transfers.view'),
+  handleTransferRequestListViewsGet
+];
+
+router.get('/transfer-request-list-views', ...transferRequestListViewsMiddleware);
+
 router.get(
   '/sku-unit-statuses',
   requireAnyModule(['command_unit', 'foundry', 'storepilot']),
@@ -61,3 +77,5 @@ router.get(
 );
 
 module.exports = router;
+module.exports.transferRequestListViewsMiddleware = transferRequestListViewsMiddleware;
+module.exports.handleTransferRequestListViewsGet = handleTransferRequestListViewsGet;

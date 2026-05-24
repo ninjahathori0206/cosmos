@@ -206,7 +206,7 @@ router.get('/available', ...transferCreateStockAccess, async (req, res, next) =>
 // ── GET /api/stock-transfers/lookup ──────────────────────────────────────────
 // Resolves a scanned QR / barcode / SKU code to a transferable SKU row.
 // Query param: q (sku_code or barcode)
-router.get('/lookup', ...stockReadAccess, async (req, res, next) => {
+router.get('/lookup', ...transferCreateStockAccess, async (req, res, next) => {
   try {
     const { q } = req.query;
     if (!q || !q.trim()) {
