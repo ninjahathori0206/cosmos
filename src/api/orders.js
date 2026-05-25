@@ -116,6 +116,17 @@ function gateStorepilotLabMutations(req, res, next) {
 }
 
 /**
+ * Target statuses that require the hq_manager actor slot in pos_lab_transitions.
+ * Checked before the store module branch so Admin / HQ users with pos in JWT still qualify.
+ */
+const HQ_LAB_ACTOR_TARGETS = new Set([
+  'LAB_FITTING',
+  'QC_PASS',
+  'QC_FAIL_LAB',
+  'DISPATCHED_TO_STORE'
+])
+
+/**
  * Maps a JWT caller + target status to the actor_role slot used in pos_lab_transitions.
  *
  * Real roles in this system:
@@ -127,8 +138,9 @@ function gateStorepilotLabMutations(req, res, next) {
  * (advanceLabSubOrdersThroughInvoiced) and must NOT be reachable via lab-status.
  * They are blocked at the route level; if somehow reached here, return 'system'.
  *
- * Precedence: when JWT has multiple modules (e.g. legacy empty-module token), the
- * user's role_key is the decisive tiebreaker — store roles win over HQ modules.
+ * Precedence: HQ lab stages resolve to hq_manager for HQ roles / Foundry / CU even when
+ * the JWT also lists pos or storepilot (common for super_admin). Pure store roles still
+ * use store actor slots for store-side transitions.
  */
 function resolveActorRole(req, toStatus) {
   const target = String(toStatus || '').toUpperCase()
@@ -139,13 +151,18 @@ function resolveActorRole(req, toStatus) {
   const isStorePilot  = hasModuleAccess(req, 'storepilot')
   const isPos         = hasModuleAccess(req, 'pos')
 
-  // Store roles always resolve to store actor slots regardless of module map.
   const isStoreRole = roleKey === 'store_incharge' || roleKey === 'store_in_charge'
     || roleKey === 'store_manager' || roleKey === 'store_staff'
+  const isHqRole = roleKey === 'hq_manager' || roleKey === 'hq-manager'
 
+  if (HQ_LAB_ACTOR_TARGETS.has(target)) {
+    if (isSuperAdmin(req) || isHqRole) return 'hq_manager'
+    if ((isFoundry || isCommandUnit) && !isStoreRole) return 'hq_manager'
+  }
+
+  // Store-side transitions: incharge owns receive + store QC; staff only marks ready for delivery.
   if (isStoreRole || isStorePilot || isPos) {
-    if (target === 'STORE_QC_PASS' || target === 'STORE_QC_PARTIAL'
-        || target === 'READY_FOR_DELIVERY') return 'store_staff'
+    if (target === 'READY_FOR_DELIVERY') return 'store_staff'
     // Handover tail must not route through here; guard just in case.
     if (target === 'DELIVERED' || target === 'BALANCE_COLLECTED' || target === 'INVOICED') return 'system'
     return 'store_in_charge'

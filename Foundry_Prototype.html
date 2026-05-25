@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -14,7 +14,7 @@
 >
 <link rel="preload" href="/js/cosmos-modules-catalog.js" as="script">
 <link rel="preload" href="/js/cosmos-module-switch.js" as="script">
-<link rel="preload" href="/js/foundry-prototype.js?v=20260528-hq-create-transfer" as="script">
+<link rel="preload" href="/js/foundry-prototype.js?v=20260525-foundry-lab-mobile" as="script">
 <link rel="preload" href="/css/cosmos-ui.css" as="style">
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/foundry-prototype.css">
@@ -91,18 +91,23 @@
 
   <!-- ═══ DASHBOARD ═══ -->
   <div class="page active" id="page-dashboard">
-    <div class="ph"><div class="pt">Foundry Dashboard</div></div>
-    <div class="sg4">
+    <div class="fy-dash-hero fy-dash-mobile-only">
+      <div class="fy-dash-greeting" id="fy-dash-greeting">Good morning</div>
+      <div class="fy-dash-greeting-sub" id="fy-dash-greeting-sub">Procurement overview</div>
+    </div>
+    <div class="ph fy-dash-head-desktop"><div class="pt">Foundry Dashboard</div></div>
+    <div class="sg4 fy-dash-stats">
       <div class="sc" style="--sc-color:var(--acc)"><div class="sl">Active Purchases</div><div class="sv" id="dash-active-purchases">—</div><div class="sm" id="dash-pending-bill">— pending bill verification</div></div>
       <div class="sc" style="--sc-color:var(--teal)"><div class="sl">SKUs in Catalogue</div><div class="sv" id="dash-skus">—</div><div class="sm">Live SKUs in system</div></div>
       <div class="sc" style="--sc-color:var(--gold)"><div class="sl">Warehouse Stock</div><div class="sv" id="dash-warehouse">—</div><div class="sm">Units available for transfer</div></div>
       <div class="sc" style="--sc-color:var(--green)"><div class="sl">Active Suppliers</div><div class="sv" id="dash-suppliers">—</div><div class="sm">Active vendor accounts</div></div>
     </div>
 
-    <div class="two-col mb4">
-      <!-- Recent Purchases -->
-      <div class="card">
-        <div class="ch"><div class="ct">Recent Purchases</div><button class="btn sm" onclick="nav('purchases',document.querySelector('[onclick*=purchases]'))">View All →</button></div>
+    <div class="fy-dash-quick-actions fy-dash-mobile-only" id="fy-dash-quick-actions" role="toolbar" aria-label="Quick actions"></div>
+
+    <div class="two-col mb4 fy-dash-panels">
+      <div class="card fy-dash-desktop-only">
+        <div class="ch"><div class="ct">Recent Purchases</div><button class="btn sm" type="button" onclick="nav('purchases',document.querySelector('[onclick*=purchases]'))">View All →</button></div>
         <div class="tw">
           <table>
             <thead><tr><th>ID</th><th>Brand / Collection</th><th>Qty</th><th>Rate</th><th>Stage</th></tr></thead>
@@ -111,8 +116,15 @@
         </div>
       </div>
 
-      <!-- Low Stock -->
-      <div class="card">
+      <section class="fy-dash-section fy-dash-mobile-only" aria-labelledby="fy-dash-recent-title">
+        <div class="fy-dash-section-head">
+          <h2 class="fy-dash-section-title" id="fy-dash-recent-title">Recent Purchases</h2>
+          <button class="fy-dash-section-link" type="button" onclick="nav('purchases',document.querySelector('[onclick*=purchases]'))">View all</button>
+        </div>
+        <div id="fy-dash-recent-mobile" class="fy-dash-card-list"></div>
+      </section>
+
+      <div class="card fy-dash-desktop-only">
         <div class="ch"><div class="ct">Low Stock Alerts</div><span class="b b-gray" id="dash-low-stock-count">Loading…</span></div>
         <div class="tw">
           <table>
@@ -123,10 +135,17 @@
           </table>
         </div>
       </div>
+
+      <section class="fy-dash-section fy-dash-mobile-only" aria-labelledby="fy-dash-low-title">
+        <div class="fy-dash-section-head">
+          <h2 class="fy-dash-section-title" id="fy-dash-low-title">Low Stock Alerts</h2>
+          <span class="b b-gray" id="fy-dash-low-stock-count-mobile">Loading…</span>
+        </div>
+        <div id="fy-dash-low-mobile" class="fy-dash-card-list"></div>
+      </section>
     </div>
 
-    <!-- Pipeline Status -->
-    <div class="card">
+    <div class="card fy-dash-desktop-only mb4">
       <div class="ch"><div class="ct">Procurement Pipeline — All Active</div></div>
       <div class="tw">
         <table>
@@ -135,6 +154,12 @@
         </table>
       </div>
     </div>
+
+    <section class="fy-dash-section fy-dash-mobile-only fy-dash-pipeline-mobile" aria-labelledby="fy-dash-pipeline-title">
+      <h2 class="fy-dash-section-title" id="fy-dash-pipeline-title">Pipeline — Active</h2>
+      <div id="fy-dash-pipeline-mobile" class="fy-dash-card-list"></div>
+    </section>
+
   </div>
 
   <!-- ═══ NEW PURCHASE ═══ -->
@@ -1538,26 +1563,29 @@
 
   <!-- ═══ LAB ORDERS ═══ -->
   <div class="page" id="page-lab-orders">
-    <div class="ph flex ic">
-      <div>
+    <div class="ph flex ic fy-lab-head">
+      <div class="fy-lab-head-text">
         <div class="pt">Lab Orders</div>
-        <div class="xs td2">All stores — monitor and advance lab order workflow from Sent-to-Lab through Dispatch.</div>
+        <div class="xs td2 fy-lab-subtitle">All stores — monitor and advance lab order workflow from Sent-to-Lab through Dispatch.</div>
       </div>
-      <div class="mla flex ic g2">
-        <input id="lab-orders-search" class="search" placeholder="Search order, customer, store" style="min-width:240px" oninput="if(window.debounceLabOrders) window.debounceLabOrders()">
-        <button class="btn" onclick="window.loadLabOrders && window.loadLabOrders()">Refresh</button>
+      <div class="mla flex ic g2 fy-lab-tools">
+        <div class="sw fy-lab-search-wrap">
+          <span class="si" aria-hidden="true">🔍</span>
+          <input id="lab-orders-search" class="search fy-lab-search" placeholder="Search order, customer, store" oninput="if(window.debounceLabOrders) window.debounceLabOrders()">
+        </div>
+        <button type="button" class="btn fy-lab-refresh-btn" onclick="window.loadLabOrders && window.loadLabOrders()">Refresh</button>
       </div>
     </div>
-    <div class="tabs" style="margin:10px 0 12px">
-      <button class="tab active" id="fy-lab-tab-all" onclick="setFyLabFilter('', this)">All</button>
-      <button type="button" class="tab" id="fy-lab-tab-pending" onclick="setFyLabFilter('SENT_TO_LAB', this)">Pending Lab</button>
-      <button type="button" class="tab" id="fy-lab-tab-at-lab" onclick="setFyLabFilter('LAB_FITTING', this)">At Lab</button>
-      <button type="button" class="tab" id="fy-lab-tab-qc" onclick="setFyLabFilter('QC_PASS', this)">QC Pass</button>
-      <button type="button" class="tab" id="fy-lab-tab-dispatched" onclick="setFyLabFilter('DISPATCHED_TO_STORE', this)">Dispatched</button>
+    <div class="tabs fy-lab-tabs" role="tablist" aria-label="Lab order filters">
+      <button type="button" class="tab active" id="fy-lab-tab-all" role="tab" onclick="setFyLabFilter('', this)">All</button>
+      <button type="button" class="tab" id="fy-lab-tab-pending" role="tab" onclick="setFyLabFilter('SENT_TO_LAB', this)">Pending Lab</button>
+      <button type="button" class="tab" id="fy-lab-tab-at-lab" role="tab" onclick="setFyLabFilter('LAB_FITTING', this)">At Lab</button>
+      <button type="button" class="tab" id="fy-lab-tab-qc" role="tab" onclick="setFyLabFilter('QC_PASS', this)">QC Pass</button>
+      <button type="button" class="tab" id="fy-lab-tab-dispatched" role="tab" onclick="setFyLabFilter('DISPATCHED_TO_STORE', this)">Dispatched</button>
     </div>
-    <div class="card">
-      <div style="overflow:auto">
-        <table class="table">
+    <div class="card fy-lab-desktop-only">
+      <div class="tw">
+        <table class="table lab-orders-table">
           <thead>
             <tr>
               <th>Order #</th>
@@ -1572,7 +1600,9 @@
         </table>
       </div>
     </div>
+    <div id="fy-lab-orders-mobile" class="fy-lab-mobile-list fy-lab-mobile-only" aria-live="polite"></div>
   </div>
+
 
 <script>
 const bcMap = {
@@ -1649,7 +1679,7 @@ function addColour() {
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260522-camera-resume" defer></script>
-<script src="/js/foundry-prototype.js?v=20260528-hq-create-transfer" defer></script>
+<script src="/js/foundry-prototype.js?v=20260525-foundry-lab-mobile" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)
 document.addEventListener('DOMContentLoaded', function() {
@@ -1705,3 +1735,5 @@ window.getFpIso = function(inputId) {
 </script>
 </body>
 </html>
+
+

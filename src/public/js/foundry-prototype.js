@@ -1087,24 +1087,262 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ─────────────────────────────────────────────────────────────────────────
   // DASHBOARD
   // ─────────────────────────────────────────────────────────────────────────
-  async function loadDashboard() {
+  function fyDashSafe(v) {
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function fyDashGreetingWord() {
+    const hour = Number(new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', hour: 'numeric', hour12: false }));
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  function fyDashGreetingDateLine() {
+    return new Date().toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short'
+    }) + ' · Procurement overview';
+  }
+
+  function fyUpdateDashGreeting() {
+    const greetEl = document.getElementById('fy-dash-greeting');
+    const subEl = document.getElementById('fy-dash-greeting-sub');
+    const nameEl = document.getElementById('foundry-user-name');
+    const first = nameEl && nameEl.textContent
+      ? String(nameEl.textContent).trim().split(/\s+/)[0]
+      : 'there';
+    if (greetEl) greetEl.textContent = fyDashGreetingWord() + ', ' + first;
+    if (subEl) subEl.textContent = fyDashGreetingDateLine();
+  }
+
+  function fyCanFoundryPerm(key) {
+    if (user.role === 'super_admin') return true;
+    return !!(key && userPermissions.includes(key));
+  }
+
+  function fyInitDashQuickActions() {
+    const wrap = document.getElementById('fy-dash-quick-actions');
+    if (!wrap) return;
+    const chips = [
+      { label: '+ New Purchase', perm: 'foundry.purchases.create', primary: true, page: 'new-purchase', sel: '[onclick*=new-purchase]' },
+      { label: 'Bill Verify', perm: 'foundry.bill_verification.view', page: 'bill-verify', sel: '[onclick*=bill-verify]' },
+      { label: 'Goods Request', perm: 'foundry.transfers.view', page: 'transfer-requests', sel: '#nav-transfer-requests' },
+      { label: 'Lab Orders', perm: 'foundry.lab.view', page: 'lab-orders', sel: '[onclick*=lab-orders]' }
+    ];
+    wrap.innerHTML = chips.filter((c) => fyCanFoundryPerm(c.perm)).map((c) => {
+      const cls = c.primary ? 'fy-dash-quick-chip primary' : 'fy-dash-quick-chip';
+      return `<button type="button" class="${cls}" data-fy-dash-nav="${fyDashSafe(c.page)}" data-fy-dash-sel="${fyDashSafe(c.sel)}">${fyDashSafe(c.label)}</button>`;
+    }).join('');
+    wrap.querySelectorAll('[data-fy-dash-nav]').forEach((btn) => {
+      btn.addEventListener('click', function () {
+        const page = btn.getAttribute('data-fy-dash-nav');
+        const sel = btn.getAttribute('data-fy-dash-sel');
+        const target = sel ? document.querySelector(sel) : null;
+        nav(page, target);
+      });
+    });
+  }
+
+  function fyDashStageText(status) {
+    const map = {
+      DRAFT: 'Draft',
+      PENDING_BILL_VERIFICATION: 'Pending bill',
+      CHALLAN_VALUED: 'Valued by Finance',
+      BILL_DISCREPANCY: 'Bill discrepancy',
+      PENDING_BRANDING: 'Pending branding',
+      BRANDING_DISPATCHED: 'Branding dispatched',
+      PENDING_DIGITISATION: 'Pending digitisation',
+      WAREHOUSE_READY: 'Warehouse ready'
+    };
+    return map[status] || status || '—';
+  }
+
+  function fyDashPurchaseLine(r) {
+    const supplier = r.supplier_name || r.bill_ref || r.challan_number || 'Purchase';
+    return '#' + r.header_id + ' · ' + supplier;
+  }
+
+  function fyDashOpenPurchase(headerId) {
+    if (typeof window.openPurchaseView === 'function') window.openPurchaseView(headerId);
+    else nav('purchases', document.querySelector('[onclick*=purchases]'));
+  }
+
+  function fyRenderDashRecentDesktop(rows) {
+    const tb = document.getElementById('dash-recent-purchases');
+    if (!tb) return;
+    const recent = rows.slice(0, 6);
+    if (!recent.length) {
+      tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text3)">No recent purchases.</td></tr>';
+      return;
+    }
+    tb.innerHTML = recent.map((r) => `<tr class="tr-link" tabindex="0" role="button" onclick="openPurchaseView(${r.header_id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openPurchaseView(${r.header_id})}">
+      <td class="mono xs">#${r.header_id}</td>
+      <td>${fyDashSafe(r.supplier_name || '—')}</td>
+      <td class="tc">${r.total_qty || 0}</td>
+      <td class="mono xs">${inrD(r.expected_bill_amt)}</td>
+      <td>${stageBadge(r.pipeline_status)}</td>
+    </tr>`).join('');
+  }
+
+  function fyRenderDashRecentMobile(rows) {
+    const el = document.getElementById('fy-dash-recent-mobile');
+    if (!el) return;
+    const recent = rows.slice(0, 5);
+    if (!recent.length) {
+      el.innerHTML = `<div class="fy-dash-empty"><div class="fy-dash-empty-head">No purchases yet</div><div class="fy-dash-empty-sub">Register your first purchase to get started.</div>${fyCanFoundryPerm('foundry.purchases.create') ? '<button type="button" class="btn primary sm" onclick="nav(\'new-purchase\',document.querySelector(\'[onclick*=new-purchase]\'))">+ New Purchase</button>' : ''}</div>`;
+      return;
+    }
+    el.innerHTML = recent.map((r) => {
+      const qty = Number(r.total_qty || 0);
+      return `<button type="button" class="fy-dash-card tr-link" onclick="openPurchaseView(${r.header_id})" aria-label="Purchase ${r.header_id}">
+        <div class="fy-dash-card__title">${fyDashSafe(fyDashPurchaseLine(r))}</div>
+        <div class="fy-dash-card__row">
+          <span class="fy-dash-card__meta">${qty} pcs · ${fyDashSafe(fyDashStageText(r.pipeline_status))}</span>
+          <span class="fy-dash-card__chev" aria-hidden="true">›</span>
+        </div>
+      </button>`;
+    }).join('');
+  }
+
+  function fyRenderDashLowStockDesktop(lowRows) {
     const lowStockTbody = document.getElementById('dash-low-stock');
     const lowStockCount = document.getElementById('dash-low-stock-count');
-    if (lowStockTbody) {
-      if (window.cosmosSkeletonTable) window.cosmosSkeletonTable('dash-low-stock', 4, 4);
-      else lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>';
+    if (!lowStockTbody || !lowStockCount) return;
+    lowStockCount.className = lowRows.length ? 'b b-red' : 'b b-gray';
+    lowStockCount.textContent = lowRows.length ? `${lowRows.length} SKUs` : 'No alerts';
+    if (!lowRows.length) {
+      lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">No low stock alerts.</td></tr>';
+      return;
     }
+    lowStockTbody.innerHTML = lowRows.map((r) => {
+      const qty = Number(r.available_qty ?? r.warehouse_qty ?? r.qty ?? 0);
+      const threshold = Number(r.threshold_qty ?? r.min_qty ?? 5);
+      const qtyColor = qty <= 2 ? 'var(--red)' : 'var(--gold)';
+      return `<tr>
+        <td class="mono xs">${fyDashSafe(r.sku_code || r.sku || '—')}</td>
+        <td>${fyDashSafe(r.product_name || r.display_name || r.model_name || '—')}</td>
+        <td class="fw6" style="color:${qtyColor}">${qty}</td>
+        <td class="td2">${threshold}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function fyRenderDashLowStockMobile(lowRows) {
+    const el = document.getElementById('fy-dash-low-mobile');
+    const badge = document.getElementById('fy-dash-low-stock-count-mobile');
+    if (badge) {
+      badge.className = lowRows.length ? 'b b-red' : 'b b-gray';
+      badge.textContent = lowRows.length ? `${lowRows.length} SKUs` : 'No alerts';
+    }
+    if (!el) return;
+    if (!lowRows.length) {
+      el.innerHTML = '<div class="fy-dash-empty"><div class="fy-dash-empty-head">Stock levels look healthy</div><div class="fy-dash-empty-sub">No SKUs are below threshold right now.</div></div>';
+      return;
+    }
+    el.innerHTML = lowRows.slice(0, 6).map((r) => {
+      const qty = Number(r.available_qty ?? r.warehouse_qty ?? r.qty ?? 0);
+      const threshold = Number(r.threshold_qty ?? r.min_qty ?? 5);
+      const qtyCls = qty <= 2 ? 'is-low' : 'is-warn';
+      return `<div class="fy-dash-card" style="cursor:default">
+        <div class="fy-dash-card__title mono xs">${fyDashSafe(r.sku_code || r.sku || '—')} · ${fyDashSafe(r.product_name || r.display_name || r.model_name || '—')}</div>
+        <div class="fy-dash-card__row">
+          <span class="fy-dash-card__meta">Threshold ${threshold}</span>
+          <span class="fy-dash-card__qty ${qtyCls}">Qty ${qty}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function fyRenderDashPipelineDesktop(activeRows) {
+    const tb = document.getElementById('dash-pipeline');
+    if (!tb) return;
+    if (!activeRows.length) {
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--text3)">No active pipeline items.</td></tr>';
+      return;
+    }
+    tb.innerHTML = activeRows.slice(0, 12).map((r) => `<tr class="tr-link" tabindex="0" role="button" onclick="openPurchaseView(${r.header_id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openPurchaseView(${r.header_id})}">
+      <td class="mono xs">#${r.header_id}</td>
+      <td>${fyDashSafe(r.supplier_name || '—')}</td>
+      <td>${fyDashSafe(r.supplier_name || '—')}</td>
+      <td class="tc">${r.total_qty || 0}</td>
+      <td class="mono xs">${inrD(r.expected_bill_amt)}</td>
+      <td>${stageBadge(r.pipeline_status)}</td>
+      <td class="tc">${r.days_open != null ? r.days_open : '—'}</td>
+      <td></td>
+    </tr>`).join('');
+  }
+
+  function fyRenderDashPipelineMobile(activeRows) {
+    const el = document.getElementById('fy-dash-pipeline-mobile');
+    if (!el) return;
+    if (!activeRows.length) {
+      el.innerHTML = `<div class="fy-dash-empty"><div class="fy-dash-empty-head">No active pipeline items</div><div class="fy-dash-empty-sub">Completed purchases drop off this list automatically.</div><button type="button" class="btn sm" onclick="nav('purchases',document.querySelector('[onclick*=purchases]'))">View purchases</button></div>`;
+      return;
+    }
+    el.innerHTML = activeRows.slice(0, 8).map((r) => {
+      const days = r.days_open != null ? r.days_open : '—';
+      return `<button type="button" class="fy-dash-card tr-link" onclick="openPurchaseView(${r.header_id})" aria-label="Pipeline purchase ${r.header_id}">
+        <div class="fy-dash-card__row">
+          <span class="fy-dash-card__title" style="margin:0">#${r.header_id} · ${fyDashSafe(r.supplier_name || 'Supplier')} · ${days} days</span>
+          <span class="fy-dash-card__chev" aria-hidden="true">›</span>
+        </div>
+        <div class="fy-dash-card__badge">${stageBadge(r.pipeline_status)}</div>
+      </button>`;
+    }).join('');
+  }
+
+  async function loadDashboard() {
+    fyUpdateDashGreeting();
+    fyInitDashQuickActions();
+
+    const lowStockTbody = document.getElementById('dash-low-stock');
+    const recentTbody = document.getElementById('dash-recent-purchases');
+    const pipelineTbody = document.getElementById('dash-pipeline');
+    const lowStockCount = document.getElementById('dash-low-stock-count');
+    const lowMobile = document.getElementById('fy-dash-low-mobile');
+    const recentMobile = document.getElementById('fy-dash-recent-mobile');
+    const pipelineMobile = document.getElementById('fy-dash-pipeline-mobile');
+
+    if (window.cosmosSkeletonTable && lowStockTbody) window.cosmosSkeletonTable('dash-low-stock', 4, 4);
+    else if (lowStockTbody) lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>';
+
+    if (window.cosmosSkeletonTable && recentTbody) window.cosmosSkeletonTable('dash-recent-purchases', 5, 4);
+    else if (recentTbody) recentTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>';
+
+    if (window.cosmosSkeletonTable && pipelineTbody) window.cosmosSkeletonTable('dash-pipeline', 8, 4);
+    else if (pipelineTbody) pipelineTbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>';
+
+    if (window.cosmosSkeletonRows && recentMobile) window.cosmosSkeletonRows('fy-dash-recent-mobile', 3);
+    if (window.cosmosSkeletonRows && lowMobile) window.cosmosSkeletonRows('fy-dash-low-mobile', 3);
+    if (window.cosmosSkeletonRows && pipelineMobile) window.cosmosSkeletonRows('fy-dash-pipeline-mobile', 3);
+
     if (lowStockCount) {
       lowStockCount.className = 'b b-gray';
       lowStockCount.textContent = 'Loading…';
     }
+    const lowStockCountMobile = document.getElementById('fy-dash-low-stock-count-mobile');
+    if (lowStockCountMobile) {
+      lowStockCountMobile.className = 'b b-gray';
+      lowStockCountMobile.textContent = 'Loading…';
+    }
+
     try {
       await refreshWarehouseContext();
-      const [data, availableStock] = await Promise.all([
+      const [data, availableStock, purchases] = await Promise.all([
         apiGet('/api/purchases/dashboard-stats'),
-        apiGet('/api/stock-transfers/available').catch(() => [])
+        apiGet('/api/stock-transfers/available').catch(() => []),
+        apiGet('/api/purchases').catch(() => [])
       ]);
       const p = data.purchases || {};
+      const purchaseRows = Array.isArray(purchases) ? purchases : [];
       const setV = (id, v, asCurrency) => {
         const el = document.getElementById(id);
         if (!el) return;
@@ -1119,52 +1357,38 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
       const activePurchases = Number(p.active_purchases || 0);
       const donePurchases = Number(p.warehouse_ready || 0);
+      const pendingBill = purchaseRows.filter((r) => r.pipeline_status === 'PENDING_BILL_VERIFICATION').length;
       setV('dash-active-purchases', activePurchases);
       const activeMeta = document.getElementById('dash-pending-bill');
       if (activeMeta) {
-        activeMeta.textContent = `${activePurchases} to process · ${donePurchases} done`;
+        activeMeta.textContent = pendingBill
+          ? `${pendingBill} pending bill · ${donePurchases} done`
+          : `${activePurchases} to process · ${donePurchases} done`;
       }
-      setV('dash-branding', p.in_branding);
-      setV('dash-digitisation', p.in_digitisation);
-      setV('dash-warehouse', p.warehouse_ready);
-      setV('dash-discrepancy', p.bill_discrepancy);
       setV('dash-skus', (data.skus || {}).total_skus);
-      setV('dash-stock', (data.stock || {}).warehouse_stock, true);
+      setV('dash-warehouse', (data.stock || {}).warehouse_stock);
       setV('dash-suppliers', (data.suppliers || {}).active_suppliers);
 
-      if (lowStockTbody && lowStockCount) {
-        const safe = (v) => String(v == null ? '' : v)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;');
-        const rows = Array.isArray(availableStock) ? availableStock : [];
-        const lowRows = rows
-          .filter((r) => Number(r.available_qty ?? r.warehouse_qty ?? r.qty ?? 0) <= 5)
-          .sort((a, b) => Number(a.available_qty ?? a.warehouse_qty ?? a.qty ?? 0) - Number(b.available_qty ?? b.warehouse_qty ?? b.qty ?? 0))
-          .slice(0, 8);
+      const rows = Array.isArray(availableStock) ? availableStock : [];
+      const lowRows = rows
+        .filter((r) => Number(r.available_qty ?? r.warehouse_qty ?? r.qty ?? 0) <= 5)
+        .sort((a, b) => Number(a.available_qty ?? a.warehouse_qty ?? a.qty ?? 0) - Number(b.available_qty ?? b.warehouse_qty ?? b.qty ?? 0))
+        .slice(0, 8);
 
-        lowStockCount.className = lowRows.length ? 'b b-red' : 'b b-gray';
-        lowStockCount.textContent = lowRows.length ? `${lowRows.length} SKUs` : 'No alerts';
+      fyRenderDashLowStockDesktop(lowRows);
+      fyRenderDashLowStockMobile(lowRows);
 
-        if (!lowRows.length) {
-          lowStockTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">No low stock alerts.</td></tr>';
-        } else {
-          lowStockTbody.innerHTML = lowRows.map((r) => {
-            const qty = Number(r.available_qty ?? r.warehouse_qty ?? r.qty ?? 0);
-            const threshold = Number(r.threshold_qty ?? r.min_qty ?? 5);
-            const qtyColor = qty <= 2 ? 'var(--red)' : 'var(--gold)';
-            return `<tr>
-              <td class="mono xs">${safe(r.sku_code || r.sku || '—')}</td>
-              <td>${safe(r.product_name || r.display_name || r.model_name || '—')}</td>
-              <td class="fw6" style="color:${qtyColor}">${qty}</td>
-              <td class="td2">${threshold}</td>
-            </tr>`;
-          }).join('');
-        }
-      }
-    } catch (err) { console.error('loadDashboard:', err); }
+      const sortedPurchases = purchaseRows.slice().sort((a, b) => Number(b.header_id || 0) - Number(a.header_id || 0));
+      fyRenderDashRecentDesktop(sortedPurchases);
+      fyRenderDashRecentMobile(sortedPurchases);
+
+      const activePipeline = sortedPurchases.filter((r) => r.pipeline_status && r.pipeline_status !== 'WAREHOUSE_READY');
+      fyRenderDashPipelineDesktop(activePipeline);
+      fyRenderDashPipelineMobile(activePipeline);
+    } catch (err) {
+      console.error('loadDashboard:', err);
+      if (window.cosmosToastError) window.cosmosToastError(err.message || 'Could not load dashboard.');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -10352,10 +10576,73 @@ ${initScript}
     _labOrdersTimer = setTimeout(() => { window.loadLabOrders && window.loadLabOrders(); }, 300);
   };
 
+  function fyBuildLabOrderMobileCard(r) {
+    const statusShown = fyJobsFromOrderRow(r).map(function (j) {
+      return fyLabelLabStatus(j.lab_workflow_status)
+    }).filter(Boolean).join(' · ')
+    const statusFinal = statusShown || fyLabelLabStatus(r.lab_workflow_status)
+    const created = typeof fmtDateTime === 'function' ? fmtDateTime(r.created_at) : (r.created_at || '')
+    const orderNo = fyEscapeHtml(r.order_no || '')
+    return (
+      '<article class="fy-lab-card">' +
+      '<header class="fy-lab-card__head">' +
+      '<div class="fy-lab-card__order mono">' + orderNo + '</div>' +
+      '<span class="b b-blue" style="font-size:11px">' + fyEscapeHtml(statusFinal) + '</span>' +
+      '</header>' +
+      '<div class="fy-lab-card__customer">' + fyEscapeHtml(r.customer_name || 'Walk-in') + '</div>' +
+      (r.customer_phone ? '<div class="fy-lab-card__phone">' + fyEscapeHtml(r.customer_phone) + '</div>' : '') +
+      '<div class="fy-lab-card__store">' + fyEscapeHtml(r.store_name || '') + '</div>' +
+      '<div class="fy-lab-card__meta">' +
+      '<span>' + fyEscapeHtml(created) + '</span>' +
+      '<button type="button" class="fy-lab-card__timeline" onclick="window.cosmosTimelineOpen(' + r.order_id + ',\'' + fyEscapeAttr(r.order_no || '') + '\')">Timeline</button>' +
+      '</div>' +
+      '<div class="fy-lab-card__actions fy-lab-card__actions-row">' + buildFyLabStatusAction(r) + '</div>' +
+      '</article>'
+    )
+  }
+
+  function fyRenderLabOrdersEmpty(q, filterTitle, hint, hasSearch) {
+    const atLabBtn =
+      '<button type="button" class="btn sm primary" onclick="document.getElementById(\'fy-lab-tab-at-lab\')&&setFyLabFilter(\'LAB_FITTING\',document.getElementById(\'fy-lab-tab-at-lab\'))">Show At Lab</button>'
+    const dispatchBtn =
+      '<button type="button" class="btn sm" onclick="document.getElementById(\'fy-lab-tab-dispatched\')&&setFyLabFilter(\'DISPATCHED_TO_STORE\',document.getElementById(\'fy-lab-tab-dispatched\'))">Show Dispatched</button>'
+    const extraQueues =
+      String(_fyLabStatusFilter || '').toUpperCase() === 'QC_PASS'
+        ? '<div style="margin-top:12px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">' + atLabBtn + dispatchBtn + '</div>'
+        : ''
+    const searchLine = hasSearch
+      ? '<div style="margin-top:8px;font-size:12px;color:var(--gold)">Active search filters the list (' + fyEscapeHtml(q) + ').</div>'
+      : ''
+    const primaryEmptyBtn =
+      '<button type="button" class="btn sm primary" onclick="fyLabClearSearchAndShowAll()">' +
+      (hasSearch ? 'Clear search &amp; show all' : 'Show all orders') +
+      '</button>'
+    const emptyInner =
+      '<div class="empty" style="padding:32px 24px;text-align:center;max-width:520px;margin:0 auto">' +
+      '<div class="empty-ic" style="font-weight:700;font-size:26px;line-height:1;color:var(--acc2)" aria-hidden="true">◇</div>' +
+      '<div style="font-size:15px;font-weight:600;color:var(--text1);margin:12px 0 8px">' + fyEscapeHtml(hasSearch ? 'No matches for this query' : 'No lab orders in this view') + '</div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.5">' + fyEscapeHtml(hint) + '</div>' +
+      '<div style="font-size:12px;color:var(--text3);margin-top:8px">' + fyEscapeHtml('Tab: ' + filterTitle + (hasSearch ? ' · search on' : '')) + '</div>' +
+      searchLine +
+      '<div style="margin-top:18px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">' +
+      primaryEmptyBtn +
+      '<button type="button" class="btn sm" onclick="window.loadLabOrders && window.loadLabOrders()">Refresh</button>' +
+      '</div>' +
+      extraQueues +
+      '</div>'
+
+    const tbody = document.getElementById('lab-orders-tbody')
+    const mobile = document.getElementById('fy-lab-orders-mobile')
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6">' + emptyInner + '</td></tr>'
+    if (mobile) mobile.innerHTML = '<div class="fy-lab-empty">' + emptyInner + '</div>'
+  }
+
   window.loadLabOrders = async function() {
     const tbody = document.getElementById('lab-orders-tbody');
-    if (!tbody) return;
-    if (typeof window.cosmosSkeletonTable === 'function') window.cosmosSkeletonTable('lab-orders-tbody', 6);
+    const mobile = document.getElementById('fy-lab-orders-mobile');
+    if (!tbody && !mobile) return;
+    if (typeof window.cosmosSkeletonTable === 'function' && tbody) window.cosmosSkeletonTable('lab-orders-tbody', 6);
+    if (typeof window.cosmosSkeletonRows === 'function' && mobile) window.cosmosSkeletonRows('fy-lab-orders-mobile', 4);
 
     const searchEl = document.getElementById('lab-orders-search');
     const q = (searchEl && searchEl.value ? searchEl.value.trim() : '');
@@ -10368,48 +10655,16 @@ ${initScript}
       if (_fyLabStatusFilter) qs.set('lab_status', _fyLabStatusFilter);
       const rows = await apiGet(`/api/orders?${qs.toString()}`);
       if (!rows || !rows.length) {
-        const filterTitle = fyLabFilterTitle(_fyLabStatusFilter)
-        const hint = fyLabEmptyHintForFilter(_fyLabStatusFilter)
-        const hasSearch = Boolean(q)
-        const atLabBtn =
-          `<button type="button" class="btn sm primary" onclick="document.getElementById('fy-lab-tab-at-lab')&&setFyLabFilter('LAB_FITTING',document.getElementById('fy-lab-tab-at-lab'))">Show At Lab</button>`
-        const dispatchBtn =
-          `<button type="button" class="btn sm" onclick="document.getElementById('fy-lab-tab-dispatched')&&setFyLabFilter('DISPATCHED_TO_STORE',document.getElementById('fy-lab-tab-dispatched'))">Show Dispatched</button>`
-        const extraQueues =
-          String(_fyLabStatusFilter || '').toUpperCase() === 'QC_PASS'
-            ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">${atLabBtn}${dispatchBtn}</div>`
-            : ''
-        const searchLine = hasSearch
-          ? `<div style="margin-top:8px;font-size:12px;color:var(--gold)">Active search filters the list (${fyEscapeHtml(q)}).</div>`
-          : ''
-        const primaryEmptyBtn =
-          `<button type="button" class="btn sm primary" onclick="fyLabClearSearchAndShowAll()">` +
-          (hasSearch ? 'Clear search &amp; show all' : 'Show all orders') +
-          '</button>'
-
-        tbody.innerHTML = `
-        <tr><td colspan="6">
-          <div class="empty" style="padding:32px 24px;text-align:center;max-width:520px;margin:0 auto">
-            <div class="empty-ic" style="font-weight:700;font-size:26px;line-height:1;color:var(--acc2)" aria-hidden="true">◇</div>
-            <div style="font-size:15px;font-weight:600;color:var(--text1);margin:12px 0 8px">${fyEscapeHtml(hasSearch ? 'No matches for this query' : 'No lab orders in this view')}</div>
-            <div style="font-size:13px;color:var(--text2);line-height:1.5">${fyEscapeHtml(hint)}</div>
-            <div style="font-size:12px;color:var(--text3);margin-top:8px">${fyEscapeHtml('Tab: ' + filterTitle + (hasSearch ? ' · search on' : ''))}</div>
-            ${searchLine}
-            <div style="margin-top:18px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">
-              ${primaryEmptyBtn}
-              <button type="button" class="btn sm" onclick="window.loadLabOrders && window.loadLabOrders()">Refresh</button>
-            </div>
-            ${extraQueues}
-          </div>
-        </td></tr>`
-        return
+        fyRenderLabOrdersEmpty(q, fyLabFilterTitle(_fyLabStatusFilter), fyLabEmptyHintForFilter(_fyLabStatusFilter), Boolean(q));
+        return;
       }
-      tbody.innerHTML = rows.map((r) => {
-        const statusShown = fyJobsFromOrderRow(r).map(function (j) {
-          return fyLabelLabStatus(j.lab_workflow_status)
-        }).filter(Boolean).join(' · ')
-        const statusFinal = statusShown || fyLabelLabStatus(r.lab_workflow_status)
-        return `
+      if (tbody) {
+        tbody.innerHTML = rows.map((r) => {
+          const statusShown = fyJobsFromOrderRow(r).map(function (j) {
+            return fyLabelLabStatus(j.lab_workflow_status)
+          }).filter(Boolean).join(' · ')
+          const statusFinal = statusShown || fyLabelLabStatus(r.lab_workflow_status)
+          return `
         <tr>
           <td class="mono xs">
             <div>${r.order_no || ''}</div>
@@ -10422,11 +10677,14 @@ ${initScript}
           <td>${buildFyLabStatusAction(r)}</td>
         </tr>
       `
-      }).join('');
+        }).join('');
+      }
+      if (mobile) mobile.innerHTML = rows.map((r) => fyBuildLabOrderMobileCard(r)).join('');
     } catch (e) {
       const msg = e && e.message ? e.message : 'Could not load orders.';
       if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg);
-      tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);padding:16px">Could not load orders.</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);padding:16px">Could not load orders.</td></tr>`;
+      if (mobile) mobile.innerHTML = '<div class="fy-lab-empty" style="color:var(--red)">Could not load orders.</div>';
     }
   };
 
