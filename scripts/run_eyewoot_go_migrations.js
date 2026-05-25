@@ -14,7 +14,8 @@ const MIGRATIONS = [
   '34_loyalty_tiers.sql',
   '35_customer_offers.sql',
   'customer_offers_bogo_discount_types.sql',
-  '37_widen_customer_offers_discount_type.sql'
+  '37_widen_customer_offers_discount_type.sql',
+  '62_seed_membership_plans_default.sql'
 ];
 
 async function runMigrations() {

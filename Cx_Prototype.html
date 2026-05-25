@@ -232,8 +232,91 @@
     padding-bottom: 2px;
   }
 
-  @media (max-width: 768px) {
+  /* Native mobile / tablet portrait — match menu-toggle breakpoint in cosmos-ui-polish */
+  .cx-cust-list { display: none; flex-direction: column; gap: 10px; }
+  .cx-cust-card {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 14px 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    background: var(--card);
+    cursor: pointer;
+    font-family: inherit;
+    color: inherit;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .cx-cust-card:hover,
+  .cx-cust-card:focus-visible {
+    border-color: var(--acc2);
+    background: var(--accL);
+    outline: none;
+  }
+  .cx-cust-card__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .cx-cust-card__av {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--acc), var(--acc2));
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .cx-cust-card__meta { flex: 1; min-width: 0; }
+  .cx-cust-card__name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cx-cust-card__phone { font-size: 13px; color: var(--text2); margin-top: 2px; }
+  .cx-cust-card__chev {
+    flex-shrink: 0;
+    font-size: 20px;
+    color: var(--acc2);
+    opacity: 0.7;
+  }
+  .cx-cust-card__row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    padding: 4px 0;
+    border-top: 1px solid var(--border);
+  }
+  .cx-cust-card__row:first-of-type { border-top: none; padding-top: 0; }
+  .cx-cust-card__row span:first-child {
+    color: var(--text3);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  .cx-cust-card__row span:last-child {
+    color: var(--text1);
+    text-align: right;
+    word-break: break-word;
+  }
+
+  @media (max-width: 1024px) {
     .main { margin-left: 0; }
+    #page-customers > .ph { display: none; }
+    .cx-cust-list { display: flex; }
+    #cx-customers-table-wrap { display: none !important; }
     .sg4 {
       display: flex;
       flex-wrap: nowrap;
@@ -266,27 +349,6 @@
       padding-top: 12px;
       padding-bottom: 12px;
       font-size: 14px;
-    }
-    #cx-customers-table thead { display: none; }
-    #cx-customers-table tbody tr.tr-link {
-      display: block;
-      margin-bottom: 12px;
-      border: 1.5px solid var(--border);
-      border-radius: 12px;
-      padding: 12px 14px;
-      background: var(--card);
-    }
-    #cx-customers-table tbody tr.tr-link td {
-      display: block;
-      border: none;
-      padding: 4px 0;
-    }
-    #cx-customers-table tbody tr.tr-link td:first-child {
-      font-size: 15px;
-      padding-bottom: 8px;
-    }
-    #cx-customers-table tbody tr.tr-link td.text-right {
-      text-align: left;
     }
     .card .ch {
       flex-direction: column;
@@ -347,8 +409,8 @@
     .gm-price-grid { grid-template-columns: 1fr; }
   }
 </style>
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-cx-mobile-shell">
-<script src="/js/cosmos-ui-polish.js?v=20260528-cx-mobile-shell" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-cx-cust-cards">
+<script src="/js/cosmos-ui-polish.js?v=20260528-cx-cust-cards" defer></script>
 </head>
 <body class="cosmos-app-shell">
 
@@ -447,7 +509,8 @@
         </div>
         <button type="button" class="btn primary sm" id="btn-cx-cust-search">Search</button>
       </div>
-      <div class="tw">
+      <div class="cx-cust-list" id="cx-customers-list" aria-live="polite"></div>
+      <div class="tw" id="cx-customers-table-wrap">
         <table id="cx-customers-table">
           <thead>
             <tr>
@@ -692,7 +755,7 @@
 
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal"></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
-<script src="/js/cx-prototype.js?v=20260528-cx-mobile-shell"></script>
+<script src="/js/cx-prototype.js?v=20260528-cx-membership-plans"></script>
 <script>
 /* ── CX: Offers page ─────────────────────────────────────────── */
 var _cxOffersLoaded = false;

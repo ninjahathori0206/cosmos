@@ -92,29 +92,110 @@ router.get('/orders', authJwt, requireModule('cx'), requireCxPermission('cx.orde
    STAFF: Eyewoot Go — membership plans + grant membership
 ══════════════════════════════════════════════════════════════ */
 
+function derivePlanKeyFromTier (row) {
+  const loyalty = String(row.loyalty_tier || '').trim()
+  if (loyalty) {
+    return loyalty.toUpperCase().replace(/[^A-Z0-9_]/g, '_').slice(0, 50)
+  }
+  const slug = String(row.tier_name || 'PLAN')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+  return (slug || 'PLAN').slice(0, 50)
+}
+
+/** Mirror Command Unit membership_tiers into membership_plans so CX grant can use CU-configured tiers. */
+async function ensureMembershipPlansFromTiers (pool) {
+  let tiers = []
+  try {
+    const tiersR = await pool.request().query(`
+      SELECT membership_id, tier_name, annual_fee, loyalty_tier
+      FROM   dbo.membership_tiers
+      WHERE  is_active = 1
+    `)
+    tiers = tiersR.recordset || []
+  } catch (err) {
+    if (String(err.message || '').includes('Invalid object name')) return
+    throw err
+  }
+  if (!tiers.length) return
+
+  const nowSql = 'DATEADD(MINUTE, 330, SYSUTCDATETIME())'
+  for (const t of tiers) {
+    const planKey = derivePlanKeyFromTier(t)
+    const displayName = String(t.tier_name || planKey).trim().slice(0, 100)
+    const price = Number(t.annual_fee)
+    const safePrice = Number.isFinite(price) && price >= 0 ? price : 0
+    await pool
+      .request()
+      .input('pk', sql.NVarChar(50), planKey)
+      .input('dn', sql.NVarChar(100), displayName)
+      .input('pr', sql.Decimal(10, 2), safePrice)
+      .query(`
+        MERGE dbo.membership_plans AS tgt
+        USING (SELECT @pk AS plan_key) AS src
+        ON tgt.plan_key = src.plan_key
+        WHEN MATCHED THEN
+          UPDATE SET
+            display_name = @dn,
+            price = @pr,
+            is_active = 1
+        WHEN NOT MATCHED BY TARGET THEN
+          INSERT (plan_key, display_name, price, validity_days, max_dependents, is_active, created_at)
+          VALUES (@pk, @dn, @pr, 365, 5, 1, ${nowSql});
+      `)
+  }
+}
+
+async function fetchActiveMembershipPlans (pool) {
+  const r = await pool.request().query(`
+    SELECT plan_id, plan_key, display_name, price, validity_days, max_dependents, is_active
+    FROM   dbo.membership_plans
+    WHERE  is_active = 1
+    ORDER BY plan_key ASC
+  `)
+  return r.recordset || []
+}
+
 async function handleCxMembershipPlans (_req, res, next) {
   try {
     const pool = await getPool()
-    const r = await pool.request().query(`
-      SELECT plan_id, plan_key, display_name, price, validity_days, max_dependents, is_active
-      FROM   dbo.membership_plans
-      WHERE  is_active = 1
-      ORDER BY plan_key ASC
-    `)
-    return res.json({ success: true, data: r.recordset || [] })
+    let plans = []
+    try {
+      plans = await fetchActiveMembershipPlans(pool)
+      if (!plans.length) {
+        await ensureMembershipPlansFromTiers(pool)
+        plans = await fetchActiveMembershipPlans(pool)
+      }
+    } catch (err) {
+      const msg = String(err.message || '')
+      if (msg.includes('Invalid object name') && msg.includes('membership_plans')) {
+        return res.status(503).json({
+          success: false,
+          message:
+            'Membership tables are not deployed. Run Eyewoot Go SQL migrations (31_membership_plans, 32_customer_memberships) on this database.'
+        })
+      }
+      throw err
+    }
+    return res.json({ success: true, data: plans })
   } catch (err) {
     return next(err)
   }
 }
 
-/** GET /api/cx/plans and /api/cx/membership-plans — Eyewoot Go plan catalogue */
-router.get(
-  ['/plans', '/membership-plans'],
+const cxPlansMiddleware = [
   authJwt,
   requireModule('cx'),
-  requireCxPermission('cx.membership.manage'),
-  handleCxMembershipPlans
-)
+  requireCxPermission('cx.membership.manage', 'cx.customers.view')
+]
+
+/** GET /api/cx/plans — Eyewoot Go plan catalogue (syncs from membership_tiers when empty) */
+router.get('/plans', ...cxPlansMiddleware, handleCxMembershipPlans)
+
+/** GET /api/cx/membership-plans — alias */
+router.get('/membership-plans', ...cxPlansMiddleware, handleCxMembershipPlans)
 
 /** GET /api/cx/customers/:id/membership — current active Eyewoot Go membership (if any) */
 router.get(

@@ -103,6 +103,139 @@ function cxCustomerInitials (name) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
+function cxIsMobileLayout () {
+  try {
+    return window.matchMedia('(max-width: 1024px)').matches
+  } catch (_) {
+    return false
+  }
+}
+
+function cxCustomerEmptyHtml () {
+  return (
+    '<div class="empty">' +
+    '<div class="empty-ic">\uD83D\uDC65</div>' +
+    '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No customers found</div>' +
+    '<div style="font-size:13px;color:var(--text2)">Adjust search or register customers from POS.</div>' +
+    '</div>'
+  )
+}
+
+function cxOpenCustomerFromEl (el) {
+  if (!el) return
+  var idStr = el.getAttribute('data-cid')
+  if (!idStr) return
+  var id = parseInt(idStr, 10)
+  if (!id) return
+  if (!window.cosmosCxAllows(['cx.membership.manage'])) {
+    if (typeof window.cosmosToastWarn === 'function') {
+      window.cosmosToastWarn('No permission to manage membership. Ask an admin for CX — Membership plans & grant.')
+    }
+    return
+  }
+  var name = ''
+  var phone = ''
+  var store = ''
+  try {
+    name = decodeURIComponent(el.getAttribute('data-cname') || '')
+  } catch (_) {
+    name = ''
+  }
+  try {
+    phone = decodeURIComponent(el.getAttribute('data-cphone') || '')
+  } catch (_) {
+    phone = ''
+  }
+  try {
+    store = decodeURIComponent(el.getAttribute('data-cstore') || '')
+  } catch (_) {
+    store = ''
+  }
+  if (typeof window.openGrantMembershipModal === 'function') {
+    window.openGrantMembershipModal(id, name, phone, store)
+  }
+}
+
+function cxRenderCustomerCard (r) {
+  var cid = escCx(String(r.customer_id))
+  var cname = encodeURIComponent(r.full_name || '')
+  return (
+    '<button type="button" class="cx-cust-card tr-link" data-cid="' +
+    cid +
+    '" data-cname="' +
+    cname +
+    '" data-cphone="' +
+    encodeURIComponent(r.phone || '') +
+    '" data-cstore="' +
+    encodeURIComponent(r.home_store_name || '') +
+    '">' +
+    '<div class="cx-cust-card__head">' +
+    '<div class="cx-cust-card__av">' +
+    escCx(cxCustomerInitials(r.full_name)) +
+    '</div>' +
+    '<div class="cx-cust-card__meta">' +
+    '<div class="cx-cust-card__name">' +
+    escCx(r.full_name) +
+    '</div>' +
+    '<div class="cx-cust-card__phone mono">' +
+    escCx(r.phone || '\u2014') +
+    '</div>' +
+    '</div>' +
+    '<span class="cx-cust-card__chev" aria-hidden="true">\u203A</span>' +
+    '</div>' +
+    '<div class="cx-cust-card__row"><span>Home store</span><span>' +
+    escCx(r.home_store_name || '\u2014') +
+    '</span></div>' +
+    '<div class="cx-cust-card__row"><span>Orders</span><span>' +
+    escCx(String(r.order_count)) +
+    '</span></div>' +
+    '<div class="cx-cust-card__row"><span>Lifetime</span><span class="mono fw6">' +
+    fmtCxRs(r.lifetime_revenue) +
+    '</span></div>' +
+    '<div class="cx-cust-card__row"><span>Last order</span><span>' +
+    fmtCxDateOnly(r.last_order_at) +
+    '</span></div>' +
+    '</button>'
+  )
+}
+
+function cxRenderCustomerTableRow (r) {
+  var cid = escCx(String(r.customer_id))
+  var cname = encodeURIComponent(r.full_name || '')
+  return (
+    '<tr class="tr-link" data-cid="' +
+    cid +
+    '" data-cname="' +
+    cname +
+    '" data-cphone="' +
+    encodeURIComponent(r.phone || '') +
+    '" data-cstore="' +
+    encodeURIComponent(r.home_store_name || '') +
+    '">' +
+    '<td><div class="fw6">' +
+    escCx(r.full_name) +
+    '</div>' +
+    (r.email ? '<div class="xs td3">' + escCx(r.email) + '</div>' : '') +
+    '</td>' +
+    '<td class="mono">' +
+    escCx(r.phone) +
+    '</td>' +
+    '<td>' +
+    escCx(r.home_store_name || '\u2014') +
+    '</td>' +
+    '<td class="text-right">' +
+    escCx(String(r.order_count)) +
+    '</td>' +
+    '<td class="text-right mono fw6">' +
+    fmtCxRs(r.lifetime_revenue) +
+    '</td>' +
+    '<td class="td3" style="font-size:12px">' +
+    fmtCxDateOnly(r.last_order_at) +
+    '</td>' +
+    '</tr>'
+  )
+}
+
 function fmtCxRs (v) {
   var n = Number(v) || 0
   return (
@@ -457,8 +590,24 @@ window.loadCxDashboardPage = async function () {
 }
 
 window.loadCxCustomersPage = async function () {
-  if (typeof window.cosmosSkeletonTable === 'function') {
-    window.cosmosSkeletonTable('cx-tbody-customers', 6, 10)
+  var mobile = cxIsMobileLayout()
+  var list = document.getElementById('cx-customers-list')
+  var wrap = document.getElementById('cx-customers-table-wrap')
+  var tbody = document.getElementById('cx-tbody-customers')
+  if (mobile && list) {
+    if (wrap) wrap.style.display = 'none'
+    list.style.display = 'flex'
+    if (typeof window.cosmosSkeletonRows === 'function') {
+      window.cosmosSkeletonRows('cx-customers-list', 8)
+    } else if (list) {
+      list.innerHTML = ''
+    }
+  } else {
+    if (list) list.style.display = 'none'
+    if (wrap) wrap.style.display = ''
+    if (typeof window.cosmosSkeletonTable === 'function' && tbody) {
+      window.cosmosSkeletonTable('cx-tbody-customers', 6, 10)
+    }
   }
   try {
     var qInput = document.getElementById('cx-cust-search')
@@ -466,63 +615,31 @@ window.loadCxCustomersPage = async function () {
     var qs = q ? '?q=' + encodeURIComponent(q) + '&limit=200' : '?limit=200'
     var res = await cxApiGet('/api/cx/customers' + qs)
     var rows = res.data || []
-    var tbody = document.getElementById('cx-tbody-customers')
-    if (!tbody) return
     if (!rows.length) {
-      tbody.innerHTML =
-        '<tr><td colspan="6" style="border:none">' +
-        '<div class="empty">' +
-        '<div class="empty-ic">\uD83D\uDC65</div>' +
-        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No customers found</div>' +
-        '<div style="font-size:13px;color:var(--text2);margin-bottom:16px">Adjust search or register customers from POS.</div>' +
-        '</div></td></tr>'
+      if (mobile && list) {
+        list.innerHTML = cxCustomerEmptyHtml()
+      } else if (tbody) {
+        tbody.innerHTML =
+          '<tr><td colspan="6" style="border:none">' + cxCustomerEmptyHtml() + '</td></tr>'
+      }
       return
     }
-    tbody.innerHTML = rows
-      .map(function (r) {
-        var cid = escCx(String(r.customer_id))
-        var cname = encodeURIComponent(r.full_name || '')
-        return (
-          '<tr class="tr-link" data-cid="' +
-          cid +
-          '" data-cname="' +
-          cname +
-          '" data-cphone="' +
-          encodeURIComponent(r.phone || '') +
-          '" data-cstore="' +
-          encodeURIComponent(r.home_store_name || '') +
-          '">' +
-          '<td><div class="fw6">' +
-          escCx(r.full_name) +
-          '</div>' +
-          (r.email ? '<div class="xs td3">' + escCx(r.email) + '</div>' : '') +
-          '</td>' +
-          '<td class="mono">' +
-          escCx(r.phone) +
-          '</td>' +
-          '<td>' +
-          escCx(r.home_store_name || '\u2014') +
-          '</td>' +
-          '<td class="text-right">' +
-          escCx(String(r.order_count)) +
-          '</td>' +
-          '<td class="text-right mono fw6">' +
-          fmtCxRs(r.lifetime_revenue) +
-          '</td>' +
-          '<td class="td3" style="font-size:12px">' +
-          fmtCxDateOnly(r.last_order_at) +
-          '</td>' +
-          '</tr>'
-        )
-      })
-      .join('')
+    if (mobile && list) {
+      list.innerHTML = rows.map(cxRenderCustomerCard).join('')
+      return
+    }
+    if (!tbody) return
+    tbody.innerHTML = rows.map(cxRenderCustomerTableRow).join('')
   } catch (err) {
     var msg = err && err.message ? err.message : 'Could not load customers.'
     if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg)
-    var tbody = document.getElementById('cx-tbody-customers')
-    if (tbody)
+    if (mobile && list) {
+      list.innerHTML =
+        '<div style="text-align:center;padding:18px;color:var(--red)">Could not load customers.</div>'
+    } else if (tbody) {
       tbody.innerHTML =
         '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--red)">Could not load customers.</td></tr>'
+    }
   }
 }
 
@@ -593,7 +710,13 @@ window.openGrantMembershipModal = async function (customerId, customerName, cust
     }
     if (!plans.length) {
       document.getElementById('gm-current-status').innerHTML =
-        '<span style="color:var(--red)">No active membership plans in the database.</span>'
+        '<span style="color:var(--red)">No membership plans found.</span> ' +
+        '<span style="display:block;margin-top:8px;font-size:13px;color:var(--text2)">' +
+        'Add tiers in <strong>Command Unit → Membership</strong> or run SQL migration ' +
+        '<span class="mono">62_seed_membership_plans_default.sql</span>, then reopen this screen.</span>'
+      if (typeof window.cosmosToastWarn === 'function') {
+        window.cosmosToastWarn('No membership plans in database. Configure tiers in Command Unit → Membership.')
+      }
       return
     }
     plans.forEach(function (p) {
@@ -609,7 +732,11 @@ window.openGrantMembershipModal = async function (customerId, customerName, cust
       window._gmApplyPlanDefaults()
     }
   } catch (err) {
-    var msg = err && err.message ? err.message : 'Could not load.'
+    var msg = err && err.message ? err.message : 'Could not load membership plans.'
+    if (/permission denied/i.test(msg)) {
+      msg =
+        'Permission denied. Assign CX — Membership plans & grant (cx.membership.manage) in Command Unit → Roles, then sign out and sign in.'
+    }
     document.getElementById('gm-current-status').innerHTML =
       '<span style="color:var(--red)">' + escCx(msg) + '</span>'
     if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg)
@@ -685,42 +812,23 @@ document.addEventListener('DOMContentLoaded', function () {
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') window.cxCloseSidebar()
     })
-    var cxTbl = document.getElementById('cx-customers-table')
-    if (cxTbl && !cxTbl.dataset.cxGrantMembershipBound) {
-      cxTbl.dataset.cxGrantMembershipBound = '1'
-      cxTbl.addEventListener('click', function (e) {
-        var tr = e.target.closest('tbody tr[data-cid]')
-        if (!tr) return
-        var idStr = tr.getAttribute('data-cid')
-        if (!idStr) return
-        var id = parseInt(idStr, 10)
-        if (!id) return
-        if (!window.cosmosCxAllows(['cx.membership.manage'])) {
-          if (typeof window.cosmosToastWarn === 'function') {
-            window.cosmosToastWarn('No permission to manage membership. Ask an admin for CX — Membership plans & grant.')
-          }
-          return
-        }
-        var name = ''
-        var phone = ''
-        var store = ''
-        try {
-          name = decodeURIComponent(tr.getAttribute('data-cname') || '')
-        } catch (e2) {
-          name = ''
-        }
-        try {
-          phone = decodeURIComponent(tr.getAttribute('data-cphone') || '')
-        } catch (e3) {
-          phone = ''
-        }
-        try {
-          store = decodeURIComponent(tr.getAttribute('data-cstore') || '')
-        } catch (e4) {
-          store = ''
-        }
-        if (typeof window.openGrantMembershipModal === 'function') {
-          window.openGrantMembershipModal(id, name, phone, store)
+    function cxBindCustomerPick (root, key) {
+      if (!root || root.dataset[key]) return
+      root.dataset[key] = '1'
+      root.addEventListener('click', function (e) {
+        var pick = e.target.closest('[data-cid]')
+        if (!pick) return
+        cxOpenCustomerFromEl(pick)
+      })
+    }
+    cxBindCustomerPick(document.getElementById('cx-customers-table'), 'cxGrantMembershipBound')
+    cxBindCustomerPick(document.getElementById('cx-customers-list'), 'cxGrantMembershipBoundList')
+    if (!window._cxCustResizeBound) {
+      window._cxCustResizeBound = true
+      window.addEventListener('resize', function () {
+        if (document.getElementById('page-customers') &&
+          document.getElementById('page-customers').classList.contains('active')) {
+          window.loadCxCustomersPage().catch(function () {})
         }
       })
     }

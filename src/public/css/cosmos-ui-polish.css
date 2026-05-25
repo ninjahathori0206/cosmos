@@ -1349,13 +1349,26 @@ body.cosmos-app-shell .sidebar {
   height: 100dvh;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
+  body.cosmos-app-shell .main > .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    background: var(--card, #fff);
+    border-bottom: 1px solid var(--border, #e2e8f0);
+    box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+  }
+}
+
+@media (max-width: 1024px) {
+  body.cosmos-app-shell .menu-toggle {
+    display: flex;
+  }
   body.cosmos-app-shell .sidebar {
     transform: translateX(-100%);
     transition: transform 0.25s ease;
     position: fixed;
     z-index: 200;
-    box-shadow: none;
     pointer-events: none;
   }
   body.cosmos-app-shell .sidebar.open {
@@ -1366,9 +1379,6 @@ body.cosmos-app-shell .sidebar {
   }
   body.cosmos-app-shell .main {
     margin-left: 0 !important;
-  }
-  body.cosmos-app-shell .menu-toggle {
-    display: flex;
   }
   body.cosmos-app-shell .topbar,
   body.cosmos-app-shell .main > .topbar {
