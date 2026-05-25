@@ -80,6 +80,7 @@ function resolveTransitBadge(labWorkflowStatus) {
  *   labStatusIncludes?: string[],
  *   labStatusExcludesUnion?: string[],
  *   invoicedSinceDays?: number,
+ *   invoicedQueue?: boolean,
  *   activeQueue?: boolean,
  *   transitRequiresPayment?: boolean,
  *   orderKind?: string,
@@ -110,9 +111,8 @@ function resolveQueueFetchOptions(queueKey) {
 
   if (key === 'INVOICED_7') {
     return {
-      labStatusIncludes: POS_ORDER_QUEUE_LAB_STATUSES.INVOICED_7,
+      invoicedQueue: true,
       invoicedSinceDays: INVOICED_QUEUE_DAYS,
-      orderKind: 'LAB',
       // Header becomes COMPLETED on handover/invoicing — must not exclude those rows.
       excludeOrderStatuses: []
     }
@@ -151,7 +151,7 @@ function posOrderQueueEmptyCopy(queueKey) {
     },
     INVOICED_7: {
       title: 'No recent invoiced orders',
-      subtext: 'Orders invoiced in the last 7 days appear here. Older invoices — search by order no or phone.'
+      subtext: 'Instant and lab orders invoiced in the last 7 days appear here. Older invoices — search by order no or phone.'
     }
   }
   return copies[key] || {

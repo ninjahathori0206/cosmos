@@ -17,7 +17,7 @@
 <script src="/js/storeos-pwa.js?v=20260523-pwa-sw-v5" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260523-cart-bucket" defer></script>
-<script src="/js/pos.js?v=storeos-20260528-partial-payment-success" defer></script>
+<script src="/js/pos.js?v=storeos-20260525-invoiced-queue" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -825,13 +825,42 @@
       <div class="pos-confirm-check" aria-hidden="true">✓</div>
       <div id="confirm-title" class="pos-confirm-title">Order placed!</div>
       <div id="confirm-order-no" class="pos-confirm-sub">Order #--</div>
+      <div id="confirm-invoice-badge" class="pos-confirm-invoice-badge" hidden>
+        <span class="pos-confirm-invoice-badge-label">Invoice</span>
+        <span id="confirm-invoice-badge-no">—</span>
+      </div>
       <div id="confirm-balance-due" class="pos-confirm-sub" style="display:none;color:var(--gold);font-weight:600"></div>
     </div>
 
+    <div id="confirm-invoice-deferred" class="pos-confirm-invoice-deferred" hidden role="status">
+      Tax invoice will be issued when the order is fully delivered and handed over.
+    </div>
+
     <div class="pos-confirm-summary-card">
-      <div class="pos-field-label">Amount paid</div>
+      <div id="confirm-summary-label" class="pos-field-label">Amount paid</div>
       <div id="confirm-amount" class="pos-confirm-amount">₹0</div>
       <div id="confirm-method" class="pos-confirm-sub">Paid via --</div>
+      <div id="confirm-invoice-line" class="pos-confirm-invoice-line" hidden>
+        <span class="pos-confirm-invoice-line-label">Tax Invoice:</span>
+        <span id="confirm-invoice-line-no">—</span>
+      </div>
+    </div>
+
+    <div id="confirm-invoice-panel-wrap" class="pos-confirm-invoice-panel-wrap" hidden>
+      <button type="button" id="btn-confirm-invoice-toggle" class="pos-confirm-invoice-toggle" aria-expanded="false" tabindex="0">
+        <span>Invoice Details</span>
+        <span class="pos-confirm-invoice-toggle-chevron" aria-hidden="true">▼</span>
+      </button>
+      <div id="confirm-invoice-fields" class="pos-confirm-invoice-fields" aria-hidden="true">
+        <label class="pos-field-label" for="confirm-bill-name">Bill name</label>
+        <input type="text" id="confirm-bill-name" class="pos-input" autocomplete="name" placeholder="Customer name on invoice">
+        <label class="pos-field-label" for="confirm-gstin">GSTIN (optional)</label>
+        <input type="text" id="confirm-gstin" class="pos-input" autocomplete="off" placeholder="27AAABBBCCCC1Z5">
+        <label class="pos-field-label" for="confirm-billing-address">Billing address (optional)</label>
+        <textarea id="confirm-billing-address" class="pos-input" rows="2" placeholder="Building, street, city, PIN"></textarea>
+        <label class="pos-field-label" for="confirm-invoice-notes">Notes on invoice (optional)</label>
+        <textarea id="confirm-invoice-notes" class="pos-input" rows="2" placeholder="e.g. For office use"></textarea>
+      </div>
     </div>
 
     <div>
@@ -844,9 +873,13 @@
         <span aria-hidden="true">💬</span>
         <span>WhatsApp Receipt</span>
       </button>
-      <button type="button" id="btn-confirm-print" class="pos-confirm-action-print" tabindex="0">
-        <span aria-hidden="true">🖨</span>
-        <span>Print Bill</span>
+      <button type="button" id="btn-confirm-view-invoice" class="pos-confirm-action-print" tabindex="0" disabled>
+        <span aria-hidden="true">🧾</span>
+        <span>View Invoice</span>
+      </button>
+      <button type="button" id="btn-confirm-email-invoice" class="pos-confirm-action-email" tabindex="0" disabled title="Customer email required">
+        <span aria-hidden="true">📧</span>
+        <span>Email</span>
       </button>
       <button type="button" id="btn-confirm-collect-balance" class="btn primary" style="display:none" tabindex="0">Collect balance</button>
       <button type="button" id="btn-confirm-new-order" class="pos-confirm-action-new" tabindex="0">

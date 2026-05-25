@@ -80,7 +80,7 @@
     await ensureCosmosApiKeyFromBootstrap()
     const headers = { 'X-API-Key': getApiKey() }
     if (token) headers['Authorization'] = 'Bearer ' + token
-    const res = await fetch(path, { headers })
+    const res = await fetch(path, { headers, cache: 'no-store' })
     const body = await res.json()
     if (!res.ok || !body.success) throw new Error(body.message || 'Request failed')
     return body.data
@@ -804,6 +804,8 @@
   let _posHandoverSubmitting = false
   /** Lab handover: cached payload for reopening invoice preview inside the POS shell. */
   let _posHandoverInvoicePreviewLast = null
+  /** Confirm screen: cached order detail for View Invoice preview. */
+  let _posConfirmDetailSnap = null
   let posDeliveryMode = 'STORE'
 
   // ── Order Builder state ──────────────────────────────────────────────────
@@ -3417,10 +3419,24 @@
     if (btnConfirmBack) btnConfirmBack.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
     const btnConfirmNew = document.getElementById('btn-confirm-new-order')
     if (btnConfirmNew) btnConfirmNew.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
-    const btnConfirmPrint = document.getElementById('btn-confirm-print')
+    const btnConfirmPrint = document.getElementById('btn-confirm-view-invoice')
     if (btnConfirmPrint) {
-      btnConfirmPrint.addEventListener('click', () => {
-        if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Print queued')
+      btnConfirmPrint.addEventListener('click', function () {
+        void openPosConfirmInvoicePreview()
+      })
+    }
+    const btnConfirmEmail = document.getElementById('btn-confirm-email-invoice')
+    if (btnConfirmEmail) {
+      btnConfirmEmail.addEventListener('click', function () {
+        if (typeof cosmosToastInfo === 'function') {
+          cosmosToastInfo('Email invoice will be available when SMTP is configured in Command Unit.')
+        }
+      })
+    }
+    const btnConfirmInvToggle = document.getElementById('btn-confirm-invoice-toggle')
+    if (btnConfirmInvToggle) {
+      btnConfirmInvToggle.addEventListener('click', function () {
+        togglePosConfirmInvoicePanel()
       })
     }
   }
@@ -4562,12 +4578,15 @@
     lastPaymentReceipt = {
       order_id: opts.receiptOrderId,
       order_no: opts.receiptOrderNo,
+      order_kind: (data && data.order_kind) || opts.order_kind || null,
       amount: opts.amount,
       method: opts.method,
       external_ref: opts.external_ref,
       delivery_mode: posDeliveryMode,
       delivery_date: deliveryDate,
       customer_phone: phone,
+      customer_name: (posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.full_name) || opts.customerName || '',
+      customer_email: (posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.email) || opts.customerEmail || '',
       invoice_no: (data && data.invoice_no) || null,
       balance_due: balanceDue
     }
@@ -4691,24 +4710,102 @@
     }
   }
 
+  function readPosConfirmInvoicePreferencesFromDom() {
+    function gv(id) {
+      const el = document.getElementById(id)
+      return el && el.value != null ? String(el.value).trim() : ''
+    }
+    const receipt = lastPaymentReceipt || {}
+    return {
+      bill_name: gv('confirm-bill-name') || String(receipt.customer_name || '').trim(),
+      gstin: gv('confirm-gstin'),
+      billing_address: gv('confirm-billing-address'),
+      notes: gv('confirm-invoice-notes'),
+      phone: String(receipt.customer_phone || '').trim(),
+      email: String(receipt.customer_email || '').trim()
+    }
+  }
+
+  function togglePosConfirmInvoicePanel() {
+    const wrap = document.getElementById('confirm-invoice-fields')
+    const btn = document.getElementById('btn-confirm-invoice-toggle')
+    if (!wrap || !btn) return
+    const open = wrap.classList.toggle('pos-confirm-invoice-fields--open')
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false')
+    wrap.setAttribute('aria-hidden', open ? 'false' : 'true')
+  }
+
+  function fillPosConfirmInvoiceFieldsFromReceipt(receipt) {
+    const billEl = document.getElementById('confirm-bill-name')
+    if (billEl && !String(billEl.value || '').trim()) {
+      billEl.value = String(receipt.customer_name || '').trim()
+    }
+  }
+
+  async function openPosConfirmInvoicePreview() {
+    const receipt = lastPaymentReceipt
+    if (!receipt || !receipt.invoice_no) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Invoice is not available for this order yet.')
+      return
+    }
+    const session = getPosSession()
+    if (!session || !session.token) return
+    let detailSnap = _posConfirmDetailSnap
+    if (!detailSnap && receipt.order_id) {
+      try {
+        detailSnap = await apiGet('/api/pos/orders/' + receipt.order_id, session.token)
+        _posConfirmDetailSnap = detailSnap
+      } catch (_e) {
+        if (typeof cosmosToastError === 'function') cosmosToastError('Could not load order details for invoice preview.')
+        return
+      }
+    }
+    const prefs = readPosConfirmInvoicePreferencesFromDom()
+    const sn = (session && session.store_name) ? session.store_name : 'Store'
+    openPosHandoverInvoicePreview(sn, detailSnap, prefs, receipt.invoice_no)
+  }
+
   function showConfirmScreen() {
     const receipt = lastPaymentReceipt
     if (!receipt) {
       navigate(POS_ROUTES.CATALOGUE)
       return
     }
+    _posConfirmDetailSnap = null
     const balanceDue = Math.max(0, Number(receipt.balance_due) || 0)
+    const orderKind = String(receipt.order_kind || '').trim().toUpperCase()
+    const hasInvoice = !!String(receipt.invoice_no || '').trim()
+    const isInstantInvoiced = orderKind === 'INSTANT' && hasInvoice && balanceDue <= 0.009
+    const isLabDeferred = (orderKind === 'LAB' || orderKind === 'MIXED') && !hasInvoice
+
     const titleEl = document.getElementById('confirm-title')
     const balanceEl = document.getElementById('confirm-balance-due')
     const collectBalBtn = document.getElementById('btn-confirm-collect-balance')
     const noEl = document.getElementById('confirm-order-no')
     const amtEl = document.getElementById('confirm-amount')
     const mEl = document.getElementById('confirm-method')
+    const summaryLbl = document.getElementById('confirm-summary-label')
+    const invBadge = document.getElementById('confirm-invoice-badge')
+    const invBadgeNo = document.getElementById('confirm-invoice-badge-no')
+    const invLine = document.getElementById('confirm-invoice-line')
+    const invLineNo = document.getElementById('confirm-invoice-line-no')
+    const invDeferred = document.getElementById('confirm-invoice-deferred')
+    const invPanelWrap = document.getElementById('confirm-invoice-panel-wrap')
+    const viewInvBtn = document.getElementById('btn-confirm-view-invoice')
+    const emailInvBtn = document.getElementById('btn-confirm-email-invoice')
+
     if (titleEl) {
       titleEl.textContent =
         balanceDue > 0.009 ? 'Order placed — advance received' : 'Order placed!'
     }
     if (noEl) noEl.textContent = 'Order #' + (receipt.order_no || '--')
+    if (summaryLbl) {
+      summaryLbl.textContent = balanceDue > 0.009 ? 'Advance paid' : 'Amount paid'
+    }
+    if (amtEl) {
+      amtEl.textContent = formatRupees(receipt.amount || 0)
+      amtEl.classList.toggle('pos-confirm-amount--advance', balanceDue > 0.009)
+    }
     if (balanceEl) {
       if (balanceDue > 0.009) {
         balanceEl.textContent = 'Balance due: ' + formatRupees(balanceDue) + ' (collect when ready or from Orders)'
@@ -4730,16 +4827,56 @@
         collectBalBtn.onclick = null
       }
     }
-    if (amtEl) amtEl.textContent = formatRupees(receipt.amount || 0)
     if (mEl) {
       const methodLabel = String(receipt.method || '').toUpperCase()
       const refPart = receipt.external_ref ? (' · Ref: ' + receipt.external_ref) : ''
-      const inv = receipt.invoice_no ? (' · Invoice: ' + receipt.invoice_no) : ''
       const delPart = receipt.delivery_date
         ? ' · ' + (receipt.delivery_mode === 'HOME' ? 'Home delivery' : 'Pickup') + ' by ' + fmtOfferDateIso(receipt.delivery_date)
         : ''
-      mEl.textContent = 'Paid via ' + methodLabel + refPart + inv + delPart
+      let payLine = balanceDue > 0.009
+        ? ('Paid via ' + methodLabel + refPart + ' · Balance ' + formatRupees(balanceDue) + ' due')
+        : ('Paid via ' + methodLabel + refPart)
+      mEl.textContent = payLine + delPart
     }
+
+    if (invBadge && invBadgeNo) {
+      if (isInstantInvoiced) {
+        invBadge.hidden = false
+        invBadgeNo.textContent = receipt.invoice_no
+      } else {
+        invBadge.hidden = true
+        invBadgeNo.textContent = '—'
+      }
+    }
+    if (invLine && invLineNo) {
+      if (isInstantInvoiced) {
+        invLine.hidden = false
+        invLineNo.textContent = receipt.invoice_no
+      } else {
+        invLine.hidden = true
+        invLineNo.textContent = '—'
+      }
+    }
+    if (invDeferred) {
+      invDeferred.hidden = !isLabDeferred
+    }
+    if (invPanelWrap) {
+      invPanelWrap.hidden = !isInstantInvoiced
+    }
+    if (isInstantInvoiced) {
+      fillPosConfirmInvoiceFieldsFromReceipt(receipt)
+    }
+    if (viewInvBtn) {
+      viewInvBtn.disabled = !isInstantInvoiced
+      viewInvBtn.style.opacity = isInstantInvoiced ? '1' : '0.4'
+    }
+    const hasEmail = String(receipt.customer_email || '').trim().indexOf('@') > 0
+    if (emailInvBtn) {
+      emailInvBtn.disabled = !isInstantInvoiced || !hasEmail
+      emailInvBtn.style.opacity = (isInstantInvoiced && hasEmail) ? '1' : '0.4'
+      emailInvBtn.title = hasEmail ? 'Email invoice to customer' : 'Customer email required'
+    }
+
     // WhatsApp button
     const waBtn = document.getElementById('btn-confirm-whatsapp')
     if (waBtn) {
@@ -4777,6 +4914,20 @@
     if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('confirm-breakdown', 2)
     try {
       const detail = await apiGet('/api/pos/orders/' + receipt.order_id, session.token)
+      _posConfirmDetailSnap = detail
+      if (!receipt.invoice_no && detail.invoice_no) {
+        receipt.invoice_no = detail.invoice_no
+      } else if (!receipt.invoice_no && detail.order && detail.order.invoice_no) {
+        receipt.invoice_no = detail.order.invoice_no
+      }
+      if (!receipt.order_kind && detail.order && detail.order.order_kind) {
+        receipt.order_kind = detail.order.order_kind
+      }
+      if (detail.customer) {
+        if (!receipt.customer_name && detail.customer.full_name) receipt.customer_name = detail.customer.full_name
+        if (!receipt.customer_email && detail.customer.email) receipt.customer_email = detail.customer.email
+      }
+      fillPosConfirmInvoiceFieldsFromReceipt(receipt)
       const subs = detail.sub_orders || []
       const lines = detail.lines || []
       const storeName = (session && session.store_name) ? session.store_name : 'this store'
@@ -4811,6 +4962,28 @@
       }
       html += '</div>'
       breakEl.innerHTML = html
+      if (receipt.invoice_no) {
+        const invBadge = document.getElementById('confirm-invoice-badge')
+        const invBadgeNo = document.getElementById('confirm-invoice-badge-no')
+        const invLine = document.getElementById('confirm-invoice-line')
+        const invLineNo = document.getElementById('confirm-invoice-line-no')
+        const viewInvBtn = document.getElementById('btn-confirm-view-invoice')
+        const kind = String(receipt.order_kind || '').trim().toUpperCase()
+        const bal = Math.max(0, Number(receipt.balance_due) || 0)
+        const showInv = kind === 'INSTANT' && bal <= 0.009
+        if (invBadge && invBadgeNo && showInv) {
+          invBadge.hidden = false
+          invBadgeNo.textContent = receipt.invoice_no
+        }
+        if (invLine && invLineNo && showInv) {
+          invLine.hidden = false
+          invLineNo.textContent = receipt.invoice_no
+        }
+        if (viewInvBtn && showInv) {
+          viewInvBtn.disabled = false
+          viewInvBtn.style.opacity = '1'
+        }
+      }
     } catch (e) {
       breakEl.innerHTML = '<div class="pos-lk-confirm-pill"><div class="pill-sub">Line details unavailable.</div></div>'
     }
@@ -6307,7 +6480,7 @@
         return `
           <div class="pos-order-card pos-order-card--pressable" data-order-id="${o.order_id}" role="listitem">
             <div class="pos-order-info">
-              <div class="pos-order-no">${o.order_no}</div>
+              <div class="pos-order-no">${o.order_no}${o.invoice_no ? `<div class="pos-order-invoice-no">${escapeHtml(o.invoice_no)}</div>` : ''}</div>
               ${storeHtml}
               <div class="pos-order-customer">${o.customer_name} ${o.customer_phone ? '(' + o.customer_phone + ')' : ''}</div>
               <div class="pos-order-date">${dateStr}</div>
@@ -6885,7 +7058,7 @@
       '<div><div class="brand-k">Store OS · Cosmos</div>' +
       '<div class="store-n">' + escapeHtml(displayStore) + '</div>' +
       '<div class="store-sub">Printed tax invoice (handover preview)</div></div>' +
-      '<div class="inv"><h1>TAX INVOICE</h1>' +
+      '<div class="inv"><h1>' + (posSettings.composition_scheme ? 'RETAIL INVOICE' : 'TAX INVOICE') + '</h1>' +
       '<div class="inv-row"><strong>No.</strong> ' + escapeHtml(String(invoiceNo || '—')) + '</div>' +
       '<div class="inv-row"><strong>Order ref.</strong> ' + orderNoDisp + '</div>' +
       '<div class="inv-row"><strong>Dated</strong> ' + escapeHtml(dt) + ' IST</div>' +

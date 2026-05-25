@@ -325,6 +325,13 @@ app.use(
 // Request logging (API only; skip static asset noise)
 app.use('/api', requestLogger);
 
+// ERP API responses must never be browser-cached (ETag 304 kept stale empty order lists after deploy).
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
+
 // Goods Transfer — destination stores (before static + two paths so old proxies / cached routes still resolve)
 const destinationStoresChain = [apiKeyAuth, authJwt, requireGoodsTransferDestinationStores, handleDestinationStores];
 app.get('/api/stock-transfers/destination-stores', ...destinationStoresChain);

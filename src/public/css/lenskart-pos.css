@@ -3891,6 +3891,117 @@ body.pos-lk-flow .pos-confirm-action-whatsapp:disabled {
   cursor: not-allowed;
 }
 
+body.pos-lk-flow .pos-confirm-invoice-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--accL, #EFF6FF);
+  border: 1px solid var(--acc, #2563EB);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--acc2, #1D4ED8);
+}
+body.pos-lk-flow .pos-confirm-invoice-badge-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--acc2, #1D4ED8);
+  opacity: 0.85;
+}
+body.pos-lk-flow .pos-confirm-invoice-line {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border, #E2E8F0);
+  text-align: center;
+  font-size: 13px;
+  color: var(--text2, #64748B);
+}
+body.pos-lk-flow .pos-confirm-invoice-line-label {
+  font-weight: 700;
+  color: var(--text1, #0F172A);
+  margin-right: 6px;
+}
+body.pos-lk-flow .pos-confirm-invoice-deferred {
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--accL, #EFF6FF);
+  border: 1px solid var(--border, #BFDBFE);
+  font-size: 13px;
+  color: var(--acc2, #1D4ED8);
+  text-align: center;
+  line-height: 1.45;
+}
+body.pos-lk-flow .pos-confirm-invoice-panel-wrap {
+  border: 1px solid var(--border, #E2E8F0);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--card, #fff);
+}
+body.pos-lk-flow .pos-confirm-invoice-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text1, #0F172A);
+  cursor: pointer;
+}
+body.pos-lk-flow .pos-confirm-invoice-toggle-chevron {
+  font-size: 11px;
+  color: var(--text3, #94A3B8);
+  transition: transform 0.15s ease;
+}
+body.pos-lk-flow .pos-confirm-invoice-toggle[aria-expanded="true"] .pos-confirm-invoice-toggle-chevron {
+  transform: rotate(180deg);
+}
+body.pos-lk-flow .pos-confirm-invoice-fields {
+  display: none;
+  padding: 0 16px 16px;
+  flex-direction: column;
+  gap: 10px;
+}
+body.pos-lk-flow .pos-confirm-invoice-fields--open {
+  display: flex;
+}
+body.pos-lk-flow .pos-confirm-invoice-fields .pos-field-label {
+  margin-top: 4px;
+  font-size: 12px;
+}
+body.pos-lk-flow .pos-confirm-action-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  background: var(--card, #fff);
+  color: var(--text1, #0F172A);
+  font-weight: 800;
+  font-size: 14px;
+  border: 1px solid var(--border, #E2E8F0);
+  cursor: pointer;
+}
+body.pos-lk-flow .pos-confirm-action-email:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+body.pos-lk-flow .pos-confirm-amount--advance {
+  color: var(--gold, #D97706) !important;
+}
+body.pos-lk-flow .pos-order-invoice-no {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--acc2, #1D4ED8);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Tablet landscape as primary Store OS layout (body.pos-target-tablet-landscape)
    — earlier two-column breakpoints + full-width page shell for 1024–1366 class tablets.

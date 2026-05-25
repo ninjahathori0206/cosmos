@@ -38,7 +38,7 @@
       },
       INVOICED_7: {
         title: 'No recent invoiced orders',
-        subtext: 'Orders invoiced in the last 7 days appear here. Older invoices — search by order no or phone.'
+        subtext: 'Instant and lab orders invoiced in the last 7 days appear here. Older invoices — search by order no or phone.'
       }
     },
     resolveTransitBadge: function (labWorkflowStatus) {

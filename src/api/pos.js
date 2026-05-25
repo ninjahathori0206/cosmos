@@ -1482,6 +1482,7 @@ router.get('/orders', ...posOrdersView, async (req, res, next) => {
       labStatusIncludes: qOpts.labStatusIncludes || [],
       labStatusExcludesUnion: qOpts.labStatusExcludesUnion || [],
       invoicedSinceDays: qOpts.invoicedSinceDays != null ? qOpts.invoicedSinceDays : null,
+      invoicedQueue: qOpts.invoicedQueue === true,
       activeQueue: qOpts.activeQueue === true,
       transitRequiresPayment: qOpts.transitRequiresPayment === true,
       excludeOrderStatuses: Array.isArray(qOpts.excludeOrderStatuses)
@@ -1519,8 +1520,12 @@ router.get('/orders/:id', ...posOrdersView, async (req, res, next) => {
     return res.json({
       success: true,
       data: {
-        order: orderService.mapOrderRowForApi(bundle.order, { payment_summary: bundle.payment_summary }),
+        order: orderService.mapOrderRowForApi(bundle.order, {
+          payment_summary: bundle.payment_summary,
+          invoice_no: bundle.invoice_no || null
+        }),
         customer: bundle.customer || null,
+        invoice_no: bundle.invoice_no || null,
         sub_orders: bundle.subList,
         payments: bundle.payments,
         payment_summary: bundle.payment_summary,

@@ -6,6 +6,7 @@ const { resolvePosOrderDisplayStatus } = require('../config/posOrderDisplayCatal
 const ORDERS_ENGINE_MODE_KEY = 'orders_engine_mode'
 const MONEY_EPS = 0.02
 const ORDER_SEQ_KEY = 'pos_order_seq'
+const INVOICE_SEQ_KEY = 'pos_invoice_seq'
 
 /** Other LAB sibling must be ≥ lab QC Pass before dispatching any job under the same bill to store. */
 const LAB_PEER_READY_FOR_DISPATCH = new Set([
@@ -680,8 +681,9 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
   const payment_summary = buildPaymentSummary(order, labSubtotal, instantSubtotal, payments)
 
   const customer = await fetchOrderCustomerSnapshotForBundle(pool, mode, order)
+  const invoice_no = await fetchInvoiceNoForOrderId(pool, order.order_id)
 
-  return { order, subList, payments, payment_summary, customer }
+  return { order, subList, payments, payment_summary, customer, invoice_no }
 }
 
 /**
@@ -745,7 +747,8 @@ function mapOrderRowForApi(order, extras = {}) {
     total_amount: totalAmt,
     created_at: order.created_at,
     rx_snapshot: parseJsonMaybe(order.rx_snapshot),
-    inventory_committed: order.inventory_committed === true || order.inventory_committed === 1
+    inventory_committed: order.inventory_committed === true || order.inventory_committed === 1,
+    invoice_no: extras.invoice_no != null ? String(extras.invoice_no).trim() || null : null
   }
 }
 
@@ -1025,6 +1028,75 @@ async function allocateNextPosOrderSeq(transaction) {
   }
 
   return nextSeq
+}
+
+/** Indian FY label for invoice numbers, e.g. May 2026 → "2627". */
+function getIndianFyLabelForInvoice(date = new Date()) {
+  const istDateStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+  const parts = istDateStr.split('-').map(Number)
+  const y = parts[0]
+  const m = parts[1]
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return '0000'
+  const fyStart = m >= 4 ? y : y - 1
+  const fyEnd = (fyStart + 1) % 100
+  const fyStartShort = fyStart % 100
+  return String(fyStartShort).padStart(2, '0') + String(fyEnd).padStart(2, '0')
+}
+
+function compactStoreCodeForInvoice(storeCode) {
+  const s = String(storeCode || 'STORE').trim()
+  const trimmed = s.replace(/^EW-/i, '').replace(/-/g, '')
+  return trimmed || 'STORE'
+}
+
+/**
+ * Monotonic POS invoice number: {prefix}{FY}-{storeCompact}-{seq5}.
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function allocateNextPosInvoiceNo(pool, storeId) {
+  const prefixRaw = await readSetting(pool, 'pos_invoice_prefix')
+  const prefix = String(prefixRaw || 'EW-INV-')
+  const sid = Number(storeId)
+  let storeCode = 'STORE'
+  if (Number.isFinite(sid) && sid > 0) {
+    const storeRs = await pool.request().input('sid', sql.Int, sid).query(`
+      SELECT store_code FROM dbo.stores WHERE store_id = @sid
+    `)
+    if (storeRs.recordset[0] && storeRs.recordset[0].store_code) {
+      storeCode = String(storeRs.recordset[0].store_code)
+    }
+  }
+  const storeCompact = compactStoreCodeForInvoice(storeCode)
+  const fy = getIndianFyLabelForInvoice()
+
+  const k = INVOICE_SEQ_KEY
+  const rEns = pool.request()
+  rEns.input('k', sql.VarChar(100), k)
+  await rEns.query(`
+    IF NOT EXISTS (SELECT 1 FROM dbo.app_settings WITH (UPDLOCK, ROWLOCK) WHERE setting_key = @k)
+    BEGIN
+      INSERT INTO dbo.app_settings (setting_key, setting_value, setting_group, description)
+      VALUES (@k, N'0', N'pos', N'Monotonic invoice sequence (integer string).');
+    END
+  `)
+
+  const rLock = pool.request()
+  rLock.input('k', sql.VarChar(100), k)
+  const seqLock = await rLock.query(
+    'SELECT setting_value FROM dbo.app_settings WITH (UPDLOCK, ROWLOCK) WHERE setting_key = @k'
+  )
+  let seq = parseInt((seqLock.recordset[0] || {}).setting_value, 10)
+  if (!Number.isFinite(seq)) seq = 0
+  const nextSeq = seq + 1
+
+  const rUp = pool.request()
+  rUp.input('k', sql.VarChar(100), k)
+  rUp.input('v', sql.VarChar(500), String(nextSeq))
+  await rUp.query(
+    'UPDATE dbo.app_settings SET setting_value = @v, updated_at = DATEADD(MINUTE,330,SYSUTCDATETIME()) WHERE setting_key = @k'
+  )
+
+  return `${prefix}${fy}-${storeCompact}-${String(nextSeq).padStart(5, '0')}`
 }
 
 /**
@@ -1478,9 +1550,10 @@ async function fetchInvoiceNoForOrderId(pool, orderId) {
  * @returns {Promise<string>}
  */
 async function insertPosInvoiceIfAbsent(pool, order, options = {}) {
-  const prefixRaw = await readSetting(pool, 'pos_invoice_prefix')
-  const prefix = String(prefixRaw || 'EW-INV-')
-  const invoiceNo = prefix + String(order.order_no || order.order_id)
+  const existing = await fetchInvoiceNoForOrderId(pool, order.order_id)
+  if (existing) return existing
+
+  const invoiceNo = await allocateNextPosInvoiceNo(pool, order.store_id)
 
   const prefsObj = normalizeInvoicePreferencesForStorage(options && options.invoice_preferences)
   const prefsJson = prefsObj ? JSON.stringify(prefsObj) : null
@@ -2018,6 +2091,7 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
  *   labStatusIncludes?: string[],
  *   labStatusExcludesUnion?: string[],
  *   invoicedSinceDays?: number|null,
+ *   invoicedQueue?: boolean,
  *   activeQueue?: boolean,
  *   transitRequiresPayment?: boolean
  * }} opts
@@ -2096,7 +2170,14 @@ function appendPosOrderQueueFilters(query, t, opts, paramPrefix = '') {
   }
 
   const invDays = opts.invoicedSinceDays != null ? Number(opts.invoicedSinceDays) : null
-  if (invDays != null && invDays > 0 && includes.includes('INVOICED')) {
+  if (opts.invoicedQueue && invDays != null && invDays > 0) {
+    invoicedDaysParam = `${pfx}invoiced_days`
+    q += ` AND EXISTS (
+      SELECT 1 FROM dbo.pos_invoices piq
+      WHERE piq.order_id = o.order_id
+        AND piq.created_at >= DATEADD(DAY, -@${invoicedDaysParam}, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+    ) `
+  } else if (invDays != null && invDays > 0 && includes.includes('INVOICED')) {
     invoicedDaysParam = `${pfx}invoiced_days`
     q += ` AND EXISTS (
       SELECT 1 FROM ${t.order_status_log} lg
@@ -2136,6 +2217,7 @@ async function fetchAllOrders(pool, mode, {
   labStatusIncludes = [],
   labStatusExcludesUnion = [],
   invoicedSinceDays = null,
+  invoicedQueue = false,
   activeQueue = false,
   transitRequiresPayment = false
 }) {
@@ -2148,6 +2230,7 @@ async function fetchAllOrders(pool, mode, {
     labStatusIncludes,
     labStatusExcludesUnion,
     invoicedSinceDays,
+    invoicedQueue,
     activeQueue,
     transitRequiresPayment
   }
@@ -2157,6 +2240,7 @@ async function fetchAllOrders(pool, mode, {
            c.full_name as customer_name, c.phone as customer_phone,
            s.store_name,
            ISNULL(pay_agg.paid_total, 0) AS paid_total,
+           (SELECT TOP 1 pi.invoice_no FROM dbo.pos_invoices pi WHERE pi.order_id = o.order_id ORDER BY pi.invoice_no) AS invoice_no,
            MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.lab_workflow_status ELSE NULL END) AS lab_workflow_status,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_received_confirmed, 0) AS INT) ELSE NULL END) AS lab_rcv_all,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_backorder_confirmed, 0) AS INT) ELSE NULL END) AS lab_bo_all,
@@ -2301,7 +2385,8 @@ async function fetchAllOrders(pool, mode, {
       gst_amount: Number(row.gst_amount),
       created_at: row.created_at,
       customer_name: row.customer_name || 'Walk-in Customer',
-      customer_phone: row.customer_phone || ''
+      customer_phone: row.customer_phone || '',
+      invoice_no: row.invoice_no ? String(row.invoice_no).trim() : null
     }
   })
 }
@@ -2317,6 +2402,7 @@ async function fetchStoreOrders(pool, storeId, mode, {
   labStatusIncludes = [],
   labStatusExcludesUnion = [],
   invoicedSinceDays = null,
+  invoicedQueue = false,
   activeQueue = false,
   transitRequiresPayment = false
 }) {
@@ -2330,6 +2416,7 @@ async function fetchStoreOrders(pool, storeId, mode, {
            o.created_by_user_id,
            c.full_name as customer_name, c.phone as customer_phone,
            ISNULL(pay_agg.paid_total, 0) AS paid_total,
+           (SELECT TOP 1 pi.invoice_no FROM dbo.pos_invoices pi WHERE pi.order_id = o.order_id ORDER BY pi.invoice_no) AS invoice_no,
            MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.lab_workflow_status ELSE NULL END) AS lab_workflow_status,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_received_confirmed, 0) AS INT) ELSE NULL END) AS lab_rcv_all,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_backorder_confirmed, 0) AS INT) ELSE NULL END) AS lab_bo_all,
@@ -2400,6 +2487,7 @@ async function fetchStoreOrders(pool, storeId, mode, {
     labStatusIncludes,
     labStatusExcludesUnion,
     invoicedSinceDays,
+    invoicedQueue,
     activeQueue,
     transitRequiresPayment
   }
@@ -2486,7 +2574,8 @@ async function fetchStoreOrders(pool, storeId, mode, {
       gst_amount: Number(row.gst_amount),
       created_at: row.created_at,
       customer_name: row.customer_name || 'Walk-in Customer',
-      customer_phone: row.customer_phone || ''
+      customer_phone: row.customer_phone || '',
+      invoice_no: row.invoice_no ? String(row.invoice_no).trim() : null
     }
   })
 }
