@@ -151,6 +151,27 @@ function cxGetNavEl (id) {
   return document.querySelector('.sidebar-nav .nav-item[data-cx-page="' + id + '"]') || null
 }
 
+window.cxOpenSidebar = function cxOpenSidebar () {
+  var sb = document.getElementById('cx-sidebar') || document.querySelector('.sidebar')
+  var ov = document.getElementById('cx-sidebar-overlay')
+  if (sb) sb.classList.add('open')
+  if (ov) ov.classList.add('open')
+  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll()
+  else document.body.style.overflow = 'hidden'
+  var btn = document.getElementById('cx-menu-toggle')
+  if (btn) btn.setAttribute('aria-expanded', 'true')
+}
+
+window.cxCloseSidebar = function cxCloseSidebar () {
+  var sb = document.getElementById('cx-sidebar') || document.querySelector('.sidebar')
+  var ov = document.getElementById('cx-sidebar-overlay')
+  if (sb) sb.classList.remove('open')
+  if (ov) ov.classList.remove('open')
+  document.body.style.overflow = ''
+  var btn = document.getElementById('cx-menu-toggle')
+  if (btn) btn.setAttribute('aria-expanded', 'false')
+}
+
 var CX_BC_MAP = {
   dashboard: 'Dashboard',
   customers: 'Customers',
@@ -203,7 +224,7 @@ window.cxNav = function (id, el, options) {
   if (id === 'dashboard') window.loadCxDashboardPage()
   if (id === 'customers') window.loadCxCustomersPage()
   if (id === 'offers' && typeof window.loadOffersPage === 'function') window.loadOffersPage()
-  document.body.classList.remove('cx-mob-nav-open')
+  if (typeof window.cxCloseSidebar === 'function') window.cxCloseSidebar()
 }
 
 function cxApplyRouteFromPath () {
@@ -644,11 +665,26 @@ window.saveGrantMembership = async function () {
 
 document.addEventListener('DOMContentLoaded', function () {
   ;(async function cxBoot () {
+    if (typeof window.cosmosRefreshSession === 'function') {
+      try {
+        await window.cosmosRefreshSession()
+      } catch (refreshErr) {
+        if (refreshErr && (refreshErr.status === 401 || refreshErr.status === 403)) {
+          if (typeof window.cosmosSignOut === 'function') window.cosmosSignOut()
+          else window.location.href = '/'
+          return
+        }
+      }
+    }
     if (typeof window.cosmosLoadRbacBootstrap === 'function') {
       await window.cosmosLoadRbacBootstrap()
     }
     cxLoadUser()
+    cxApplyFinePermissionsUi()
     cxApplyRouteFromPath()
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') window.cxCloseSidebar()
+    })
     var cxTbl = document.getElementById('cx-customers-table')
     if (cxTbl && !cxTbl.dataset.cxGrantMembershipBound) {
       cxTbl.dataset.cxGrantMembershipBound = '1'

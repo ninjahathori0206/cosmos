@@ -25,6 +25,66 @@ function hashFromLoginRow(user) {
   return raw != null ? String(raw) : '';
 }
 
+async function loadEffectiveModules(userId) {
+  const modules = {};
+  try {
+    const modResult = await executeStoredProcedure('sp_User_EffectiveModules', {
+      user_id: { type: sql.Int, value: userId }
+    });
+    (modResult.recordset || []).forEach((r) => {
+      const k = String(r.module_key || '').toLowerCase();
+      if (k) modules[k] = !!r.is_effective;
+    });
+  } catch (spErr) {
+    console.warn('[auth] sp_User_EffectiveModules failed:', spErr.message);
+  }
+  return modules;
+}
+
+async function loadRolePermissions(roleKey) {
+  let permissions = [];
+  try {
+    const permResult = await executeStoredProcedure('sp_Role_GetPermissions', {
+      role_key: { type: sql.VarChar(50), value: roleKey }
+    });
+    permissions = (permResult.recordset || []).map((row) =>
+      String(row.permission || '').toLowerCase()
+    ).filter(Boolean);
+  } catch (permErr) {
+    console.warn('[auth] sp_Role_GetPermissions failed:', permErr.message);
+  }
+  return permissions;
+}
+
+async function buildSessionForUser(user) {
+  const modules = await loadEffectiveModules(user.user_id);
+  const permissions = await loadRolePermissions(user.role_key);
+  const payload = {
+    user_id: user.user_id,
+    role: user.role_key,
+    store_id: user.store_id || null,
+    modules,
+    permissions,
+    token_issued_at: nowUnixSec()
+  };
+  const token = jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '1d'
+  });
+  return {
+    token,
+    user: {
+      user_id: user.user_id,
+      username: user.username,
+      full_name: user.full_name,
+      role: user.role_key,
+      store_id: user.store_id,
+      store_name: user.store_name || null,
+      modules,
+      permissions
+    }
+  };
+}
+
 router.post('/login', async (req, res, next) => {
   try {
     const { error, value } = loginSchema.validate(req.body);
@@ -91,65 +151,8 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
-    // Compute effective module access: role policy intersected with store policy.
-    // Returns rows with { module_key, role_allows, store_allows, is_effective }.
-    // Falls back gracefully — an empty array means "all modules allowed" on the client.
-    let modules = {};
-    try {
-      const modResult = await executeStoredProcedure('sp_User_EffectiveModules', {
-        user_id: { type: sql.Int, value: user.user_id }
-      });
-      (modResult.recordset || []).forEach((r) => {
-        const k = String(r.module_key || '').toLowerCase();
-        if (k) modules[k] = !!r.is_effective;
-      });
-    } catch (spErr) {
-      // Non-fatal: if SP not yet deployed the login still succeeds;
-      // empty modules map = legacy “all enabled” on the client.
-      console.warn('[auth/login] sp_User_EffectiveModules failed:', spErr.message);
-    }
-
-    let permissions = [];
-    try {
-      const permResult = await executeStoredProcedure('sp_Role_GetPermissions', {
-        role_key: { type: sql.VarChar(50), value: user.role_key }
-      });
-      permissions = (permResult.recordset || []).map((row) =>
-        String(row.permission || '').toLowerCase()
-      ).filter(Boolean);
-    } catch (permErr) {
-      console.warn('[auth/login] sp_Role_GetPermissions failed:', permErr.message);
-    }
-
-    const payload = {
-      user_id: user.user_id,
-      role: user.role_key,
-      store_id: user.store_id || null,
-      modules,
-      permissions,
-      token_issued_at: nowUnixSec()
-    };
-
-    const token = jwt.sign(payload, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '1d'
-    });
-
-    return res.json({
-      success: true,
-      data: {
-        token,
-        user: {
-          user_id: user.user_id,
-          username: user.username,
-          full_name: user.full_name,
-          role: user.role_key,
-          store_id: user.store_id,
-          store_name: user.store_name || null,
-          modules,
-          permissions
-        }
-      }
-    });
+    const session = await buildSessionForUser(user);
+    return res.json({ success: true, data: session });
   } catch (err) {
     return next(err);
   }
@@ -160,6 +163,32 @@ router.get('/me', authJwt, (req, res) => {
     success: true,
     data: req.user
   });
+});
+
+/** Re-read role modules + permissions from DB and issue a fresh JWT (after CU role edits). */
+router.post('/refresh', authJwt, async (req, res, next) => {
+  try {
+    const userId = Number(req.user && req.user.user_id);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      return res.status(401).json({ success: false, message: 'Invalid session.' });
+    }
+
+    const result = await executeStoredProcedure('sp_User_GetById', {
+      user_id: { type: sql.Int, value: userId }
+    });
+    const user = result.recordset && result.recordset[0];
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User not found.' });
+    }
+    if (user.is_active === false || user.is_active === 0) {
+      return res.status(403).json({ success: false, message: 'Account is inactive.' });
+    }
+
+    const session = await buildSessionForUser(user);
+    return res.json({ success: true, data: session });
+  } catch (err) {
+    return next(err);
+  }
 });
 
 module.exports = router;

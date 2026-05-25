@@ -1377,13 +1377,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     container.innerHTML = '<div class="td-muted text-xs">Loading modules…</div>';
     try {
       const rows = await apiGet(`/api/role-modules/${roleKey}`);
+      const roleHasModulePolicy = rows.length > 0;
       rows.forEach((r) => { roleModuleState[r.module_key] = !!r.is_enabled; });
 
       container.innerHTML = '';
 
       MODULE_DEFS.forEach((m) => {
         if (!Object.prototype.hasOwnProperty.call(roleModuleState, m.key)) {
-          roleModuleState[m.key] = true;
+          /* Opt-in roles: missing row = OFF in DB (sp_User_EffectiveModules), not ON */
+          roleModuleState[m.key] = roleHasModulePolicy ? false : true;
         }
       });
 
@@ -1416,7 +1418,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const enabled = !!roleModuleState[m.key];
         await apiPut(`/api/role-modules/${roleKey}`, { module_key: m.key, is_enabled: enabled });
       }
-      if (msgEl) { msgEl.style.color = 'var(--green,#16a34a)'; msgEl.textContent = '✓ Modules saved.'; }
+      if (msgEl) {
+        msgEl.style.color = 'var(--green,#16a34a)';
+        msgEl.textContent = '✓ Modules saved. Users must sign out and sign in, or reopen the app (session refreshes on load).';
+      }
       setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3000);
     } catch (err) {
       if (msgEl) { msgEl.style.color = '#b91c1c'; msgEl.textContent = `Error: ${err.message}`; }

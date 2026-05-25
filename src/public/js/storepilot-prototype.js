@@ -836,6 +836,18 @@ function renderNoAccessState(reasonKey) {
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  if (typeof window.cosmosRefreshSession === 'function') {
+    try {
+      await window.cosmosRefreshSession();
+    } catch (refreshErr) {
+      if (refreshErr && (refreshErr.status === 401 || refreshErr.status === 403)) {
+        if (typeof window.cosmosSignOut === 'function') window.cosmosSignOut();
+        else window.location.href = '/';
+        return;
+      }
+    }
+  }
+
   spHydrateUserFromSession();
 
   const routeFromPath = getStorepilotPageFromPath(window.location.pathname);

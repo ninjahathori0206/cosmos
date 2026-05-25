@@ -218,53 +218,6 @@
     .two-col { grid-template-columns:1fr; }
   }
 
-  /* ── Mobile nav backdrop (drawer over content) ── */
-  .cx-mob-backdrop {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(15, 23, 42, 0.48);
-    z-index: 350;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-    pointer-events: none;
-  }
-  body.cx-mob-nav-open .cx-mob-backdrop {
-    display: block;
-    opacity: 1;
-    pointer-events: auto;
-  }
-  body.cx-mob-nav-open .main { overflow: hidden; }
-  .cx-mob-bar {
-    display: none;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 14px;
-    background: var(--card);
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    z-index: 60;
-    flex-shrink: 0;
-  }
-  .cx-mob-menu-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--card);
-    color: var(--text1);
-    font-size: 18px;
-    cursor: pointer;
-    font-family: inherit;
-  }
-  .cx-mob-menu-btn:hover { border-color: var(--acc2); color: var(--acc); }
-  .cx-mob-title { font-size: 14px; font-weight: 700; color: var(--text1); }
-
   /* Eye test modal — same shell as cx-modal (no foundry CSS on this page) */
   #modal-eyetest-overlay .cx-modal.et-wide { max-width: 560px; }
   .et-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -280,25 +233,67 @@
   }
 
   @media (max-width: 768px) {
-    .sidebar {
-      transform: translateX(-100%);
-      transition: transform 0.22s ease;
-      z-index: 400;
-      box-shadow: none;
-      pointer-events: none;
-    }
-    body.cx-mob-nav-open .sidebar {
-      transform: translateX(0);
-      box-shadow: 8px 0 28px rgba(15, 23, 42, 0.25);
-      pointer-events: auto;
-    }
     .main { margin-left: 0; }
-    .cx-mob-bar { display: flex; }
-    .sg4 { grid-template-columns: repeat(2, 1fr); }
-    .page { padding: 16px 14px; }
-    .topbar { padding: 0 14px; height: 48px; }
+    .sg4 {
+      display: flex;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 4px;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+    .sg4 .sc {
+      flex: 0 0 min(78vw, 280px);
+      scroll-snap-align: start;
+    }
+    .page { padding: 14px 14px calc(18px + env(safe-area-inset-bottom, 0px)); }
+    .ph {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      margin: -14px -14px 16px;
+      padding: 14px 14px 12px;
+      background: color-mix(in srgb, var(--bg) 92%, transparent);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
     .gm-hero { flex-wrap: wrap; }
     .et-grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .sidebar-nav .nav-item {
+      min-height: 48px;
+      padding-top: 12px;
+      padding-bottom: 12px;
+      font-size: 14px;
+    }
+    #cx-customers-table thead { display: none; }
+    #cx-customers-table tbody tr.tr-link {
+      display: block;
+      margin-bottom: 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: var(--card);
+    }
+    #cx-customers-table tbody tr.tr-link td {
+      display: block;
+      border: none;
+      padding: 4px 0;
+    }
+    #cx-customers-table tbody tr.tr-link td:first-child {
+      font-size: 15px;
+      padding-bottom: 8px;
+    }
+    #cx-customers-table tbody tr.tr-link td.text-right {
+      text-align: left;
+    }
+    .card .ch {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .card .ch .fgrp { width: 100%; }
+    .card .ch .btn { width: 100%; justify-content: center; min-height: 44px; }
   }
 
   @media (max-width: 600px) {
@@ -352,13 +347,12 @@
     .gm-price-grid { grid-template-columns: 1fr; }
   }
 </style>
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260525-toast-date">
-<script src="/js/cosmos-ui-polish.js?v=20260528-polish-load-defer" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-cx-mobile-shell">
+<script src="/js/cosmos-ui-polish.js?v=20260528-cx-mobile-shell" defer></script>
 </head>
 <body class="cosmos-app-shell">
-<div class="cx-mob-backdrop" onclick="document.body.classList.remove('cx-mob-nav-open')" aria-hidden="true"></div>
 
-<aside class="sidebar">
+<aside class="sidebar" id="cx-sidebar">
   <nav class="sidebar-nav">
     <div class="nav-group">Overview</div>
     <div class="nav-item active" data-cx-page="dashboard" onclick="cxNav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
@@ -381,13 +375,19 @@
   </div>
 </aside>
 
+<div class="sidebar-overlay" id="cx-sidebar-overlay" onclick="cxCloseSidebar()" aria-hidden="true"></div>
+
 <main class="main">
-  <div class="cx-mob-bar">
-    <button type="button" class="cx-mob-menu-btn" onclick="document.body.classList.add('cx-mob-nav-open')" aria-label="Open navigation menu" aria-expanded="false" id="cx-mob-menu-open">☰</button>
-    <span class="cx-mob-title">Cosmos · CX</span>
-  </div>
   <div class="topbar">
-    <div class="breadcrumb">CX <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="cx-bc">Dashboard</span></div>
+    <button type="button" class="menu-toggle" id="cx-menu-toggle" onclick="cxOpenSidebar()" aria-label="Open navigation menu" aria-expanded="false" aria-controls="cx-sidebar">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="topbar-center">
+      <div class="breadcrumb" id="cx-breadcrumb">
+        <span class="breadcrumb-prefix">CX <span style="color:var(--text3);margin:0 4px">›</span></span>
+        <span class="cur" id="cx-bc">Dashboard</span>
+      </div>
+    </div>
   </div>
 
   <div class="cosmos-app-scroll" id="cosmos-app-scroll">
@@ -692,7 +692,7 @@
 
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal"></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
-<script src="/js/cx-prototype.js"></script>
+<script src="/js/cx-prototype.js?v=20260528-cx-mobile-shell"></script>
 <script>
 /* ── CX: Offers page ─────────────────────────────────────────── */
 var _cxOffersLoaded = false;

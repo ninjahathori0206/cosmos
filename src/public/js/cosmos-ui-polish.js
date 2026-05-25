@@ -214,6 +214,48 @@
     window.location.href = '/'
   }
 
+  /**
+   * Reload modules + permissions from DB into sessionStorage (after Command Unit role edits).
+   * Safe to call on module app load; no-op when not signed in.
+   */
+  window.cosmosRefreshSession = async function cosmosRefreshSession() {
+    var token = ''
+    try {
+      token = sessionStorage.getItem('cosmos_token') || ''
+    } catch (_) {}
+    if (!token) return null
+
+    var apiKey = await window.cosmosEnsureApiKey()
+    var res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+        'Authorization': 'Bearer ' + token
+      }
+    })
+    var raw = await res.text()
+    var data
+    try {
+      data = JSON.parse(raw)
+    } catch (_) {
+      throw new Error('Unexpected server response while refreshing session.')
+    }
+    if (!res.ok || !data.success) {
+      var err = new Error((data && data.message) || 'Session refresh failed')
+      err.status = res.status
+      throw err
+    }
+    var session = data.data || {}
+    if (session.token) {
+      try { sessionStorage.setItem('cosmos_token', session.token) } catch (_) {}
+    }
+    if (session.user) {
+      try { sessionStorage.setItem('cosmos_user', JSON.stringify(session.user)) } catch (_) {}
+    }
+    return session.user || null
+  }
+
   function cosmosInitMobileChrome() {
     cosmosBindMobileViewportInsets()
     window.cosmosUpdateToastTopOffset()

@@ -1356,10 +1356,13 @@ body.cosmos-app-shell .sidebar {
     position: fixed;
     z-index: 200;
     box-shadow: none;
+    pointer-events: none;
   }
   body.cosmos-app-shell .sidebar.open {
     transform: translateX(0);
     box-shadow: 8px 0 28px rgba(15, 30, 53, 0.28);
+    pointer-events: auto;
+    padding-top: env(safe-area-inset-top, 0px);
   }
   body.cosmos-app-shell .main {
     margin-left: 0 !important;
