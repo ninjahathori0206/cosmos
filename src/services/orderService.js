@@ -2491,6 +2491,214 @@ async function fetchStoreOrders(pool, storeId, mode, {
   })
 }
 
+/** @returns {string|null} Seven-digit unit barcode or null if invalid. */
+function normalizeUnitBarcode(code) {
+  const digits = String(code || '').replace(/\D/g, '')
+  if (!digits.length) return null
+  const padded = digits.padStart(7, '0').slice(-7)
+  return padded.length === 7 ? padded : null
+}
+
+/**
+ * @param {import('mssql').Transaction} transaction
+ */
+async function restoreStoreStockQty(transaction, storeId, skuId, qty) {
+  const sid = Number(storeId)
+  const sku = Number(skuId)
+  const q = Number(qty) || 0
+  if (!Number.isFinite(sid) || sid <= 0 || !Number.isFinite(sku) || sku <= 0 || q <= 0) return
+  const rStock = new sql.Request(transaction)
+  rStock.input('sku_id', sql.Int, sku)
+  rStock.input('store_id', sql.Int, sid)
+  rStock.input('qty', sql.Int, q)
+  const stockRes = await rStock.query(`
+    SELECT balance_id, qty FROM dbo.stock_balances
+    WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id
+  `)
+  const sb = stockRes.recordset && stockRes.recordset[0]
+  if (sb && sb.balance_id) {
+    await rStock.query(`
+      UPDATE dbo.stock_balances
+      SET qty = qty + @qty,
+          last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id
+    `)
+  } else {
+    await rStock.query(`
+      INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, qty, last_updated)
+      VALUES (@sku_id, N'STORE', @store_id, @qty, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+    `)
+  }
+}
+
+/**
+ * Release SOLD sku_units tied to an order and optionally restore store stock from line qty.
+ * Safe when the order row is already deleted (units may still reference order_id).
+ * @param {import('mssql').Transaction} transaction
+ */
+async function releaseSkuUnitsForOrder(transaction, { mode, storeId, orderId, lineRows, restoreStock }) {
+  const t = tableNames(mode)
+  const oid = Number(orderId)
+  const sid = Number(storeId)
+  if (!Number.isFinite(oid) || oid <= 0 || !Number.isFinite(sid) || sid <= 0) {
+    const err = new Error('orderId and storeId are required.')
+    err.statusCode = 400
+    throw err
+  }
+
+  let rows = lineRows
+  if (!rows) {
+    const itemsRes = await new sql.Request(transaction)
+      .input('oid', sql.Int, oid)
+      .query(`
+        SELECT i.order_item_id, i.sku_id, i.qty
+        FROM ${t.order_items} i
+        INNER JOIN ${t.sub_orders} s ON s.sub_order_id = i.sub_order_id
+        WHERE s.order_id = @oid
+      `)
+    rows = itemsRes.recordset || []
+  }
+
+  if (restoreStock) {
+    for (const row of rows) {
+      const skuId = Number(row.sku_id)
+      const qty = Number(row.qty) || 0
+      if (!Number.isFinite(skuId) || skuId <= 0 || qty <= 0) continue
+      await restoreStoreStockQty(transaction, sid, skuId, qty)
+    }
+  }
+
+  const reqRel = new sql.Request(transaction)
+  reqRel.input('oid', sql.Int, oid)
+  reqRel.input('store_id', sql.Int, sid)
+  await reqRel.query(`
+    IF OBJECT_ID(N'dbo.order_item_units', N'U') IS NOT NULL
+      DELETE oiu
+      FROM dbo.order_item_units oiu
+      WHERE oiu.unit_id IN (
+        SELECT unit_id FROM dbo.sku_units
+        WHERE order_id = @oid AND sold_store_id = @store_id AND status = N'SOLD'
+      );
+  `)
+
+  const unitRes = await reqRel.query(`
+    UPDATE dbo.sku_units
+    SET status = N'AT_STORE',
+        location_type = N'STORE',
+        location_id = @store_id,
+        sold_at = NULL,
+        sold_store_id = NULL,
+        order_id = NULL,
+        order_item_id = NULL
+    WHERE order_id = @oid
+      AND sold_store_id = @store_id
+      AND status = N'SOLD';
+    SELECT @@ROWCOUNT AS units_released;
+  `)
+
+  const unitsReleased = unitRes.recordset && unitRes.recordset[0]
+    ? Number(unitRes.recordset[0].units_released) || 0
+    : 0
+
+  return { units_released: unitsReleased }
+}
+
+/**
+ * Release SOLD units by 7-digit barcode (e.g. after manual order DELETE).
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function releaseSkuUnitsByBarcodes(pool, { storeId, barcodes, restoreStock = true }) {
+  const sid = Number(storeId)
+  if (!Number.isFinite(sid) || sid <= 0) {
+    const err = new Error('storeId is required.')
+    err.statusCode = 400
+    throw err
+  }
+  const results = { released: [], skipped: [], not_found: [] }
+  const list = Array.isArray(barcodes) ? barcodes : [barcodes]
+  const trx = new sql.Transaction(pool)
+  await trx.begin()
+  try {
+    for (const raw of list) {
+      const code = normalizeUnitBarcode(raw)
+      if (!code) {
+        results.not_found.push({ barcode: String(raw), reason: 'invalid_format' })
+        continue
+      }
+      const lookup = await new sql.Request(trx)
+        .input('code', sql.Char(7), code)
+        .query(`
+          SELECT unit_id, sku_id, status, sold_store_id, order_id, location_id
+          FROM dbo.sku_units
+          WHERE unit_barcode = @code
+        `)
+      const u = lookup.recordset && lookup.recordset[0]
+      if (!u) {
+        results.not_found.push({ barcode: code })
+        continue
+      }
+      const status = String(u.status || '').toUpperCase()
+      if (status === 'AT_STORE' && Number(u.location_id) === sid) {
+        results.skipped.push({ barcode: code, status, reason: 'already_at_store' })
+        continue
+      }
+      if (status !== 'SOLD') {
+        results.skipped.push({ barcode: code, status })
+        continue
+      }
+      const soldStore = Number(u.sold_store_id)
+      if (Number.isFinite(soldStore) && soldStore > 0 && soldStore !== sid) {
+        results.skipped.push({
+          barcode: code,
+          status,
+          reason: 'wrong_store',
+          sold_store_id: soldStore
+        })
+        continue
+      }
+      const uid = Number(u.unit_id)
+      await new sql.Request(trx).input('uid', sql.Int, uid).query(`
+        IF OBJECT_ID(N'dbo.order_item_units', N'U') IS NOT NULL
+          DELETE FROM dbo.order_item_units WHERE unit_id = @uid;
+      `)
+      const upd = await new sql.Request(trx)
+        .input('uid', sql.Int, uid)
+        .input('store_id', sql.Int, sid)
+        .query(`
+          UPDATE dbo.sku_units
+          SET status = N'AT_STORE',
+              location_type = N'STORE',
+              location_id = @store_id,
+              sold_at = NULL,
+              sold_store_id = NULL,
+              order_id = NULL,
+              order_item_id = NULL
+          WHERE unit_id = @uid AND status = N'SOLD';
+          SELECT @@ROWCOUNT AS ok;
+        `)
+      const ok = upd.recordset && upd.recordset[0] ? Number(upd.recordset[0].ok) : 0
+      if (ok !== 1) {
+        results.skipped.push({ barcode: code, status, reason: 'update_failed' })
+        continue
+      }
+      if (restoreStock) {
+        await restoreStoreStockQty(trx, sid, u.sku_id, 1)
+      }
+      results.released.push({
+        barcode: code,
+        unit_id: uid,
+        sku_id: Number(u.sku_id),
+        previous_order_id: u.order_id
+      })
+    }
+    await trx.commit()
+  } catch (e) {
+    await trx.rollback()
+    throw e
+  }
+  return results
+}
+
 /**
  * Void a zero-payment OPEN orphan: CANCELLED + restore store stock and unit barcodes.
  * @param {import('mssql').ConnectionPool} pool
@@ -2534,60 +2742,12 @@ async function voidUnpaidPosOrder(pool, mode, storeId, orderId, actorUserId, opt
   const trx = new sql.Transaction(pool)
   await trx.begin()
   try {
-    const itemsRes = await new sql.Request(trx)
-      .input('oid', sql.Int, oid)
-      .query(`
-        SELECT i.order_item_id, i.sku_id, i.qty
-        FROM ${t.order_items} i
-        INNER JOIN ${t.sub_orders} s ON s.sub_order_id = i.sub_order_id
-        WHERE s.order_id = @oid
-      `)
-    const lineRows = itemsRes.recordset || []
-
-    if (inventoryCommitted) {
-      for (const row of lineRows) {
-        const skuId = Number(row.sku_id)
-        const qty = Number(row.qty) || 0
-        if (!Number.isFinite(skuId) || skuId <= 0 || qty <= 0) continue
-        const rStock = new sql.Request(trx)
-        rStock.input('sku_id', sql.Int, skuId)
-        rStock.input('store_id', sql.Int, storeId)
-        rStock.input('qty', sql.Int, qty)
-        const stockRes = await rStock.query(`
-          SELECT balance_id, qty FROM dbo.stock_balances
-          WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id
-        `)
-        const sb = stockRes.recordset && stockRes.recordset[0]
-        if (sb && sb.balance_id) {
-          await rStock.query(`
-            UPDATE dbo.stock_balances
-            SET qty = qty + @qty,
-                last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-            WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id
-          `)
-        } else {
-          await rStock.query(`
-            INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, qty, last_updated)
-            VALUES (@sku_id, N'STORE', @store_id, @qty, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
-          `)
-        }
-      }
-    }
-
-    await new sql.Request(trx)
-      .input('oid', sql.Int, oid)
-      .input('store_id', sql.Int, storeId)
-      .query(`
-        UPDATE dbo.sku_units
-        SET status = N'AT_STORE',
-            sold_at = NULL,
-            sold_store_id = NULL,
-            order_id = NULL,
-            order_item_id = NULL
-        WHERE order_id = @oid
-          AND sold_store_id = @store_id
-          AND status = N'SOLD'
-      `)
+    await releaseSkuUnitsForOrder(trx, {
+      mode,
+      storeId,
+      orderId: oid,
+      restoreStock: inventoryCommitted
+    })
 
     await new sql.Request(trx)
       .input('oid', sql.Int, oid)
@@ -2786,6 +2946,9 @@ module.exports = {
   patchLabSubOrderIntake,
   fetchStoreOrders,
   voidUnpaidPosOrder,
+  releaseSkuUnitsForOrder,
+  releaseSkuUnitsByBarcodes,
+  normalizeUnitBarcode,
   fetchAllOrders,
   fetchCxSummary,
   fetchCxRevenueByStore,
