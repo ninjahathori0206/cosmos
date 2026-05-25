@@ -2665,9 +2665,27 @@ async function fetchCxRevenueByStore(pool, mode, { limit = 30 } = {}) {
  * All registered POS customers with lifetime order stats (LEFT JOIN orders).
  * @param {import('mssql').ConnectionPool} pool
  */
+async function membershipPlansHasTierIdColumn(pool) {
+  const r = await pool.request().query(`
+    SELECT COL_LENGTH('dbo.membership_plans', 'tier_id') AS col_len
+  `)
+  const len = r.recordset && r.recordset[0] && r.recordset[0].col_len
+  return len != null && Number(len) > 0
+}
+
 async function fetchCxCustomerRollup(pool, mode, { search, limit = 100 } = {}) {
   const t = tableNames(mode)
   const lim = Math.min(500, Math.max(1, Number(limit) || 100))
+  const linkTiers = await membershipPlansHasTierIdColumn(pool)
+  const tierNameExpr = linkTiers
+    ? 'ISNULL(mt.tier_name, p.display_name)'
+    : 'p.display_name'
+  const typeExpr = linkTiers
+    ? "NULLIF(LTRIM(RTRIM(ISNULL(mt.loyalty_tier, N''))), N'')"
+    : 'NULL'
+  const tierJoin = linkTiers
+    ? 'LEFT JOIN dbo.membership_tiers mt ON mt.membership_id = p.tier_id'
+    : ''
   let query = `
     SELECT c.customer_id,
            c.full_name,
@@ -2677,16 +2695,46 @@ async function fetchCxCustomerRollup(pool, mode, { search, limit = 100 } = {}) {
            ISNULL(st.store_name, N'') AS home_store_name,
            COUNT(o.order_id) AS order_count,
            ISNULL(SUM(o.total_amount), 0) AS lifetime_revenue,
-           MAX(o.created_at) AS last_order_at
+           MAX(o.created_at) AS last_order_at,
+           MAX(am.plan_key) AS active_plan_key,
+           MAX(am.plan_display_name) AS plan_display_name,
+           MAX(am.membership_tier_name) AS membership_tier_name,
+           MAX(am.membership_type) AS membership_type,
+           MAX(am.membership_expires_at) AS membership_expires_at
     FROM dbo.pos_customers c
     LEFT JOIN ${t.orders} o ON o.customer_id = c.customer_id
     LEFT JOIN dbo.stores st ON c.home_store_id = st.store_id
+    OUTER APPLY (
+      SELECT TOP 1
+        m.plan_key,
+        p.display_name AS plan_display_name,
+        ${tierNameExpr} AS membership_tier_name,
+        ${typeExpr} AS membership_type,
+        m.expires_at AS membership_expires_at
+      FROM dbo.customer_memberships m
+      INNER JOIN dbo.membership_plans p ON p.plan_key = m.plan_key AND p.is_active = 1
+      ${tierJoin}
+      WHERE m.customer_id = c.customer_id
+        AND m.is_active = 1
+        AND m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      ORDER BY m.expires_at DESC
+    ) am
     WHERE c.is_active = 1
   `
   const req = pool.request().input('lim', sql.Int, lim)
   if (search) {
-    query += ` AND (c.full_name LIKE @search OR c.phone LIKE @search OR ISNULL(c.email, N'') LIKE @search) `
-    req.input('search', sql.NVarChar(200), '%' + search + '%')
+    const digitsOnly = String(search).replace(/\D/g, '')
+    if (digitsOnly.length >= 4 && digitsOnly.length >= String(search).replace(/\s/g, '').length * 0.7) {
+      query += ` AND (
+        c.phone LIKE @search
+        OR REPLACE(REPLACE(REPLACE(c.phone, N' ', N''), N'-', N''), N'+', N'') LIKE @searchDigits
+      ) `
+      req.input('search', sql.NVarChar(200), '%' + search + '%')
+      req.input('searchDigits', sql.NVarChar(30), '%' + digitsOnly + '%')
+    } else {
+      query += ` AND (c.full_name LIKE @search OR c.phone LIKE @search OR ISNULL(c.email, N'') LIKE @search) `
+      req.input('search', sql.NVarChar(200), '%' + search + '%')
+    }
   }
   query += `
     GROUP BY c.customer_id, c.full_name, c.phone, c.email, c.home_store_id, st.store_name
@@ -2703,7 +2751,12 @@ async function fetchCxCustomerRollup(pool, mode, { search, limit = 100 } = {}) {
     home_store_name: row.home_store_name || '',
     order_count: Number(row.order_count) || 0,
     lifetime_revenue: roundMoney(Number(row.lifetime_revenue) || 0),
-    last_order_at: row.last_order_at || null
+    last_order_at: row.last_order_at || null,
+    active_plan_key: row.active_plan_key || null,
+    plan_display_name: row.plan_display_name || null,
+    membership_tier_name: row.membership_tier_name || null,
+    membership_type: row.membership_type || null,
+    membership_expires_at: row.membership_expires_at || null
   }))
 }
 

@@ -232,7 +232,31 @@
     padding-bottom: 2px;
   }
 
-  /* Native mobile / tablet portrait — match menu-toggle breakpoint in cosmos-ui-polish */
+  .cx-cust-search-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    width: 100%;
+  }
+  .cx-cust-search-form .fgrp { flex: 1 1 200px; min-width: 0; }
+  .cx-cust-results-wrap {
+    min-height: 120px;
+  }
+  .cx-cust-detail-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 14px 0;
+  }
+  .cx-cust-detail-stat {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+  }
+  .cx-cust-detail-stat .lbl { font-size: 10px; font-weight: 600; color: var(--text3); text-transform: uppercase; }
+  .cx-cust-detail-stat .val { font-size: 15px; font-weight: 600; color: var(--text1); margin-top: 4px; }
   .cx-cust-list { display: none; flex-direction: column; gap: 10px; }
   .cx-cust-card {
     display: block;
@@ -311,12 +335,20 @@
     text-align: right;
     word-break: break-word;
   }
+  .cx-cust-card__row--active-member span:last-child {
+    color: var(--green);
+    font-weight: 600;
+  }
 
   @media (max-width: 1024px) {
     .main { margin-left: 0; }
     #page-customers > .ph { display: none; }
+    .cx-cust-search-card { margin-bottom: 12px; }
+    .cx-cust-results-wrap { padding: 0 2px 16px; }
     .cx-cust-list { display: flex; }
     #cx-customers-table-wrap { display: none !important; }
+    .cx-cust-search-form { flex-direction: column; align-items: stretch; }
+    .cx-cust-search-form .btn { width: 100%; min-height: 44px; justify-content: center; }
     .sg4 {
       display: flex;
       flex-wrap: nowrap;
@@ -501,15 +533,19 @@
       <div class="pt">Customers</div>
       <div class="ps">Registered POS customers with lifetime order value. Click a row to grant or renew Eyewoot Go membership.</div>
     </div>
-    <div class="card mb4">
+    <div class="card mb4 cx-cust-search-card">
       <div class="ch">
-        <div class="fgrp">
-          <label for="cx-cust-search">Search name, phone, or email</label>
-          <input type="search" id="cx-cust-search" placeholder="Search..." autocomplete="off">
-        </div>
-        <button type="button" class="btn primary sm" id="btn-cx-cust-search">Search</button>
+        <form id="cx-cust-search-form" class="cx-cust-search-form" autocomplete="off" onsubmit="return false">
+          <div class="fgrp">
+            <label for="cx-cust-search">Search name, phone, or email</label>
+            <input type="search" id="cx-cust-search" placeholder="Name or 10-digit phone…" autocomplete="off" enterkeyhint="search">
+          </div>
+          <button type="submit" class="btn primary sm" id="btn-cx-cust-search">Search</button>
+        </form>
       </div>
-      <div class="cx-cust-list" id="cx-customers-list" aria-live="polite"></div>
+    </div>
+    <div class="cx-cust-results-wrap" id="cx-cust-results-wrap" aria-live="polite">
+      <div class="cx-cust-list" id="cx-customers-list"></div>
       <div class="tw" id="cx-customers-table-wrap">
         <table id="cx-customers-table">
           <thead>
@@ -519,6 +555,7 @@
               <th>Home store</th>
               <th class="text-right">Orders</th>
               <th class="text-right">Lifetime revenue</th>
+              <th>Membership tier</th>
               <th>Last order</th>
             </tr>
           </thead>
@@ -656,6 +693,31 @@
   </div>
 </div>
 
+<!-- ── Customer detail (tap from search / list) ───────── -->
+<div class="overlay" id="modal-cx-customer-detail" style="display:none" role="dialog" aria-modal="true" aria-labelledby="cx-cust-detail-title" onclick="if(event.target===this)closeCxCustomerDetail()">
+  <div class="cx-modal" style="max-width:480px" onclick="event.stopPropagation()">
+    <div class="cx-mh">
+      <div class="cx-mt" id="cx-cust-detail-title">Customer</div>
+      <button type="button" class="cx-mclose" onclick="closeCxCustomerDetail()" aria-label="Close">✕</button>
+    </div>
+    <div class="cx-mb">
+      <div class="gm-hero" id="cx-cust-detail-hero">
+        <div class="gm-hero-av" id="cx-cust-detail-av">—</div>
+        <div class="gm-hero-meta">
+          <div class="gm-hero-name" id="cx-cust-detail-name">—</div>
+          <div class="gm-hero-sub" id="cx-cust-detail-sub"></div>
+        </div>
+      </div>
+      <div id="cx-cust-detail-stats" class="cx-cust-detail-stats"></div>
+      <div id="cx-cust-detail-membership" style="font-size:13px;color:var(--text2);min-height:20px"></div>
+      <div class="gm-actions" style="margin-top:16px">
+        <button type="button" class="btn primary" id="cx-cust-detail-grant-btn" style="display:none">Grant / renew membership</button>
+        <button type="button" class="btn" onclick="closeCxCustomerDetail()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Grant / renew membership ───────────────────────── -->
 <div class="overlay" id="modal-grant-membership-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="gm-modal-title" onclick="if(event.target===this)closeGrantMembershipModal()">
   <div class="cx-modal" onclick="event.stopPropagation()">
@@ -683,7 +745,7 @@
       </div>
       <div id="gm-current-status"></div>
       <div class="fgrp">
-        <label for="gm-plan">Plan <span class="label-req">*</span></label>
+        <label for="gm-plan">Membership tier / type <span class="label-req">*</span></label>
         <select id="gm-plan"></select>
       </div>
       <div class="gm-price-grid">
@@ -755,7 +817,7 @@
 
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal"></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
-<script src="/js/cx-prototype.js?v=20260528-cx-membership-plans"></script>
+<script src="/js/cx-prototype.js?v=20260528-cx-membership-tier-link"></script>
 <script>
 /* ── CX: Offers page ─────────────────────────────────────────── */
 var _cxOffersLoaded = false;

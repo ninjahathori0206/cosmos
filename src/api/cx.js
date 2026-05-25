@@ -105,6 +105,14 @@ function derivePlanKeyFromTier (row) {
   return (slug || 'PLAN').slice(0, 50)
 }
 
+async function membershipPlansHasTierIdColumn (pool) {
+  const r = await pool.request().query(`
+    SELECT COL_LENGTH('dbo.membership_plans', 'tier_id') AS col_len
+  `)
+  const len = r.recordset && r.recordset[0] && r.recordset[0].col_len
+  return len != null && Number(len) > 0
+}
+
 /** Mirror Command Unit membership_tiers into membership_plans so CX grant can use CU-configured tiers. */
 async function ensureMembershipPlansFromTiers (pool) {
   let tiers = []
@@ -121,18 +129,20 @@ async function ensureMembershipPlansFromTiers (pool) {
   }
   if (!tiers.length) return
 
+  const linkTiers = await membershipPlansHasTierIdColumn(pool)
   const nowSql = 'DATEADD(MINUTE, 330, SYSUTCDATETIME())'
   for (const t of tiers) {
     const planKey = derivePlanKeyFromTier(t)
     const displayName = String(t.tier_name || planKey).trim().slice(0, 100)
     const price = Number(t.annual_fee)
     const safePrice = Number.isFinite(price) && price >= 0 ? price : 0
-    await pool
+    const req = pool
       .request()
       .input('pk', sql.NVarChar(50), planKey)
       .input('dn', sql.NVarChar(100), displayName)
       .input('pr', sql.Decimal(10, 2), safePrice)
-      .query(`
+    if (linkTiers) {
+      await req.input('tid', sql.Int, t.membership_id).query(`
         MERGE dbo.membership_plans AS tgt
         USING (SELECT @pk AS plan_key) AS src
         ON tgt.plan_key = src.plan_key
@@ -140,21 +150,65 @@ async function ensureMembershipPlansFromTiers (pool) {
           UPDATE SET
             display_name = @dn,
             price = @pr,
-            is_active = 1
+            is_active = 1,
+            tier_id = @tid
+        WHEN NOT MATCHED BY TARGET THEN
+          INSERT (plan_key, display_name, price, validity_days, max_dependents, is_active, created_at, tier_id)
+          VALUES (@pk, @dn, @pr, 365, 5, 1, ${nowSql}, @tid);
+      `)
+    } else {
+      await req.query(`
+        MERGE dbo.membership_plans AS tgt
+        USING (SELECT @pk AS plan_key) AS src
+        ON tgt.plan_key = src.plan_key
+        WHEN MATCHED THEN
+          UPDATE SET display_name = @dn, price = @pr, is_active = 1
         WHEN NOT MATCHED BY TARGET THEN
           INSERT (plan_key, display_name, price, validity_days, max_dependents, is_active, created_at)
           VALUES (@pk, @dn, @pr, 365, 5, 1, ${nowSql});
       `)
+    }
   }
 }
 
 async function fetchActiveMembershipPlans (pool) {
-  const r = await pool.request().query(`
-    SELECT plan_id, plan_key, display_name, price, validity_days, max_dependents, is_active
-    FROM   dbo.membership_plans
-    WHERE  is_active = 1
-    ORDER BY plan_key ASC
-  `)
+  const linkTiers = await membershipPlansHasTierIdColumn(pool)
+  const r = linkTiers
+    ? await pool.request().query(`
+        SELECT
+          p.plan_id,
+          p.plan_key,
+          p.display_name,
+          p.price,
+          p.validity_days,
+          p.max_dependents,
+          p.is_active,
+          p.tier_id,
+          t.tier_name,
+          t.loyalty_tier AS membership_type,
+          t.annual_fee AS tier_annual_fee
+        FROM   dbo.membership_plans p
+        LEFT JOIN dbo.membership_tiers t ON t.membership_id = p.tier_id
+        WHERE  p.is_active = 1
+        ORDER BY ISNULL(t.tier_name, p.display_name) ASC, p.plan_key ASC
+      `)
+    : await pool.request().query(`
+        SELECT
+          p.plan_id,
+          p.plan_key,
+          p.display_name,
+          p.price,
+          p.validity_days,
+          p.max_dependents,
+          p.is_active,
+          NULL AS tier_id,
+          p.display_name AS tier_name,
+          NULL AS membership_type,
+          NULL AS tier_annual_fee
+        FROM   dbo.membership_plans p
+        WHERE  p.is_active = 1
+        ORDER BY p.display_name ASC, p.plan_key ASC
+      `)
   return r.recordset || []
 }
 
@@ -163,11 +217,8 @@ async function handleCxMembershipPlans (_req, res, next) {
     const pool = await getPool()
     let plans = []
     try {
+      await ensureMembershipPlansFromTiers(pool)
       plans = await fetchActiveMembershipPlans(pool)
-      if (!plans.length) {
-        await ensureMembershipPlansFromTiers(pool)
-        plans = await fetchActiveMembershipPlans(pool)
-      }
     } catch (err) {
       const msg = String(err.message || '')
       if (msg.includes('Invalid object name') && msg.includes('membership_plans')) {
@@ -216,21 +267,59 @@ router.get(
     const cust = custR.recordset[0]
     if (!cust) return res.status(404).json({ success: false, message: 'Customer not found.' })
 
-    const memR = await pool.request().input('cid', customerId).query(`
-      SELECT TOP 1 m.membership_id, m.plan_key, m.purchased_at, m.expires_at, m.price_paid,
-             m.is_active, p.display_name AS plan_display_name
-      FROM   dbo.customer_memberships m
-      JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
-      WHERE  m.customer_id = @cid AND m.is_active = 1
-        AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
-      ORDER BY m.expires_at DESC
-    `)
+    const linkTiers = await membershipPlansHasTierIdColumn(pool)
+    const memR = linkTiers
+      ? await pool.request().input('cid', customerId).query(`
+          SELECT TOP 1
+            m.membership_id,
+            m.plan_key,
+            m.purchased_at,
+            m.expires_at,
+            m.price_paid,
+            m.is_active,
+            p.display_name AS plan_display_name,
+            p.tier_id,
+            t.tier_name,
+            t.loyalty_tier AS membership_type,
+            t.benefits AS tier_benefits
+          FROM   dbo.customer_memberships m
+          JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
+          LEFT JOIN dbo.membership_tiers t ON t.membership_id = p.tier_id
+          WHERE  m.customer_id = @cid AND m.is_active = 1
+            AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
+          ORDER BY m.expires_at DESC
+        `)
+      : await pool.request().input('cid', customerId).query(`
+          SELECT TOP 1
+            m.membership_id,
+            m.plan_key,
+            m.purchased_at,
+            m.expires_at,
+            m.price_paid,
+            m.is_active,
+            p.display_name AS plan_display_name,
+            NULL AS tier_id,
+            p.display_name AS tier_name,
+            NULL AS membership_type,
+            NULL AS tier_benefits
+          FROM   dbo.customer_memberships m
+          JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
+          WHERE  m.customer_id = @cid AND m.is_active = 1
+            AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
+          ORDER BY m.expires_at DESC
+        `)
+
+    const active = memR.recordset[0] || null
+    if (active) {
+      active.membership_tier_label = active.tier_name || active.plan_display_name || active.plan_key
+      active.membership_type_label = active.membership_type || null
+    }
 
     return res.json({
       success: true,
       data: {
         customer: { customer_id: cust.customer_id, full_name: cust.full_name, phone: cust.phone, is_active: !!cust.is_active },
-        active_membership: memR.recordset[0] || null
+        active_membership: active
       }
     })
   } catch (err) {
