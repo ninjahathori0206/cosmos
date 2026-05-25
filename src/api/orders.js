@@ -10,6 +10,7 @@ const {
   isRbacStrictEmptyPermissions
 } = require('../middleware/authorize')
 const orderService = require('../services/orderService')
+const { labCallerFromReq } = require('../services/labWorkflowAuth')
 
 const router = express.Router()
 
@@ -22,7 +23,14 @@ const listSchema = Joi.object({
     Joi.string().max(500),
     Joi.array().items(Joi.string().max(30))
   ),
+  include_lab_status: Joi.alternatives().try(
+    Joi.string().max(500),
+    Joi.array().items(Joi.string().max(30))
+  ),
   scope: Joi.string().valid('all', 'store').default('all'),
+  store_id: Joi.number().integer().positive().allow(null),
+  lab_logged_status: Joi.string().max(30).allow('', null),
+  lab_logged_since_days: Joi.number().integer().min(1).max(365).allow(null),
   limit: Joi.number().integer().min(1).max(500).default(100)
 })
 
@@ -41,13 +49,51 @@ const labIntakeSchema = Joi.object({
   backorder_created: Joi.boolean().valid(true)
 }).xor('received_at_lab', 'backorder_created')
 
-function normalizeLabStatusExcludes(input) {
+function normalizeLabStatusList(input) {
   if (!input) return []
   if (Array.isArray(input)) return input.filter(Boolean).map((x) => String(x).trim()).filter(Boolean)
   return String(input)
     .split(',')
     .map((x) => x.trim())
     .filter(Boolean)
+}
+
+function normalizeLabStatusExcludes(input) {
+  return normalizeLabStatusList(input)
+}
+
+/** Foundry Lab Orders tab keys that are not real lab_workflow_status values. */
+const VIRTUAL_LAB_TAB_FILTERS = {
+  DISPATCHED_7D: {
+    labLoggedStatus: 'DISPATCHED_TO_STORE',
+    labLoggedSinceDays: 7
+  },
+  QC_BY_STORE: {
+    labStatusIncludes: ['QC_FAIL_STORE', 'STORE_QC_PARTIAL']
+  }
+}
+
+function resolveLabListFilters(value) {
+  let labStatusFilter = value.lab_status ? String(value.lab_status).trim() : ''
+  let labStatusIncludes = normalizeLabStatusList(value.include_lab_status)
+  let labLoggedStatus = value.lab_logged_status ? String(value.lab_logged_status).trim().toUpperCase() : ''
+  let labLoggedSinceDays = value.lab_logged_since_days ? Number(value.lab_logged_since_days) : null
+
+  const virtual = VIRTUAL_LAB_TAB_FILTERS[String(labStatusFilter || '').toUpperCase()]
+  if (virtual) {
+    labStatusFilter = ''
+    if (virtual.labLoggedStatus) {
+      labLoggedStatus = virtual.labLoggedStatus
+      labLoggedSinceDays = virtual.labLoggedSinceDays
+    }
+    if (virtual.labStatusIncludes) {
+      labStatusIncludes = virtual.labStatusIncludes.slice()
+    }
+  } else if (labStatusFilter) {
+    labStatusIncludes = []
+  }
+
+  return { labStatusFilter, labStatusIncludes, labLoggedStatus, labLoggedSinceDays }
 }
 
 function allowCrossStoreLab(req) {
@@ -71,6 +117,27 @@ function jwtPermissionsLower(req) {
 /** Role has any storepilot.lab.* permission — switches StorePilot lab enforcement on (legacy = none). */
 function storepilotHasGranularLabPerms(req) {
   return jwtPermissionsLower(req).some((x) => x.startsWith('storepilot.lab.'))
+}
+
+/** Role has any foundry.lab.* permission — switches Foundry lab mutation enforcement on (legacy = none). */
+function foundryHasGranularLabPerms(req) {
+  return jwtPermissionsLower(req).some((x) => x.startsWith('foundry.lab.'))
+}
+
+/**
+ * Foundry / Command Unit lab workflow updates: legacy unchanged when no foundry.lab.* keys.
+ * With granular lab perms, require foundry.lab.manage (or command_unit equivalent via manage on foundry path).
+ */
+function gateFoundryLabMutations(req, res, next) {
+  if (!hasModuleAccess(req, 'foundry') && !hasModuleAccess(req, 'command_unit')) return next()
+  const ps = jwtPermissionsLower(req)
+  if (isRbacStrictEmptyPermissions()) {
+    if (ps.includes('foundry.lab.manage')) return next()
+    return res.status(403).json({ success: false, message: 'Permission denied.' })
+  }
+  if (!foundryHasGranularLabPerms(req)) return next()
+  if (ps.includes('foundry.lab.manage')) return next()
+  return res.status(403).json({ success: false, message: 'Permission denied.' })
 }
 
 /** RBAC: documented bypass of per-pair lab dispatch coherence (timeline audit). */
@@ -103,77 +170,21 @@ function gateStorepilotLabOrdersList(req, res, next) {
  * Lab workflow updates / handover from StorePilot: legacy unchanged.
  * With granular lab perms, require `storepilot.lab.manage`.
  */
+function canHandoverFromStore(req) {
+  const ps = jwtPermissionsLower(req)
+  return ps.includes('storepilot.lab.manage') || ps.includes('pos.lab.workflow')
+}
+
 function gateStorepilotLabMutations(req, res, next) {
   if (!hasModuleAccess(req, 'storepilot')) return next()
   const ps = jwtPermissionsLower(req)
   if (isRbacStrictEmptyPermissions()) {
-    if (ps.includes('storepilot.lab.manage')) return next()
+    if (canHandoverFromStore(req)) return next()
     return res.status(403).json({ success: false, message: 'Permission denied.' })
   }
   if (!storepilotHasGranularLabPerms(req)) return next()
-  if (ps.includes('storepilot.lab.manage')) return next()
+  if (canHandoverFromStore(req)) return next()
   return res.status(403).json({ success: false, message: 'Permission denied.' })
-}
-
-/**
- * Target statuses that require the hq_manager actor slot in pos_lab_transitions.
- * Checked before the store module branch so Admin / HQ users with pos in JWT still qualify.
- */
-const HQ_LAB_ACTOR_TARGETS = new Set([
-  'LAB_FITTING',
-  'QC_PASS',
-  'QC_FAIL_LAB',
-  'DISPATCHED_TO_STORE'
-])
-
-/**
- * Maps a JWT caller + target status to the actor_role slot used in pos_lab_transitions.
- *
- * Real roles in this system:
- *   hq_manager   — Foundry / Command Unit staff (all HQ lab stages: fitting, QC, dispatch)
- *   store_in_charge — StorePilot / POS store incharge (acceptance, receive, store QC)
- *   store_staff     — StorePilot store staff (marks ready for delivery)
- *
- * DELIVERED, BALANCE_COLLECTED, INVOICED are set atomically by the handover API
- * (advanceLabSubOrdersThroughInvoiced) and must NOT be reachable via lab-status.
- * They are blocked at the route level; if somehow reached here, return 'system'.
- *
- * Precedence: HQ lab stages resolve to hq_manager for HQ roles / Foundry / CU even when
- * the JWT also lists pos or storepilot (common for super_admin). Pure store roles still
- * use store actor slots for store-side transitions.
- */
-function resolveActorRole(req, toStatus) {
-  const target = String(toStatus || '').toUpperCase()
-  const roleKey = String((req.user && req.user.role) || '').toLowerCase()
-
-  const isFoundry     = hasModuleAccess(req, 'foundry')
-  const isCommandUnit = hasModuleAccess(req, 'command_unit')
-  const isStorePilot  = hasModuleAccess(req, 'storepilot')
-  const isPos         = hasModuleAccess(req, 'pos')
-
-  const isStoreRole = roleKey === 'store_incharge' || roleKey === 'store_in_charge'
-    || roleKey === 'store_manager' || roleKey === 'store_staff'
-  const isHqRole = roleKey === 'hq_manager' || roleKey === 'hq-manager'
-
-  if (HQ_LAB_ACTOR_TARGETS.has(target)) {
-    if (isSuperAdmin(req) || isHqRole) return 'hq_manager'
-    if ((isFoundry || isCommandUnit) && !isStoreRole) return 'hq_manager'
-  }
-
-  // Store-side transitions: incharge owns receive + store QC; staff only marks ready for delivery.
-  if (isStoreRole || isStorePilot || isPos) {
-    if (target === 'READY_FOR_DELIVERY') return 'store_staff'
-    // Handover tail must not route through here; guard just in case.
-    if (target === 'DELIVERED' || target === 'BALANCE_COLLECTED' || target === 'INVOICED') return 'system'
-    return 'store_in_charge'
-  }
-
-  // HQ staff (hq_manager via Foundry / Command Unit) — both fitting and QC stages.
-  if (isFoundry || isCommandUnit) {
-    return 'hq_manager'
-  }
-
-  return roleKey || 'unknown'
 }
 
 router.get('/', requireAnyModule(['foundry', 'command_unit', 'storepilot']), gateStorepilotLabOrdersList, async (req, res, next) => {
@@ -191,8 +202,14 @@ router.get('/', requireAnyModule(['foundry', 'command_unit', 'storepilot']), gat
     const search = value.search || ''
     const statusFilter = value.status || ''
     const orderKind = value.kind || ''
-    const labStatusFilter = value.lab_status || ''
     const labStatusExcludes = normalizeLabStatusExcludes(value.exclude_lab_status)
+    const {
+      labStatusFilter,
+      labStatusIncludes,
+      labLoggedStatus,
+      labLoggedSinceDays
+    } = resolveLabListFilters(value)
+    const storeIdFilter = value.store_id ? Number(value.store_id) : null
     // Use the raw query param to distinguish "caller sent scope=all" from "defaulted to all".
     // StorePilot users default to their own store when no scope given.
     // Explicit scope=all always fetches all stores (even for super_admin).
@@ -207,6 +224,9 @@ router.get('/', requireAnyModule(['foundry', 'command_unit', 'storepilot']), gat
           orderKind,
           labStatusFilter,
           labStatusExcludes,
+          labStatusIncludes,
+          labLoggedStatus,
+          labLoggedSinceDays,
           limit: value.limit
         })
       : await orderService.fetchAllOrders(pool, mode, {
@@ -215,6 +235,10 @@ router.get('/', requireAnyModule(['foundry', 'command_unit', 'storepilot']), gat
           orderKind,
           labStatusFilter,
           labStatusExcludes,
+          labStatusIncludes,
+          storeIdFilter,
+          labLoggedStatus,
+          labLoggedSinceDays,
           limit: value.limit
         })
 
@@ -224,7 +248,7 @@ router.get('/', requireAnyModule(['foundry', 'command_unit', 'storepilot']), gat
   }
 })
 
-router.post('/:id/lab-intake', requireAnyModule(['foundry', 'command_unit']), async (req, res, next) => {
+router.post('/:id/lab-intake', requireAnyModule(['foundry', 'command_unit']), gateFoundryLabMutations, async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id, 10)
     if (!Number.isFinite(orderId)) {
@@ -266,7 +290,7 @@ router.post('/:id/lab-intake', requireAnyModule(['foundry', 'command_unit']), as
 // They must never be settable through the manual lab-status endpoint.
 const LAB_STATUS_HANDOVER_ONLY = new Set(['DELIVERED', 'BALANCE_COLLECTED', 'INVOICED'])
 
-router.post('/:id/lab-status', requireAnyModule(['foundry', 'command_unit', 'storepilot', 'pos']), gateStorepilotLabMutations, async (req, res, next) => {
+router.post('/:id/lab-status', requireAnyModule(['foundry', 'command_unit', 'storepilot', 'pos']), gateStorepilotLabMutations, gateFoundryLabMutations, async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id, 10)
     if (!Number.isFinite(orderId)) {
@@ -297,7 +321,6 @@ router.post('/:id/lab-status', requireAnyModule(['foundry', 'command_unit', 'sto
 
     const pool = await getPool()
     const mode = await orderService.getOrdersEngineMode(pool)
-    const actorRole = resolveActorRole(req, value.to_status)
     const crossStoreLab = allowCrossStoreLab(req)
     const actorUserId =
       req.user.user_id != null
@@ -309,7 +332,7 @@ router.post('/:id/lab-status', requireAnyModule(['foundry', 'command_unit', 'sto
       orderId,
       storeId: req.user.store_id,
       employeeId: actorUserId,
-      actorRole,
+      labCaller: labCallerFromReq(req, isSuperAdmin),
       subOrderId: value.sub_order_id,
       toStatus: value.to_status,
       note: value.note,
@@ -391,7 +414,15 @@ router.get('/:id', requireAnyModule(['storepilot', 'foundry', 'command_unit', 'p
       ? await orderService.fetchOrderBundle(pool, orderId, storeId, mode)
       : await orderService.fetchOrderBundle(pool, orderId, req.user.store_id, mode)
     if (!bundle) return res.status(404).json({ success: false, message: 'Order not found.' })
-    return res.json({ success: true, data: { order: bundle.order, payment_summary: bundle.payment_summary, sub_orders: bundle.subList } })
+    return res.json({
+      success: true,
+      data: {
+        order: bundle.order,
+        payment_summary: bundle.payment_summary,
+        sub_orders: bundle.subList,
+        handover_ui: orderService.getHandoverUiState(bundle)
+      }
+    })
   } catch (err) {
     return next(err)
   }
@@ -511,6 +542,12 @@ router.post('/:id/handover', requireAnyModule(['storepilot', 'pos']), gateStorep
       if (stillDue > 0.009) {
         return res.status(400).json({ success: false, message: 'Payment does not cover full balance. Balance still due: ₹' + stillDue.toFixed(2) })
       }
+      if (!invoiceNo) {
+        return res.status(400).json({
+          success: false,
+          message: 'Payment recorded but handover could not complete. Hand over the frame line first on MIXED orders, then retry bill handover.'
+        })
+      }
       return res.json({ success: true, message: 'Balance collected and order marked as delivered.', data: { invoice_no: invoiceNo, payment_summary: updatedSummary } })
     }
 
@@ -525,6 +562,12 @@ router.post('/:id/handover', requireAnyModule(['storepilot', 'pos']), gateStorep
     } else {
       invoiceNo = await orderService.autoCompleteLabSettlement(pool, mode, bundle, employeeId, {
         invoice_preferences: value.invoice_preferences || null
+      })
+    }
+    if (!invoiceNo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Handover could not complete. On MIXED orders, hand over the frame (instant) line first, then use bill handover.'
       })
     }
     return res.json({ success: true, message: 'Order marked as delivered.', data: { invoice_no: invoiceNo } })

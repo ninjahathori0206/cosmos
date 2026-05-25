@@ -1,5 +1,6 @@
 const sql = require('mssql')
 const { readSetting } = require('./procurementService')
+const { assertLabTransitionAllowed } = require('./labWorkflowAuth')
 const { resolveProductTypeRule } = require('../config/posProductTypeRule')
 const { resolvePosOrderDisplayStatus } = require('../config/posOrderDisplayCatalog')
 
@@ -55,6 +56,19 @@ function normalizeIncomingPosLinesWithPairs(lines) {
  * @returns {Map<number, { sub_order_id: number, lab_workflow_status: string|null, pair_index: number }[]>}
  */
 async function fetchLabSubOrderSnapshotsForOrders(pool, t, orderIds) {
+  const all = await fetchHandoverSubOrderSnapshotsForOrders(pool, t, orderIds)
+  const map = new Map()
+  for (const [oid, rows] of all.entries()) {
+    map.set(oid, rows.filter((r) => String(r.fulfillment) === 'LAB'))
+  }
+  return map
+}
+
+/**
+ * LAB + INSTANT sub-rows for store handover UI (frame-before-lens on MIXED bills).
+ * @returns {Map<number, object[]>}
+ */
+async function fetchHandoverSubOrderSnapshotsForOrders(pool, t, orderIds) {
   const uniq = [...new Set((orderIds || [])
     .map((x) => Number(x))
     .filter((n) => Number.isFinite(n) && n > 0))]
@@ -64,10 +78,10 @@ async function fetchLabSubOrderSnapshotsForOrders(pool, t, orderIds) {
   const req = pool.request()
   for (let i = 0; i < uniq.length; i += 1) req.input(`oid_${i}`, sql.Int, uniq[i])
   const rs = await req.query(`
-    SELECT order_id, sub_order_id, lab_workflow_status, pair_index,
+    SELECT order_id, sub_order_id, fulfillment, lab_workflow_status, pair_index, handover_status,
            lab_received_confirmed, lab_backorder_confirmed
     FROM ${t.sub_orders}
-    WHERE fulfillment = N'LAB' AND order_id IN (${ph})
+    WHERE fulfillment IN (N'LAB', N'INSTANT') AND order_id IN (${ph})
     ORDER BY order_id, pair_index, sub_order_id
   `)
   for (const row of rs.recordset || []) {
@@ -75,8 +89,10 @@ async function fetchLabSubOrderSnapshotsForOrders(pool, t, orderIds) {
     if (!map.has(oid)) map.set(oid, [])
     map.get(oid).push({
       sub_order_id: row.sub_order_id,
+      fulfillment: String(row.fulfillment || ''),
       lab_workflow_status: row.lab_workflow_status != null ? String(row.lab_workflow_status) : null,
       pair_index: row.pair_index != null ? Number(row.pair_index) : 1,
+      handover_status: row.handover_status != null ? String(row.handover_status) : null,
       lab_received_confirmed: labIntakeBitOn(row.lab_received_confirmed),
       lab_backorder_confirmed: labIntakeBitOn(row.lab_backorder_confirmed)
     })
@@ -1741,11 +1757,25 @@ async function finalizePaidOrderLedger(pool, mode, bundle, paymentStage, employe
   const instantBlocking = subsRows.filter((s) => String(s.fulfillment) === 'INSTANT'
     && String(s.handover_status || '').trim().toUpperCase() !== 'HANDED_OVER')
   if ((orderKind === 'LAB' || orderKind === 'MIXED') && instantBlocking.length) {
+    if (forceFinalize) {
+      const s0 = instantBlocking[0]
+      const label = subOrderDisplayLabel(bundle.order.order_no, s0.pair_index != null ? Number(s0.pair_index) : 1)
+      const err = new Error(
+        `MIXED order: hand over the frame (instant) line first — sub-order #${s0.sub_order_id} (${label}).`
+      )
+      err.statusCode = 400
+      throw err
+    }
     return null
   }
 
   const labs = subsRows.filter((s) => String(s.fulfillment) === 'LAB')
   if ((orderKind === 'LAB' || orderKind === 'MIXED') && labs.length === 0) {
+    if (forceFinalize) {
+      const err = new Error('No lab sub-orders on this order; bill handover does not apply.')
+      err.statusCode = 400
+      throw err
+    }
     return null
   }
 
@@ -1783,8 +1813,47 @@ async function completeInstantSettlement(pool, mode, bundle, _employeeId, option
 
 async function autoCompleteLabSettlement(pool, mode, bundle, employeeId, options = {}) {
   const labs = (bundle.subList || []).filter((sub) => String(sub.fulfillment || '') === 'LAB')
-  if (!labs.length) return null
-  return finalizePaidOrderLedger(pool, mode, bundle, null, employeeId, { ...options, forceFinalize: true })
+  if (!labs.length) {
+    const err = new Error('No lab sub-orders on this order.')
+    err.statusCode = 400
+    throw err
+  }
+  const inv = await finalizePaidOrderLedger(pool, mode, bundle, null, employeeId, { ...options, forceFinalize: true })
+  if (!inv) {
+    const err = new Error('Order is not eligible for invoicing (balance due or prerequisites not met).')
+    err.statusCode = 400
+    throw err
+  }
+  return inv
+}
+
+/**
+ * Whether bill-level handover is allowed (instant lines handed over when MIXED).
+ * @param {{ order: object, subList?: object[] }} bundle
+ */
+function getHandoverUiState(bundle) {
+  const orderKind = String(bundle.order.order_kind || '').trim().toUpperCase()
+  const subs = bundle.subList || []
+  const pendingInstant = subs.filter(
+    (s) => String(s.fulfillment) === 'INSTANT'
+      && String(s.handover_status || '').trim().toUpperCase() !== 'HANDED_OVER'
+  )
+  const labSubs = subs.filter((s) => String(s.fulfillment) === 'LAB')
+  const hasLabReady = labSubs.some((s) => {
+    const st = String(s.lab_workflow_status || '').trim().toUpperCase()
+    return st === 'READY_FOR_DELIVERY' || st === 'DELIVERED' || st === 'BALANCE_COLLECTED' || st === 'INVOICED'
+  })
+  const canBillHandover = pendingInstant.length === 0 && hasLabReady
+    && (orderKind === 'LAB' || orderKind === 'MIXED' || orderKind === 'INSTANT')
+  return {
+    order_kind: orderKind,
+    pending_instant_sub_orders: pendingInstant.map((s) => ({
+      sub_order_id: s.sub_order_id,
+      sub_order_label: s.sub_order_label,
+      handover_status: s.handover_status
+    })),
+    can_bill_handover: canBillHandover
+  }
 }
 
 async function markInstantSubOrderHandedOver(pool, mode, orderId, storeId, subOrderId, employeeId, options = {}) {
@@ -1822,13 +1891,11 @@ async function markInstantSubOrderHandedOver(pool, mode, orderId, storeId, subOr
     note: options.note || null
   })
   const again = await fetchOrderBundle(pool, orderId, storeId, mode)
-  const invoiceNo = await finalizePaidOrderLedger(pool, mode, again, null, employeeId, {
-    invoice_preferences: options.invoice_preferences,
-    forceFinalize: true
-  })
+  const existingInvoice = await fetchInvoiceNoForOrderId(pool, orderId)
   return {
-    invoice_no: invoiceNo,
-    payment_summary: again.payment_summary
+    invoice_no: existingInvoice || null,
+    payment_summary: again.payment_summary,
+    handover_ui: getHandoverUiState(again)
   }
 }
 
@@ -1948,7 +2015,7 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
   orderId,
   storeId,
   employeeId,
-  actorRole,
+  labCaller,
   subOrderId,
   toStatus,
   note,
@@ -2019,19 +2086,8 @@ async function updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
     }
   }
 
-  const val = await executeStoredProcedure('sp_POS_ValidateLabTransition', {
-    from_status: { type: sql.VarChar(30), value: fromStatus },
-    to_status:   { type: sql.VarChar(30), value: toUp },
-    actor_role:  { type: sql.VarChar(50), value: actorRole }
-  })
-  const vr = (val.recordset || [])[0] || {}
-  const cnt = Number(vr.transition_count) || 0
-  const needsNote = Number(vr.requires_note) === 1
-  if (!cnt) {
-    const err = new Error(`Transition not allowed: ${fromStatus} → ${toUp} (actor: ${actorRole})`)
-    err.statusCode = 400
-    throw err
-  }
+  const transitionAuth = assertLabTransitionAllowed(labCaller, fromStatus, toUp)
+  const needsNote = transitionAuth.requires_note
   if (needsNote && !rawNoteTrim) {
     const err = new Error('Note is required for this transition.')
     err.statusCode = 400
@@ -2219,7 +2275,10 @@ async function fetchAllOrders(pool, mode, {
   invoicedSinceDays = null,
   invoicedQueue = false,
   activeQueue = false,
-  transitRequiresPayment = false
+  transitRequiresPayment = false,
+  storeIdFilter = null,
+  labLoggedStatus = '',
+  labLoggedSinceDays = null
 }) {
   const t = tableNames(mode)
   const exStat = Array.isArray(excludeOrderStatuses)
@@ -2278,6 +2337,10 @@ async function fetchAllOrders(pool, mode, {
     }
   }
 
+  if (storeIdFilter) {
+    query += ` AND o.store_id = @store_id `
+  }
+
   if (labStatusFilter) {
     query += ` AND EXISTS (
       SELECT 1 FROM ${t.sub_orders} ls
@@ -2301,6 +2364,17 @@ async function fetchAllOrders(pool, mode, {
     ) `
   }
 
+  const labLoggedDays = labLoggedSinceDays != null ? Number(labLoggedSinceDays) : null
+  const labLoggedSt = labLoggedStatus ? String(labLoggedStatus).trim().toUpperCase() : ''
+  if (labLoggedSt && labLoggedDays != null && labLoggedDays > 0) {
+    query += ` AND EXISTS (
+      SELECT 1 FROM ${t.order_status_log} fy_lgl
+      WHERE fy_lgl.order_id = o.order_id
+        AND fy_lgl.to_status = @lab_logged_status
+        AND fy_lgl.created_at >= DATEADD(DAY, -@lab_logged_since_days, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+    ) `
+  }
+
   const queueBindings = appendPosOrderQueueFilters(query, t, queueOpts, 'all_')
   query = queueBindings.query
   
@@ -2320,8 +2394,15 @@ async function fetchAllOrders(pool, mode, {
   if (orderKind && String(orderKind).toUpperCase() !== 'LAB') {
     req.input('order_kind', sql.NVarChar(20), orderKind)
   }
+  if (storeIdFilter) {
+    req.input('store_id', sql.Int, storeIdFilter)
+  }
   if (labStatusFilter) {
     req.input('lab_status', sql.NVarChar(30), labStatusFilter)
+  }
+  if (labLoggedSt && labLoggedDays != null && labLoggedDays > 0) {
+    req.input('lab_logged_status', sql.NVarChar(30), labLoggedSt)
+    req.input('lab_logged_since_days', sql.Int, labLoggedDays)
   }
   if (Array.isArray(labStatusExcludes) && labStatusExcludes.length > 0) {
     for (let i = 0; i < labStatusExcludes.length; i += 1) {
@@ -2404,7 +2485,9 @@ async function fetchStoreOrders(pool, storeId, mode, {
   invoicedSinceDays = null,
   invoicedQueue = false,
   activeQueue = false,
-  transitRequiresPayment = false
+  transitRequiresPayment = false,
+  labLoggedStatus = '',
+  labLoggedSinceDays = null
 }) {
   const t = tableNames(mode)
   const exStat = Array.isArray(excludeOrderStatuses)
@@ -2483,6 +2566,17 @@ async function fetchStoreOrders(pool, storeId, mode, {
     ) `
   }
 
+  const labLoggedDaysSp = labLoggedSinceDays != null ? Number(labLoggedSinceDays) : null
+  const labLoggedStSp = labLoggedStatus ? String(labLoggedStatus).trim().toUpperCase() : ''
+  if (labLoggedStSp && labLoggedDaysSp != null && labLoggedDaysSp > 0) {
+    query += ` AND EXISTS (
+      SELECT 1 FROM ${t.order_status_log} fy_lgl
+      WHERE fy_lgl.order_id = o.order_id
+        AND fy_lgl.to_status = @lab_logged_status
+        AND fy_lgl.created_at >= DATEADD(DAY, -@lab_logged_since_days, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+    ) `
+  }
+
   const queueOpts = {
     labStatusIncludes,
     labStatusExcludesUnion,
@@ -2514,6 +2608,10 @@ async function fetchStoreOrders(pool, storeId, mode, {
   if (labStatusFilter) {
     req.input('lab_status', sql.NVarChar(30), labStatusFilter)
   }
+  if (labLoggedStSp && labLoggedDaysSp != null && labLoggedDaysSp > 0) {
+    req.input('lab_logged_status', sql.NVarChar(30), labLoggedStSp)
+    req.input('lab_logged_since_days', sql.Int, labLoggedDaysSp)
+  }
   if (Array.isArray(labStatusExcludes) && labStatusExcludes.length > 0) {
     for (let i = 0; i < labStatusExcludes.length; i += 1) {
       req.input(`lab_ex_${i}`, sql.NVarChar(30), labStatusExcludes[i])
@@ -2531,16 +2629,25 @@ async function fetchStoreOrders(pool, storeId, mode, {
   
   const result = await req.query(query)
   const listRows = result.recordset || []
-  const labMapSp = await fetchLabSubOrderSnapshotsForOrders(pool, t, listRows.map((r) => r.order_id))
+  const handoverMap = await fetchHandoverSubOrderSnapshotsForOrders(pool, t, listRows.map((r) => r.order_id))
 
   return listRows.map((row) => {
-    const snaps = labMapSp.get(Number(row.order_id)) || []
-    const lab_sub_orders = snaps.map((s) => ({
+    const snaps = handoverMap.get(Number(row.order_id)) || []
+    const labSnaps = snaps.filter((s) => String(s.fulfillment) === 'LAB')
+    const instantSnaps = snaps.filter((s) => String(s.fulfillment) === 'INSTANT')
+    const lab_sub_orders = labSnaps.map((s) => ({
       sub_order_id: s.sub_order_id,
       lab_workflow_status: s.lab_workflow_status,
       pair_index: s.pair_index,
       lab_received_confirmed: s.lab_received_confirmed === true,
       lab_backorder_confirmed: s.lab_backorder_confirmed === true,
+      sub_order_label: subOrderDisplayLabel(row.order_no, s.pair_index)
+    }))
+    const instant_sub_orders = instantSnaps.map((s) => ({
+      sub_order_id: s.sub_order_id,
+      fulfillment: s.fulfillment,
+      handover_status: s.handover_status,
+      pair_index: s.pair_index,
       sub_order_label: subOrderDisplayLabel(row.order_no, s.pair_index)
     }))
     const paidTotal = roundMoney(Number(row.paid_total) || 0)
@@ -2567,6 +2674,7 @@ async function fetchStoreOrders(pool, storeId, mode, {
       lab_workflow_status: row.lab_workflow_status || null,
       sub_order_id: row.sub_order_id || null,
       lab_sub_orders,
+      instant_sub_orders,
       lab_received_confirmed: row.lab_rcv_all != null && Number(row.lab_rcv_all) === 1,
       lab_backorder_confirmed: row.lab_bo_all != null && Number(row.lab_bo_all) === 1,
       total_amount: totalAmt,
@@ -3031,6 +3139,7 @@ module.exports = {
   recordPayment,
   autoCompleteLabSettlement,
   completeInstantSettlement,
+  getHandoverUiState,
   updateLabSubOrderStatus,
   patchLabSubOrderIntake,
   fetchStoreOrders,

@@ -1,6 +1,6 @@
 /**
- * Foundry — POS lens catalogue admin (categories, packages, add-ons, links).
- * GET requires foundry.catalogue.view; mutating routes require foundry.catalogue.edit.
+ * Foundry — POS lens catalogue admin (categories, packages, add-ons, links, wizard).
+ * Phase B granular keys; legacy foundry.catalogue.* still accepted (see foundryCatalogueAuth.js).
  */
 const express = require('express');
 const sql = require('mssql');
@@ -10,11 +10,24 @@ const {
   requireModule,
   requirePermission
 } = require('../middleware/authorize');
+const {
+  LENS_ADMIN_GET_VIEW,
+  LENS_PACKAGES_EDIT,
+  LENS_ADDONS_EDIT,
+  LENS_MATRIX_EDIT,
+  LENS_WIZARD_VIEW,
+  LENS_WIZARD_EDIT
+} = require('../config/foundryCatalogueAuth');
 
 const router = express.Router();
+const foundryMod = [requireModule('foundry')];
 
-const lensView = [requireModule('foundry'), requirePermission('foundry.catalogue.view')];
-const lensEdit = [requireModule('foundry'), requirePermission('foundry.catalogue.edit')];
+const lensAdminGet = [...foundryMod, requirePermission(...LENS_ADMIN_GET_VIEW)];
+const lensPackagesEdit = [...foundryMod, requirePermission(...LENS_PACKAGES_EDIT)];
+const lensAddonsEdit = [...foundryMod, requirePermission(...LENS_ADDONS_EDIT)];
+const lensMatrixEdit = [...foundryMod, requirePermission(...LENS_MATRIX_EDIT)];
+const lensWizardView = [...foundryMod, requirePermission(...LENS_WIZARD_VIEW)];
+const lensWizardEdit = [...foundryMod, requirePermission(...LENS_WIZARD_EDIT)];
 
 function mapProductTypeLensWizardRows(result) {
   const rs = result.recordsets || [];
@@ -49,7 +62,7 @@ function buildAdminPayload(result) {
 }
 
 // GET /api/foundry/lens-config
-router.get('/', ...lensView, async (req, res, next) => {
+router.get('/', ...lensAdminGet, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_LensConfig_AdminGet', {});
     return res.json({ success: true, data: buildAdminPayload(result) });
@@ -73,7 +86,7 @@ const catsSaveSchema = Joi.object({
   wizard_tone: Joi.number().integer().min(1).max(5).allow(null)
 });
 
-router.post('/categories', ...lensEdit, async (req, res, next) => {
+router.post('/categories', ...lensPackagesEdit, async (req, res, next) => {
   try {
     const { error, value } = catsSaveSchema.validate(req.body, { abortEarly: false });
     if (error) {
@@ -103,7 +116,7 @@ router.post('/categories', ...lensEdit, async (req, res, next) => {
   }
 });
 
-router.put('/categories/:id', ...lensEdit, async (req, res, next) => {
+router.put('/categories/:id', ...lensPackagesEdit, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id < 1) {
@@ -171,7 +184,7 @@ function lensConfigPackageSaveParams(value) {
   };
 }
 
-router.post('/packages', ...lensEdit, async (req, res, next) => {
+router.post('/packages', ...lensPackagesEdit, async (req, res, next) => {
   try {
     const { error, value } = pkgSaveSchema.validate(req.body, { abortEarly: false });
     if (error) {
@@ -188,7 +201,7 @@ router.post('/packages', ...lensEdit, async (req, res, next) => {
   }
 });
 
-router.put('/packages/:id', ...lensEdit, async (req, res, next) => {
+router.put('/packages/:id', ...lensPackagesEdit, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id < 1) {
@@ -220,7 +233,7 @@ const addonSaveSchema = Joi.object({
   is_active: Joi.boolean().default(true)
 });
 
-router.post('/addons', ...lensEdit, async (req, res, next) => {
+router.post('/addons', ...lensAddonsEdit, async (req, res, next) => {
   try {
     const { error, value } = addonSaveSchema.validate(req.body, { abortEarly: false });
     if (error) {
@@ -246,7 +259,7 @@ router.post('/addons', ...lensEdit, async (req, res, next) => {
   }
 });
 
-router.put('/addons/:id', ...lensEdit, async (req, res, next) => {
+router.put('/addons/:id', ...lensAddonsEdit, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id < 1) {
@@ -280,7 +293,7 @@ const pkgAddonsSchema = Joi.object({
   addon_ids: Joi.array().items(Joi.number().integer().min(1)).required()
 });
 
-router.put('/packages/:id/addons', ...lensEdit, async (req, res, next) => {
+router.put('/packages/:id/addons', ...lensMatrixEdit, async (req, res, next) => {
   try {
     const packageId = Number(req.params.id);
     if (!Number.isFinite(packageId) || packageId < 1) {
@@ -308,7 +321,7 @@ router.put('/packages/:id/addons', ...lensEdit, async (req, res, next) => {
 // ── GET /api/foundry/lens-config/product-type-rules ──────────────────────────
 // Returns product type lens policies + full bridge matrix (for Foundry matrix page).
 // Loaded fresh from sp_LensConfig_AdminGet RS4+RS5.
-router.get('/product-type-rules', ...lensView, async (req, res, next) => {
+router.get('/product-type-rules', ...lensWizardView, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_LensConfig_AdminGet', {});
     const { productTypes, bridgeRows } = mapProductTypeLensWizardRows(result);
@@ -331,7 +344,7 @@ const productTypeLensWizardSchema = Joi.object({
 
 // ── PUT /api/foundry/lens-config/product-type-rules/:key ─────────────────────
 // Update lens_wizard_policy and/or the category allow-list for one product type.
-router.put('/product-type-rules/:key', ...lensEdit, async (req, res, next) => {
+router.put('/product-type-rules/:key', ...lensWizardEdit, async (req, res, next) => {
   try {
     const key = String(req.params.key || '').trim().toUpperCase();
     if (!key) return res.status(400).json({ success: false, message: 'Invalid product type key.' });

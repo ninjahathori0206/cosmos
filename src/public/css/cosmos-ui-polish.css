@@ -1345,6 +1345,11 @@ body.cosmos-app-shell .cosmos-app-scroll:has(.page.active .sp-page-body) > .page
   display: block;
 }
 
+/* Inactive Foundry/StorePilot pages must stay hidden (page-specific flex rules must not override .page) */
+body.cosmos-app-shell .cosmos-app-scroll > .page:not(.active) {
+  display: none !important;
+}
+
 body.cosmos-app-shell .sidebar {
   height: 100dvh;
 }
@@ -1464,7 +1469,7 @@ body.cosmos-app-shell .sidebar {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
-  body.cosmos-app-shell #page-transfer-requests {
+  body.cosmos-app-shell #page-transfer-requests.active {
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -1522,7 +1527,8 @@ body.cosmos-app-shell .sidebar {
     margin-top: 2px;
   }
   #page-transfer-requests .ftr-store-chips,
-  #page-transfer-requests .ftr-status-tabs {
+  #page-transfer-requests .ftr-status-tabs,
+  #page-lab-orders .ftr-store-chips {
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -1531,11 +1537,13 @@ body.cosmos-app-shell .sidebar {
     margin-bottom: 8px;
   }
   #page-transfer-requests .ftr-store-chips::-webkit-scrollbar,
-  #page-transfer-requests .ftr-status-tabs::-webkit-scrollbar {
+  #page-transfer-requests .ftr-status-tabs::-webkit-scrollbar,
+  #page-lab-orders .ftr-store-chips::-webkit-scrollbar {
     display: none;
   }
   #page-transfer-requests .ftr-store-chips .btn.sm,
-  #page-transfer-requests .ftr-status-tabs .btn.sm {
+  #page-transfer-requests .ftr-status-tabs .btn.sm,
+  #page-lab-orders .ftr-store-chips .btn.sm {
     flex-shrink: 0;
     white-space: nowrap;
     min-height: 44px;
@@ -1543,6 +1551,11 @@ body.cosmos-app-shell .sidebar {
     -webkit-tap-highlight-color: transparent;
   }
   #page-transfer-requests .ftr-store-chips .btn.sm {
+    max-width: none;
+    text-align: center;
+    line-height: 1.25;
+  }
+  #page-lab-orders .ftr-store-chips .btn.sm {
     max-width: none;
     text-align: center;
     line-height: 1.25;

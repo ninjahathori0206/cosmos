@@ -12,6 +12,7 @@ const { writeAuditLog }     = require('../services/auditService')
 const { resolveProcurementMode, readSetting } = require('../services/procurementService')
 const { nowUnixSec } = require('../services/jwtPolicyService')
 const orderService = require('../services/orderService')
+const { labCallerFromReq } = require('../services/labWorkflowAuth')
 const {
   POS_ORDER_QUEUE_KEYS,
   POS_ORDER_QUEUE_TABS,
@@ -1532,7 +1533,8 @@ router.get('/orders/:id', ...posOrdersView, async (req, res, next) => {
         orders_engine_mode: mode,
         created_by_user_id: bundle.order.created_by_user_id != null ? Number(bundle.order.created_by_user_id) : null,
         can_mutate: posCanMutateOrder(req, bundle.order),
-        is_mine: actorId != null && Number(bundle.order.created_by_user_id) === actorId
+        is_mine: actorId != null && Number(bundle.order.created_by_user_id) === actorId,
+        handover_ui: orderService.getHandoverUiState(bundle)
       }
     })
   } catch (err) {
@@ -1959,12 +1961,11 @@ router.post('/orders/:id/status', ...posLabWorkflow, async (req, res, next) => {
       bypass: isSuperAdmin(req)
     })
     const employeeId = req.user.employee_id
-    const actorRole = 'store_in_charge'
     const out = await orderService.updateLabSubOrderStatus(pool, mode, executeStoredProcedure, {
       orderId,
       storeId,
       employeeId,
-      actorRole,
+      labCaller: labCallerFromReq(req, isSuperAdmin),
       subOrderId: value.sub_order_id,
       toStatus: value.to_status,
       note: value.note,

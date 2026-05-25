@@ -7,6 +7,64 @@ const { requireModule, requirePermission } = require('../middleware/authorize');
 
 const router = express.Router();
 
+async function enrichPurchaseSkusWithBrand(rows) {
+  if (!Array.isArray(rows) || !rows.length) return rows;
+  const needsBrand = rows.some(function (r) {
+    if (!r.sku_id) return false;
+    const name = r.brand_name && String(r.brand_name).trim();
+    const code = r.brand_code && String(r.brand_code).trim();
+    return !name || !code;
+  });
+  if (!needsBrand) return rows;
+
+  const ids = [...new Set(rows.map(function (r) { return Number(r.sku_id); }).filter(function (id) { return id > 0; }))];
+  if (!ids.length) return rows;
+
+  const pool = await getPool();
+  const req = pool.request();
+  ids.forEach(function (id, i) { req.input('sid' + i, sql.Int, id); });
+  const inClause = ids.map(function (_id, i) { return '@sid' + i; }).join(',');
+
+  const q = await req.query(`
+    SELECT sk.sku_id,
+      LTRIM(RTRIM(COALESCE(
+        NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(pm.source_brand, ''))), ''),
+        NULLIF(LTRIM(RTRIM(ISNULL(mk.maker_name, ''))), ''),
+        ''
+      ))) AS brand_name,
+      NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_code, ''))), '') AS brand_code
+    FROM dbo.skus sk
+    JOIN dbo.product_master pm ON sk.product_master_id = pm.product_id
+    LEFT JOIN dbo.home_brands hb ON pm.home_brand_id = hb.brand_id
+    LEFT JOIN dbo.purchase_item_colours pic ON sk.item_colour_id = pic.colour_id
+    LEFT JOIN dbo.purchase_items pi ON pic.item_id = pi.item_id
+    LEFT JOIN dbo.maker_master mk ON pi.maker_master_id = mk.maker_id
+    WHERE sk.sku_id IN (${inClause})
+  `);
+
+  const brandMap = new Map();
+  (q.recordset || []).forEach(function (r) {
+    const sid = Number(r.sku_id);
+    if (!sid) return;
+    const name = r.brand_name != null ? String(r.brand_name).trim() : '';
+    const code = r.brand_code != null ? String(r.brand_code).trim() : '';
+    brandMap.set(sid, { brand_name: name, brand_code: code });
+  });
+
+  rows.forEach(function (row) {
+    const resolved = brandMap.get(Number(row.sku_id));
+    if (!resolved) return;
+    if (!row.brand_name || !String(row.brand_name).trim()) {
+      if (resolved.brand_name) row.brand_name = resolved.brand_name;
+    }
+    if (!row.brand_code || !String(row.brand_code).trim()) {
+      if (resolved.brand_code) row.brand_code = resolved.brand_code;
+    }
+  });
+  return rows;
+}
+
 // ── Validation schemas ──────────────────────────────────────────────────────
 
 const colourSchema = Joi.object({
@@ -218,6 +276,7 @@ router.get(
           row.units = [];
         }
       }
+      await enrichPurchaseSkusWithBrand(rows);
       return res.json({ success: true, data: rows });
     } catch (err) { return next(err); }
   }

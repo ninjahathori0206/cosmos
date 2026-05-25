@@ -40,15 +40,28 @@ const RAW_PERMISSION_GROUPS = [
     ['foundry.digitisation.create', 'Digitisation — Generate SKU'],
     ['foundry.digitisation.edit', 'Digitisation — Edit media'],
     ['foundry.warehouse.view', 'Warehouse — View'],
-    ['foundry.warehouse.create', 'Warehouse — Approve ready']
+    ['foundry.warehouse.create', 'Warehouse — Approve ready'],
+    ['foundry.label_formats.view', 'Label print formats — View'],
+    ['foundry.label_formats.edit', 'Label print formats — Create / edit']
   ]],
   ['Foundry — Lab', [
     ['foundry.lab.view', 'Lab orders — Foundry / HQ (all stores)'],
+    ['foundry.lab.manage', 'Lab orders — Update workflow (HQ lab + cross-store store QC)'],
     ['foundry.lab.bypass_order_sibling', 'Lab — Bypass per-pair sibling dispatch guard (audited)']
   ]],
   ['Foundry — Catalogue & Inventory', [
-    ['foundry.catalogue.view', 'SKU catalogue — View'],
-    ['foundry.catalogue.edit', 'SKU catalogue — Edit'],
+    ['foundry.catalogue.view', 'SKU catalogue — View', 'SKU Catalogue nav and /api/skus only — not lens or master'],
+    ['foundry.catalogue.edit', 'SKU catalogue — Edit', 'SKU sale price and catalogue edits — not lens setup'],
+    ['foundry.lens.packages.view', 'Lens packages — View'],
+    ['foundry.lens.packages.edit', 'Lens packages — Edit'],
+    ['foundry.lens.addons.view', 'Lens add-ons — View'],
+    ['foundry.lens.addons.edit', 'Lens add-ons — Edit'],
+    ['foundry.lens.matrix.view', 'Lens link matrix — View'],
+    ['foundry.lens.matrix.edit', 'Lens link matrix — Edit'],
+    ['foundry.lens.wizard.view', 'Lens wizard rules — View'],
+    ['foundry.lens.wizard.edit', 'Lens wizard rules — Edit'],
+    ['foundry.master_catalogue.view', 'Master catalogue — View'],
+    ['foundry.master_catalogue.edit', 'Master catalogue — Edit'],
     ['foundry.stock.view', 'Stock transfers — View'],
     ['foundry.stock.create', 'Stock transfers — Create']
   ]],
@@ -58,6 +71,7 @@ const RAW_PERMISSION_GROUPS = [
     ['foundry.transfers.edit', 'Transfer requests — Approve / Dispatch']
   ]],
   ['Foundry — Intelligence', [
+    ['foundry.rate_intelligence.view', 'Rate Intelligence — View'],
     ['foundry.suppliers.view', 'Suppliers — View'],
     ['foundry.suppliers.create', 'Suppliers — Create'],
     ['foundry.suppliers.edit', 'Suppliers — Edit'],
@@ -158,6 +172,9 @@ function buildCatalogueGroups() {
   }));
 }
 
+/** Bump when adding keys — Command Unit fetches with this revision to avoid stale catalogue. */
+const PERMISSION_CATALOGUE_REVISION = '20260525-rate-intelligence';
+
 const PERMISSION_CATALOGUE_GROUPS = buildCatalogueGroups();
 
 function getCataloguePermissionKeysSet() {
@@ -180,6 +197,7 @@ function isCataloguePermissionKey(key) {
 }
 
 module.exports = {
+  PERMISSION_CATALOGUE_REVISION,
   PERMISSION_CATALOGUE_GROUPS,
   getCataloguePermissionKeysSet,
   isCataloguePermissionKey,

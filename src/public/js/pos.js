@@ -6450,10 +6450,22 @@
         const dueHtml = isUnpaid && amountRemaining > 0.009
           ? `<div style="margin-top:4px;font-size:12px;color:var(--gold)">Due ${formatRupees(amountRemaining)}</div>`
           : ''
-        const canCollectBalance = canMutate && (o.order_kind === 'LAB' || o.order_kind === 'MIXED') && labStatus === 'READY_FOR_DELIVERY'
+        const pendingInstant = Array.isArray(o.instant_sub_orders)
+          ? o.instant_sub_orders.filter((s) => String(s.handover_status || '').toUpperCase() !== 'HANDED_OVER')
+          : []
+        const canCollectBalance = canMutate && (o.order_kind === 'LAB' || o.order_kind === 'MIXED') && labStatus === 'READY_FOR_DELIVERY' && !pendingInstant.length
+        const instantHandoverHtml = pendingInstant.length && canMutate
+          ? pendingInstant.map((inst) => {
+            const sid = Number(inst.sub_order_id) || 0
+            const lbl = escapeHtml(inst.sub_order_label || ('#' + sid))
+            return `<button type="button" style="margin-top:8px;margin-right:6px;padding:8px 10px;border:1px solid var(--gold);background:var(--goldL);color:var(--gold);border-radius:8px;cursor:pointer" onclick="submitPosInstantSubHandover(${o.order_id}, ${sid})">Hand over frame · ${lbl}</button>`
+          }).join('')
+          : ''
         const collectHtml = canCollectBalance
           ? `<button style="margin-top:8px;padding:8px 10px;border:1px solid var(--acc2);background:var(--accL);color:var(--acc2);border-radius:8px;cursor:pointer" onclick="openBalanceCollection(${o.order_id})">Collect Balance</button>`
-          : ''
+          : (pendingInstant.length && labStatus === 'READY_FOR_DELIVERY' && canMutate
+            ? '<div style="margin-top:6px;font-size:11px;color:var(--text2)">Hand over frame first, then collect balance / handover.</div>'
+            : '')
         // Store OS advances stages 1–3 via lab-status buttons
         const labActionHtml = (() => {
           if (!canMutate) return ''
@@ -6495,6 +6507,7 @@
               ${resumePayHtml}
               ${voidHtml}
               ${labActionHtml}
+              ${instantHandoverHtml}
               ${collectHtml}
             </div>
           </div>
@@ -6717,8 +6730,15 @@
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
       const res = await apiPost('/api/orders/' + orderId + '/handover', body, session.token)
-      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
       const inv = res.data && res.data.invoice_no ? res.data.invoice_no : null
+      if (!inv) {
+        if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+        const msg = 'Handover did not complete. On MIXED orders, hand over the frame line first, then retry bill handover.'
+        if (errEl) { errEl.textContent = msg; errEl.style.display = 'block' }
+        if (typeof cosmosToastError === 'function') cosmosToastError(msg)
+        return
+      }
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
       if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Order handed over successfully.')
       const prefsPhone = String((invoice_preferences && invoice_preferences.phone) || '').trim()
       const customerPhoneWa = prefsPhone.replace(/\D/g, '').length >= 10 ? prefsPhone : (_posHandoverCtx.customerPhone || '')
@@ -6831,6 +6851,16 @@
       const order = detail.order
       if (!order) {
         body.innerHTML = '<div style="padding:16px;color:var(--red)">Order not found.</div>'
+        return
+      }
+      const handoverUi = detail.handover_ui || {}
+      if (handoverUi.pending_instant_sub_orders && handoverUi.pending_instant_sub_orders.length) {
+        const labels = handoverUi.pending_instant_sub_orders.map((s) => s.sub_order_label).join(', ')
+        body.innerHTML =
+          '<div class="pos-handover-stack">' +
+          '<div class="pos-handover-badge-warn" style="background:var(--goldL);color:var(--gold);padding:8px 12px;border-radius:8px;font-weight:600;width:fit-content">Frame first</div>' +
+          '<p class="pos-handover-lead">Hand over the frame line(s) <strong>' + escapeHtml(labels) + '</strong> from the orders list, then open bill handover again.</p>' +
+          '<button type="button" class="pos-handover-btn" onclick="closePosHandoverModal()">Close</button></div>'
         return
       }
       const summary = detail.payment_summary || {}
@@ -7203,6 +7233,23 @@
 
   window.openBalanceCollection = async function(orderId) {
     await openPosHandoverModal(orderId)
+  }
+
+  window.submitPosInstantSubHandover = async function (orderId, subOrderId) {
+    const session = getPosSession()
+    if (!session || !session.token) return
+    try {
+      const res = await apiPost('/api/orders/' + orderId + '/instant-sub-handover', { sub_order_id: Number(subOrderId) }, session.token)
+      const inv = res.data && res.data.invoice_no
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess(inv ? 'Frame handed over. Invoice: ' + inv : 'Frame handed over.')
+      }
+      const searchEl = document.getElementById('pos-orders-search')
+      const q = searchEl && searchEl.value ? searchEl.value.trim() : ''
+      await loadOrderHistory(session, q, posOrdersSelectedStatus())
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
   }
 
   function bindPosLensNewCustomerModal() {

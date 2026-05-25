@@ -11,7 +11,7 @@ On **Purchase View**, operators can print barcode/QR labels for purchase SKUs wi
 | Action | Where | Behaviour |
 |--------|-------|-----------|
 | **Print selected** | Card header | Opens modal for **checked** SKUs only |
-| **Print all** | Card header | Opens modal for all purchase SKUs (all rows checked by default) |
+| **Print all** | Card header | Opens modal for all purchase SKUs |
 
 Stages: **4 — Digitisation** (Generated SKUs table) and **5 — Warehouse** (SKU Details table).
 
@@ -22,9 +22,13 @@ Stages: **4 — Digitisation** (Generated SKUs table) and **5 — Warehouse** (S
 
 ## Modal behaviour
 
-- **Print selected** passes a filtered SKU list to `window.openBarcodeModal` (all modal rows checked by default).
-- Unit-tracked SKUs: `_bcExpandSkusWithUnits` — one label row per physical unit (same as warehouse publish flow).
-- Empty selection → `cosmosToastWarn`.
+- **SKU selection happens upstream** on Purchase View (or warehouse publish passes the full SKU list).
+- The modal has **no unit list, checkboxes, or quantity controls** — full batch prints from upstream SKU selection.
+- **Label format** dropdown loads org-wide presets (`GET /api/meta/label-print-formats`) — e.g. small 15×15 mm vs large 40×28 mm; editable with `foundry.label_formats.edit`.
+- Preview panel shows label layout and batch counts (labels · units · SKUs).
+- **One unique label per unit**; legacy SKUs without unit rows print `quantity` labels from stock (fixed, not editable).
+- `_bcExpandSkusWithUnits` fetches units via `GET /api/skus/:skuId/units` when needed.
+- Empty upstream selection → `cosmosToastWarn`.
 
 ## Out of scope
 

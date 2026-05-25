@@ -1,18 +1,4 @@
 
-// ── Mobile sidebar toggle ──────────────────────────────────────────────────────
-function openSidebar() {
-  document.querySelector('.sidebar').classList.add('open');
-  document.getElementById('fy-sidebar-overlay').classList.add('open');
-  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll();
-  else document.body.style.overflow = 'hidden';
-}
-function closeSidebar() {
-  document.querySelector('.sidebar').classList.remove('open');
-  document.getElementById('fy-sidebar-overlay').classList.remove('open');
-  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll();
-  else document.body.style.overflow = '';
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('.nav-item[data-foundry-permission="foundry.bill_verification.view"]').forEach((el) => { el.style.display = 'none'; });
   const bvPage = document.getElementById('page-bill-verify');
@@ -221,11 +207,54 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.initCosmosModuleSwitchFooter(user);
   }
 
+  // ── Foundry permission helpers (Phase B catalogue — OR comma-separated keys) ─
+  function foundryHasAnyPerm(keysStrOrArr) {
+    if (user.role === 'super_admin') return true;
+    const arr = Array.isArray(keysStrOrArr)
+      ? keysStrOrArr
+      : String(keysStrOrArr || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (!arr.length) return true;
+    return arr.some((k) => userPermissions.includes(k));
+  }
+
+  const FOUNDRY_PAGE_VIEW_BY_PAGE = {
+    'sku-catalogue': ['foundry.catalogue.view'],
+    'stock-view': ['foundry.stock.view'],
+    'lens-packages': ['foundry.lens.packages.view'],
+    'lens-addons': ['foundry.lens.addons.view'],
+    'lens-package-addons': ['foundry.lens.matrix.view'],
+    'lens-wizard-rules': ['foundry.lens.wizard.view'],
+    'master-catalogue': ['foundry.master_catalogue.view', 'foundry.purchases.view'],
+    'rate-intelligence': ['foundry.rate_intelligence.view']
+  };
+
+  const FOUNDRY_CATALOGUE_EDIT_BY_PAGE = {
+    'sku-catalogue': ['foundry.catalogue.edit'],
+    'lens-packages': ['foundry.lens.packages.edit'],
+    'lens-addons': ['foundry.lens.addons.edit'],
+    'lens-package-addons': ['foundry.lens.matrix.edit'],
+    'lens-wizard-rules': ['foundry.lens.wizard.edit'],
+    'master-catalogue': ['foundry.master_catalogue.edit', 'foundry.purchases.create', 'foundry.purchases.edit']
+  };
+
+  function foundryPageCanView(pageId) {
+    const keys = FOUNDRY_PAGE_VIEW_BY_PAGE[pageId];
+    if (!keys || !keys.length) return true;
+    return foundryHasAnyPerm(keys);
+  }
+
+  function foundryCatalogueCanViewPage(pageId) {
+    return foundryPageCanView(pageId);
+  }
+
+  function foundryCatalogueCanEditPage(pageId) {
+    return foundryHasAnyPerm(FOUNDRY_CATALOGUE_EDIT_BY_PAGE[pageId] || ['foundry.catalogue.edit']);
+  }
+
   // ── Foundry sidebar permission gating ─────────────────────────────────────
   // Hide nav items the current user lacks permission for, then collapse any
   // nav-group heading that has no visible items beneath it.
   (function applyFoundryPermissionNav() {
-    const perms = userPermissions;
     // super_admin (empty permissions array with role super_admin) sees everything
     if (user.role === 'super_admin') return;
 
@@ -234,7 +263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.querySelectorAll('[data-foundry-permission]').forEach((el) => {
       const required = el.getAttribute('data-foundry-permission');
-      if (required && !perms.includes(required)) {
+      if (required && !foundryHasAnyPerm(required)) {
         el.style.display = 'none';
       }
     });
@@ -2219,7 +2248,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       ]);
       const h     = purchData.header;
       const items = purchData.items || [];
-      const skus  = skuData || [];
+      const skus  = _pvMergeBrandOntoSkus(items, skuData || []);
       window._pvCurrentSkus = skus;
 
       const titleEl = document.getElementById('pv-title');
@@ -2367,6 +2396,69 @@ document.addEventListener('DOMContentLoaded', async () => {
     return null;
   }
 
+  /** Purchase items carry brand_name; SKU list from GetSKUs often does not — merge for label print. */
+  function _pvMergeBrandOntoSkus(items, skus) {
+    const brandByItemId = {};
+    const brandCodeByItemId = {};
+    (items || []).forEach(function (it) {
+      const b = it.brand_name || it.locked_home_brand_name || it.source_brand || it.maker_name || '';
+      const trimmed = String(b).trim();
+      if (it.item_id && trimmed && trimmed !== '—') brandByItemId[Number(it.item_id)] = trimmed;
+      const c = it.brand_code || it.locked_home_brand_code || '';
+      const codeTrim = String(c).trim();
+      if (it.item_id && codeTrim) brandCodeByItemId[Number(it.item_id)] = codeTrim;
+    });
+    return (skus || []).map(function (sk) {
+      let out = sk;
+      const hasName = sk.brand_name && String(sk.brand_name).trim() && String(sk.brand_name).trim() !== '—';
+      const hasCode = sk.brand_code && String(sk.brand_code).trim();
+      const fromName = brandByItemId[Number(sk.item_id)];
+      const fromCode = brandCodeByItemId[Number(sk.item_id)];
+      if ((!hasName && fromName) || (!hasCode && fromCode)) {
+        out = Object.assign({}, sk);
+        if (!hasName && fromName) out.brand_name = fromName;
+        if (!hasCode && fromCode) out.brand_code = fromCode;
+      }
+      return out;
+    });
+  }
+
+  function _bcStripBrandLine(sk) {
+    const candidates = [
+      sk.brand_name,
+      sk.locked_home_brand_name,
+      sk.source_brand,
+      sk.maker_name
+    ];
+    for (let i = 0; i < candidates.length; i++) {
+      const s = candidates[i] != null ? String(candidates[i]).trim() : '';
+      if (s && s !== '—') return s;
+    }
+    return '';
+  }
+
+  function _bcCompactBrandSegment(sk) {
+    const code = sk.brand_code != null ? String(sk.brand_code).trim() : '';
+    if (code) return code.toUpperCase().slice(0, 6);
+    const name = _bcStripBrandLine(sk);
+    if (name) {
+      const letters = name.replace(/[^A-Za-z0-9]/g, '');
+      if (letters.length >= 1) return letters.slice(0, 3).toUpperCase();
+    }
+    return '—';
+  }
+
+  function _bcCompactPriceSegment(sk) {
+    if (sk.sale_price == null || sk.sale_price === '') return '—';
+    const n = Math.round(Number(sk.sale_price));
+    if (!Number.isFinite(n)) return '—';
+    return String(n);
+  }
+
+  function _bcCompactBottomLine(sk) {
+    return _bcCompactBrandSegment(sk) + ' - ' + _bcCompactPriceSegment(sk);
+  }
+
   function _pvBarcodeToolbarHtml() {
     return `<button type="button" class="btn btn-sm primary pv-print-selected-btn" onclick="pvPrintSelectedBarcodes()" disabled style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print selected</button>
       <button type="button" class="btn btn-sm" onclick="window.openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print all</button>`;
@@ -2401,7 +2493,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (typeof cosmosToastError === 'function') cosmosToastError('Barcode print is not loaded yet.');
       return;
     }
-    window.openBarcodeModal(filtered);
+    window.openBarcodeModal(filtered, { source: 'purchase-view' });
   };
 
   window.pvPrintSelectedBarcodes = function pvPrintSelectedBarcodes() {
@@ -4353,7 +4445,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let _mcBrandFilterReady = false;
   let _mcRowById = {};
   let _mcDetailSkus = [];
-  const canEditMasterDigitisationFields = user.role === 'super_admin' || userPermissions.includes('foundry.catalogue.edit');
+  const canEditMasterDigitisationFields = foundryCatalogueCanEditPage('master-catalogue');
 
   async function _mcEnsureBrandFilter() {
     if (_mcBrandFilterReady) return;
@@ -5221,7 +5313,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   // ── Lens config (POS catalogue) — /api/foundry/lens-config ────────────────────
-  const lcCanEdit = user.role === 'super_admin' || userPermissions.includes('foundry.catalogue.edit');
+  let _lcActivePage = 'lens-packages';
+  function lcCanEdit() {
+    return foundryCatalogueCanEditPage(_lcActivePage);
+  }
   let _lcData = null;
   let _lcSelCatId = null;
   let _lcSelPkgId = null;
@@ -5252,10 +5347,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   function lcApplyEditVisibility() {
     ['lc-btn-add-cat', 'lc-btn-add-pkg', 'lc-pkg-th-edit', 'lc-pkg-save-row', 'lc-addon-new-btn', 'lc-addon-th-actions'].forEach((id) => {
       const el = document.getElementById(id);
-      if (el) el.style.display = lcCanEdit ? '' : 'none';
+      if (el) el.style.display = lcCanEdit() ? '' : 'none';
     });
     const wr = document.getElementById('lc-pkg-addons-wrap');
-    if (wr) wr.style.display = lcCanEdit && _lcSelPkgId ? '' : 'none';
+    if (wr) wr.style.display = lcCanEdit() && _lcSelPkgId ? '' : 'none';
   }
 
   async function lcFetchConfig() {
@@ -5272,7 +5367,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function lcScheduleMatrixSave(packageId) {
     const pid = Number(packageId);
-    if (!lcCanEdit || !Number.isFinite(pid)) return;
+    if (!lcCanEdit() || !Number.isFinite(pid)) return;
     const key = String(pid);
     if (_lcMatrixTimers[key]) clearTimeout(_lcMatrixTimers[key]);
     _lcMatrixTimers[key] = setTimeout(async () => {
@@ -5299,7 +5394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function lcSchedulePkgEditorAddonPersist() {
     const pid = Number(document.getElementById('lc-pkg-id') && document.getElementById('lc-pkg-id').value);
-    if (!lcCanEdit || !Number.isFinite(pid) || pid < 1) return;
+    if (!lcCanEdit() || !Number.isFinite(pid) || pid < 1) return;
     const wrap = document.getElementById('lc-pkg-addons-chk');
     if (!wrap) return;
     const ids = [];
@@ -5343,7 +5438,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const active = lcBool(c.is_active);
         const sel = Number(_lcSelCatId) === Number(c.id);
         const dot = active ? '<span class="b b-green xs">On</span>' : '<span class="b b-gray xs">Off</span>';
-        const btn = lcCanEdit
+        const btn = lcCanEdit()
           ? `<button type="button" class="btn xs" onclick="event.stopPropagation();window.lcEditCategory && window.lcEditCategory(${Number(c.id)})">Edit</button>`
           : '';
         const name = lcEsc(String(c.pos_name || c.name || '').trim() || '—');
@@ -5369,15 +5464,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (lbl) lbl.textContent = cat ? `· ${lcPosLabel(cat.pos_brand, cat.pos_name, cat.name)}` : '';
     const pkgs = (_lcData.packages || []).filter((p) => Number(p.category_id) === Number(_lcSelCatId));
     if (!pkgs.length) {
-      tb.innerHTML = `<tr><td colspan="${lcCanEdit ? 5 : 4}" class="td2 p12" style="color:var(--text3)">No packages in this category</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="${lcCanEdit() ? 5 : 4}" class="td2 p12" style="color:var(--text3)">No packages in this category</td></tr>`;
       return;
     }
-    const colspan = lcCanEdit ? 5 : 4;
+    const colspan = lcCanEdit() ? 5 : 4;
     tb.innerHTML = pkgs
       .map((p) => {
         const active = lcBool(p.is_active);
         const dot = active ? '<span class="b b-green xs">Yes</span>' : '<span class="b b-gray xs">No</span>';
-        const edit = lcCanEdit
+        const edit = lcCanEdit()
           ? `<td class="tc"><button type="button" class="btn xs primary" onclick="event.stopPropagation();window.lcSelectPackage && window.lcSelectPackage(${Number(p.id)})">Edit</button></td>`
           : '';
         return `<tr class="tr-link${Number(_lcSelPkgId) === Number(p.id) ? ' lc-pkg-sel' : ''}" data-lc-pkg="${Number(p.id)}" style="${Number(_lcSelPkgId) === Number(p.id) ? 'background:var(--accL);' : ''}"><td>${lcEsc(String(p.pos_brand || '').trim() || '—')}</td><td>${lcEsc(String(p.pos_name || p.name || '').trim() || '—')}</td><td class="tc mono">${inr(p.price)}</td><td class="tc">${dot}</td>${edit}</tr>`;
@@ -5430,7 +5525,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (warr) warr.value = p.card_warranty_label || '';
     if (warrTone) warrTone.value = String(p.card_warranty_tone != null ? p.card_warranty_tone : 1);
     const chk = document.getElementById('lc-pkg-addons-chk');
-    if (chk && lcCanEdit) {
+    if (chk && lcCanEdit()) {
       const allowed = new Set(lcPackageAddonSet(p.id));
       const addons = (_lcData.addons || []).filter((a) => lcBool(a.is_active));
       chk.innerHTML = addons
@@ -5444,7 +5539,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         cb.addEventListener('change', () => lcSchedulePkgEditorAddonPersist());
       });
     }
-    if (aw) aw.style.display = lcCanEdit ? '' : 'none';
+    if (aw) aw.style.display = lcCanEdit() ? '' : 'none';
     lcApplyEditVisibility();
   }
 
@@ -5455,7 +5550,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.lcOpenNewPackage = function () {
-    if (!lcCanEdit) return;
+    if (!lcCanEdit()) return;
     if (!_lcSelCatId) {
       if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a category first.');
       return;
@@ -5491,7 +5586,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.lcSavePackage = async function () {
-    if (!lcCanEdit) return;
+    if (!lcCanEdit()) return;
     const posNameEl = document.getElementById('lc-pkg-pos-name');
     const priceEl = document.getElementById('lc-pkg-price');
     if (!posNameEl || !String(posNameEl.value || '').trim()) {
@@ -5547,12 +5642,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.loadLensPackagesPage = async function () {
+    _lcActivePage = 'lens-packages';
     const ctb = document.getElementById('lc-cat-tbody');
     const ptb = document.getElementById('lc-pkg-tbody');
     if (!ctb || !ptb) return;
     if (typeof cosmosSkeletonTable === 'function') {
       cosmosSkeletonTable('lc-cat-tbody', 1, 4);
-      cosmosSkeletonTable('lc-pkg-tbody', lcCanEdit ? 5 : 4, 6);
+      cosmosSkeletonTable('lc-pkg-tbody', lcCanEdit() ? 5 : 4, 6);
     }
     lcApplyEditVisibility();
     try {
@@ -5576,7 +5672,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.lcEditCategory = function (id) {
-    if (!lcCanEdit || !_lcData) return;
+    if (!lcCanEdit() || !_lcData) return;
     const c = (_lcData.categories || []).find((x) => Number(x.id) === Number(id));
     if (!c) return;
     document.getElementById('lc-cat-id').value = String(c.id);
@@ -5596,7 +5692,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.lcSaveCategory = async function () {
-    if (!lcCanEdit) return;
+    if (!lcCanEdit()) return;
     const posName = document.getElementById('lc-cat-pos-name');
     if (!String(posName.value || '').trim()) {
       if (typeof cosmosFieldError === 'function') cosmosFieldError(posName, 'Required');
@@ -5642,7 +5738,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.lcOpenNewCategory = function () {
-    if (!lcCanEdit) return;
+    if (!lcCanEdit()) return;
     document.getElementById('lc-cat-id').value = '';
     document.getElementById('lc-cat-pos-brand').value = '';
     document.getElementById('lc-cat-pos-name').value = '';
@@ -5659,7 +5755,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.lcOpenNewAddon = function () {
-    if (!lcCanEdit) return;
+    if (!lcCanEdit()) return;
     document.getElementById('lc-ad-id').value = '';
     document.getElementById('lc-ad-pos-brand').value = '';
     document.getElementById('lc-ad-pos-name').value = '';
@@ -5672,7 +5768,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.lcEditAddon = function (id) {
-    if (!lcCanEdit || !_lcData) return;
+    if (!lcCanEdit() || !_lcData) return;
     const a = (_lcData.addons || []).find((x) => Number(x.id) === Number(id));
     if (!a) return;
     document.getElementById('lc-ad-id').value = String(a.id);
@@ -5687,7 +5783,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.lcSaveAddon = async function () {
-    if (!lcCanEdit) return;
+    if (!lcCanEdit()) return;
     const nm = document.getElementById('lc-ad-pos-name');
     const pr = document.getElementById('lc-ad-price');
     if (!String(nm.value || '').trim()) {
@@ -5734,9 +5830,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.loadLensAddonsPage = async function () {
+    _lcActivePage = 'lens-addons';
     const tb = document.getElementById('lc-addon-tbody');
     if (!tb) return;
-    const ncol = lcCanEdit ? 7 : 6;
+    const ncol = lcCanEdit() ? 7 : 6;
     if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('lc-addon-tbody', ncol, 8);
     lcApplyEditVisibility();
     try {
@@ -5750,7 +5847,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         .map((a) => {
           const on = lcBool(a.is_active);
           const dot = on ? '<span class="b b-green xs">Yes</span>' : '<span class="b b-gray xs">No</span>';
-          const ed = lcCanEdit
+          const ed = lcCanEdit()
             ? `<td class="tc"><button type="button" class="btn xs" onclick="window.lcEditAddon(${Number(a.id)})">Edit</button></td>`
             : '';
           return `<tr><td>${lcEsc(String(a.pos_brand || '').trim() || '—')}</td><td>${lcEsc(String(a.pos_name || a.name || '').trim() || '—')}</td><td class="xs" style="color:var(--text3)">${lcEsc(String(a.internal_brand || '').trim() || '—')}</td><td class="xs" style="color:var(--gold)">${lcEsc(String(a.internal_name || a.name || '').trim() || '—')}</td><td class="tc mono">${inr(a.price)}</td><td class="tc">${dot}</td>${ed}</tr>`;
@@ -5762,6 +5859,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.loadLensMatrixPage = async function () {
+    _lcActivePage = 'lens-package-addons';
     const thead = document.getElementById('lc-matrix-thead');
     const tb = document.getElementById('lc-matrix-tbody');
     if (!thead || !tb) return;
@@ -5789,7 +5887,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             .map((a) => {
               const aid = Number(a.id);
               const on = allowed.has(aid);
-              if (!lcCanEdit) {
+              if (!lcCanEdit()) {
                 return `<td class="tc">${on ? '●' : '—'}</td>`;
               }
               return `<td class="tc"><input type="checkbox" data-lc-aid="${aid}" ${on ? 'checked' : ''} aria-label="link"></td>`;
@@ -5798,7 +5896,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           return `<tr data-lc-pkg-row="${Number(p.id)}"><td class="td2 fw6">${plab}</td>${cells}</tr>`;
         })
         .join('');
-      if (lcCanEdit) {
+      if (lcCanEdit()) {
         tb.querySelectorAll('tr[data-lc-pkg-row]').forEach((tr) => {
           const pid = Number(tr.getAttribute('data-lc-pkg-row'));
           tr.querySelectorAll('input[data-lc-aid]').forEach((cb) => {
@@ -5851,7 +5949,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return `<tr class="tr-link" onclick="window.lwrSelectProductType && window.lwrSelectProductType('${ptKeyEsc}')">
         <td class="fw6">${ptKeyEsc}</td>
         <td>
-          ${lcCanEdit
+          ${lcCanEdit()
             ? `<select class="inp-sel xs" data-lwr-pt="${ptKeyEsc}" onclick="event.stopPropagation()" onchange="window.lwrPolicyChange && window.lwrPolicyChange(this)">${opts}</select>`
             : `<span>${lcEsc(LWR_POLICY_LABELS[pt.lens_wizard_policy] || pt.lens_wizard_policy)}</span>`
           }
@@ -5899,7 +5997,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const label = lcPosLabel(c.pos_brand, c.pos_name, c.name);
       const checked = existingIds.has(Number(c.id));
       return `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;min-width:180px;padding:4px 0">
-        <input type="checkbox" data-lwr-cat-id="${Number(c.id)}" ${checked ? 'checked' : ''} ${lcCanEdit ? '' : 'disabled'}>
+        <input type="checkbox" data-lwr-cat-id="${Number(c.id)}" ${checked ? 'checked' : ''} ${lcCanEdit() ? '' : 'disabled'}>
         ${lcEsc(label)}
       </label>`;
     }).join('');
@@ -5935,6 +6033,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   window.loadLensWizardRulesPage = async function () {
+    _lcActivePage = 'lens-wizard-rules';
     const tb = document.getElementById('lwr-policy-tbody');
     if (!tb) return;
     if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('lwr-policy-tbody', 3, 3);
@@ -6007,6 +6106,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const origNav = window.nav;
   window.nav = function(id, el, skipList, options) {
     const navOptions = options || {};
+    if (FOUNDRY_PAGE_VIEW_BY_PAGE[id] && !foundryPageCanView(id)) {
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn('You do not have permission to open this screen.');
+      }
+      if (id !== 'dashboard') {
+        const fallback = Object.keys(FOUNDRY_PAGE_VIEW_BY_PAGE).find((pid) => foundryPageCanView(pid)) || 'dashboard';
+        window.nav(fallback, getFoundryNavEl(fallback), false, navOptions);
+      }
+      return;
+    }
     if (typeof origNav === 'function') origNav(id, el);
     const nextPath = FOUNDRY_PAGE_PATHS[id] || '/foundry/dashboard';
     let pathForHistory = nextPath;
@@ -6050,7 +6159,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (id === 'lens-package-addons' && typeof window.loadLensMatrixPage === 'function') window.loadLensMatrixPage();
     if (id === 'lens-wizard-rules' && typeof window.loadLensWizardRulesPage === 'function') window.loadLensWizardRulesPage();
     // loadLabOrders is assigned later in this file; guard avoids ReferenceError + aborted init on /foundry/lab-orders refresh.
-    if (id === 'lab-orders' && typeof window.loadLabOrders === 'function') window.loadLabOrders();
+    if (id === 'lab-orders') {
+      void (typeof fyInitLabStoreFilter === 'function' ? fyInitLabStoreFilter() : Promise.resolve()).then(function () {
+        if (typeof window.loadLabOrders === 'function') window.loadLabOrders();
+      });
+    }
     // Only load the list when navigating from sidebar (not when opening a detail directly)
     if (!skipList) {
       if (id === 'bill-verify')  loadBillVerifyList();
@@ -6085,29 +6198,284 @@ document.addEventListener('DOMContentLoaded', async () => {
   const TSC_VENDOR_ID = 0x0EB8;
   /** localStorage key prefix — horizontal TSPL calibration per USB identity */
   const BC_CALIB_STORAGE_PREFIX = 'cosmos.foundry.bcAlign.v1';
-  /** Full modal layout (margins, gaps, label grid, QR/TSPL fields, USB mm offset) */
-  const BC_LAYOUT_STORAGE_KEY = 'cosmos.foundry.bcLayout.v1';
-  const BC_LAYOUT_INPUT_IDS = [
-    'bc-margin-top',
-    'bc-margin-bottom',
-    'bc-margin-left',
-    'bc-margin-right',
-    'bc-gap-row',
-    'bc-gap-col',
-    'bc-label-width',
-    'bc-label-height',
-    'bc-labels-per-row',
-    'bc-dots-per-mm',
-    'bc-qr-cell-size',
-    'bc-qr-visual-size-mm',
-    'bc-qr-top-ratio',
-    'bc-text-top-ratio',
-    'bc-text-x-mul',
-    'bc-text-y-mul',
-    'bc-text-font-id',
-    'bc-text-font-pt',
-    'bc-tspl-offset-x-mm',
+  /** Org-wide label format presets (server) + last-selected key (browser) */
+  const BC_FORMAT_KEY_STORAGE = 'cosmos.foundry.bcFormatKey.v1';
+  const BC_FORMAT_FIELD_MAP = [
+    { configKey: 'marginTop', inputId: 'bc-margin-top' },
+    { configKey: 'marginBottom', inputId: 'bc-margin-bottom' },
+    { configKey: 'marginLeft', inputId: 'bc-margin-left' },
+    { configKey: 'marginRight', inputId: 'bc-margin-right' },
+    { configKey: 'gapRow', inputId: 'bc-gap-row' },
+    { configKey: 'gapCol', inputId: 'bc-gap-col' },
+    { configKey: 'labelWidthMm', inputId: 'bc-label-width' },
+    { configKey: 'labelHeightMm', inputId: 'bc-label-height' },
+    { configKey: 'labelsPerRow', inputId: 'bc-labels-per-row' },
+    { configKey: 'dotsPerMm', inputId: 'bc-dots-per-mm' },
+    { configKey: 'qrCellSize', inputId: 'bc-qr-cell-size' },
+    { configKey: 'qrVisualSizeMm', inputId: 'bc-qr-visual-size-mm' },
+    { configKey: 'qrTopRatio', inputId: 'bc-qr-top-ratio' },
+    { configKey: 'textTopRatio', inputId: 'bc-text-top-ratio' },
+    { configKey: 'textXMul', inputId: 'bc-text-x-mul' },
+    { configKey: 'textYMul', inputId: 'bc-text-y-mul' },
+    { configKey: 'textFontId', inputId: 'bc-text-font-id' },
+    { configKey: 'textFontPt', inputId: 'bc-text-font-pt' }
   ];
+  const BC_FORMAT_INPUT_IDS = BC_FORMAT_FIELD_MAP.map(function (f) { return f.inputId; });
+  let _bcLabelFormats = [];
+  let _bcLabelFormatsLoaded = false;
+  let _bcActiveFormatConfig = { layoutType: 'grid' };
+
+  const BC_STRIP_CONFIG_KEYS = ['layoutType', 'printWidthMm', 'zone1WidthMm', 'zone2WidthMm', 'tailWidthMm'];
+  const BC_COMPACT_CONFIG_KEYS = ['layoutType', 'bottomBandHeightMm', 'rightRailWidthMm'];
+
+  const BC_SMALL_COMPACT_FALLBACK = {
+    format_key: 'small_label',
+    name: 'Small label',
+    description: 'Eyewear QR sticker — 15×15 mm (unit + brand/price)',
+    config: {
+      v: 1, layoutType: 'compact', marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0,
+      gapRow: 0, gapCol: 0, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 1, dotsPerMm: 8,
+      qrCellSize: 3, qrVisualSizeMm: 10, qrTopRatio: 0.02, textTopRatio: 0.68,
+      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 3.5,
+      bottomBandHeightMm: 4, rightRailWidthMm: 3.5
+    }
+  };
+
+  const BC_EYEWEAR_STRIP_FALLBACK = {
+    format_key: 'eyewear_strip_12x100',
+    name: 'Eyewear strip 12×100',
+    description: 'Frame wrap — 66 mm print + 34 mm tail',
+    config: {
+      v: 1, layoutType: 'strip', marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0,
+      gapRow: 0, gapCol: 0, labelWidthMm: 100, labelHeightMm: 12, labelsPerRow: 1, dotsPerMm: 8,
+      qrCellSize: 3, qrVisualSizeMm: 10, qrTopRatio: 0.06, textTopRatio: 0.72,
+      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 4,
+      printWidthMm: 66, zone1WidthMm: 33, zone2WidthMm: 33, tailWidthMm: 34
+    }
+  };
+
+  function _bcGetActiveFormatConfig() {
+    return Object.assign({ layoutType: 'grid' }, _bcActiveFormatConfig || {});
+  }
+
+  function _bcGetLayoutType() {
+    const t = String(_bcGetActiveFormatConfig().layoutType || 'grid').toLowerCase();
+    if (t === 'strip') return 'strip';
+    if (t === 'compact') return 'compact';
+    return 'grid';
+  }
+
+  function _bcUpdateFormatHint() {
+    const el = document.getElementById('bc-format-hint');
+    if (!el) return;
+    if (_bcGetLayoutType() === 'strip') {
+      el.textContent = 'Strip layout — Zone 1: QR + unit text · Zone 2: brand (bold), model, MRP · tail non-print';
+    } else if (_bcGetLayoutType() === 'compact') {
+      el.textContent = 'Compact 15×15 — QR + vertical unit id · bottom: brand code/abbrev - price';
+    } else {
+      el.textContent = 'QR encodes unit barcode · text shows SKU code';
+    }
+  }
+
+  function _bcCanEditLabelFormats() {
+    return typeof foundryHasAnyPerm === 'function' && foundryHasAnyPerm('foundry.label_formats.edit');
+  }
+
+  function _bcRefreshLabelFormatActions() {
+    const wrap = document.getElementById('bc-format-actions');
+    if (wrap) wrap.style.display = _bcCanEditLabelFormats() ? '' : 'none';
+  }
+
+  function _bcReadStoredFormatKey() {
+    try { return String(localStorage.getItem(BC_FORMAT_KEY_STORAGE) || '').trim(); } catch (_e) { return ''; }
+  }
+
+  function _bcWriteStoredFormatKey(key) {
+    try { if (key) localStorage.setItem(BC_FORMAT_KEY_STORAGE, String(key)); } catch (_e) { /* ignore */ }
+  }
+
+  function _bcCollectFormatConfig() {
+    const out = { v: 1 };
+    BC_FORMAT_FIELD_MAP.forEach(function (f) {
+      const el = document.getElementById(f.inputId);
+      out[f.configKey] = el && 'value' in el ? el.value : '';
+    });
+    BC_STRIP_CONFIG_KEYS.forEach(function (k) {
+      if (_bcActiveFormatConfig[k] !== undefined && _bcActiveFormatConfig[k] !== null) {
+        out[k] = _bcActiveFormatConfig[k];
+      }
+    });
+    BC_COMPACT_CONFIG_KEYS.forEach(function (k) {
+      if (_bcActiveFormatConfig[k] !== undefined && _bcActiveFormatConfig[k] !== null) {
+        out[k] = _bcActiveFormatConfig[k];
+      }
+    });
+    return out;
+  }
+
+  function _bcNormalizeSmallLabelFormat(fmt) {
+    if (!fmt || fmt.format_key !== 'small_label') return fmt;
+    const cfg = fmt.config && typeof fmt.config === 'object' ? fmt.config : {};
+    if (String(cfg.layoutType || '').toLowerCase() === 'compact') return fmt;
+    return Object.assign({}, fmt, {
+      description: BC_SMALL_COMPACT_FALLBACK.description,
+      config: Object.assign({}, BC_SMALL_COMPACT_FALLBACK.config, cfg, { layoutType: 'compact' })
+    });
+  }
+
+  function _bcApplyFormatConfig(config) {
+    if (!config || typeof config !== 'object') return;
+    BC_FORMAT_FIELD_MAP.forEach(function (f) {
+      if (config[f.configKey] === undefined || config[f.configKey] === null) return;
+      const el = document.getElementById(f.inputId);
+      if (el && 'value' in el) el.value = String(config[f.configKey]);
+    });
+  }
+
+  function _bcPopulateFormatSelect(formats, selectedKey) {
+    const sel = document.getElementById('bc-format-select');
+    if (!sel) return;
+    const list = Array.isArray(formats) ? formats : [];
+    sel.innerHTML = list.map(function (f) {
+      const key = _bcEsc(f.format_key || '');
+      const name = _bcEsc(f.name || f.format_key || 'Format');
+      const def = f.is_default ? ' (default)' : '';
+      return '<option value="' + key + '">' + name + def + '</option>';
+    }).join('');
+    if (selectedKey && list.some(function (f) { return f.format_key === selectedKey; })) {
+      sel.value = selectedKey;
+    } else {
+      const def = list.find(function (f) { return f.is_default; });
+      if (def) sel.value = def.format_key;
+      else if (list[0]) sel.value = list[0].format_key;
+    }
+  }
+
+  function _bcGetSelectedFormatKey() {
+    return String(document.getElementById('bc-format-select')?.value || '').trim();
+  }
+
+  function _bcApplyLabelFormatByKey(formatKey) {
+    const key = String(formatKey || '').trim();
+    let fmt = _bcLabelFormats.find(function (f) { return f.format_key === key; });
+    fmt = _bcNormalizeSmallLabelFormat(fmt);
+    if (fmt && fmt.config) {
+      _bcActiveFormatConfig = Object.assign({ layoutType: 'grid', v: 1 }, fmt.config);
+      _bcApplyFormatConfig(fmt.config);
+    }
+    if (key) _bcWriteStoredFormatKey(key);
+    _bcUpdateFormatHint();
+    if (_bcSkus.length) _bcRenderPreviewNow();
+    else bcRenderPreview();
+  }
+
+  async function _bcEnsureLabelFormatsLoaded() {
+    if (_bcLabelFormatsLoaded && _bcLabelFormats.length) return _bcLabelFormats;
+    try {
+      const res = await apiGet('/api/meta/label-print-formats');
+      const list = res && res.formats ? res.formats : (Array.isArray(res) ? res : []);
+      _bcLabelFormats = Array.isArray(list) ? list.map(_bcNormalizeSmallLabelFormat) : [];
+      if (!_bcLabelFormats.some(function (f) { return f.format_key === BC_EYEWEAR_STRIP_FALLBACK.format_key; })) {
+        _bcLabelFormats.push(Object.assign({}, BC_EYEWEAR_STRIP_FALLBACK));
+      }
+      if (!_bcLabelFormats.some(function (f) { return f.format_key === BC_SMALL_COMPACT_FALLBACK.format_key; })) {
+        _bcLabelFormats.push(Object.assign({}, BC_SMALL_COMPACT_FALLBACK));
+      }
+    } catch (err) {
+      _bcLabelFormats = [];
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn(err.message || 'Could not load label formats — using on-screen defaults.');
+      }
+    }
+    _bcLabelFormatsLoaded = true;
+    return _bcLabelFormats;
+  }
+
+  window.bcOnFormatSelectChange = function() {
+    _bcApplyLabelFormatByKey(_bcGetSelectedFormatKey());
+  };
+
+  window.bcUpdateLabelFormat = async function() {
+    if (!_bcCanEditLabelFormats()) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('You do not have permission to edit label formats.');
+      return;
+    }
+    const key = _bcGetSelectedFormatKey();
+    if (!key) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a label format first.');
+      return;
+    }
+    const btn = document.getElementById('bc-format-update-btn');
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      const updated = await apiPut('/api/foundry/label-print-formats/' + encodeURIComponent(key), {
+        config: _bcCollectFormatConfig()
+      });
+      const row = updated && updated.format_key ? updated : (updated && updated.data ? updated.data : null);
+      if (row) {
+        const idx = _bcLabelFormats.findIndex(function (f) { return f.format_key === key; });
+        if (idx >= 0) _bcLabelFormats[idx] = row;
+      }
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Label format updated.');
+      bcRenderPreview();
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Update failed.');
+    }
+  };
+
+  window.bcSaveLabelFormatAsNew = async function() {
+    if (!_bcCanEditLabelFormats()) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('You do not have permission to create label formats.');
+      return;
+    }
+    const name = window.prompt('Name for this label format:', '');
+    if (!name || !String(name).trim()) return;
+    const btn = document.getElementById('bc-format-save-new-btn');
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      const created = await apiPost('/api/foundry/label-print-formats', {
+        name: String(name).trim(),
+        config: _bcCollectFormatConfig()
+      });
+      const row = created && created.format_key ? created : (created && created.data ? created.data : null);
+      if (row) {
+        _bcLabelFormats.push(row);
+        _bcPopulateFormatSelect(_bcLabelFormats, row.format_key);
+        _bcWriteStoredFormatKey(row.format_key);
+      }
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Label format saved.');
+      bcRenderPreview();
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed.');
+    }
+  };
+
+  window.bcSetDefaultLabelFormat = async function() {
+    if (!_bcCanEditLabelFormats()) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('You do not have permission to edit label formats.');
+      return;
+    }
+    const key = _bcGetSelectedFormatKey();
+    if (!key) return;
+    const btn = document.getElementById('bc-format-default-btn');
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      await apiPut('/api/foundry/label-print-formats/' + encodeURIComponent(key), { is_default: true });
+      _bcLabelFormats = _bcLabelFormats.map(function (f) {
+        return Object.assign({}, f, { is_default: f.format_key === key });
+      });
+      _bcPopulateFormatSelect(_bcLabelFormats, key);
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Default label format set.');
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not set default.');
+    }
+  };
   let _bcCalibSaveTimer = null;
   let _jsBarcodeLoader = null;
   let _html5QrLoader = null;
@@ -6145,7 +6513,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
   }
 
-  // ── Client-side QR generation (preview + browser print — no /api/qr storm) ──
   let _qrCodeLoader = null;
   const _BC_QR_CACHE_MAX = 500;
   const _bcQrCache = new Map();
@@ -6233,27 +6600,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           img.style.display = 'block';
           el.replaceWith(img);
         } catch (_e) {
-          el.style.background = '#fee2e2';
+          el.style.background = 'var(--redL)';
           el.title = 'QR generation failed for: ' + code;
         }
       })).then(() => requestAnimationFrame(nextBatch));
     }
     requestAnimationFrame(nextBatch);
-  }
-
-  function loadHtml5QrLib() {
-    return _loadScriptOnce(
-      'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
-      {
-        integrity: 'sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+',
-        crossorigin: 'anonymous',
-        loaderRef: {
-          get current() { return _html5QrLoader; },
-          set current(v) { _html5QrLoader = v; }
-        }
-      },
-      'Html5Qrcode'
-    );
   }
 
   function _bcEsc(s) {
@@ -6265,7 +6617,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       .replace(/"/g, '&quot;');
   }
 
-  /** Per-unit 7-digit code when present; else PID / batch barcode / sku_code. */
   function _bcQrPayload(sk) {
     const ub = sk.unit_barcode != null && String(sk.unit_barcode).trim() !== '' ? String(sk.unit_barcode).trim() : '';
     if (/^\d{7}$/.test(ub)) return ub;
@@ -6306,13 +6657,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     return out;
   }
 
-  function _bcRowShouldBeChecked(sk, opts) {
-    if (!opts.onlySkuIds || !opts.onlySkuIds.length) return true;
-    const idSet = new Set(opts.onlySkuIds.map(function (x) { return Number(x); }).filter(function (n) { return n > 0; }));
-    if (sk.sku_id != null && idSet.has(Number(sk.sku_id))) return true;
-    const codes = opts.onlySkuCodes;
-    if (codes && codes.length && sk.sku_code && codes.indexOf(sk.sku_code) >= 0) return true;
-    return false;
+  function _bcIsUnitRow(sk) {
+    const ub = sk.unit_barcode != null ? String(sk.unit_barcode).trim() : '';
+    return /^\d{7}$/.test(ub);
+  }
+
+  function _bcRowCopies(sk) {
+    if (_bcIsUnitRow(sk)) return 1;
+    return Math.max(1, parseInt(String(sk.quantity || 1), 10) || 1);
   }
 
   window.openBarcodeModal = async function(skus, opts) {
@@ -6322,6 +6674,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     _bcQrCache.clear();
+    _bcLabelFormatsLoaded = false;
     try {
       await Promise.all([loadJsBarcodeLib(), loadBcQrLib()]);
     } catch (err) {
@@ -6330,51 +6683,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     _bcSkus = await _bcExpandSkusWithUnits(skus);
-    if (!_bcSkus.some(function (sk) { return sk.unit_barcode }) && skus.some(function (sk) { return (Number(sk.quantity) || 0) > 0 })) {
+    if (!_bcSkus.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels in batch to print.');
+      return;
+    }
+    if (!_bcSkus.some(function (sk) { return sk.unit_barcode; }) && skus.some(function (sk) { return (Number(sk.quantity) || 0) > 0; })) {
       if (typeof cosmosToastWarn === 'function') {
         cosmosToastWarn('No unit barcodes for this SKU. Run maintenance backfill or re-generate SKU, then print again.');
       }
     }
 
-    // Build SKU list rows — each row has its own qty input defaulting to unit quantity
-    const listEl = document.getElementById('bc-sku-list');
-    if (listEl) {
-      listEl.innerHTML = _bcSkus.map((sk, i) => {
-        const sku = sk.sku_code || '—';
-        const qrVal = _bcQrPayload(sk);
-        const isUnit = sk.unit_barcode && /^\d{7}$/.test(String(sk.unit_barcode));
-        const legacy = !isUnit && !sk.pid && sk.barcode === sk.sku_code && sk.sku_code;
-        const qrLine = (qrVal !== sku || isUnit)
-          ? `<div class="bc-sku-qr mono" style="font-size:9px;color:var(--text2);margin-top:2px">QR: ${_bcEsc(qrVal)}</div>`
-          : '';
-        const legacyLine = legacy
-          ? `<div style="font-size:9px;color:var(--gold);margin-top:2px">Legacy row: QR may match SKU only.</div>`
-          : '';
-        const chkOn = _bcRowShouldBeChecked(sk, opts);
-        return `
-        <div class="bc-sku-row">
-          <input type="checkbox" id="bc-chk-${i}" ${chkOn ? 'checked' : ''} onchange="bcRenderPreview()">
-          <div style="flex:1;min-width:0">
-            <div class="bc-sku-code">${_bcEsc(sku)}</div>
-            ${qrLine}${isUnit && sk.unit_no ? `<div style="font-size:9px;color:var(--text3);margin-top:2px">Piece ${sk.unit_no}</div>` : ''}${legacyLine}
-            <div class="bc-sku-info">${_bcEsc(sk.ew_collection || '')} · ${_bcEsc(sk.colour_name || '')}</div>
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0">
-            <span style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">${isUnit ? 'Labels' : 'Qty'}</span>
-            <input type="number" id="bc-qty-${i}" min="1" max="${isUnit ? 1 : 9999}" value="${isUnit ? 1 : (sk.quantity || 1)}"
-              style="width:52px;text-align:center;font-size:12px;padding:3px 4px"
-              oninput="bcRenderPreview()" ${isUnit ? 'readonly title="One label per unit"' : ''}>
-            <span style="font-size:9px;color:var(--text2)">${isUnit ? '1 unit' : ((sk.quantity || 0) + ' stk')}</span>
-          </div>
-        </div>`;
-      }).join('');
+    if (_bcPreviewDebounceTimer) {
+      clearTimeout(_bcPreviewDebounceTimer);
+      _bcPreviewDebounceTimer = null;
     }
-
-    // Reset controls
-    const copiesEl = document.getElementById('bc-copies');
-    if (copiesEl) copiesEl.value = '';
-    const typeEl = document.getElementById('bc-type');
-    if (typeEl) typeEl.value = opts.defaultType || 'QR';
 
     _bcEnsureCalibrationListeners();
     try {
@@ -6397,120 +6719,95 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     openM('modal-barcode-print');
 
-    _bcApplySavedPrintConfigurationFromStorage();
-    if (opts.defaultType && typeEl) typeEl.value = opts.defaultType;
+    const formats = await _bcEnsureLabelFormatsLoaded();
+    const storedKey = _bcReadStoredFormatKey();
+    _bcPopulateFormatSelect(formats, storedKey);
+    _bcApplyLabelFormatByKey(_bcGetSelectedFormatKey());
+    _bcRefreshLabelFormatActions();
     _bcSchedulePersistCalibration();
 
-    setTimeout(bcRenderPreview, 100); // wait for modal to render
   };
-
-  /** Restore inputs from localStorage. Returns true if a snapshot was applied. */
-  function _bcApplySavedPrintConfigurationFromStorage() {
-    try {
-      const raw = localStorage.getItem(BC_LAYOUT_STORAGE_KEY);
-      if (!raw) return false;
-      const obj = JSON.parse(raw);
-      if (!obj || typeof obj !== 'object') return false;
-      BC_LAYOUT_INPUT_IDS.forEach((id) => {
-        if (obj[id] === undefined || obj[id] === null) return;
-        const el = document.getElementById(id);
-        if (el && 'value' in el) el.value = String(obj[id]);
-      });
-      const sel = document.getElementById('bc-type');
-      if (sel && obj['bc-type'] != null && String(obj['bc-type']).trim() !== '') {
-        sel.value = String(obj['bc-type']);
-      }
-      return true;
-    } catch (e) {
-      return false;
-    }
+  // Build list of {code (pid for QR), label (sku_code for text), copies} — full batch, no modal selection
+  function _bcSelectedItems() {
+    return _bcSkus.map((sk) => ({
+      code: _bcQrPayload(sk),
+      label: sk.sku_code || '',
+      copies: _bcRowCopies(sk)
+    }));
   }
 
-  window.bcSavePrintConfiguration = function() {
-    try {
-      const payload = { v: 1, savedAt: new Date().toISOString() };
-      BC_LAYOUT_INPUT_IDS.forEach((id) => {
-        const el = document.getElementById(id);
-        if (el && 'value' in el) payload[id] = el.value;
-      });
-      const sel = document.getElementById('bc-type');
-      if (sel) payload['bc-type'] = sel.value;
-      localStorage.setItem(BC_LAYOUT_STORAGE_KEY, JSON.stringify(payload));
-      if (typeof cosmosToastSuccess === 'function') {
-        cosmosToastSuccess(
-          'Print configuration saved on this browser — sheet geometry (including left/right inset margins), gaps, label grid, QR/TSPL fields, and USB horizontal mm.'
-        );
-      }
-      bcRenderPreview();
-    } catch (err) {
-      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not save configuration.');
-      else alert(err.message || 'Could not save configuration.');
-    }
-  };
+  function _bcTruncateStripLine(text, maxLen) {
+    const s = String(text || '').trim();
+    if (!s) return '';
+    if (s.length <= maxLen) return s;
+    return s.slice(0, Math.max(1, maxLen - 1)) + '…';
+  }
 
-  window.bcLoadPrintConfiguration = function() {
-    if (!_bcApplySavedPrintConfigurationFromStorage()) {
-      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No saved print configuration found.');
-      else alert('No saved print configuration found.');
-      return;
-    }
-    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Saved configuration loaded.');
-    _bcSchedulePersistCalibration();
-    bcRenderPreview();
-  };
-
-  window.bcClearSavedPrintConfiguration = function() {
-    try {
-      localStorage.removeItem(BC_LAYOUT_STORAGE_KEY);
-    } catch (e) {
-      /* ignore */
-    }
-    if (typeof cosmosToastSuccess === 'function') {
-      cosmosToastSuccess('Saved print configuration removed. Current fields on screen are unchanged.');
-    }
-  };
-
-  // Select / deselect all checkboxes
-  window.bcSelectAll = function(state) {
-    _bcSkus.forEach((_, i) => {
-      const chk = document.getElementById(`bc-chk-${i}`);
-      if (chk) chk.checked = state;
+  function _bcStripModelLine(sk) {
+    const parts = [sk.ew_collection, sk.style_model].filter(function (x) {
+      return x != null && String(x).trim() !== '';
     });
-    bcRenderPreview();
-  };
+    return parts.join(' · ') || String(sk.style_model || '').trim() || '—';
+  }
 
-  // "Set All" — apply the global copies input to every visible row
-  window.bcApplyGlobalQty = function() {
-    const globalVal = parseInt(document.getElementById('bc-copies')?.value || '0', 10);
-    if (!globalVal || globalVal < 1) return;
-    _bcSkus.forEach((_, i) => {
-      const qtyEl = document.getElementById(`bc-qty-${i}`);
-      if (qtyEl) qtyEl.value = globalVal;
-    });
-    bcRenderPreview();
-  };
+  function _bcStripMrpLine(sk) {
+    if (sk.sale_price == null || sk.sale_price === '') return 'MRP —';
+    return 'MRP ' + inrD(sk.sale_price);
+  }
 
-  // "Reset to stock qty" — restore each row's qty to its unit quantity
-  window.bcResetQty = function() {
-    _bcSkus.forEach((sk, i) => {
-      const qtyEl = document.getElementById(`bc-qty-${i}`);
-      if (qtyEl) qtyEl.value = sk.quantity || 1;
-    });
-    bcRenderPreview();
-  };
-
-  // Build list of {code (pid for QR), label (sku_code for text), copies}
-  function _bcSelectedItems() {
-    const items = [];
-    _bcSkus.forEach((sk, i) => {
-      const chk = document.getElementById(`bc-chk-${i}`);
-      if (!chk || !chk.checked) return;
-      const copies = Math.max(1, parseInt(document.getElementById(`bc-qty-${i}`)?.value || '1', 10));
+  function _bcSelectedStripItems() {
+    return _bcSkus.map(function (sk) {
       const code = _bcQrPayload(sk);
-      const label = sk.sku_code || '';
-      items.push({ code, label, copies });
+      const unitText = /^\d{7}$/.test(String(code)) ? String(code) : String(sk.unit_barcode || code || '').trim();
+      return {
+        code: code,
+        unitText: unitText,
+        brand: _bcTruncateStripLine(_bcStripBrandLine(sk) || '—', 22),
+        model: _bcTruncateStripLine(_bcStripModelLine(sk), 26),
+        mrp: _bcTruncateStripLine(_bcStripMrpLine(sk), 18),
+        copies: _bcRowCopies(sk)
+      };
     });
-    return items;
+  }
+
+  function _bcSelectedCompactItems() {
+    return _bcSkus.map(function (sk) {
+      const code = _bcQrPayload(sk);
+      const unitText = /^\d{7}$/.test(String(code)) ? String(code) : String(sk.unit_barcode || code || '').trim();
+      return {
+        code: code,
+        unitText: unitText,
+        bottomLine: _bcTruncateStripLine(_bcCompactBottomLine(sk), 14),
+        copies: _bcRowCopies(sk)
+      };
+    });
+  }
+
+  function _bcReadCompactLayoutMm() {
+    const cfg = _bcGetActiveFormatConfig();
+    const labelW = Number(cfg.labelWidthMm) || 15;
+    const labelH = Number(cfg.labelHeightMm) || 15;
+    const bottom = Number(cfg.bottomBandHeightMm) || 4;
+    const rail = Number(cfg.rightRailWidthMm) || 3.5;
+    const contentH = Math.max(1, labelH - bottom);
+    const qrMainW = Math.max(1, labelW - rail);
+    return { labelW: labelW, labelH: labelH, bottom: bottom, rail: rail, contentH: contentH, qrMainW: qrMainW };
+  }
+
+  function _bcReadStripLayoutMm() {
+    const cfg = _bcGetActiveFormatConfig();
+    const z1 = Number(cfg.zone1WidthMm) || 33;
+    const z2 = Number(cfg.zone2WidthMm) || 33;
+    const tail = Number(cfg.tailWidthMm) || 34;
+    const totalW = Number(cfg.labelWidthMm) || z1 + z2 + tail;
+    return {
+      totalW: totalW,
+      labelH: Number(cfg.labelHeightMm) || 12,
+      printW: Number(cfg.printWidthMm) || z1 + z2,
+      z1: z1,
+      z2: z2,
+      tail: tail
+    };
   }
 
   /** Legacy server QR URL — preview/print use client-side _bcQrDataUrl instead. */
@@ -6567,14 +6864,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     const box = document.getElementById('bc-live-summary');
     if (!box) return;
 
+    const dotsPerMm = _bcReadDotsPerMm();
+    const calib = _bcReadTsplOffsetXMM();
+
+    if (_bcGetLayoutType() === 'strip') {
+      const lay = _bcReadStripLayoutMm();
+      const { qrCellSize, qrVisualSizeMm } = _bcReadQrConfig();
+      const { textFontPt, textXMul, textYMul, textFontId } = _bcReadTextConfig();
+      const wDots = Math.round(lay.totalW * dotsPerMm);
+      const hDots = Math.round(lay.labelH * dotsPerMm);
+      const lines = [
+        `Eyewear strip · TSPL2 SIZE ${lay.totalW.toFixed(2)} × ${lay.labelH.toFixed(2)} mm (~${wDots} × ${hDots} dots)`,
+        `Print zone ${lay.printW} mm = Zone1 ${lay.z1} (QR + unit) + Zone2 ${lay.z2} (brand · model · MRP) · Tail ${lay.tail} mm non-print`,
+        `QR ${qrVisualSizeMm} mm · TSPL QRCODE cell ${qrCellSize} · Brand scale ${textXMul}×${textYMul} · Preview ${textFontPt} pt · Font id ${textFontId}`
+      ];
+      if (calib !== 0) lines.push(`USB horizontal calibration ${calib > 0 ? '+' : ''}${calib} mm`);
+      box.innerHTML = lines.map((line) => _bcEsc(line)).join('<br>');
+      return;
+    }
+
+    if (_bcGetLayoutType() === 'compact') {
+      const lay = _bcReadCompactLayoutMm();
+      const { qrCellSize, qrVisualSizeMm } = _bcReadQrConfig();
+      const { textFontPt, textXMul, textYMul, textFontId } = _bcReadTextConfig();
+      const wDots = Math.round(lay.labelW * dotsPerMm);
+      const hDots = Math.round(lay.labelH * dotsPerMm);
+      const lines = [
+        `Compact QR 15×15 · TSPL2 SIZE ${lay.labelW.toFixed(2)} × ${lay.labelH.toFixed(2)} mm (~${wDots} × ${hDots} dots)`,
+        `QR ${qrVisualSizeMm} mm · right rail ${lay.rail} mm (vertical unit) · bottom ${lay.bottom} mm (brand - price)`,
+        `TSPL QRCODE cell ${qrCellSize} · Text ${textXMul}×${textYMul} · Preview ${textFontPt} pt · Font id ${textFontId}`
+      ];
+      if (calib !== 0) lines.push(`USB horizontal calibration ${calib > 0 ? '+' : ''}${calib} mm`);
+      box.innerHTML = lines.map((line) => _bcEsc(line)).join('<br>');
+      return;
+    }
+
     const mm = _bcReadMarginsMm();
     const gp = _bcReadGapMm();
     const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
-    const dotsPerMm = _bcReadDotsPerMm();
     const { qrCellSize, qrVisualSizeMm, qrTopRatio } = _bcReadQrConfig();
     const { textTopRatio, textFontPt, textXMul, textYMul, textFontId } = _bcReadTextConfig();
-    const type = document.getElementById('bc-type')?.value || 'QR';
-    const calib = _bcReadTsplOffsetXMM();
 
     const sheetW = mm.left + cols * labelW + Math.max(0, cols - 1) * gp.colGap + mm.right;
     const wDots = Math.round(sheetW * dotsPerMm);
@@ -6582,7 +6911,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const lines = [];
     lines.push(
-      `${type === 'QR' ? 'QR code' : 'Code 128'} · TSPL2 row SIZE ${sheetW.toFixed(2)} × ${labelH.toFixed(
+      `QR code · TSPL2 row SIZE ${sheetW.toFixed(2)} × ${labelH.toFixed(
         2
       )} mm (~${wDots} × ${hDots} dots at ${dotsPerMm} dots/mm)`
     );
@@ -6596,15 +6925,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       `Feed gap (row) ${gp.rowGap} mm · Column gap ${gp.colGap} mm · Cell inset margins top/right/bottom/left ${mm.top} / ${mm.right} / ${mm.bottom} / ${mm.left} mm`
     );
 
-    if (type === 'QR') {
-      lines.push(
-        `QR preview ${qrVisualSizeMm} mm · TSPL QRCODE cell ${qrCellSize} · QR top ratio ${qrTopRatio} · Text top ratio ${textTopRatio} · Preview font ${textFontPt} pt · TSPL TEXT scale ${textXMul}×${textYMul} · TSPL font id ${textFontId}`
-      );
-    } else {
-      lines.push(
-        `Barcode row · Text top ratio ${textTopRatio} · Preview font ${textFontPt} pt · TSPL TEXT scale ${textXMul}×${textYMul} · TSPL font id ${textFontId}`
-      );
-    }
+    lines.push(
+      `QR preview ${qrVisualSizeMm} mm · TSPL QRCODE cell ${qrCellSize} · QR top ratio ${qrTopRatio} · Text top ratio ${textTopRatio} · Preview font ${textFontPt} pt · TSPL TEXT scale ${textXMul}×${textYMul} · TSPL font id ${textFontId}`
+    );
 
     if (calib !== 0) {
       lines.push(`USB horizontal calibration ${calib > 0 ? '+' : ''}${calib} mm`);
@@ -6619,7 +6942,125 @@ document.addEventListener('DOMContentLoaded', async () => {
     _bcPreviewDebounceTimer = setTimeout(_bcRenderPreviewNow, 200);
   };
 
+  function _bcRenderStripPreviewNow() {
+    _bcUpdateBarcodeLiveSummary();
+
+    const previewEl = document.getElementById('bc-preview-rows');
+    const summaryEl = document.getElementById('bc-summary');
+    if (!previewEl) return;
+
+    const lay = _bcReadStripLayoutMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm } = _bcReadQrConfig();
+    const { textFontPt } = _bcReadTextConfig();
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+    const gp = _bcReadGapMm();
+
+    const items = _bcSelectedStripItems();
+    if (!items.length) {
+      previewEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text2);font-size:13px">No labels in batch</div>';
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
+
+    const expanded = [];
+    items.forEach(function (item) {
+      for (let c = 0; c < item.copies; c++) expanded.push(item);
+    });
+
+    const brandPt = Math.max(textFontPt + 0.5, textFontPt * 1.12);
+    let inner = '';
+    expanded.forEach(function (item) {
+      inner += `<div class="bc-strip-row" style="display:flex;width:${lay.totalW}mm;height:${lay.labelH}mm;box-sizing:border-box;border:1px solid var(--border);border-radius:2px;overflow:hidden;background:var(--card);margin-bottom:${gp.rowGap || 2}mm">
+        <div class="bc-strip-z1" style="width:${lay.z1}mm;height:100%;display:flex;align-items:center;gap:1mm;padding:0 1mm;box-sizing:border-box;border-right:1px dashed var(--border)">
+          <div class="qr-placeholder" data-qr-code="${_bcEsc(item.code)}" data-qr-px="${qrPreviewPx}"
+            style="width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;flex-shrink:0;background:var(--border);border-radius:1px"></div>
+          <div class="mono" style="font-size:${textFontPt}pt;font-weight:600;line-height:1.1;color:var(--text1);word-break:break-all">${_bcEsc(item.unitText)}</div>
+        </div>
+        <div class="bc-strip-z2" style="width:${lay.z2}mm;height:100%;display:flex;flex-direction:column;justify-content:center;padding:0 1.5mm;box-sizing:border-box;text-align:center;overflow:hidden">
+          <div style="font-size:${brandPt}pt;font-weight:700;line-height:1.05;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_bcEsc(item.brand)}</div>
+          <div style="font-size:${textFontPt}pt;line-height:1.05;color:var(--text2);margin-top:0.3mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_bcEsc(item.model)}</div>
+          <div style="font-size:${textFontPt}pt;line-height:1.05;color:var(--text2);margin-top:0.3mm">${_bcEsc(item.mrp)}</div>
+        </div>
+        <div class="bc-strip-tail" style="width:${lay.tail}mm;height:100%;box-sizing:border-box;border-left:1px dashed var(--border);background:repeating-linear-gradient(-45deg,transparent,transparent 2px,var(--border) 2px,var(--border) 3px);opacity:0.35" title="Non-print tail"></div>
+      </div>`;
+    });
+
+    previewEl.innerHTML = `<div style="display:flex;flex-direction:column;align-items:flex-start">${inner}</div>`;
+    _bcFillQrPlaceholders(previewEl);
+
+    const unitCount = expanded.length;
+    const skuCount = new Set(_bcSkus.map(function (sk) { return sk.sku_code; }).filter(Boolean)).size;
+    if (summaryEl) {
+      summaryEl.textContent = `${unitCount} strip${unitCount !== 1 ? 's' : ''} · ${skuCount} SKU${skuCount !== 1 ? 's' : ''} · eyewear layout`;
+    }
+  }
+
+  function _bcRenderCompactPreviewNow() {
+    _bcUpdateBarcodeLiveSummary();
+
+    const previewEl = document.getElementById('bc-preview-rows');
+    const summaryEl = document.getElementById('bc-summary');
+    if (!previewEl) return;
+
+    const lay = _bcReadCompactLayoutMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm } = _bcReadQrConfig();
+    const { textFontPt } = _bcReadTextConfig();
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+    const gp = _bcReadGapMm();
+    const railPt = Math.max(2.5, textFontPt - 0.5);
+    const bottomPt = Math.max(2.5, textFontPt);
+
+    const items = _bcSelectedCompactItems();
+    if (!items.length) {
+      previewEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text2);font-size:13px">No labels in batch</div>';
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
+
+    const expanded = [];
+    items.forEach(function (item) {
+      for (let c = 0; c < item.copies; c++) expanded.push(item);
+    });
+
+    let inner = '';
+    expanded.forEach(function (item) {
+      inner += `<div class="bc-compact-row" style="width:${lay.labelW}mm;height:${lay.labelH}mm;box-sizing:border-box;border:1px solid var(--border);border-radius:2px;overflow:hidden;background:var(--card);display:flex;flex-direction:column;margin-bottom:${gp.rowGap || 2}mm">
+        <div style="display:flex;height:${lay.contentH}mm;box-sizing:border-box">
+          <div style="width:${lay.qrMainW}mm;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;padding:0.4mm;box-sizing:border-box;border-right:1px dashed var(--border)">
+            <div class="qr-placeholder" data-qr-code="${_bcEsc(item.code)}" data-qr-px="${qrPreviewPx}"
+              style="width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;flex-shrink:0;background:var(--border);border-radius:1px"></div>
+          </div>
+          <div style="width:${lay.rail}mm;height:100%;display:flex;align-items:center;justify-content:center;box-sizing:border-box;overflow:hidden">
+            <span class="mono" style="font-size:${railPt}pt;font-weight:600;line-height:1;color:var(--text1);writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:0.02em">${_bcEsc(item.unitText)}</span>
+          </div>
+        </div>
+        <div style="height:${lay.bottom}mm;display:flex;align-items:center;justify-content:center;border-top:1px dashed var(--border);box-sizing:border-box;padding:0 0.5mm;overflow:hidden">
+          <span class="mono" style="font-size:${bottomPt}pt;font-weight:700;line-height:1;color:var(--text1);white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:100%">${_bcEsc(item.bottomLine)}</span>
+        </div>
+      </div>`;
+    });
+    previewEl.innerHTML = inner;
+    _bcFillQrPlaceholders(previewEl);
+
+    const unitCount = _bcSkus.filter(_bcIsUnitRow).length;
+    const skuCount = new Set(_bcSkus.map(function (sk) { return sk.sku_code; }).filter(Boolean)).size;
+    if (summaryEl) {
+      summaryEl.textContent = `${expanded.length} compact label${expanded.length !== 1 ? 's' : ''} · ${unitCount || expanded.length} unit${(unitCount || expanded.length) !== 1 ? 's' : ''} · ${skuCount} SKU${skuCount !== 1 ? 's' : ''}`;
+    }
+  }
+
   function _bcRenderPreviewNow() {
+    if (_bcGetLayoutType() === 'strip') {
+      _bcRenderStripPreviewNow();
+      return;
+    }
+    if (_bcGetLayoutType() === 'compact') {
+      _bcRenderCompactPreviewNow();
+      return;
+    }
+
     _bcUpdateBarcodeLiveSummary();
 
     const previewEl = document.getElementById('bc-preview-rows');
@@ -6642,10 +7083,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     previewEl.style.boxSizing = 'border-box';
 
     const items = _bcSelectedItems();
-    const type  = document.getElementById('bc-type')?.value || 'QR';
 
     if (!items.length) {
-      previewEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text2);font-size:13px">No SKUs selected</div>';
+      previewEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text2);font-size:13px">No labels in batch</div>';
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
@@ -6671,8 +7111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           continue
         }
 
-        if (type === 'QR') {
-          inner += `<div class="bc-label-cell" style="position:relative;width:${labelW}mm;height:${labelH}mm;padding:0;box-sizing:border-box">
+        inner += `<div class="bc-label-cell" style="position:relative;width:${labelW}mm;height:${labelH}mm;padding:0;box-sizing:border-box">
             <div class="qr-placeholder"
               data-qr-code="${_bcEsc(item.code)}"
               data-qr-px="${qrPreviewPx}"
@@ -6680,40 +7119,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
             <div class="bc-label-code" style="position:absolute;left:0;right:0;top:${textTopMm}mm;font-size:${textFontPt}pt;font-weight:700;margin-top:0;padding:0;line-height:1.1;white-space:normal;word-break:break-word;overflow-wrap:anywhere;max-height:2.2em;overflow:hidden">${_bcEsc(item.label)}</div>
           </div>`;
-        } else {
-          const uid = `bc-svg-${Math.random().toString(36).slice(2)}`;
-          inner += `<div class="bc-label-cell" style="position:relative;width:${labelW}mm;height:${labelH}mm;padding:0;box-sizing:border-box">
-            <svg id="${uid}" data-code="${_bcEsc(item.code)}" xmlns="http://www.w3.org/2000/svg" style="position:absolute;left:50%;transform:translateX(-50%);top:${qrTopMm}mm"></svg>
-            <div class="bc-label-code" style="position:absolute;left:0;right:0;top:${textTopMm}mm;font-size:${textFontPt}pt;font-weight:700;margin-top:0;padding:0;line-height:1.1;white-space:normal;word-break:break-word;overflow-wrap:anywhere;max-height:2.2em;overflow:hidden">${_bcEsc(item.label)}</div>
-          </div>`;
-        }
       }
       inner += '</div>';
     });
     previewEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:${rowGapCss}">${inner}</div>`;
 
-    if (type === 'QR') {
-      _bcFillQrPlaceholders(previewEl);
-    }
-
-    // Render Code128 barcodes after DOM is updated
-    if (type === 'CODE128' && typeof JsBarcode !== 'undefined') {
-      previewEl.querySelectorAll('svg[data-code]').forEach((svgEl) => {
-        const code = svgEl.getAttribute('data-code');
-        if (!code) return;
-        try {
-          JsBarcode(svgEl, code, { format:'CODE128', width:1, height:36, displayValue:false, margin:0 });
-          svgEl.style.cssText = 'max-width:64px;height:36px;display:block;margin:0 auto';
-        } catch (e) {
-          svgEl.innerHTML = `<text x="2" y="20" font-size="7" fill="red">ERR</text>`;
-        }
-      });
-    }
+    _bcFillQrPlaceholders(previewEl);
 
     const totalLabels = expanded.length;
     const totalRows   = rows.length;
+    const unitCount = _bcSkus.filter(_bcIsUnitRow).length;
+    const skuCount = new Set(_bcSkus.map((sk) => sk.sku_code).filter(Boolean)).size;
+    const pieceCount = unitCount > 0 ? unitCount : totalLabels;
     if (summaryEl) {
-      summaryEl.textContent = `${totalLabels} label${totalLabels !== 1 ? 's' : ''} · ${totalRows} row${totalRows !== 1 ? 's' : ''} of ${cols} · ${items.length} unique SKU${items.length !== 1 ? 's' : ''}`;
+      summaryEl.textContent = `${totalLabels} label${totalLabels !== 1 ? 's' : ''} · ${totalRows} row${totalRows !== 1 ? 's' : ''} of ${cols} · ${pieceCount} unit${pieceCount !== 1 ? 's' : ''} · ${skuCount} SKU${skuCount !== 1 ? 's' : ''}`;
     }
   }
 
@@ -7029,13 +7448,211 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     return new TextEncoder().encode(cmds);
   }
 
+  function _bcGenerateTSPL2Strip(strips) {
+    const lay = _bcReadStripLayoutMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { rowGap } = _bcReadGapMm();
+    const tsplOffsetXMM = _bcReadTsplOffsetXMM();
+    const { qrCellSize, qrVisualSizeMm } = _bcReadQrConfig();
+    const { textXMul, textYMul, textFontId } = _bcReadTextConfig();
+    const brandYMul = Math.min(10, textYMul + 1);
+    const mmToDot = function (mm) { return Math.round(mm * dotsPerMm); };
+    const qrLeftMm = 0.8;
+    const unitTextXmm = qrLeftMm + qrVisualSizeMm + 0.8;
+    const z2StartMm = lay.z1;
+    const line1Ymm = 1.2;
+    const line2Ymm = 4.6;
+    const line3Ymm = 8.0;
+
+    let cmds = '';
+    strips.forEach(function (item) {
+      if (!item) return;
+      cmds += `SIZE ${lay.totalW} mm, ${lay.labelH} mm\r\n`;
+      cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
+      cmds += 'DIRECTION 0\r\n';
+      cmds += 'CLS\r\n';
+
+      const code = _bcTsplQuote(item.code);
+      const unitText = _bcTsplQuote(item.unitText || item.code);
+      const brand = _bcTsplQuote(item.brand);
+      const model = _bcTsplQuote(item.model);
+      const mrp = _bcTsplQuote(item.mrp);
+
+      const qrX = mmToDot(qrLeftMm + tsplOffsetXMM);
+      const qrY = mmToDot(0.8);
+      cmds += `QRCODE ${Math.max(0, qrX)},${qrY},L,${qrCellSize},A,0,"${code}"\r\n`;
+
+      const unitX = mmToDot(unitTextXmm + tsplOffsetXMM);
+      const unitY = mmToDot(3.2);
+      cmds += `TEXT ${Math.max(0, unitX)},${unitY},"${textFontId}",0,${textXMul},${textYMul},"${unitText}"\r\n`;
+
+      const z2X = mmToDot(z2StartMm + 1 + tsplOffsetXMM);
+      cmds += `TEXT ${Math.max(0, z2X)},${mmToDot(line1Ymm)},"${textFontId}",0,${textXMul},${brandYMul},"${brand}"\r\n`;
+      cmds += `TEXT ${Math.max(0, z2X)},${mmToDot(line2Ymm)},"${textFontId}",0,${textXMul},${textYMul},"${model}"\r\n`;
+      cmds += `TEXT ${Math.max(0, z2X)},${mmToDot(line3Ymm)},"${textFontId}",0,${textXMul},${textYMul},"${mrp}"\r\n`;
+
+      cmds += 'PRINT 1, 1\r\n';
+    });
+
+    return new TextEncoder().encode(cmds);
+  }
+
+  function _bcGenerateTSPL2Compact(labels) {
+    const lay = _bcReadCompactLayoutMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { rowGap } = _bcReadGapMm();
+    const tsplOffsetXMM = _bcReadTsplOffsetXMM();
+    const { qrCellSize, qrVisualSizeMm } = _bcReadQrConfig();
+    const { textXMul, textYMul, textFontId } = _bcReadTextConfig();
+    const mmToDot = function (mm) { return Math.round(mm * dotsPerMm); };
+    const qrInsetMm = 0.4;
+    const railTextXmm = lay.labelW - lay.rail + 0.25;
+    const bottomYmm = lay.contentH + 0.35;
+
+    let cmds = '';
+    labels.forEach(function (item) {
+      if (!item) return;
+      cmds += `SIZE ${lay.labelW} mm, ${lay.labelH} mm\r\n`;
+      cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
+      cmds += 'DIRECTION 0\r\n';
+      cmds += 'CLS\r\n';
+
+      const code = _bcTsplQuote(item.code);
+      const unitText = _bcTsplQuote(item.unitText);
+      const bottom = _bcTsplQuote(item.bottomLine);
+
+      const qrX = Math.max(0, mmToDot(qrInsetMm + tsplOffsetXMM));
+      const qrY = mmToDot(qrInsetMm);
+      cmds += `QRCODE ${qrX},${qrY},L,${qrCellSize},A,0,"${code}"\r\n`;
+
+      const railX = Math.max(0, mmToDot(railTextXmm + tsplOffsetXMM));
+      const railY = mmToDot(0.5);
+      cmds += `TEXT ${railX},${railY},"${textFontId}",90,${textXMul},${textYMul},"${unitText}"\r\n`;
+
+      const bottomX = Math.max(0, mmToDot(0.5 + tsplOffsetXMM));
+      const bottomY = mmToDot(bottomYmm);
+      cmds += `TEXT ${bottomX},${bottomY},"${textFontId}",0,${textXMul},${textYMul},"${bottom}"\r\n`;
+
+      cmds += 'PRINT 1, 1\r\n';
+    });
+
+    return new TextEncoder().encode(cmds);
+  }
+
   // ── Print via WebUSB ──────────────────────────────────────────────────
   window.bcPrint = async function() {
-    const items    = _bcSelectedItems();
-    const type     = document.getElementById('bc-type')?.value || 'QR';
     const printBtn = document.getElementById('bc-print-btn');
 
-    if (!items.length) { alert('Please select at least one SKU to print.'); return; }
+    if (_bcGetLayoutType() === 'compact') {
+      const compactItems = _bcSelectedCompactItems();
+      if (!compactItems.length) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels in batch to print.');
+        else alert('No labels in batch to print.');
+        return;
+      }
+      const expanded = [];
+      compactItems.forEach(function (item) {
+        for (let c = 0; c < item.copies; c++) expanded.push(item);
+      });
+
+      if (!_bcUsbDevice) {
+        await _bcPrintFallbackCompact(expanded);
+        return;
+      }
+
+      if (printBtn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(printBtn);
+      try {
+        let endpointNumber = null;
+        for (const iface of _bcUsbDevice.configuration.interfaces) {
+          for (const alt of iface.alternates) {
+            for (const ep of alt.endpoints) {
+              if (ep.direction === 'out' && ep.type === 'bulk') {
+                endpointNumber = ep.endpointNumber;
+                break;
+              }
+            }
+            if (endpointNumber !== null) break;
+          }
+          if (endpointNumber !== null) break;
+        }
+        if (endpointNumber === null) throw new Error('No bulk-out endpoint found on printer.');
+        const data = _bcGenerateTSPL2Compact(expanded);
+        await _bcUsbDevice.transferOut(endpointNumber, data);
+        _bcPersistCalibrationNow(_bcUsbDevice);
+        if (printBtn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(printBtn);
+        else if (printBtn) cosmosBtnDone(printBtn);
+        if (typeof cosmosToastSuccess === 'function') {
+          cosmosToastSuccess(`Sent ${expanded.length} compact label${expanded.length !== 1 ? 's' : ''} to printer.`);
+        }
+      } catch (err) {
+        if (printBtn && typeof cosmosBtnDone === 'function') cosmosBtnDone(printBtn);
+        _bcUpdatePrinterStatus('error', err.message);
+        if (typeof cosmosToastError === 'function') cosmosToastError(err.message + ' — falling back to browser print…');
+        else alert(`Print failed: ${err.message}\n\nFalling back to browser print…`);
+        await _bcPrintFallbackCompact(expanded);
+      }
+      return;
+    }
+
+    if (_bcGetLayoutType() === 'strip') {
+      const stripItems = _bcSelectedStripItems();
+      if (!stripItems.length) {
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels in batch to print.');
+        else alert('No labels in batch to print.');
+        return;
+      }
+      const expanded = [];
+      stripItems.forEach(function (item) {
+        for (let c = 0; c < item.copies; c++) expanded.push(item);
+      });
+
+      if (!_bcUsbDevice) {
+        await _bcPrintFallbackStrip(expanded);
+        return;
+      }
+
+      if (printBtn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(printBtn);
+      try {
+        let endpointNumber = null;
+        for (const iface of _bcUsbDevice.configuration.interfaces) {
+          for (const alt of iface.alternates) {
+            for (const ep of alt.endpoints) {
+              if (ep.direction === 'out' && ep.type === 'bulk') {
+                endpointNumber = ep.endpointNumber;
+                break;
+              }
+            }
+            if (endpointNumber !== null) break;
+          }
+          if (endpointNumber !== null) break;
+        }
+        if (endpointNumber === null) throw new Error('No bulk-out endpoint found on printer.');
+        const data = _bcGenerateTSPL2Strip(expanded);
+        await _bcUsbDevice.transferOut(endpointNumber, data);
+        _bcPersistCalibrationNow(_bcUsbDevice);
+        if (printBtn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(printBtn);
+        else if (printBtn) cosmosBtnDone(printBtn);
+        if (typeof cosmosToastSuccess === 'function') {
+          cosmosToastSuccess(`Sent ${expanded.length} strip label${expanded.length !== 1 ? 's' : ''} to printer.`);
+        }
+      } catch (err) {
+        if (printBtn && typeof cosmosBtnDone === 'function') cosmosBtnDone(printBtn);
+        _bcUpdatePrinterStatus('error', err.message);
+        if (typeof cosmosToastError === 'function') cosmosToastError(err.message + ' — falling back to browser print…');
+        else alert(`Print failed: ${err.message}\n\nFalling back to browser print…`);
+        await _bcPrintFallbackStrip(expanded);
+      }
+      return;
+    }
+
+    const items    = _bcSelectedItems();
+    const type = 'QR';
+
+    if (!items.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels in batch to print.');
+      else alert('No labels in batch to print.');
+      return;
+    }
 
     // Expand by copies — each entry is {code: pid, label: sku_code}
     const expanded = [];
@@ -7053,9 +7670,9 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       return;
     }
 
-    try {
-      if (printBtn) { printBtn.disabled = true; printBtn.textContent = '⏳ Sending to printer…'; }
+    if (printBtn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(printBtn);
 
+    try {
       // Find bulk-out endpoint
       let endpointNumber = null;
       for (const iface of _bcUsbDevice.configuration.interfaces) {
@@ -7077,17 +7694,115 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       await _bcUsbDevice.transferOut(endpointNumber, data);
       _bcPersistCalibrationNow(_bcUsbDevice);
 
-      if (printBtn) { printBtn.disabled = false; printBtn.textContent = '🖨️ Print Labels'; }
-      alert(`✅ Sent ${expanded.length} label${expanded.length !== 1 ? 's' : ''} to printer successfully.`);
+      if (printBtn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(printBtn);
+      else if (printBtn) cosmosBtnDone(printBtn);
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess(`Sent ${expanded.length} label${expanded.length !== 1 ? 's' : ''} to printer.`);
+      }
     } catch (err) {
-      if (printBtn) { printBtn.disabled = false; printBtn.textContent = '🖨️ Print Labels'; }
+      if (printBtn && typeof cosmosBtnDone === 'function') cosmosBtnDone(printBtn);
       _bcUpdatePrinterStatus('error', err.message);
-      alert(`Print failed: ${err.message}\n\nFalling back to browser print…`);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message + ' — falling back to browser print…');
+      else alert(`Print failed: ${err.message}\n\nFalling back to browser print…`);
       await _bcPrintFallback(batches, type);
     }
   };
 
   // ── Browser-print fallback (generates printable HTML) ─────────────────
+  async function _bcPrintFallbackCompact(labels) {
+    const lay = _bcReadCompactLayoutMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm } = _bcReadQrConfig();
+    const { textFontPt } = _bcReadTextConfig();
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+    const railPt = Math.max(2.5, textFontPt - 0.5);
+    const bottomPt = Math.max(2.5, textFontPt);
+
+    try {
+      await loadBcQrLib();
+    } catch (err) {
+      alert(err.message || 'Failed to load QR library for print.');
+      return;
+    }
+
+    const printDataUrls = new Map();
+    await Promise.all(labels.map(async function (item) {
+      const key = `${item.code}|${qrPreviewPx}`;
+      const url = await _bcQrDataUrl(item.code, qrPreviewPx).catch(function () { return ''; });
+      printDataUrls.set(key, url);
+    }));
+
+    let rows = '';
+    labels.forEach(function (item) {
+      const dataUrl = printDataUrls.get(`${item.code}|${qrPreviewPx}`) || '';
+      rows += '<div class="compact" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;display:flex;flex-direction:column;margin-bottom:2mm;border:1px solid #ccc;box-sizing:border-box;page-break-inside:avoid">' +
+        '<div style="display:flex;height:' + lay.contentH + 'mm">' +
+        '<div style="width:' + lay.qrMainW + 'mm;padding:0.4mm;box-sizing:border-box;border-right:1px dashed #ccc">' +
+        '<img src="' + dataUrl + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm" alt="">' +
+        '</div>' +
+        '<div style="width:' + lay.rail + 'mm;display:flex;align-items:center;justify-content:center">' +
+        '<span class="mono" style="font-size:' + railPt + 'pt;font-weight:600;writing-mode:vertical-rl">' + _bcEsc(item.unitText) + '</span>' +
+        '</div></div>' +
+        '<div style="height:' + lay.bottom + 'mm;display:flex;align-items:center;justify-content:center;border-top:1px dashed #ccc">' +
+        '<span class="mono" style="font-size:' + bottomPt + 'pt;font-weight:700">' + _bcEsc(item.bottomLine) + '</span>' +
+        '</div></div>';
+    });
+
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
+    win.document.write('<!DOCTYPE html><html><head><title>Compact QR 15×15 labels</title>' +
+      '<style>@page{size:auto;margin:8mm}body{font-family:Arial,sans-serif;margin:0;padding:8mm}.mono{font-family:Consolas,monospace}</style></head>' +
+      '<body>' + rows + '<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body></html>');
+    win.document.close();
+  }
+
+  async function _bcPrintFallbackStrip(strips) {
+    const lay = _bcReadStripLayoutMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm } = _bcReadQrConfig();
+    const { textFontPt } = _bcReadTextConfig();
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+    const brandPt = Math.max(textFontPt + 0.5, textFontPt * 1.12);
+
+    try {
+      await loadBcQrLib();
+    } catch (err) {
+      alert(err.message || 'Failed to load QR library for print.');
+      return;
+    }
+
+    const printDataUrls = new Map();
+    await Promise.all(strips.map(async function (item) {
+      const key = `${item.code}|${qrPreviewPx}`;
+      const url = await _bcQrDataUrl(item.code, qrPreviewPx).catch(function () { return ''; });
+      printDataUrls.set(key, url);
+    }));
+
+    let rows = '';
+    strips.forEach(function (item) {
+      const dataUrl = printDataUrls.get(`${item.code}|${qrPreviewPx}`) || '';
+      rows += `<div class="strip" style="width:${lay.totalW}mm;height:${lay.labelH}mm;display:flex;margin-bottom:2mm;border:1px solid #ccc;box-sizing:border-box;page-break-inside:avoid">
+        <div style="width:${lay.z1}mm;display:flex;align-items:center;gap:1mm;padding:0 1mm;box-sizing:border-box;border-right:1px dashed #ccc">
+          <img src="${dataUrl}" style="width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;flex-shrink:0" alt="">
+          <span class="mono" style="font-size:${textFontPt}pt;font-weight:600">${_bcEsc(item.unitText)}</span>
+        </div>
+        <div style="width:${lay.z2}mm;display:flex;flex-direction:column;justify-content:center;text-align:center;padding:0 1.5mm;box-sizing:border-box;overflow:hidden">
+          <div style="font-size:${brandPt}pt;font-weight:700;line-height:1.05">${_bcEsc(item.brand)}</div>
+          <div style="font-size:${textFontPt}pt;line-height:1.05;margin-top:0.3mm">${_bcEsc(item.model)}</div>
+          <div style="font-size:${textFontPt}pt;line-height:1.05;margin-top:0.3mm">${_bcEsc(item.mrp)}</div>
+        </div>
+        <div style="width:${lay.tail}mm;opacity:0.2;background:#eee"></div>
+      </div>`;
+    });
+
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
+    win.document.write(`<!DOCTYPE html><html><head><title>Eyewear strip labels</title>
+<style>@page{size:auto;margin:8mm}body{font-family:Arial,sans-serif;margin:0;padding:8mm}.mono{font-family:Consolas,monospace}</style></head>
+<body>${rows}<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body></html>`);
+    win.document.close();
+  }
+
   async function _bcPrintFallback(batches, labelType) {
     const pad = _bcReadMarginsMm();
     const gp = _bcReadGapMm();
@@ -8385,6 +9100,33 @@ ${initScript}
     return '';
   }
 
+  async function ftrFetchDestinationStoresList() {
+    const raw = await apiGetFirst([
+      '/api/stock-transfers/destination-stores',
+      '/api/foundry/destination-stores'
+    ]);
+    const rows = Array.isArray(raw) ? raw : [];
+    const seen = new Set();
+    const list = [];
+    rows.forEach(function (s) {
+      if (!s || typeof s !== 'object') return;
+      const sid = Number(s.store_id);
+      if (!Number.isFinite(sid) || sid < 1 || seen.has(sid)) return;
+      const status = String(s.status || '').trim().toUpperCase();
+      if (status && status !== 'ACTIVE') return;
+      seen.add(sid);
+      list.push(s);
+    });
+    list.sort(function (a, b) {
+      return String(a.store_code || a.store_name || '').localeCompare(
+        String(b.store_code || b.store_name || ''),
+        undefined,
+        { sensitivity: 'base' }
+      );
+    });
+    return list;
+  }
+
   async function ftrInitStoreFilter() {
     const row = document.getElementById('ftr-store-filter-row');
     const chips = document.getElementById('ftr-store-chips');
@@ -8412,29 +9154,7 @@ ${initScript}
     allBtn.onclick = function () { window.setFtrStoreFilter(''); };
     chips.appendChild(allBtn);
     try {
-      const raw = await apiGetFirst([
-        '/api/stock-transfers/destination-stores',
-        '/api/foundry/destination-stores'
-      ]);
-      const rows = Array.isArray(raw) ? raw : [];
-      const seen = new Set();
-      const list = [];
-      rows.forEach(function (s) {
-        if (!s || typeof s !== 'object') return;
-        const sid = Number(s.store_id);
-        if (!Number.isFinite(sid) || sid < 1 || seen.has(sid)) return;
-        const status = String(s.status || '').trim().toUpperCase();
-        if (status && status !== 'ACTIVE') return;
-        seen.add(sid);
-        list.push(s);
-      });
-      list.sort(function (a, b) {
-        return String(a.store_code || a.store_name || '').localeCompare(
-          String(b.store_code || b.store_name || ''),
-          undefined,
-          { sensitivity: 'base' }
-        );
-      });
+      const list = await ftrFetchDestinationStoresList();
       list.forEach(function (s) {
         const sid = String(s.store_id);
         const btn = document.createElement('button');
@@ -10359,7 +11079,76 @@ ${initScript}
 
   // ── LAB ORDERS ────────────────────────────────────────────────────────────
   let _labOrdersTimer = null;
-  let _fyLabStatusFilter = '';
+  let _fyLabStatusFilter = 'SENT_TO_LAB';
+  let _fyLabStoreFilter = '';
+  let _fyLabStoreFilterReady = false;
+
+  function fySyncLabStoreChipActive() {
+    const chips = document.getElementById('fy-lab-store-chips');
+    if (!chips) return;
+    chips.querySelectorAll('[data-fy-lab-store-chip]').forEach(function (b) {
+      const id = b.getAttribute('data-store-id') || '';
+      const active = id === (_fyLabStoreFilter || '');
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  async function fyInitLabStoreFilter() {
+    const row = document.getElementById('fy-lab-store-filter-row');
+    const chips = document.getElementById('fy-lab-store-chips');
+    if (!row || !chips) return;
+    if (!ftrCanFilterByStore()) {
+      row.hidden = true;
+      row.style.display = '';
+      _fyLabStoreFilter = '';
+      return;
+    }
+    row.hidden = false;
+    row.style.display = '';
+    if (_fyLabStoreFilterReady) {
+      fySyncLabStoreChipActive();
+      return;
+    }
+    chips.innerHTML = '';
+    const allBtn = document.createElement('button');
+    allBtn.type = 'button';
+    allBtn.className = 'btn sm';
+    allBtn.textContent = 'All stores';
+    allBtn.setAttribute('data-fy-lab-store-chip', '1');
+    allBtn.setAttribute('data-store-id', '');
+    allBtn.setAttribute('aria-pressed', _fyLabStoreFilter ? 'false' : 'true');
+    if (!_fyLabStoreFilter) allBtn.classList.add('active');
+    allBtn.onclick = function () { window.setFyLabStoreFilter(''); };
+    chips.appendChild(allBtn);
+    try {
+      const list = await ftrFetchDestinationStoresList();
+      list.forEach(function (s) {
+        const sid = String(s.store_id);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn sm';
+        btn.textContent = ftrStoreChipLabel(s) || ('Store #' + s.store_id);
+        const titleParts = [s.store_name, s.store_code].map(function (v) { return String(v || '').trim(); }).filter(Boolean);
+        if (titleParts.length) btn.title = titleParts.join(' · ');
+        btn.setAttribute('aria-label', 'Filter by store ' + (ftrStoreChipLabel(s) || sid));
+        btn.setAttribute('data-fy-lab-store-chip', '1');
+        btn.setAttribute('data-store-id', sid);
+        btn.onclick = function () { window.setFyLabStoreFilter(sid); };
+        chips.appendChild(btn);
+      });
+      _fyLabStoreFilterReady = true;
+      fySyncLabStoreChipActive();
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not load stores.');
+    }
+  }
+
+  window.setFyLabStoreFilter = function setFyLabStoreFilter(storeId) {
+    _fyLabStoreFilter = storeId ? String(storeId) : '';
+    fySyncLabStoreChipActive();
+    if (typeof window.loadLabOrders === 'function') window.loadLabOrders();
+  };
 
   const FY_LAB_STATUS_LABELS = {
     ORDER_PLACED:                 'Order Placed',
@@ -10382,13 +11171,21 @@ ${initScript}
     INVOICED:                     'Invoiced'
   };
 
-  /** Matches the five Lab Orders tabs (friendly label; DB value may differ, e.g. Sent To Lab). */
+  /** Matches Lab Orders tabs (friendly label; DB value may differ, e.g. Sent To Lab). */
   const FY_LAB_QUEUE_TAB_LABEL = {
-    SENT_TO_LAB: 'Pending Lab',
-    LAB_FITTING: 'At Lab',
-    QC_PASS: 'QC Pass',
-    DISPATCHED_TO_STORE: 'Dispatched'
+    SENT_TO_LAB: 'Need Attention',
+    LAB_FITTING: 'Lab',
+    QC_PASS: 'QC',
+    DISPATCHED_7D: 'Last 7 Days',
+    QC_BY_STORE: 'QC at Store (Fail/Partial)'
   };
+
+  /** Default tab — HQ dispatch recorded in the last 7 days (IST). */
+  const FY_LAB_DISPATCH_7D_LOG_STATUS = 'DISPATCHED_TO_STORE';
+  const FY_LAB_DISPATCH_7D_DAYS = 7;
+
+  /** Store-end QC issues — shown on the QC By Store tab, grouped by store. */
+  const FY_LAB_QC_BY_STORE_STATUSES = ['QC_FAIL_STORE', 'STORE_QC_PARTIAL'];
 
   // Store-side early chain (POS): ORDER_PLACED → Accepted (DB key ADVANCE_PAID) → SENT_TO_LAB.
   const FY_LAB_NEXT_STATUSES = {
@@ -10397,7 +11194,9 @@ ${initScript}
     FRAME_AND_LENS_RECEIVED:      ['LAB_FITTING'],
     // QC Fail is selectable but auto-reverts server-side — order never leaves At Lab
     LAB_FITTING:                  ['QC_PASS', 'QC_FAIL_LAB'],
-    QC_PASS:                      ['DISPATCHED_TO_STORE']
+    QC_PASS:                      ['DISPATCHED_TO_STORE'],
+    QC_FAIL_STORE:                ['SENT_TO_LAB'],
+    STORE_QC_PARTIAL:             ['READY_FOR_DELIVERY']
   };
 
   function fyCanBypassSiblingGuard() {
@@ -10451,29 +11250,99 @@ ${initScript}
 
   function fyLabFilterTitle(statusKey) {
     const k = String(statusKey || '').toUpperCase()
-    if (!k) return 'All lab orders'
+    if (!k) return 'Need Attention'
     return FY_LAB_QUEUE_TAB_LABEL[k] || fyLabelLabStatus(k)
+  }
+
+  function fyLabIsDispatched7dTab() {
+    return String(_fyLabStatusFilter || '').toUpperCase() === 'DISPATCHED_7D'
+  }
+
+  function fyLabIsQcByStoreTab() {
+    return String(_fyLabStatusFilter || '').toUpperCase() === 'QC_BY_STORE'
+  }
+
+  function fyLabQcByStoreStatusSet() {
+    return new Set(FY_LAB_QC_BY_STORE_STATUSES.map(function (s) { return String(s).toUpperCase() }))
+  }
+
+  function fyJobsForLabView(order) {
+    var jobs = fyJobsFromOrderRow(order)
+    if (!fyLabIsQcByStoreTab()) return jobs
+    var allowed = fyLabQcByStoreStatusSet()
+    return jobs.filter(function (j) {
+      return allowed.has(String(j.lab_workflow_status || '').toUpperCase())
+    })
+  }
+
+  function fyGroupLabOrdersByStore(rows) {
+    var groups = new Map()
+    rows.forEach(function (r) {
+      var sid = r.store_id != null ? String(r.store_id) : '0'
+      var label = String(r.store_name || 'Unknown store').trim() || 'Unknown store'
+      if (!groups.has(sid)) groups.set(sid, { store_id: sid, store_name: label, rows: [] })
+      groups.get(sid).rows.push(r)
+    })
+    return Array.from(groups.values()).sort(function (a, b) {
+      return a.store_name.localeCompare(b.store_name, undefined, { sensitivity: 'base' })
+    })
+  }
+
+  function fyLabStatusBadgeHtml(statusFinal, qcByStoreTab) {
+    var isFail = String(statusFinal || '').toLowerCase().indexOf('fail') >= 0
+    var cls = qcByStoreTab && isFail ? 'b b-red' : (qcByStoreTab ? 'b b-gold' : 'b b-blue')
+    return '<span class="' + cls + '" style="font-size:11px">' + fyEscapeHtml(statusFinal) + '</span>'
+  }
+
+  function fyRenderLabOrderTableRow(r, qcByStoreTab) {
+    var jobs = fyJobsForLabView(r)
+    var statusShown = jobs.map(function (j) {
+      return fyLabelLabStatus(j.lab_workflow_status)
+    }).filter(Boolean).join(' · ')
+    var statusFinal = statusShown || fyLabelLabStatus(r.lab_workflow_status)
+    var rowForAction = qcByStoreTab && jobs.length
+      ? Object.assign({}, r, { lab_sub_orders: jobs })
+      : r
+    return (
+      '<tr>' +
+      '<td class="mono xs">' +
+      '<div>' + fyEscapeHtml(r.order_no || '') + '</div>' +
+      '<button type="button" onclick="window.cosmosTimelineOpen(' + r.order_id + ',\'' + fyEscapeAttr(r.order_no || '') + '\')" style="background:none;border:none;color:var(--acc2);font-size:11px;cursor:pointer;padding:0;margin-top:2px;text-decoration:underline">📋 Timeline</button>' +
+      '</td>' +
+      '<td>' + fyEscapeHtml(r.customer_name || 'Walk-in') +
+      (r.customer_phone ? '<div style="font-size:11px;color:var(--text3)">' + fyEscapeHtml(r.customer_phone) + '</div>' : '') +
+      '</td>' +
+      '<td>' + fyEscapeHtml(r.store_name || '') + '</td>' +
+      '<td>' + fyLabStatusBadgeHtml(statusFinal, qcByStoreTab) + '</td>' +
+      '<td style="font-size:12px;color:var(--text3)">' + (typeof fmtDateTime === 'function' ? fmtDateTime(r.created_at) : fyEscapeHtml(r.created_at || '')) + '</td>' +
+      '<td>' + buildFyLabStatusAction(rowForAction) + '</td>' +
+      '</tr>'
+    )
   }
 
   function fyLabEmptyHintForFilter(statusKey) {
     const k = String(statusKey || '').toUpperCase()
     const hints = {
+      DISPATCHED_7D:
+        'Lab bills HQ dispatched to store in the last 7 days (IST). Includes jobs that may have moved on to At Store or delivery.',
       SENT_TO_LAB:
-        'This tab lists jobs in “Pending Lab” (system status Sent To Lab). Rows appear after the store marks the bill Sent To Lab in Store OS.',
+        'Jobs that need attention at lab intake (system status Sent To Lab). Rows appear after the store marks the bill Sent To Lab in Store OS.',
       LAB_FITTING: 'Jobs land here once both lab intake checkpoints are done and edging has started.',
       QC_PASS:
-        'Nothing is currently at QC Pass. Open At Lab if work is still in fitting and edging, or All to see every active lab bill.',
-      DISPATCHED_TO_STORE: 'Shown after HQ dispatches the job toward the store from QC Pass.'
+        'Nothing is currently at QC. Open Lab if work is still in fitting and edging, or Last 7 Days to see recent HQ dispatches.',
+      QC_BY_STORE:
+        'Store QC Failed and QC Partial jobs appear here after receipt at store. Orders are grouped by store.'
     }
-    return hints[k] || 'Widen this filter by choosing All or clear the search.'
+    return hints[k] || 'Widen this filter by choosing another tab or clear the search.'
   }
 
   /** Clear search + All tab — used from Lab Orders empty-state actions */
   window.fyLabClearSearchAndShowAll = function () {
     const s = document.getElementById('lab-orders-search')
-    const t = document.getElementById('fy-lab-tab-all')
+    const t = document.getElementById('fy-lab-tab-pending')
     if (s) s.value = ''
-    setFyLabFilter('', t)
+    window.setFyLabStoreFilter('')
+    setFyLabFilter('SENT_TO_LAB', t)
   }
 
   function buildFyLabActionForSingleJob(order, job) {
@@ -10487,55 +11356,55 @@ ${initScript}
       if (!subId) return '';
       var rc = job.lab_received_confirmed === true;
       var bc = job.lab_backorder_confirmed === true;
-      var row = '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">' +
-        '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+      var row = '<div class="fy-lab-intake-row">' +
+        '<div class="fy-lab-intake-btns">';
       if (rc) {
-        row += '<span style="font-size:11px;font-weight:600;color:var(--green);background:var(--greenL);padding:3px 8px;border-radius:6px">Received at Lab — done</span>';
+        row += '<span class="fy-lab-done-badge">Received at Lab — done</span>';
       } else {
         row += '<button type="button" class="btn sm" id="btn-fy-intake-rcv-' + idSuf +
           '" onclick="markFyLabIntake(' + oid + ',' + subId + ',\'received_at_lab\')">Mark Received at Lab</button>';
       }
       if (bc) {
-        row += '<span style="font-size:11px;font-weight:600;color:var(--green);background:var(--greenL);padding:3px 8px;border-radius:6px">Backorder Created — done</span>';
+        row += '<span class="fy-lab-done-badge">Backorder Created — done</span>';
       } else {
         row += '<button type="button" class="btn sm" id="btn-fy-intake-bo-' + idSuf +
           '" onclick="markFyLabIntake(' + oid + ',' + subId + ',\'backorder_created\')">Mark Backorder Created</button>';
       }
       row += '</div>';
       if (rc && bc) {
-        row += '<div style="margin-top:2px"><button type="button" class="btn primary" id="btn-fy-fitting-edging-' +
-          idSuf + '" onclick="advanceFyLabFittingEdging(' + oid + ', ' + subId + ')">Fitting/Edging</button></div>';
+        row += '<button type="button" class="btn primary" id="btn-fy-fitting-edging-' +
+          idSuf + '" onclick="advanceFyLabFittingEdging(' + oid + ', ' + subId + ')">Fitting/Edging</button>';
       } else {
-        row += '<span style="font-size:11px;color:var(--text3)">Complete both checkpoints to advance.</span>';
+        row += '<span class="fy-lab-action-hint">Complete both checkpoints to advance.</span>';
       }
       row += '</div>';
       return row;
     }
 
     var options = FY_LAB_NEXT_STATUSES[curr] || [];
-    if (!options.length) return '<span style="font-size:12px;color:var(--text3)">No action</span>';
+    if (!options.length) return '<span class="fy-lab-action-hint">No action</span>';
     var opts = options.map(function(s) {
       return '<option value="' + fyEscapeAttr(s) + '">' + fyLabelLabStatus(s) + '</option>';
     }).join('');
     var qcHint = '';
     if (curr === 'LAB_FITTING') {
       qcHint =
-        '<div style="font-size:11px;color:var(--text3);margin-top:4px;max-width:320px"><strong>QC Pass</strong> moves toward dispatch once pair rules allow. <strong>QC Fail</strong> stays in this queue for rework.</div>';
+        '<div class="fy-lab-action-hint"><strong>QC Pass</strong> moves toward dispatch once pair rules allow. <strong>QC Fail</strong> stays in this queue for rework.</div>';
     }
     var bypassRow = '';
     if (curr === 'QC_PASS' && fyCanBypassSiblingGuard()) {
       bypassRow =
-        '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">' +
+        '<div class="fy-lab-bypass-row">' +
         '<button type="button" class="btn sm" style="border-color:var(--gold);color:var(--text1)" ' +
         'id="btn-fy-lab-bypass-' + idSuf + '" onclick="updateFyLabOrderDispatchWithBypass(' + oid +
         ', ' + subId + ')">Dispatch anyway (pair guard bypass)</button>' +
-        '<span style="font-size:11px;color:var(--text3)">Requires audit permission; timeline will record the bypass.</span></div>';
+        '<span class="fy-lab-action-hint">Requires audit permission; timeline will record the bypass.</span></div>';
     }
     return (
-      '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">' +
-      '<div style="display:flex;gap:6px;align-items:center">' +
-      '<select id="fy-lab-next-' + idSuf + '" aria-label="Next lab stage for ' + fyEscapeAttr(plainLabel) +
-      '" style="font-size:12px;min-width:175px">' +
+      '<div class="fy-lab-action-stack">' +
+      '<div class="fy-lab-status-row">' +
+      '<select class="fy-lab-status-select" id="fy-lab-next-' + idSuf + '" aria-label="Next lab stage for ' + fyEscapeAttr(plainLabel) +
+      '">' +
       opts + '</select>' +
       '<button type="button" class="btn sm" id="btn-fy-lab-next-' + idSuf + '" onclick="updateFyLabOrderStatus(' + oid +
       ', ' + subId + ')">Update</button></div>' +
@@ -10548,20 +11417,20 @@ ${initScript}
   function buildFyLabStatusAction(order) {
     var jobs = fyJobsFromOrderRow(order);
     if (!jobs.length) {
-      return '<span style="font-size:11px;color:var(--gold)">No LAB line — reopen order.</span>';
+      return '<span class="fy-lab-action-hint" style="color:var(--gold)">No LAB line — reopen order.</span>';
     }
     var parts = [];
     var i;
     for (i = 0; i < jobs.length; i += 1) {
       parts.push(
-        '<div style="margin-bottom:12px;padding-bottom:12px;' + (i < jobs.length - 1 ? 'border-bottom:1px solid var(--border);' : '') + '">' +
-        '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px">' +
-        fyEscapeAttr(jobs[i].sub_order_label) + '</div>' +
+        '<div class="fy-lab-job-block">' +
+        '<div class="fy-lab-job-label">' +
+        fyEscapeHtml(jobs[i].sub_order_label) + '</div>' +
         buildFyLabActionForSingleJob(order, jobs[i]) +
         '</div>'
       );
     }
-    return '<div style="display:flex;flex-direction:column;gap:4px">' + parts.join('') + '</div>';
+    return '<div class="fy-lab-action-stack">' + parts.join('') + '</div>';
   }
 
   window.setFyLabFilter = function(status, tabEl) {
@@ -10577,17 +11446,23 @@ ${initScript}
   };
 
   function fyBuildLabOrderMobileCard(r) {
-    const statusShown = fyJobsFromOrderRow(r).map(function (j) {
+    var qcByStoreTab = fyLabIsQcByStoreTab()
+    var jobs = fyJobsForLabView(r)
+    var statusShown = jobs.map(function (j) {
       return fyLabelLabStatus(j.lab_workflow_status)
     }).filter(Boolean).join(' · ')
-    const statusFinal = statusShown || fyLabelLabStatus(r.lab_workflow_status)
-    const created = typeof fmtDateTime === 'function' ? fmtDateTime(r.created_at) : (r.created_at || '')
-    const orderNo = fyEscapeHtml(r.order_no || '')
+    var statusFinal = statusShown || fyLabelLabStatus(r.lab_workflow_status)
+    var created = typeof fmtDateTime === 'function' ? fmtDateTime(r.created_at) : (r.created_at || '')
+    var orderNo = fyEscapeHtml(r.order_no || '')
+    var rowForAction = qcByStoreTab && jobs.length
+      ? Object.assign({}, r, { lab_sub_orders: jobs })
+      : r
+    var badgeHtml = fyLabStatusBadgeHtml(statusFinal, qcByStoreTab)
     return (
       '<article class="fy-lab-card">' +
       '<header class="fy-lab-card__head">' +
       '<div class="fy-lab-card__order mono">' + orderNo + '</div>' +
-      '<span class="b b-blue" style="font-size:11px">' + fyEscapeHtml(statusFinal) + '</span>' +
+      badgeHtml +
       '</header>' +
       '<div class="fy-lab-card__customer">' + fyEscapeHtml(r.customer_name || 'Walk-in') + '</div>' +
       (r.customer_phone ? '<div class="fy-lab-card__phone">' + fyEscapeHtml(r.customer_phone) + '</div>' : '') +
@@ -10596,26 +11471,54 @@ ${initScript}
       '<span>' + fyEscapeHtml(created) + '</span>' +
       '<button type="button" class="fy-lab-card__timeline" onclick="window.cosmosTimelineOpen(' + r.order_id + ',\'' + fyEscapeAttr(r.order_no || '') + '\')">Timeline</button>' +
       '</div>' +
-      '<div class="fy-lab-card__actions fy-lab-card__actions-row">' + buildFyLabStatusAction(r) + '</div>' +
+      '<div class="fy-lab-card__actions fy-lab-card__actions-row">' + buildFyLabStatusAction(rowForAction) + '</div>' +
       '</article>'
     )
   }
 
+  function fyRenderLabOrdersGroupedHtml(rows, qcByStoreTab) {
+    var groups = fyGroupLabOrdersByStore(rows)
+    var tableParts = []
+    var mobileParts = []
+    groups.forEach(function (g) {
+      var count = g.rows.length
+      tableParts.push(
+        '<tr class="fy-lab-store-group">' +
+        '<td colspan="6">' +
+        '<div class="fy-lab-store-group-head">' +
+        '<span class="fy-lab-store-group-name">' + fyEscapeHtml(g.store_name) + '</span>' +
+        '<span class="fy-lab-store-group-count">' + count + ' order' + (count === 1 ? '' : 's') + '</span>' +
+        '</div></td></tr>'
+      )
+      mobileParts.push(
+        '<div class="fy-lab-store-group-head fy-lab-store-group-head--mobile">' +
+        '<span class="fy-lab-store-group-name">' + fyEscapeHtml(g.store_name) + '</span>' +
+        '<span class="fy-lab-store-group-count">' + count + ' order' + (count === 1 ? '' : 's') + '</span>' +
+        '</div>'
+      )
+      g.rows.forEach(function (r) {
+        tableParts.push(fyRenderLabOrderTableRow(r, qcByStoreTab))
+        mobileParts.push(fyBuildLabOrderMobileCard(r))
+      })
+    })
+    return { tableHtml: tableParts.join(''), mobileHtml: mobileParts.join('') }
+  }
+
   function fyRenderLabOrdersEmpty(q, filterTitle, hint, hasSearch) {
     const atLabBtn =
-      '<button type="button" class="btn sm primary" onclick="document.getElementById(\'fy-lab-tab-at-lab\')&&setFyLabFilter(\'LAB_FITTING\',document.getElementById(\'fy-lab-tab-at-lab\'))">Show At Lab</button>'
-    const dispatchBtn =
-      '<button type="button" class="btn sm" onclick="document.getElementById(\'fy-lab-tab-dispatched\')&&setFyLabFilter(\'DISPATCHED_TO_STORE\',document.getElementById(\'fy-lab-tab-dispatched\'))">Show Dispatched</button>'
+      '<button type="button" class="btn sm primary" onclick="document.getElementById(\'fy-lab-tab-at-lab\')&&setFyLabFilter(\'LAB_FITTING\',document.getElementById(\'fy-lab-tab-at-lab\'))">Show Lab</button>'
+    const last7dBtn =
+      '<button type="button" class="btn sm" onclick="document.getElementById(\'fy-lab-tab-dispatch-7d\')&&setFyLabFilter(\'DISPATCHED_7D\',document.getElementById(\'fy-lab-tab-dispatch-7d\'))">Last 7 Days</button>'
     const extraQueues =
       String(_fyLabStatusFilter || '').toUpperCase() === 'QC_PASS'
-        ? '<div style="margin-top:12px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">' + atLabBtn + dispatchBtn + '</div>'
+        ? '<div style="margin-top:12px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">' + atLabBtn + last7dBtn + '</div>'
         : ''
     const searchLine = hasSearch
       ? '<div style="margin-top:8px;font-size:12px;color:var(--gold)">Active search filters the list (' + fyEscapeHtml(q) + ').</div>'
       : ''
     const primaryEmptyBtn =
       '<button type="button" class="btn sm primary" onclick="fyLabClearSearchAndShowAll()">' +
-      (hasSearch ? 'Clear search &amp; show all' : 'Show all orders') +
+      (hasSearch ? 'Clear search &amp; show need attention' : 'Show need attention') +
       '</button>'
     const emptyInner =
       '<div class="empty" style="padding:32px 24px;text-align:center;max-width:520px;margin:0 auto">' +
@@ -10652,34 +11555,35 @@ ${initScript}
       qs.set('scope', 'all');
       qs.set('limit', '120');
       if (q) qs.set('search', q);
-      if (_fyLabStatusFilter) qs.set('lab_status', _fyLabStatusFilter);
+      var qcByStoreTab = fyLabIsQcByStoreTab();
+      var dispatch7dTab = fyLabIsDispatched7dTab();
+      if (qcByStoreTab) {
+        qs.set('include_lab_status', FY_LAB_QC_BY_STORE_STATUSES.join(','));
+      } else if (dispatch7dTab) {
+        qs.set('lab_logged_status', FY_LAB_DISPATCH_7D_LOG_STATUS);
+        qs.set('lab_logged_since_days', String(FY_LAB_DISPATCH_7D_DAYS));
+      } else if (_fyLabStatusFilter) {
+        qs.set('lab_status', _fyLabStatusFilter);
+      }
+      if (_fyLabStoreFilter && ftrCanFilterByStore()) qs.set('store_id', _fyLabStoreFilter);
       const rows = await apiGet(`/api/orders?${qs.toString()}`);
       if (!rows || !rows.length) {
-        fyRenderLabOrdersEmpty(q, fyLabFilterTitle(_fyLabStatusFilter), fyLabEmptyHintForFilter(_fyLabStatusFilter), Boolean(q));
+        const hasFilters = Boolean(q || (_fyLabStoreFilter && ftrCanFilterByStore()));
+        fyRenderLabOrdersEmpty(q, fyLabFilterTitle(_fyLabStatusFilter), fyLabEmptyHintForFilter(_fyLabStatusFilter), hasFilters);
         return;
       }
-      if (tbody) {
-        tbody.innerHTML = rows.map((r) => {
-          const statusShown = fyJobsFromOrderRow(r).map(function (j) {
-            return fyLabelLabStatus(j.lab_workflow_status)
-          }).filter(Boolean).join(' · ')
-          const statusFinal = statusShown || fyLabelLabStatus(r.lab_workflow_status)
-          return `
-        <tr>
-          <td class="mono xs">
-            <div>${r.order_no || ''}</div>
-            <button type="button" onclick="window.cosmosTimelineOpen(${r.order_id},'${r.order_no || ''}')" style="background:none;border:none;color:var(--acc2);font-size:11px;cursor:pointer;padding:0;margin-top:2px;text-decoration:underline">📋 Timeline</button>
-          </td>
-          <td>${r.customer_name || 'Walk-in'}${r.customer_phone ? `<div style="font-size:11px;color:var(--text3)">${r.customer_phone}</div>` : ''}</td>
-          <td>${r.store_name || ''}</td>
-          <td><span class="b b-blue" style="font-size:11px">${statusFinal}</span></td>
-          <td style="font-size:12px;color:var(--text3)">${typeof fmtDateTime === 'function' ? fmtDateTime(r.created_at) : (r.created_at || '')}</td>
-          <td>${buildFyLabStatusAction(r)}</td>
-        </tr>
-      `
-        }).join('');
+      if (qcByStoreTab) {
+        var grouped = fyRenderLabOrdersGroupedHtml(rows, true);
+        if (tbody) tbody.innerHTML = grouped.tableHtml;
+        if (mobile) mobile.innerHTML = grouped.mobileHtml;
+      } else {
+        if (tbody) {
+          tbody.innerHTML = rows.map(function (r) {
+            return fyRenderLabOrderTableRow(r, false);
+          }).join('');
+        }
+        if (mobile) mobile.innerHTML = rows.map(function (r) { return fyBuildLabOrderMobileCard(r); }).join('');
       }
-      if (mobile) mobile.innerHTML = rows.map((r) => fyBuildLabOrderMobileCard(r)).join('');
     } catch (e) {
       const msg = e && e.message ? e.message : 'Could not load orders.';
       if (typeof window.cosmosToastError === 'function') window.cosmosToastError(msg);

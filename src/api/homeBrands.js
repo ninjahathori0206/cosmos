@@ -23,6 +23,7 @@ function homeBrandReadAuth(req, res, next) {
     hasModuleAccess(req, 'foundry')
     && (
       hasPermission(req, 'foundry.catalogue.view')
+      || hasPermission(req, 'foundry.master_catalogue.view')
       || hasPermission(req, 'foundry.branding.view')
       || hasPermission(req, 'foundry.purchases.view')
     )

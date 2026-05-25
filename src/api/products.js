@@ -3,6 +3,7 @@ const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure, getPool } = require('../config/db');
 const { requireModule, requirePermission } = require('../middleware/authorize');
+const { MASTER_VIEW, MASTER_EDIT } = require('../config/foundryCatalogueAuth');
 
 const router = express.Router();
 
@@ -22,7 +23,7 @@ const foundryPurchasesEdit = [
 /** Master Catalogue list + other product reads that serve catalogue users. */
 const foundryCatalogueOrPurchasesView = [
   requireModule('foundry'),
-  requirePermission('foundry.catalogue.view', 'foundry.purchases.view')
+  requirePermission(...MASTER_VIEW)
 ];
 
 const productSchema = Joi.object({

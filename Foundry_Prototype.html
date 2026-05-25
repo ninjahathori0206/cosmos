@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="cosmos-lock-zoom">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -14,11 +14,11 @@
 >
 <link rel="preload" href="/js/cosmos-modules-catalog.js" as="script">
 <link rel="preload" href="/js/cosmos-module-switch.js" as="script">
-<link rel="preload" href="/js/foundry-prototype.js?v=20260525-foundry-lab-mobile" as="script">
+<link rel="preload" href="/js/foundry-prototype.js?v=20260525-qr-15x15-compact-v21" as="script">
 <link rel="preload" href="/css/cosmos-ui.css" as="style">
 <link rel="stylesheet" href="/css/cosmos-ui.css">
-<link rel="stylesheet" href="/css/foundry-prototype.css">
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260525-toast-date">
+<link rel="stylesheet" href="/css/foundry-prototype.css?v=20260525-label-formats-v16">
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260525-foundry-lab-store-chips">
 <script src="/js/cosmos-ui-polish.js?v=20260528-polish-load-defer" defer></script>
 <script src="/js/cosmos-record-list.js?v=20260526-detail-qty-remainder" defer></script>
 
@@ -27,7 +27,7 @@
 <body class="cosmos-app-shell">
 
 <!-- SIDEBAR -->
-<aside class="sidebar">
+<aside class="sidebar" id="fy-sidebar">
   <nav class="sidebar-nav">
     <div class="nav-group">Overview</div>
     <div class="nav-item active" onclick="nav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
@@ -40,20 +40,20 @@
     <div class="nav-item" data-foundry-permission="foundry.digitisation.view" onclick="nav('digitisation',this)"><span class="ic">📸</span> Digitisation <span id="digi-nav-badge" class="nav-badge gold" style="display:none"></span></div>
 
     <div class="nav-group" data-foundry-nav-group="catalogue">Catalogue</div>
-    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('sku-catalogue',this)"><span class="ic">🗂️</span> SKU Catalogue</div>
-    <div class="nav-item" data-foundry-permission="foundry.stock.view" onclick="nav('stock-view',this)"><span class="ic">📦</span> Stock View</div>
-    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('lens-packages',this)"><span class="ic">👁️</span> Lens packages</div>
-    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('lens-addons',this)"><span class="ic">➕</span> Lens add-ons</div>
-    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('lens-package-addons',this)"><span class="ic">▦</span> Lens link matrix</div>
-    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('lens-wizard-rules',this)"><span class="ic">⚙</span> Lens wizard rules</div>
-    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" onclick="nav('master-catalogue',this)"><span class="ic">📖</span> Master Catalogue</div>
+    <div class="nav-item" data-foundry-permission="foundry.catalogue.view" data-foundry-page="sku-catalogue" onclick="nav('sku-catalogue',this)"><span class="ic">🗂️</span> SKU Catalogue</div>
+    <div class="nav-item" data-foundry-permission="foundry.stock.view" data-foundry-page="stock-view" onclick="nav('stock-view',this)"><span class="ic">📦</span> Stock View</div>
+    <div class="nav-item" data-foundry-permission="foundry.lens.packages.view" data-foundry-page="lens-packages" onclick="nav('lens-packages',this)"><span class="ic">👁️</span> Lens packages</div>
+    <div class="nav-item" data-foundry-permission="foundry.lens.addons.view" data-foundry-page="lens-addons" onclick="nav('lens-addons',this)"><span class="ic">➕</span> Lens add-ons</div>
+    <div class="nav-item" data-foundry-permission="foundry.lens.matrix.view" data-foundry-page="lens-package-addons" onclick="nav('lens-package-addons',this)"><span class="ic">▦</span> Lens link matrix</div>
+    <div class="nav-item" data-foundry-permission="foundry.lens.wizard.view" data-foundry-page="lens-wizard-rules" onclick="nav('lens-wizard-rules',this)"><span class="ic">⚙</span> Lens wizard rules</div>
+    <div class="nav-item" data-foundry-permission="foundry.master_catalogue.view,foundry.purchases.view" data-foundry-page="master-catalogue" onclick="nav('master-catalogue',this)"><span class="ic">📖</span> Master Catalogue</div>
 
     <div class="nav-group" data-foundry-nav-group="store-connect">Store Connect</div>
     <div class="nav-item" data-foundry-permission="foundry.transfers.view" onclick="nav('transfer-requests',this)" id="nav-transfer-requests"><span class="ic">📬</span> Goods Request <span id="tr-nav-badge" class="nav-badge gold" style="display:none"></span></div>
     <div class="nav-item" data-foundry-permission="foundry.transfers.view" onclick="nav('stock-transfer',this)"><span class="ic">🚚</span> Goods Transfer</div>
 
     <div class="nav-group" data-foundry-nav-group="intelligence">Intelligence</div>
-    <div class="nav-item" data-foundry-permission="foundry.purchases.view" onclick="nav('rate-intelligence',this)"><span class="ic">💰</span> Rate Intelligence</div>
+    <div class="nav-item" data-foundry-permission="foundry.rate_intelligence.view" data-foundry-page="rate-intelligence" onclick="nav('rate-intelligence',this)"><span class="ic">💰</span> Rate Intelligence</div>
 
     <div class="nav-group" data-foundry-nav-group="lab">Lab Operations</div>
     <div class="nav-item" data-foundry-permission="foundry.lab.view" onclick="nav('lab-orders',this)"><span class="ic">🔬</span> Lab Orders</div>
@@ -75,12 +75,38 @@
 </aside>
 
 <!-- SIDEBAR OVERLAY -->
-<div class="sidebar-overlay" id="fy-sidebar-overlay" onclick="closeSidebar()"></div>
+<div class="sidebar-overlay" id="fy-sidebar-overlay" onclick="closeSidebar()" aria-hidden="true"></div>
+
+<script>
+(function () {
+  function openSidebar() {
+    var sb = document.getElementById('fy-sidebar');
+    var ov = document.getElementById('fy-sidebar-overlay');
+    var btn = document.getElementById('fy-menu-toggle');
+    if (sb) sb.classList.add('open');
+    if (ov) { ov.classList.add('open'); ov.setAttribute('aria-hidden', 'false'); }
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll();
+    else document.body.style.overflow = 'hidden';
+  }
+  function closeSidebar() {
+    var sb = document.getElementById('fy-sidebar');
+    var ov = document.getElementById('fy-sidebar-overlay');
+    var btn = document.getElementById('fy-menu-toggle');
+    if (sb) sb.classList.remove('open');
+    if (ov) { ov.classList.remove('open'); ov.setAttribute('aria-hidden', 'true'); }
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+    document.body.style.overflow = '';
+  }
+  window.openSidebar = openSidebar;
+  window.closeSidebar = closeSidebar;
+})();
+</script>
 
 <!-- MAIN -->
 <main class="main">
   <div class="topbar">
-    <button class="menu-toggle" id="fy-menu-toggle" onclick="openSidebar()" aria-label="Open menu">
+    <button type="button" class="menu-toggle" id="fy-menu-toggle" onclick="openSidebar()" aria-label="Open menu" aria-expanded="false" aria-controls="fy-sidebar">
       <span></span><span></span><span></span>
     </button>
     <div class="breadcrumb">Foundry <span style="color:var(--text3);margin:0 4px">›</span> <span class="cur" id="bc">Dashboard</span></div>
@@ -1023,6 +1049,54 @@
     </div>
   </div>
 
+  <!-- ═══ LAB ORDERS ═══ -->
+  <div class="page" id="page-lab-orders">
+    <div class="ph flex ic fy-lab-head">
+      <div class="fy-lab-head-text">
+        <div class="pt">Lab Orders</div>
+        <div class="xs td2 fy-lab-subtitle">All stores — monitor and advance lab order workflow from Sent-to-Lab through Dispatch.</div>
+      </div>
+      <div class="mla fy-lab-tools">
+        <div class="fy-lab-search-row">
+          <div class="sw fy-lab-search-wrap">
+            <span class="si" aria-hidden="true">🔍</span>
+            <input id="lab-orders-search" class="search fy-lab-search" placeholder="Search order, customer, store" oninput="if(window.debounceLabOrders) window.debounceLabOrders()">
+          </div>
+          <button type="button" class="btn sm fy-lab-refresh-btn" aria-label="Refresh lab orders" onclick="window.loadLabOrders && window.loadLabOrders()">↻</button>
+        </div>
+      </div>
+    </div>
+    <div id="fy-lab-store-filter-row" class="ftr-store-filter-row" hidden>
+      <div class="ftr-store-filter-label">Store</div>
+      <div id="fy-lab-store-chips" class="ftr-store-chips cosmos-page-filters" role="toolbar" aria-label="Filter lab orders by store"></div>
+    </div>
+    <div class="tabs fy-lab-tabs" role="tablist" aria-label="Lab order filters">
+      <button type="button" class="tab active" id="fy-lab-tab-pending" role="tab" onclick="setFyLabFilter('SENT_TO_LAB', this)">Need Attention</button>
+      <button type="button" class="tab" id="fy-lab-tab-at-lab" role="tab" onclick="setFyLabFilter('LAB_FITTING', this)">Lab</button>
+      <button type="button" class="tab" id="fy-lab-tab-qc" role="tab" onclick="setFyLabFilter('QC_PASS', this)">QC</button>
+      <button type="button" class="tab" id="fy-lab-tab-dispatch-7d" role="tab" onclick="setFyLabFilter('DISPATCHED_7D', this)">Last 7 Days</button>
+      <button type="button" class="tab" id="fy-lab-tab-qc-by-store" role="tab" onclick="setFyLabFilter('QC_BY_STORE', this)">QC at Store (Fail/Partial)</button>
+    </div>
+    <div class="card fy-lab-desktop-only">
+      <div class="tw">
+        <table class="table lab-orders-table">
+          <thead>
+            <tr>
+              <th>Order #</th>
+              <th>Customer</th>
+              <th>Store</th>
+              <th>Lab Status</th>
+              <th>Created</th>
+              <th style="width:270px">Action</th>
+            </tr>
+          </thead>
+          <tbody id="lab-orders-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="fy-lab-orders-mobile" class="fy-lab-mobile-list fy-lab-mobile-only" aria-live="polite"></div>
+  </div>
+
   </div><!-- /.cosmos-app-scroll -->
 
   <!-- Create HQ transfer (same sheet pattern as StorePilot create request) -->
@@ -1345,31 +1419,17 @@
     </div>
     <div class="mb" style="flex:1;overflow-y:auto;padding:16px;display:flex;gap:16px;flex-wrap:wrap">
 
-      <!-- Left: SKU list -->
+      <!-- Left: print settings -->
       <div style="flex:1;min-width:280px">
-        <div class="flex ic mb2" style="justify-content:space-between">
-          <div class="section-lbl">SKUs to Print</div>
-          <div class="flex ic g2">
-            <button class="btn btn-sm" onclick="bcSelectAll(true)">All</button>
-            <button class="btn btn-sm" onclick="bcSelectAll(false)">None</button>
+        <div>
+          <label class="section-lbl" for="bc-format-select">Label format</label>
+          <select id="bc-format-select" onchange="bcOnFormatSelectChange()" style="margin-top:4px;width:100%;max-width:280px" aria-label="Label format preset"></select>
+          <div id="bc-format-hint" style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.4">QR encodes unit barcode · text shows SKU code</div>
+          <div id="bc-format-actions" class="flex ic g2 mt2" style="flex-wrap:wrap">
+            <button type="button" class="btn btn-sm btn-primary" id="bc-format-update-btn" onclick="bcUpdateLabelFormat()">Update format</button>
+            <button type="button" class="btn btn-sm" id="bc-format-save-new-btn" onclick="bcSaveLabelFormatAsNew()">Save as new…</button>
+            <button type="button" class="btn btn-sm" id="bc-format-default-btn" onclick="bcSetDefaultLabelFormat()">Set as default</button>
           </div>
-        </div>
-        <div id="bc-sku-list" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px"></div>
-        <div class="mt3" style="border:1px solid var(--border);border-radius:8px;padding:10px">
-          <div class="section-lbl mb2">Override Qty (Set All)</div>
-          <div class="flex ic g2">
-            <input id="bc-copies" type="number" min="1" max="9999" placeholder="e.g. 5" style="width:70px" oninput="bcApplyGlobalQty()">
-            <button class="btn btn-sm" onclick="bcApplyGlobalQty()">Set All</button>
-            <button class="btn btn-sm" onclick="bcResetQty()" title="Reset to stock quantity">↺ Reset</button>
-          </div>
-          <div style="font-size:10px;color:var(--text2);margin-top:5px">Default = each SKU's stock quantity</div>
-        </div>
-        <div class="mt3">
-          <label class="section-lbl">Label type</label>
-          <select id="bc-type" onchange="bcRenderPreview()" style="margin-top:4px;width:100%;max-width:280px">
-            <option value="QR" selected>QR Code</option>
-            <option value="CODE128">Code 128 (barcode)</option>
-          </select>
         </div>
 
         <div class="mt3" style="border:1px solid var(--border);border-radius:8px;padding:10px">
@@ -1448,18 +1508,6 @@
             <label style="display:flex;flex-direction:column;gap:4px">Preview / browser font (pt)
               <input id="bc-text-font-pt" type="number" min="0.5" max="20" step="0.1" value="5" style="width:100%;padding:4px 6px" oninput="bcRenderPreview()">
             </label>
-          </div>
-        </div>
-
-        <div class="mt3" style="border:1px solid var(--border);border-radius:8px;padding:10px">
-          <div class="section-lbl mb2">Saved configuration (this browser)</div>
-          <div style="font-size:10px;color:var(--text2);margin-bottom:8px;line-height:1.35">
-            Saves every field above — <strong>left/right (and top/bottom) inset margins</strong>, row/column gaps, label grid, dots/mm, QR layout, TSPL text multipliers, preview font, label type, and USB horizontal calibration mm — to localStorage. Reloading this dialog applies the saved snapshot automatically after USB reconnect.
-          </div>
-          <div class="flex ic g2" style="flex-wrap:wrap">
-            <button type="button" class="btn btn-sm btn-primary" onclick="bcSavePrintConfiguration()">Save configuration</button>
-            <button type="button" class="btn btn-sm" onclick="bcLoadPrintConfiguration()">Load saved configuration</button>
-            <button type="button" class="btn btn-sm" onclick="bcClearSavedPrintConfiguration()">Clear saved configuration</button>
           </div>
         </div>
 
@@ -1561,47 +1609,6 @@
   </div>
 </div>
 
-  <!-- ═══ LAB ORDERS ═══ -->
-  <div class="page" id="page-lab-orders">
-    <div class="ph flex ic fy-lab-head">
-      <div class="fy-lab-head-text">
-        <div class="pt">Lab Orders</div>
-        <div class="xs td2 fy-lab-subtitle">All stores — monitor and advance lab order workflow from Sent-to-Lab through Dispatch.</div>
-      </div>
-      <div class="mla flex ic g2 fy-lab-tools">
-        <div class="sw fy-lab-search-wrap">
-          <span class="si" aria-hidden="true">🔍</span>
-          <input id="lab-orders-search" class="search fy-lab-search" placeholder="Search order, customer, store" oninput="if(window.debounceLabOrders) window.debounceLabOrders()">
-        </div>
-        <button type="button" class="btn fy-lab-refresh-btn" onclick="window.loadLabOrders && window.loadLabOrders()">Refresh</button>
-      </div>
-    </div>
-    <div class="tabs fy-lab-tabs" role="tablist" aria-label="Lab order filters">
-      <button type="button" class="tab active" id="fy-lab-tab-all" role="tab" onclick="setFyLabFilter('', this)">All</button>
-      <button type="button" class="tab" id="fy-lab-tab-pending" role="tab" onclick="setFyLabFilter('SENT_TO_LAB', this)">Pending Lab</button>
-      <button type="button" class="tab" id="fy-lab-tab-at-lab" role="tab" onclick="setFyLabFilter('LAB_FITTING', this)">At Lab</button>
-      <button type="button" class="tab" id="fy-lab-tab-qc" role="tab" onclick="setFyLabFilter('QC_PASS', this)">QC Pass</button>
-      <button type="button" class="tab" id="fy-lab-tab-dispatched" role="tab" onclick="setFyLabFilter('DISPATCHED_TO_STORE', this)">Dispatched</button>
-    </div>
-    <div class="card fy-lab-desktop-only">
-      <div class="tw">
-        <table class="table lab-orders-table">
-          <thead>
-            <tr>
-              <th>Order #</th>
-              <th>Customer</th>
-              <th>Store</th>
-              <th>Lab Status</th>
-              <th>Created</th>
-              <th style="width:270px">Action</th>
-            </tr>
-          </thead>
-          <tbody id="lab-orders-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-    <div id="fy-lab-orders-mobile" class="fy-lab-mobile-list fy-lab-mobile-only" aria-live="polite"></div>
-  </div>
 
 
 <script>
@@ -1679,7 +1686,7 @@ function addColour() {
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260522-camera-resume" defer></script>
-<script src="/js/foundry-prototype.js?v=20260525-foundry-lab-mobile" defer></script>
+<script src="/js/foundry-prototype.js?v=20260525-qr-15x15-compact-v21" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)
 document.addEventListener('DOMContentLoaded', function() {

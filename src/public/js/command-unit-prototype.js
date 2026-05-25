@@ -1109,11 +1109,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   /** Server-driven permission catalogue (see src/config/permissionsCatalogue.js). */
   let cachedPermissionCatalogue = null;
 
-  async function fetchPermissionCatalogue() {
-    if (cachedPermissionCatalogue && cachedPermissionCatalogue.length) return cachedPermissionCatalogue;
+  async function fetchPermissionCatalogue(forceRefresh) {
+    if (!forceRefresh && cachedPermissionCatalogue && cachedPermissionCatalogue.length) {
+      return cachedPermissionCatalogue;
+    }
     try {
-      const raw = await apiGet('/api/meta/permissions-catalogue');
+      const raw = await apiGet('/api/meta/permissions-catalogue?_=' + Date.now());
       cachedPermissionCatalogue = Array.isArray(raw.groups) ? raw.groups : [];
+      window.__cosmosPermCatalogueRevision = raw.revision || '';
     } catch (_) {
       cachedPermissionCatalogue = [];
     }
@@ -1262,7 +1265,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       const [groups, grantedPerms] = await Promise.all([
-        fetchPermissionCatalogue(),
+        fetchPermissionCatalogue(true),
         apiGet(`/api/roles/${roleKey}/permissions`)
       ]);
       if (!groups.length) {
@@ -1288,16 +1291,21 @@ document.addEventListener('DOMContentLoaded', async () => {
           Store-level policy (<strong>Configuration → Module Access</strong>) can still narrow store-scoped users.
         </div>
         <div id="perm-save-msg" style="min-height:18px;font-size:12px;margin-bottom:8px"></div>
+        <div style="margin-bottom:12px">
+          <input type="search" id="perm-search" class="inp" placeholder="Filter permissions (e.g. rate, lens, catalogue)…" style="width:100%;max-width:420px" autocomplete="off">
+          <div class="td-muted text-xs" style="margin-top:4px">Catalogue revision: <span class="font-mono" id="perm-catalogue-rev">${escHtml(window.__cosmosPermCatalogueRevision || '—')}</span></div>
+        </div>
       `;
 
       groups.forEach((group) => {
-        html += `<div class="section-divider" style="margin:14px 0 8px">${escHtml(group.group)}</div>`;
-        html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 16px">';
+        html += `<div class="section-divider perm-group-heading" data-perm-group="${escAttr(group.group)}" style="margin:14px 0 8px">${escHtml(group.group)}</div>`;
+        html += '<div class="perm-group-grid" data-perm-group="' + escAttr(group.group) + '" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 16px">';
         (group.perms || []).forEach((p) => {
           const k = String(p.key || '').toLowerCase();
           const checked = grantedSet.has(k) ? 'checked' : '';
+          const searchText = (p.label + ' ' + k + ' ' + group.group).toLowerCase();
           html += `
-            <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;padding:4px 0">
+            <label class="perm-row" data-perm-search="${escAttr(searchText)}" style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;padding:4px 0">
               <input type="checkbox" class="perm-checkbox" data-perm="${escAttr(k)}" ${checked}
                 style="width:15px;height:15px;margin-top:3px;accent-color:var(--acc);cursor:pointer">
               <span>${escHtml(p.label)} <span class="td-muted font-mono" style="font-size:10px;display:block">${escHtml(k)}</span></span>
@@ -1333,6 +1341,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         jump.addEventListener('click', (ev) => {
           ev.preventDefault();
           document.getElementById('role-module-access-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+
+      const permSearch = document.getElementById('perm-search');
+      if (permSearch) {
+        permSearch.addEventListener('input', function () {
+          const q = String(permSearch.value || '').trim().toLowerCase();
+          panel.querySelectorAll('.perm-row').forEach((row) => {
+            const hay = row.getAttribute('data-perm-search') || '';
+            row.style.display = !q || hay.indexOf(q) !== -1 ? '' : 'none';
+          });
+          panel.querySelectorAll('.perm-group-heading').forEach((heading) => {
+            let grid = heading.nextElementSibling;
+            while (grid && !grid.classList.contains('perm-group-grid')) {
+              grid = grid.nextElementSibling;
+            }
+            if (!grid) return;
+            const anyVisible = Array.from(grid.querySelectorAll('.perm-row')).some((r) => r.style.display !== 'none');
+            heading.style.display = anyVisible ? '' : 'none';
+            grid.style.display = anyVisible ? 'grid' : 'none';
+          });
         });
       }
 

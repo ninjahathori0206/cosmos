@@ -457,8 +457,20 @@ window.loadSpLabOrders = async function () {
       const jobs = spJobsFromOrderRow(r)
       const statusShown = jobs.map((j) => spLabStatusLabel(j.lab_workflow_status)).filter(Boolean).join(' · ')
       const hasReady = jobs.some((j) => j.lab_workflow_status === 'READY_FOR_DELIVERY')
+      const pendingInstant = spPendingInstantSubs(r)
       let blocks = []
-      if (hasReady && canMutate) {
+      if (pendingInstant.length && canMutate) {
+        pendingInstant.forEach((inst) => {
+          const sid = Number(inst.sub_order_id) || 0
+          const lbl = spEscapeHtml(inst.sub_order_label || ('#' + sid))
+          blocks.push(`
+          <div style="margin-bottom:8px">
+            <button type="button" class="btn sm" style="border-color:var(--gold);color:var(--gold)" onclick="submitSpInstantSubHandover(${r.order_id}, ${sid})">Hand over frame · ${lbl}</button>
+          </div>`)
+        })
+        blocks.push('<div class="muted" style="font-size:11px;margin-bottom:8px">Then use bill handover for lenses.</div>')
+      }
+      if (hasReady && canMutate && !pendingInstant.length) {
         blocks.push(`
           <div style="margin-bottom:8px">
             <button type="button" class="btn sm primary" id="sp-lab-btn-${r.order_id}-handover" onclick="openSpHandoverModal(${r.order_id})">🤝 Handover</button>
@@ -584,10 +596,29 @@ window.confirmSpQcNote = async function () {
 // ── Handover Modal ─────────────────────────────────────────────────────────
 let _spHandoverCtx = null
 
+window.submitSpInstantSubHandover = async function (orderId, subOrderId) {
+  if (!canStorePilotManageLab()) {
+    if (typeof cosmosToastWarn === 'function') {
+      cosmosToastWarn('No permission for handover — assign Lab Orders — Manage or POS — Lab workflow.')
+    }
+    return
+  }
+  try {
+    const res = await apiPost('/api/orders/' + orderId + '/instant-sub-handover', { sub_order_id: Number(subOrderId) })
+    const inv = res.data && res.data.invoice_no
+    if (typeof cosmosToastSuccess === 'function') {
+      cosmosToastSuccess(inv ? 'Frame handed over. Invoice: ' + inv : 'Frame handed over.')
+    }
+    window.loadSpLabOrders()
+  } catch (err) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+  }
+}
+
 window.openSpHandoverModal = async function (orderId) {
   if (!canStorePilotManageLab()) {
     if (typeof cosmosToastWarn === 'function') {
-      cosmosToastWarn('No permission for lab handover — assign StorePilot · Lab Orders — Manage for this role.')
+      cosmosToastWarn('No permission for lab handover — assign Lab Orders — Manage or POS — Lab workflow.')
     }
     return
   }
@@ -601,6 +632,17 @@ window.openSpHandoverModal = async function (orderId) {
     const resp = await apiGet('/api/orders/' + orderId)
     const order   = resp.data.order
     const summary = resp.data.payment_summary
+    const handoverUi = resp.data.handover_ui || {}
+    if (handoverUi.pending_instant_sub_orders && handoverUi.pending_instant_sub_orders.length) {
+      const labels = handoverUi.pending_instant_sub_orders.map((s) => s.sub_order_label).join(', ')
+      body.innerHTML = `
+        <div style="padding:16px;color:var(--text1)">
+          <div class="badge gold" style="width:fit-content;margin-bottom:10px">Frame first</div>
+          <p style="font-size:14px;margin:0 0 12px">Hand over the frame line(s) <strong>${spEscapeHtml(labels)}</strong> from the lab orders list, then open bill handover again.</p>
+          <button class="btn" onclick="closeSpHandoverModal()">Close</button>
+        </div>`
+      return
+    }
     const balanceDue = Math.max(0, Number(summary && summary.amount_remaining || 0))
     const total      = Number(order.total_amount || 0)
     const orderNo    = order.order_no || ('#' + orderId)
@@ -731,9 +773,17 @@ window.submitSpHandover = async function (hasBalance) {
   if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
   try {
     const res = await apiPost('/api/orders/' + orderId + '/handover', body)
+    const invNo = res.data && res.data.invoice_no
+    if (!invNo) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      const msg = 'Handover did not complete — hand over the frame line first on MIXED orders, then retry.'
+      if (errEl) { errEl.textContent = msg; errEl.style.display = 'block' }
+      if (typeof cosmosToastError === 'function') cosmosToastError(msg)
+      return
+    }
     if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
     window.closeSpHandoverModal()
-    const invMsg = res.data && res.data.invoice_no ? ' Invoice: ' + res.data.invoice_no + '.' : ''
+    const invMsg = invNo ? ' Invoice: ' + invNo + '.' : ''
     if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Order handed over successfully.' + invMsg)
     // Placeholder: receipt channels not connected yet — just show info
     if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Receipt channels (WhatsApp / Email / SMS / Print) will be connected in the next phase.')
@@ -769,17 +819,26 @@ function canAccessSpLabOrdersMenu() {
   return _spPermissions.includes('storepilot.lab.view')
 }
 
-/** Strict: require storepilot.lab.manage. Legacy: open mutations unless role has granular lab keys (then manage required). */
+/** Strict: require storepilot.lab.manage or pos.lab.workflow. Legacy: open mutations unless granular lab keys (then manage/workflow required). */
 function canStorePilotManageLab() {
+  const canMutate = _spPermissions.includes('storepilot.lab.manage')
+    || _spPermissions.includes('pos.lab.workflow')
   const strict =
     typeof window.cosmosRbacStrictEmptyPerms === 'function'
       ? window.cosmosRbacStrictEmptyPerms()
       : true
   if (strict) {
-    return _spPermissions.includes('storepilot.lab.manage')
+    return canMutate
   }
   if (!spJwtHasGranularLab()) return true
-  return _spPermissions.includes('storepilot.lab.manage')
+  return canMutate
+}
+
+function spPendingInstantSubs(row) {
+  const list = Array.isArray(row.instant_sub_orders) ? row.instant_sub_orders : []
+  return list.filter(
+    (s) => String(s.handover_status || '').toUpperCase() !== 'HANDED_OVER'
+  )
 }
 
 function canAccessSpView(id) {

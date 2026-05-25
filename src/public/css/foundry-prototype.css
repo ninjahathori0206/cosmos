@@ -146,43 +146,50 @@
     font-weight: 600;
     color: var(--acc2);
   }
-  #page-transfer-requests .ftr-store-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-  }
-  #page-transfer-requests .ftr-store-filter-row {
+  #page-transfer-requests .ftr-store-filter-row,
+  #page-lab-orders .ftr-store-filter-row {
     display: none;
     flex-direction: column;
     gap: 8px;
     margin-bottom: 0;
   }
-  #page-transfer-requests .ftr-store-filter-row:not([hidden]) {
+  #page-transfer-requests .ftr-store-filter-row:not([hidden]),
+  #page-lab-orders .ftr-store-filter-row:not([hidden]) {
     display: flex;
   }
-  #page-transfer-requests .ftr-store-filter-label {
+  #page-transfer-requests .ftr-store-filter-label,
+  #page-lab-orders .ftr-store-filter-label {
     font-size: 11px;
     font-weight: 600;
     color: var(--text2);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  #page-transfer-requests .ftr-store-chips .btn.sm {
+  #page-transfer-requests .ftr-store-chips,
+  #page-lab-orders .ftr-store-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  #page-transfer-requests .ftr-store-chips .btn.sm,
+  #page-lab-orders .ftr-store-chips .btn.sm {
     max-width: 100%;
     white-space: normal;
     text-align: left;
     line-height: 1.3;
   }
   @media (max-width: 768px) {
-    #page-transfer-requests .ftr-store-chips .btn.sm {
+    #page-transfer-requests .ftr-store-chips .btn.sm,
+    #page-lab-orders .ftr-store-chips .btn.sm {
       white-space: nowrap;
       text-align: center;
       max-width: none;
     }
   }
   #page-transfer-requests .ftr-status-tabs .btn.sm.active,
-  #page-transfer-requests .ftr-store-chips .btn.sm.active {
+  #page-transfer-requests .ftr-store-chips .btn.sm.active,
+  #page-lab-orders .ftr-store-chips .btn.sm.active {
     background: var(--accL);
     border-color: var(--acc2);
     color: var(--acc);
@@ -407,25 +414,161 @@
     letter-spacing:0.01em;
   }
 
+  /* Lab Orders — shared action layout (desktop table + mobile cards) */
+  #page-lab-orders .fy-lab-intake-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+  }
+  #page-lab-orders .fy-lab-intake-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  #page-lab-orders .fy-lab-done-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--green);
+    background: var(--greenL);
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  #page-lab-orders .fy-lab-action-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+  }
+  #page-lab-orders .fy-lab-status-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  #page-lab-orders .fy-lab-status-select {
+    font-size: 12px;
+    min-width: 175px;
+  }
+  #page-lab-orders .fy-lab-action-hint {
+    font-size: 11px;
+    color: var(--text3);
+    line-height: 1.45;
+  }
+  #page-lab-orders .fy-lab-bypass-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 6px;
+  }
+  #page-lab-orders .fy-lab-job-block {
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  #page-lab-orders .fy-lab-job-block:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+  #page-lab-orders .fy-lab-job-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text2);
+    margin-bottom: 6px;
+  }
+
+  /* Lab Orders — toolbar: search with compact refresh */
+  #page-lab-orders .fy-lab-tools {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 260px;
+    max-width: 420px;
+  }
+  #page-lab-orders .ftr-store-filter-row {
+    margin: 0 0 10px;
+  }
+  #page-lab-orders .fy-lab-search-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+  #page-lab-orders .fy-lab-search-wrap {
+    flex: 1;
+    min-width: 0;
+  }
+  #page-lab-orders .fy-lab-refresh-btn {
+    flex-shrink: 0;
+    min-width: 40px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    line-height: 1;
+  }
+  #page-lab-orders .fy-lab-store-group td {
+    padding: 0;
+    border-bottom: none;
+    background: transparent;
+  }
+  #page-lab-orders .fy-lab-store-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    margin-top: 12px;
+    background: var(--accL);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  #page-lab-orders .fy-lab-store-group-head--mobile {
+    margin: 16px 0 8px;
+  }
+  #page-lab-orders .fy-lab-store-group:first-child .fy-lab-store-group-head,
+  #page-lab-orders .fy-lab-store-group-head--mobile:first-child {
+    margin-top: 0;
+  }
+  #page-lab-orders .fy-lab-store-group-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--acc2);
+  }
+  #page-lab-orders .fy-lab-store-group-count {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text2);
+  }
+
   /* Lab Orders — native mobile card list */
   #page-lab-orders .fy-lab-mobile-only { display: none; }
-  @media (max-width: 768px) {
-    #page-lab-orders .fy-lab-mobile-only { display: block; }
+  @media (max-width: 1024px) {
+    #page-lab-orders .fy-lab-mobile-only { display: flex; }
     #page-lab-orders .fy-lab-desktop-only { display: none !important; }
     #page-lab-orders .fy-lab-subtitle { display: none; }
+    #page-lab-orders .fy-lab-head-text .pt {
+      font-size: 17px;
+      margin-bottom: 0;
+    }
     #page-lab-orders .fy-lab-head {
       flex-direction: column;
       align-items: stretch;
-      gap: 12px;
-      margin-bottom: 4px;
+      gap: 10px;
+      margin-bottom: 0;
     }
     #page-lab-orders .fy-lab-tools {
       margin-left: 0 !important;
       width: 100%;
-      flex-direction: column;
-      align-items: stretch;
-      gap: 8px;
+      max-width: none;
     }
+    #page-lab-orders .fy-lab-search-row { width: 100%; }
     #page-lab-orders .fy-lab-search-wrap { width: 100%; max-width: none; }
     #page-lab-orders .fy-lab-search {
       width: 100%;
@@ -434,9 +577,10 @@
       font-size: 16px;
     }
     #page-lab-orders .fy-lab-refresh-btn {
-      width: 100%;
+      width: 44px;
+      min-width: 44px;
+      height: 44px;
       min-height: 44px;
-      justify-content: center;
     }
     #page-lab-orders .fy-lab-tabs {
       display: flex;
@@ -445,8 +589,13 @@
       -webkit-overflow-scrolling: touch;
       scrollbar-width: none;
       gap: 8px;
-      margin: 8px 0 12px;
-      padding-bottom: 4px;
+      margin: 4px 0 14px;
+      padding: 4px 0 8px;
+      border-bottom: none;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: var(--bg);
     }
     #page-lab-orders .fy-lab-tabs::-webkit-scrollbar { display: none; }
     #page-lab-orders .fy-lab-tabs .tab {
@@ -454,12 +603,25 @@
       min-height: 40px;
       white-space: nowrap;
       touch-action: manipulation;
+      margin-bottom: 0;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--card);
+      padding: 8px 14px;
+      font-size: 13px;
+    }
+    #page-lab-orders .fy-lab-tabs .tab.active {
+      background: var(--accL);
+      border-color: var(--acc2);
+      color: var(--acc);
+      border-bottom-color: var(--acc2);
     }
     #page-lab-orders .fy-lab-mobile-list {
       display: flex;
       flex-direction: column;
       gap: 12px;
-      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      width: 100%;
+      padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     }
     #page-lab-orders .fy-lab-card {
       background: var(--card);
@@ -480,6 +642,7 @@
       font-weight: 800;
       color: var(--acc2);
       line-height: 1.25;
+      word-break: break-word;
     }
     #page-lab-orders .fy-lab-card__customer {
       font-size: 14px;
@@ -517,37 +680,87 @@
       font-weight: 600;
       font-family: inherit;
       cursor: pointer;
-      padding: 4px 0;
+      padding: 8px 0;
       min-height: 44px;
+      flex-shrink: 0;
+    }
+    #page-lab-orders .fy-lab-card__actions {
+      width: 100%;
     }
     #page-lab-orders .fy-lab-card__actions .btn {
       min-height: 44px;
       width: 100%;
       justify-content: center;
-      margin-top: 6px;
+      margin-top: 0;
     }
     #page-lab-orders .fy-lab-card__actions .btn.sm {
-      width: auto;
-      min-height: 40px;
-    }
-    #page-lab-orders .fy-lab-card__actions select {
       width: 100%;
       min-height: 44px;
-      font-size: 16px;
-      margin-bottom: 6px;
     }
-    #page-lab-orders .fy-lab-card__job-label {
+    #page-lab-orders .fy-lab-card__actions select,
+    #page-lab-orders .fy-lab-card__actions .fy-lab-status-select {
+      width: 100% !important;
+      min-width: 0 !important;
+      min-height: 44px;
+      font-size: 16px;
+      margin-bottom: 0;
+    }
+    #page-lab-orders .fy-lab-card__job-label,
+    #page-lab-orders .fy-lab-job-label {
       font-size: 11px;
       font-weight: 600;
       color: var(--text2);
-      margin: 10px 0 6px;
+      margin: 10px 0 8px;
       text-transform: uppercase;
       letter-spacing: 0.04em;
+      line-height: 1.35;
     }
-    #page-lab-orders .fy-lab-card__actions-row {
+    #page-lab-orders .fy-lab-card__actions-row,
+    #page-lab-orders .fy-lab-action-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+    }
+    #page-lab-orders .fy-lab-job-block {
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    #page-lab-orders .fy-lab-job-block:last-child {
+      padding-bottom: 0;
+      margin-bottom: 0;
+      border-bottom: none;
+    }
+    #page-lab-orders .fy-lab-intake-btns,
+    #page-lab-orders .fy-lab-status-row,
+    #page-lab-orders .fy-lab-bypass-row {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      width: 100%;
+    }
+    #page-lab-orders .fy-lab-intake-row {
       display: flex;
       flex-direction: column;
       gap: 8px;
+      width: 100%;
+    }
+    #page-lab-orders .fy-lab-action-hint {
+      font-size: 11px;
+      color: var(--text3);
+      line-height: 1.45;
+      margin-top: 4px;
+    }
+    #page-lab-orders .fy-lab-done-badge {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--green);
+      background: var(--greenL);
+      padding: 8px 10px;
+      border-radius: 8px;
+      text-align: center;
     }
     #page-lab-orders .fy-lab-empty {
       text-align: center;
@@ -555,6 +768,13 @@
       background: var(--card);
       border: 1px dashed var(--border);
       border-radius: 12px;
+      width: 100%;
+    }
+    #page-lab-orders .fy-lab-empty .empty {
+      padding: 16px 8px;
+    }
+    #page-lab-orders .fy-lab-empty .btn {
+      min-height: 44px;
     }
   }
   .label-sm { font-size:11px; color:var(--text2); text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px; }
@@ -851,9 +1071,8 @@
   .tbl-colour-row td:first-child { padding-left:28px !important; }
 
   /* BARCODE PRINT MODAL */
-  .bc-sku-row { display:flex; align-items:center; gap:8px; padding:7px 12px; border-bottom:1px solid var(--border); font-size:12.5px; }
+  .bc-sku-row { display:flex; align-items:flex-start; gap:8px; padding:9px 14px; border-bottom:1px solid var(--border); font-size:12.5px; }
   .bc-sku-row:last-child { border-bottom:none; }
-  .bc-sku-row input[type=checkbox] { width:15px; height:15px; cursor:pointer; flex-shrink:0; }
   .bc-sku-code { font-family:'JetBrains Mono',monospace; font-weight:600; font-size:11.5px; }
   .bc-sku-info { font-size:11px; color:var(--text2); }
   .bc-label-row { display:flex; gap:4px; margin-bottom:4px; flex-wrap:nowrap; }
@@ -1145,15 +1364,36 @@
   .menu-toggle { display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:8px; background:var(--bg); border:1.5px solid var(--border); cursor:pointer; flex-shrink:0; flex-direction:column; padding:0; }
   .menu-toggle span { display:block; width:16px; height:2px; border-radius:2px; background:var(--text1); transition:all .2s; }
   .menu-toggle span:nth-child(2) { margin:3px 0; }
-  .sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:99; }
+  .sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(15,30,53,0.45); z-index:150; }
   .sidebar-overlay.open { display:block; }
 
   /* ── RESPONSIVE BREAKPOINTS ─────────────────────────────────────────────────── */
+  @media (max-width:1024px) {
+    body.cosmos-app-shell .sidebar {
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      position: fixed;
+      z-index: 200;
+      pointer-events: none;
+    }
+    body.cosmos-app-shell .sidebar.open {
+      transform: translateX(0);
+      pointer-events: auto;
+      box-shadow: 8px 0 28px rgba(15, 30, 53, 0.28);
+      z-index: 210;
+    }
+    body.cosmos-app-shell .sidebar-overlay.open {
+      z-index: 150;
+    }
+    body.cosmos-app-shell .main {
+      margin-left: 0 !important;
+    }
+    body.cosmos-app-shell .menu-toggle {
+      display: flex;
+    }
+  }
+
   @media (max-width:768px) {
-    .sidebar { transform:translateX(-100%); transition:transform .25s ease; position:fixed; z-index:200; height:100vh; }
-    .sidebar.open { transform:translateX(0); }
-    .main { margin-left:0 !important; }
-    .menu-toggle { display:flex; }
     .topbar { padding:0 14px; gap:10px; }
     .page { padding:14px !important; }
     .pt { font-size:17px; }
