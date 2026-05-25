@@ -1046,6 +1046,13 @@ async function createOrderInTransaction(transaction, {
   appliedOfferId = null,
   inventoryDeferred = false
 }) {
+  const customerId = value && value.customer_id != null ? Number(value.customer_id) : null
+  if (!Number.isFinite(customerId) || customerId < 1) {
+    const err = new Error('Customer is required to create an order.')
+    err.statusCode = 400
+    throw err
+  }
+
   const t = tableNames(mode)
   const linesNormalized = normalizeIncomingPosLinesWithPairs(value.lines)
   const valueNorm = { ...value, lines: linesNormalized }
@@ -1092,7 +1099,7 @@ async function createOrderInTransaction(transaction, {
 
   const rIns = new sql.Request(transaction)
   rIns.input('store_id', sql.Int, storeId)
-  rIns.input('customer_id', sql.Int, value.customer_id || null)
+  rIns.input('customer_id', sql.Int, customerId)
   rIns.input('created_by_user_id', sql.Int, employeeId || null)
   rIns.input('order_no', sql.NVarChar(50), orderNo)
   rIns.input('order_source', sql.NVarChar(20), value.order_source || 'POS')

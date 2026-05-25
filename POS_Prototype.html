@@ -17,7 +17,7 @@
 <script src="/js/storeos-pwa.js?v=20260523-pwa-sw-v5" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260523-cart-bucket" defer></script>
-<script src="/js/pos.js?v=storeos-20260523-unit-search-b2" defer></script>
+<script src="/js/pos.js?v=storeos-20260528-partial-payment-success" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -610,7 +610,7 @@
       <div id="cust-results" class="pos-cust-results" role="list" aria-live="polite"></div>
     </section>
     <section class="pos-cust-section">
-      <div class="pos-ob-section-label">NEW WALK-IN</div>
+      <div class="pos-ob-section-label">NEW CUSTOMER</div>
       <div class="pos-cust-form">
         <label class="pos-field-label" for="cust-new-name">Full name</label>
         <input id="cust-new-name" class="pos-search-input" type="text" autocomplete="name" aria-label="Customer full name">
@@ -825,6 +825,7 @@
       <div class="pos-confirm-check" aria-hidden="true">✓</div>
       <div id="confirm-title" class="pos-confirm-title">Order placed!</div>
       <div id="confirm-order-no" class="pos-confirm-sub">Order #--</div>
+      <div id="confirm-balance-due" class="pos-confirm-sub" style="display:none;color:var(--gold);font-weight:600"></div>
     </div>
 
     <div class="pos-confirm-summary-card">
@@ -847,6 +848,7 @@
         <span aria-hidden="true">🖨</span>
         <span>Print Bill</span>
       </button>
+      <button type="button" id="btn-confirm-collect-balance" class="btn primary" style="display:none" tabindex="0">Collect balance</button>
       <button type="button" id="btn-confirm-new-order" class="pos-confirm-action-new" tabindex="0">
         <span aria-hidden="true">＋</span>
         <span>New Order</span>
@@ -1035,7 +1037,7 @@
         <div id="cust-picker-results" class="pos-cust-results pos-cust-results--picker" role="list" aria-live="polite"></div>
       </section>
       <section class="pos-cust-section pos-cust-section--picker">
-        <div class="pos-ob-section-label">NEW WALK-IN</div>
+        <div class="pos-ob-section-label">NEW CUSTOMER</div>
         <div class="pos-cust-form">
           <label class="pos-field-label" for="cust-picker-new-name">Full name</label>
           <input id="cust-picker-new-name" class="pos-search-input" type="text" autocomplete="name" aria-label="Customer full name">

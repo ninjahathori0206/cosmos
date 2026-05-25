@@ -385,7 +385,7 @@ const posOrderLineItemSchema = Joi.object({
 })
 
 const createOrderSchema = Joi.object({
-  customer_id:      Joi.number().integer().positive().allow(null),
+  customer_id:      Joi.number().integer().positive().required(),
   order_source:     Joi.string().max(20).default('POS'),
   rx_snapshot:      Joi.object().allow(null),
   discount_amount:  Joi.number().min(0).default(0),

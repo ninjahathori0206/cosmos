@@ -872,6 +872,7 @@
         void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
       }
       renderCartCustomerRef()
+      syncCustomerPickerBannerAndActions()
       return
     }
     posSelectedCustomerId = null
@@ -885,6 +886,8 @@
     } else {
       obRecalcTotals()
     }
+    renderCartCustomerRef()
+    syncCustomerPickerBannerAndActions()
   }
 
   function clearPosCustomerSelection() {
@@ -900,6 +903,7 @@
       obRecalcTotals()
     }
     renderCartCustomerRef()
+    syncCustomerPickerBannerAndActions()
   }
 
   function fmtOfferDateIso(v) {
@@ -1028,6 +1032,7 @@
   function renderCartCustomerRef() {
     const body = document.getElementById('pos-lk-cart-customer-body')
     if (!body) return
+    body.classList.remove('pos-lk-cart-cust--required')
     const snap = posSelectedCustomerSnapshot
     if (snap && posSelectedCustomerId) {
       const phoneRow = snap.phone
@@ -1037,21 +1042,25 @@
         '<div class="pos-lk-cart-cust-name">' + escapeHtml(snap.full_name) + '</div>' +
         phoneRow +
         '<div class="pos-lk-cart-cust-meta">Customer ID · ' + escapeHtml(String(snap.customer_id)) + '</div>' +
-        '<button type="button" class="pos-lk-text-link" id="pos-cart-remove-customer" style="margin-top:10px;padding:0">Remove customer · walk-in</button>'
-      const rm = document.getElementById('pos-cart-remove-customer')
-      if (rm) {
-        rm.addEventListener('click', function () {
-          clearPosCustomerSelection()
-          renderCartCustomerRef()
-          if (typeof cosmosToastInfo === 'function') {
-            cosmosToastInfo('Customer removed. Cart uses walk-in pricing and offers.')
-          }
+        '<button type="button" class="pos-lk-text-link" id="pos-cart-change-customer" style="margin-top:10px;padding:0">Change customer</button>'
+      const ch = document.getElementById('pos-cart-change-customer')
+      if (ch) {
+        ch.addEventListener('click', function () {
+          openPosCustomerPickerModal()
         })
       }
       return
     }
     body.innerHTML =
-      '<div class="pos-lk-cart-cust-walkin-title">Walk-in</div>'
+      '<div style="font-size:14px;font-weight:600;color:var(--text1);margin-bottom:6px">Customer required at checkout</div>' +
+      '<div style="font-size:12px;color:var(--text2);margin-bottom:12px">Select or register a customer before payment.</div>' +
+      '<button type="button" class="btn sm primary" id="pos-cart-select-customer">Select customer</button>'
+    const sel = document.getElementById('pos-cart-select-customer')
+    if (sel) {
+      sel.addEventListener('click', function () {
+        openPosCustomerPickerModal()
+      })
+    }
   }
 
   function selectedOfferMeta() {
@@ -3196,11 +3205,12 @@
       } else if (posSelectedCustomerId) {
         banner.textContent = 'Selected customer id: ' + posSelectedCustomerId
       } else {
-        banner.textContent = 'No customer selected — optional for walk-in.'
+        banner.textContent = 'Customer required before payment.'
       }
     }
     if (doneBtn) {
-      doneBtn.textContent = posSelectedCustomerId ? 'Continue to cart' : 'Skip & continue to cart'
+      doneBtn.textContent = 'Continue to cart'
+      doneBtn.disabled = !posSelectedCustomerId
     }
   }
 
@@ -3690,7 +3700,7 @@
 
   // ── Lens step 2 — Pencil 04-add-power: customer card + 4 power options ───
   function refreshLensCustomerBanner() {
-    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected customer #' + posSelectedCustomerId : 'Walk-in customer')
+    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected customer #' + posSelectedCustomerId : 'No customer selected')
     const nameEl = document.getElementById('pos-lk-customer-name')
     const av = document.querySelector('#pos-lk-customer-card .pos-lk-customer-avatar')
     if (nameEl) nameEl.textContent = customerName
@@ -3698,8 +3708,8 @@
   }
 
   function renderLensStep2AddPower(body) {
-    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected customer #' + posSelectedCustomerId : 'Walk-in customer')
-    const initial = customerName ? customerName.trim().charAt(0).toUpperCase() : 'W'
+    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected customer #' + posSelectedCustomerId : 'No customer selected')
+    const initial = customerName ? customerName.trim().charAt(0).toUpperCase() : '?'
     const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
     const hasPkgAddons = !isInstantFrame && lensWizard.pkg && (lensWizard.pkg.addons || []).length
     const showAddonsOnly = Boolean(hasPkgAddons && lensWizard.subPhase === 'addons')
@@ -3727,10 +3737,7 @@
           '<button type="button" id="pos-lk-cust-btn" class="pos-search-btn">Search</button>' +
         '</div>' +
         '<div class="pos-lk-cust-results" id="pos-lk-cust-results"></div>' +
-        '<div style="font-size:12px;color:var(--text2);margin-top:4px">Walk-in is allowed if no customer is linked. Enter at least 2–3 digits of a phone number or the start of a name when searching.</div>' +
-        '<div style="margin-top:12px">' +
-          '<button type="button" class="pos-lk-text-link" id="pos-lk-walk-in-btn">Remove customer · continue as walk-in</button>' +
-        '</div>' +
+        '<div style="font-size:12px;color:var(--text2);margin-top:4px">Search by phone or name (at least 2–3 digits or the start of a name). A customer is required before payment.</div>' +
       '</div>')
     }
 
@@ -3816,17 +3823,6 @@
     if (change && dd) {
       change.addEventListener('click', function () {
         dd.style.display = dd.style.display === 'none' ? 'flex' : 'none'
-      })
-    }
-    const walkInLens = document.getElementById('pos-lk-walk-in-btn')
-    if (walkInLens) {
-      walkInLens.addEventListener('click', function () {
-        closeLensNewCustomerModal()
-        clearPosCustomerSelection()
-        refreshLensCustomerBanner()
-        if (dd) dd.style.display = 'none'
-        if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Customer removed for this order — walk-in.')
-        maybeRefreshCartSidebar()
       })
     }
     const ddBtn = document.getElementById('pos-lk-cust-btn')
@@ -4239,9 +4235,10 @@
         const subtotalForAdv = Number(pt.subtotal_amount) || total
         payMinimumAdvanceAmount = Math.round(subtotalForAdv * (payMinimumAdvancePct / 100) * 100) / 100
         if (payMinimumAdvanceAmount > 0.009) {
-          paySessionSnapshot = { stage: 'ADVANCE', amount: payMinimumAdvanceAmount }
+          paySessionSnapshot = { stage: 'ADVANCE', amount: total }
         }
       }
+      const labAdvMode = labLike && payMinimumAdvanceAmount > 0.009
       const linesEl = document.getElementById('pay-summary-lines')
       if (linesEl) {
         let lh = ''
@@ -4273,13 +4270,54 @@
       if (totEl) totEl.textContent = formatRupees(total)
       const amtInput = document.getElementById('pay-amount-input')
       const amtSpan = document.getElementById('pay-cta-amt')
+      const amtBadge = document.getElementById('pay-advance-badge')
+      const amtLabel = document.getElementById('pay-amount-stage-label')
+      const amtHint = document.getElementById('pay-amount-hint')
       const collectAmt = Math.max(0, Number(paySessionSnapshot.amount) || 0)
       if (amtInput) {
         amtInput.value = collectAmt
         amtInput.min = payMinimumAdvanceAmount > 0 ? payMinimumAdvanceAmount : 1
         amtInput.max = total
+        amtInput.oninput = function () {
+          const v = Math.max(0, Number(this.value) || 0)
+          paySessionSnapshot.amount = v
+          if (amtSpan) amtSpan.textContent = formatRupees(v)
+          if (labAdvMode) {
+            paySessionSnapshot.stage = 'ADVANCE'
+            if (amtBadge) amtBadge.style.display = v < total - 0.009 ? '' : 'none'
+          } else {
+            paySessionSnapshot.stage = 'FULL'
+            if (amtBadge) amtBadge.style.display = 'none'
+          }
+          if (amtLabel) {
+            amtLabel.textContent =
+              paySessionSnapshot.stage === 'ADVANCE' ? 'Advance to collect' : 'Amount to collect'
+          }
+        }
       }
       if (amtSpan) amtSpan.textContent = formatRupees(collectAmt)
+      if (amtBadge) {
+        amtBadge.style.display = labAdvMode && collectAmt < total - 0.009 ? '' : 'none'
+      }
+      if (amtLabel) {
+        amtLabel.textContent =
+          paySessionSnapshot.stage === 'ADVANCE' ? 'Advance to collect' : 'Amount to collect'
+      }
+      if (amtHint) {
+        if (labAdvMode) {
+          amtHint.innerHTML =
+            'Min advance: <strong>' +
+            formatRupees(payMinimumAdvanceAmount) +
+            '</strong> (' +
+            Math.round(payMinimumAdvancePct) +
+            '%) · Full: <strong>' +
+            formatRupees(total) +
+            '</strong>'
+          amtHint.style.display = ''
+        } else {
+          amtHint.style.display = 'none'
+        }
+      }
       if (el) el.innerHTML = ''
       await loadPosOffersPanel(session, 'pos-lk-pay-offers-list', null, true)
       return
@@ -4510,6 +4548,48 @@
     await loadPosOffersPanel(session, 'pos-lk-pay-offers-list', null, true)
   }
 
+  function completePosCheckoutAfterPayment(opts) {
+    const payRes = opts.payRes
+    const data = payRes && payRes.data ? payRes.data : payRes
+    const ps = data && data.payment_summary ? data.payment_summary : null
+    const balanceDue = ps ? Math.max(0, Number(ps.amount_remaining) || 0) : 0
+    const deliveryDateEl = document.getElementById('pay-delivery-date')
+    const deliveryDate = deliveryDateEl ? deliveryDateEl.value : ''
+    const phone =
+      opts.customerPhone ||
+      (posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.phone) ||
+      ''
+    lastPaymentReceipt = {
+      order_id: opts.receiptOrderId,
+      order_no: opts.receiptOrderNo,
+      amount: opts.amount,
+      method: opts.method,
+      external_ref: opts.external_ref,
+      delivery_mode: posDeliveryMode,
+      delivery_date: deliveryDate,
+      customer_phone: phone,
+      invoice_no: (data && data.invoice_no) || null,
+      balance_due: balanceDue
+    }
+    if (balanceDue > 0.009 && typeof cosmosToastInfo === 'function') {
+      cosmosToastInfo(
+        'Balance due: ' + formatRupees(balanceDue) + ' — collect from Orders when ready.'
+      )
+    }
+    lastCreatedOrder = null
+    pendingCheckout = null
+    paySessionSnapshot = { stage: 'FULL', amount: 0 }
+    forceBalanceSettlement = false
+    obCart = []
+    posSelectedOfferId = null
+    clearCartStorage()
+    saveCart()
+    obRenderCart()
+    const session = getPosSession()
+    if (session && session.token) refreshCartSidebar(session)
+    navigate(POS_ROUTES.CONFIRM)
+  }
+
   async function submitPayment() {
     if (submitPayment._inFlight) return
     submitPayment._inFlight = true
@@ -4580,6 +4660,8 @@
         const created = payRes && payRes.data ? payRes.data : payRes
         receiptOrderId = created.order_id
         receiptOrderNo = created.order_no
+        receiptCustomerPhone =
+          (posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.phone) || ''
         pendingCheckout = null
         if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Order created and payment recorded')
       } else {
@@ -4591,51 +4673,15 @@
         if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Payment recorded')
       }
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
-      // For ADVANCE stage: check if full balance is now settled (amount_remaining ≈ 0).
-      // If so, fall through to confirm screen. Otherwise, stay on payment for balance collection.
-      if (paySessionSnapshot.stage === 'ADVANCE') {
-        const updatedSummary = payRes && payRes.data && payRes.data.payment_summary
-        const stillDue = updatedSummary ? (Number(updatedSummary.amount_remaining) || 0) : -1
-        if (stillDue > 0.009) {
-          if (typeof cosmosToastInfo === 'function') {
-            cosmosToastInfo('Advance saved. Balance due: ' + formatRupees(stillDue) + ' — collect when order is ready.')
-          }
-          const created = payRes && payRes.data ? payRes.data : null
-          if (created && created.order_id) {
-            lastCreatedOrder = {
-              order_id: created.order_id,
-              order_no: created.order_no,
-              total_amount: created.total_amount,
-              order_kind: created.order_kind,
-              customer_phone: receiptCustomerPhone || ''
-            }
-            pendingCheckout = null
-          }
-          void showPaymentScreen(session)
-          return
-        }
-        // stillDue === 0 or unknown → treat as fully paid, go to confirm
-      }
-      const deliveryDateEl = document.getElementById('pay-delivery-date')
-      const deliveryDate = deliveryDateEl ? deliveryDateEl.value : ''
-      lastPaymentReceipt = {
-        order_id: receiptOrderId,
-        order_no: receiptOrderNo,
+      completePosCheckoutAfterPayment({
+        payRes: payRes,
+        receiptOrderId: receiptOrderId,
+        receiptOrderNo: receiptOrderNo,
         amount: amt,
         method: method,
         external_ref: externalRef,
-        delivery_mode: posDeliveryMode,
-        delivery_date: deliveryDate,
-        customer_phone: receiptCustomerPhone,
-        invoice_no: (payRes && payRes.data && payRes.data.invoice_no) || (payRes && payRes.invoice_no) || null
-      }
-      lastCreatedOrder = null
-      paySessionSnapshot = { stage: 'FULL', amount: 0 }
-      forceBalanceSettlement = false
-      obCart = []
-      posSelectedOfferId = null
-      clearCartStorage()
-      navigate(POS_ROUTES.CONFIRM)
+        customerPhone: receiptCustomerPhone
+      })
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
@@ -4651,10 +4697,39 @@
       navigate(POS_ROUTES.CATALOGUE)
       return
     }
+    const balanceDue = Math.max(0, Number(receipt.balance_due) || 0)
+    const titleEl = document.getElementById('confirm-title')
+    const balanceEl = document.getElementById('confirm-balance-due')
+    const collectBalBtn = document.getElementById('btn-confirm-collect-balance')
     const noEl = document.getElementById('confirm-order-no')
     const amtEl = document.getElementById('confirm-amount')
     const mEl = document.getElementById('confirm-method')
+    if (titleEl) {
+      titleEl.textContent =
+        balanceDue > 0.009 ? 'Order placed — advance received' : 'Order placed!'
+    }
     if (noEl) noEl.textContent = 'Order #' + (receipt.order_no || '--')
+    if (balanceEl) {
+      if (balanceDue > 0.009) {
+        balanceEl.textContent = 'Balance due: ' + formatRupees(balanceDue) + ' (collect when ready or from Orders)'
+        balanceEl.style.display = ''
+      } else {
+        balanceEl.textContent = ''
+        balanceEl.style.display = 'none'
+      }
+    }
+    if (collectBalBtn) {
+      if (balanceDue > 0.009 && receipt.order_id) {
+        collectBalBtn.style.display = ''
+        collectBalBtn.disabled = false
+        collectBalBtn.onclick = function () {
+          void window.resumePosOrderPayment(receipt.order_id)
+        }
+      } else {
+        collectBalBtn.style.display = 'none'
+        collectBalBtn.onclick = null
+      }
+    }
     if (amtEl) amtEl.textContent = formatRupees(receipt.amount || 0)
     if (mEl) {
       const methodLabel = String(receipt.method || '').toUpperCase()
@@ -5522,8 +5597,6 @@
     setCartCouponOverlayOpen(false)
     if (btnCartCustomerChange) {
       btnCartCustomerChange.addEventListener('click', function () {
-        clearPosCustomerSelection()
-        renderCartCustomerRef()
         openPosCustomerPickerModal()
       })
     }
@@ -5696,6 +5769,15 @@
   async function handleProceedToPayment() {
     if (obCart.length === 0) {
       if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Your cart is empty.')
+      return
+    }
+    if (!posSelectedCustomerId) {
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn('Select or create a customer before payment.')
+      }
+      const custBody = document.getElementById('pos-lk-cart-customer-body')
+      if (custBody) custBody.classList.add('pos-lk-cart-cust--required')
+      openPosCustomerPickerModal()
       return
     }
     const unbound = obCart.filter(function (l) {
@@ -6979,6 +7061,13 @@
     custDismiss && custDismiss.addEventListener('click', closePosCustomerPickerModal)
     custCancel && custCancel.addEventListener('click', closePosCustomerPickerModal)
     custDone && custDone.addEventListener('click', function () {
+      if (!posSelectedCustomerId) {
+        if (typeof cosmosToastWarn === 'function') {
+          cosmosToastWarn('Select or create a customer before continuing.')
+        }
+        syncCustomerPickerBannerAndActions()
+        return
+      }
       closePosCustomerPickerModal()
       var s = getPosSession()
       if (s && s.token) refreshCartSidebar(s)

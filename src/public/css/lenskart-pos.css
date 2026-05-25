@@ -1350,6 +1350,18 @@ body.pos-lk-flow .pos-ob-proceed-btn {
   line-height: 1.25;
 }
 
+#pos-lk-cart-customer-body.pos-lk-cart-cust--required {
+  outline: 2px solid var(--gold);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--goldL);
+}
+
+.pos-lens-newcust-btn-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .pos-lk-offers-toggle {
   width: 100%;
   display: flex;
