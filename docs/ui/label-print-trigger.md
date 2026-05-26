@@ -12,7 +12,7 @@
 
 1. **Select products** — tick the rows you want, or use **Print all labels** for every SKU on the purchase.
 2. **Choose label type** — pick the sticker size that matches your roll (Large roll is the usual default).
-3. **Check the preview** — on the right, confirm the QR and text look right.
+3. **Check the preview** — on the right, confirm the QR and text look right. Each QR encodes **only** the 7-digit unit barcode (numeric, compact QR settings).
 4. **Print**
    - Click **Connect label printer** once if you use the USB sticker printer.
    - Click **Print now**.
@@ -43,7 +43,7 @@ You do **not** need to change numbers in “Advanced printer settings” unless 
 ## If something looks wrong
 
 - Wrong sticker size → change **Choose label type** and check preview again.
-- Missing QR → unit barcode may be missing; ask warehouse to backfill units, then try again.
+- Missing QR → SKU has no **7-digit unit barcode**; run unit backfill or re-generate SKUs, then try again. Labels without a valid 7-digit code are skipped (QR never falls back to PID or SKU text).
 - Blank dropdown → wait a moment; built-in sizes load even if the server is slow.
 
 ## For managers / IT only

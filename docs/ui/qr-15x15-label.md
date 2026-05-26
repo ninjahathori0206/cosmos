@@ -33,8 +33,8 @@ No non-print tail. One label per unit; one label per print row (`labelsPerRow: 1
 
 | Field | Source | Notes |
 |-------|--------|--------|
-| QR payload | `unit_barcode` (7 digits) or unit PID | Same as eyewear strip / existing batch expand |
-| Right column | `unit_barcode` | Duplicate of QR payload for human read at arm’s length |
+| QR payload | `unit_barcode` — **exactly 7 digits** | No PID, SKU code, or legacy barcode fallback; rows without a valid code are excluded from print |
+| Right column | Same 7-digit `unit_barcode` | Duplicate of QR payload for human read at arm’s length |
 | Bottom — brand | `home_brands.brand_code` via product `home_brand_id` | Uppercase as stored |
 | Bottom — brand fallback | First **3 letters** of `brand_name`, uppercase | When `brand_code` empty/missing (**decision B**) |
 | Bottom — price | `sale_price` as **integer** | No ₹, no decimals in label text (e.g. `800`) |
@@ -66,6 +66,12 @@ Warehouse publish path (`handleWarehouseReady`) uses the same modal and format d
 - **USB:** TSPL2 (TSC P210) — `SIZE 15 mm, 15 mm`
 - **Preview:** HTML/CSS mm layout in modal (`layoutType: 'compact'`)
 - **Fallback:** Browser print HTML (same as other formats)
+
+### QR encoding (all label formats)
+
+- **Content:** 7-digit numeric `unit_barcode` only (e.g. `1234567`).
+- **Raster (preview / browser print):** `QRCode.toDataURL` with `errorCorrectionLevel: 'L'`, `version: 1`, `margin: 2`, `width: 120` (display size still follows `qrVisualSizeMm` in CSS).
+- **TSPL:** `QRCODE …,L,<cell>,A,0,"1234567"` — same 7-digit string quoted in the command.
 
 ### TSPL notes (implementation)
 

@@ -6667,6 +6667,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   let _qrCodeLoader = null;
   const _BC_QR_CACHE_MAX = 500;
   const _bcQrCache = new Map();
+  const BC_QR_UNIT_RE = /^\d{7}$/;
+  const BC_QR_RENDER_OPTS = Object.freeze({
+    errorCorrectionLevel: 'L',
+    version: 1,
+    margin: 2,
+    width: 120
+  });
 
   function _bcQrCacheSet(key, value) {
     if (_bcQrCache.size >= _BC_QR_CACHE_MAX) {
@@ -6716,15 +6723,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     return _qrCodeLoader;
   }
 
-  async function _bcQrDataUrl(code, px) {
-    const key = `${code}|${px}`;
+  function _bcNormalizeQrUnitCode(raw) {
+    const digits = String(raw == null ? '' : raw).replace(/\D/g, '');
+    return BC_QR_UNIT_RE.test(digits) ? digits : null;
+  }
+
+  async function _bcQrDataUrl(code) {
+    const seven = _bcNormalizeQrUnitCode(code);
+    if (!seven) throw new Error('QR requires a 7-digit unit barcode');
+    const key = '7|' + seven;
     if (_bcQrCache.has(key)) return _bcQrCache.get(key);
     if (typeof QRCode === 'undefined') await loadBcQrLib();
-    const dataUrl = await QRCode.toDataURL(String(code), {
-      width: px,
-      errorCorrectionLevel: 'M',
-      margin: 1
-    });
+    const dataUrl = await QRCode.toDataURL(seven, Object.assign({}, BC_QR_RENDER_OPTS));
     _bcQrCacheSet(key, dataUrl);
     return dataUrl;
   }
@@ -6740,10 +6750,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       idx += BATCH;
       Promise.all(slice.map(async (el) => {
         const code = el.getAttribute('data-qr-code');
-        const size = parseInt(el.getAttribute('data-qr-px'), 10) || 60;
-        if (!code) return;
+        if (!code || !_bcNormalizeQrUnitCode(code)) {
+          el.style.background = 'var(--redL)';
+          el.title = 'QR requires a 7-digit unit barcode';
+          return;
+        }
         try {
-          const dataUrl = await _bcQrDataUrl(code, size);
+          const dataUrl = await _bcQrDataUrl(code);
           const img = document.createElement('img');
           img.src = dataUrl;
           img.className = 'qr-img';
@@ -6769,14 +6782,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function _bcQrPayload(sk) {
-    const ub = sk.unit_barcode != null && String(sk.unit_barcode).trim() !== '' ? String(sk.unit_barcode).trim() : '';
-    if (/^\d{7}$/.test(ub)) return ub;
-    const sku = sk.sku_code || '';
-    const p = sk.pid != null && String(sk.pid).trim() !== '' ? String(sk.pid) : '';
-    const b = sk.barcode != null && String(sk.barcode).trim() !== '' ? String(sk.barcode) : '';
-    if (p) return p;
-    if (b && b !== sku) return b;
-    return sku;
+    return _bcNormalizeQrUnitCode(sk && sk.unit_barcode) || '';
+  }
+
+  function _bcFilterSkusForQrLabels(skus) {
+    const ready = [];
+    let skipped = 0;
+    (skus || []).forEach(function (sk) {
+      if (_bcQrPayload(sk)) ready.push(sk);
+      else skipped += 1;
+    });
+    return { ready: ready, skipped: skipped };
   }
 
   async function _bcExpandSkusWithUnits(skus) {
@@ -6809,13 +6825,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function _bcIsUnitRow(sk) {
-    const ub = sk.unit_barcode != null ? String(sk.unit_barcode).trim() : '';
-    return /^\d{7}$/.test(ub);
+    return !!_bcQrPayload(sk);
   }
 
   function _bcRowCopies(sk) {
-    if (_bcIsUnitRow(sk)) return 1;
-    return Math.max(1, parseInt(String(sk.quantity || 1), 10) || 1);
+    return _bcIsUnitRow(sk) ? 1 : 0;
   }
 
   window.openBarcodeModal = async function(skus, opts) {
@@ -6833,15 +6847,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       else alert(err.message || 'Failed to load print libraries.');
       return;
     }
-    _bcSkus = await _bcExpandSkusWithUnits(skus);
-    if (!_bcSkus.length) {
-      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels to print. Go back and select products first.');
-      return;
+    const expanded = await _bcExpandSkusWithUnits(skus);
+    const qrFilter = _bcFilterSkusForQrLabels(expanded);
+    _bcSkus = qrFilter.ready;
+    if (qrFilter.skipped > 0 && typeof cosmosToastWarn === 'function') {
+      cosmosToastWarn(
+        qrFilter.ready.length + ' label' + (qrFilter.ready.length !== 1 ? 's' : '') +
+        ' ready; ' + qrFilter.skipped + ' skipped (no 7-digit unit barcode).'
+      );
     }
-    if (!_bcSkus.some(function (sk) { return sk.unit_barcode; }) && skus.some(function (sk) { return (Number(sk.quantity) || 0) > 0; })) {
+    if (!_bcSkus.length) {
       if (typeof cosmosToastWarn === 'function') {
-        cosmosToastWarn('No unit barcodes for this SKU. Run maintenance backfill or re-generate SKU, then print again.');
+        cosmosToastWarn('No labels with a 7-digit unit barcode. Run unit backfill or re-generate SKUs, then try again.');
       }
+      return;
     }
 
     if (_bcPreviewDebounceTimer) {
@@ -6880,13 +6899,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     _bcSchedulePersistCalibration();
 
   };
-  // Build list of {code (pid for QR), label (sku_code for text), copies} — full batch, no modal selection
+  // Build list of {code: 7-digit unit barcode, label: sku_code for text, copies}
   function _bcSelectedItems() {
-    return _bcSkus.map((sk) => ({
-      code: _bcQrPayload(sk),
-      label: sk.sku_code || '',
-      copies: _bcRowCopies(sk)
-    }));
+    return _bcSkus.map(function (sk) {
+      const code = _bcQrPayload(sk);
+      if (!code) return null;
+      return {
+        code: code,
+        label: sk.sku_code || '',
+        copies: _bcRowCopies(sk)
+      };
+    }).filter(Boolean);
   }
 
   function _bcTruncateStripLine(text, maxLen) {
@@ -6911,29 +6934,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   function _bcSelectedStripItems() {
     return _bcSkus.map(function (sk) {
       const code = _bcQrPayload(sk);
-      const unitText = /^\d{7}$/.test(String(code)) ? String(code) : String(sk.unit_barcode || code || '').trim();
+      if (!code) return null;
       return {
         code: code,
-        unitText: unitText,
+        unitText: code,
         brand: _bcTruncateStripLine(_bcStripBrandLine(sk) || '—', 22),
         model: _bcTruncateStripLine(_bcStripModelLine(sk), 26),
         mrp: _bcTruncateStripLine(_bcStripMrpLine(sk), 18),
-        copies: _bcRowCopies(sk)
+        copies: 1
       };
-    });
+    }).filter(Boolean);
   }
 
   function _bcSelectedCompactItems() {
     return _bcSkus.map(function (sk) {
       const code = _bcQrPayload(sk);
-      const unitText = /^\d{7}$/.test(String(code)) ? String(code) : String(sk.unit_barcode || code || '').trim();
+      if (!code) return null;
       return {
         code: code,
-        unitText: unitText,
+        unitText: code,
         bottomLine: _bcTruncateStripLine(_bcCompactBottomLine(sk), 14),
-        copies: _bcRowCopies(sk)
+        copies: 1
       };
-    });
+    }).filter(Boolean);
   }
 
   function _bcReadCompactLayoutMm() {
@@ -7995,8 +8018,8 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const flat = [];
     batches.forEach(function (row) { row.forEach(function (item) { if (item) flat.push(item); }); });
     await Promise.all(flat.map(async function (item) {
-      const key = item.code + '|' + qrPreviewPx;
-      const url = await _bcQrDataUrl(item.code, qrPreviewPx).catch(function () { return ''; });
+      const key = item.code;
+      const url = await _bcQrDataUrl(item.code).catch(function () { return ''; });
       printDataUrls.set(key, url);
     }));
 
@@ -8009,7 +8032,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
           rows += '<div style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm"></div>';
           continue;
         }
-        const dataUrl = printDataUrls.get(item.code + '|' + qrPreviewPx) || '';
+        const dataUrl = printDataUrls.get(item.code) || '';
         rows += '<div class="compact" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;display:flex;flex-direction:column;border:1px solid #ccc;box-sizing:border-box;page-break-inside:avoid">' +
           '<div style="display:flex;height:' + lay.contentH + 'mm">' +
           '<div style="width:' + lay.qrMainW + 'mm;padding:0.4mm;box-sizing:border-box;border-right:1px dashed #ccc">' +
@@ -8055,14 +8078,14 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
 
     const printDataUrls = new Map();
     await Promise.all(labels.map(async function (item) {
-      const key = `${item.code}|${qrPreviewPx}`;
-      const url = await _bcQrDataUrl(item.code, qrPreviewPx).catch(function () { return ''; });
+      const key = item.code;
+      const url = await _bcQrDataUrl(item.code).catch(function () { return ''; });
       printDataUrls.set(key, url);
     }));
 
     let rows = '';
     labels.forEach(function (item) {
-      const dataUrl = printDataUrls.get(`${item.code}|${qrPreviewPx}`) || '';
+      const dataUrl = printDataUrls.get(item.code) || '';
       rows += '<div class="compact" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;display:flex;flex-direction:column;margin-bottom:2mm;border:1px solid #ccc;box-sizing:border-box;page-break-inside:avoid">' +
         '<div style="display:flex;height:' + lay.contentH + 'mm">' +
         '<div style="width:' + lay.qrMainW + 'mm;padding:0.4mm;box-sizing:border-box;border-right:1px dashed #ccc">' +
@@ -8101,14 +8124,14 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
 
     const printDataUrls = new Map();
     await Promise.all(strips.map(async function (item) {
-      const key = `${item.code}|${qrPreviewPx}`;
-      const url = await _bcQrDataUrl(item.code, qrPreviewPx).catch(function () { return ''; });
+      const key = item.code;
+      const url = await _bcQrDataUrl(item.code).catch(function () { return ''; });
       printDataUrls.set(key, url);
     }));
 
     let rows = '';
     strips.forEach(function (item) {
-      const dataUrl = printDataUrls.get(`${item.code}|${qrPreviewPx}`) || '';
+      const dataUrl = printDataUrls.get(item.code) || '';
       rows += `<div class="strip" style="width:${lay.totalW}mm;height:${lay.labelH}mm;display:flex;margin-bottom:2mm;border:1px solid #ccc;box-sizing:border-box;page-break-inside:avoid">
         <div style="width:${lay.z1}mm;display:flex;align-items:center;gap:1mm;padding:0 1mm;box-sizing:border-box;border-right:1px dashed #ccc">
           <img src="${dataUrl}" style="width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;flex-shrink:0" alt="">
@@ -8155,8 +8178,8 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       }
       const allItems = batches.flat().filter(Boolean);
       await Promise.all(allItems.map(async (item) => {
-        const key = `${item.code}|${qrPreviewPx}`;
-        const url = await _bcQrDataUrl(item.code, qrPreviewPx).catch(() => '');
+        const key = item.code;
+        const url = await _bcQrDataUrl(item.code).catch(() => '');
         printDataUrls.set(key, url);
       }));
     }
@@ -8178,7 +8201,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
         const item = row[col];
         if (!item || !item.code) { cells.push('<td class="empty"></td>'); continue; }
         if (isQR) {
-          const dataUrl = printDataUrls.get(`${item.code}|${qrPreviewPx}`) || '';
+          const dataUrl = printDataUrls.get(item.code) || '';
           cells.push(`<td class="label-cell"><img src="${dataUrl}" class="qr-img"><div class="bc-txt">${_bcEsc(item.label)}</div></td>`);
         } else {
           const ac = String(item.code || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
