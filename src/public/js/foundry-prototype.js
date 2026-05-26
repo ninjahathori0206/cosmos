@@ -6970,6 +6970,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     return { labelW: labelW, labelH: labelH, bottom: bottom, rail: rail, contentH: contentH, qrMainW: qrMainW };
   }
 
+  /** One 6-up row on 109 mm continuous roll — browser @page size for fallback print. */
+  function _bcReadCompactMultiPageMm() {
+    const lay = _bcReadCompactLayoutMm();
+    const gp = _bcReadGapMm();
+    const mm = _bcReadMarginsMm();
+    const cols = _bcCompactColumnsPerRow();
+    const cfg = _bcGetActiveFormatConfig();
+    const computedW = mm.left + cols * lay.labelW + Math.max(0, cols - 1) * gp.colGap + mm.right;
+    const pageW = Number(cfg.pageWidthMm);
+    return {
+      pageW: Number.isFinite(pageW) && pageW > 0 ? pageW : computedW,
+      pageH: lay.labelH,
+      colGap: gp.colGap,
+      padLeft: mm.left
+    };
+  }
+
   function _bcReadStripLayoutMm() {
     const cfg = _bcGetActiveFormatConfig();
     const z1 = Number(cfg.zone1WidthMm) || 33;
@@ -7997,12 +8014,10 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
   // ── Browser-print fallback (generates printable HTML) ─────────────────
   async function _bcPrintFallbackCompactMulti(batches) {
     const lay = _bcReadCompactLayoutMm();
-    const gp = _bcReadGapMm();
+    const page = _bcReadCompactMultiPageMm();
     const cols = _bcCompactColumnsPerRow();
-    const dotsPerMm = _bcReadDotsPerMm();
     const { qrVisualSizeMm } = _bcReadQrConfig();
     const { textFontPt } = _bcReadTextConfig();
-    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
     const railPt = Math.max(2.5, textFontPt - 0.5);
     const bottomPt = Math.max(2.5, textFontPt);
 
@@ -8025,20 +8040,20 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
 
     let rows = '';
     batches.forEach(function (row) {
-      rows += '<div style="display:flex;flex-wrap:nowrap;gap:' + gp.colGap + 'mm;margin-bottom:' + (gp.rowGap || 2) + 'mm">';
+      rows += '<div class="bc-print-row" style="padding-left:' + page.padLeft + 'mm;gap:' + page.colGap + 'mm">';
       for (let col = 0; col < cols; col++) {
         const item = row[col];
         if (!item) {
-          rows += '<div style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm"></div>';
+          rows += '<div class="bc-label-cell" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm"></div>';
           continue;
         }
         const dataUrl = printDataUrls.get(item.code) || '';
-        rows += '<div class="compact" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;display:flex;flex-direction:column;border:1px solid #ccc;box-sizing:border-box;page-break-inside:avoid">' +
+        rows += '<div class="bc-label-cell compact" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm">' +
           '<div style="display:flex;height:' + lay.contentH + 'mm">' +
-          '<div style="width:' + lay.qrMainW + 'mm;padding:0.4mm;box-sizing:border-box;border-right:1px dashed #ccc">' +
+          '<div style="width:' + lay.qrMainW + 'mm;padding:0.4mm;box-sizing:border-box">' +
           '<img src="' + dataUrl + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm" alt="">' +
           '</div>' +
-          '<div style="width:' + lay.rail + 'mm;display:flex;align-items:center;justify-content:center;background:#f5f5f5">' +
+          '<div style="width:' + lay.rail + 'mm;display:flex;align-items:center;justify-content:center">' +
           '<span class="mono" style="font-size:' + railPt + 'pt;font-weight:600;writing-mode:vertical-rl">' + _bcEsc(item.unitText) + '</span>' +
           '</div></div>' +
           '<div style="height:' + lay.bottom + 'mm;display:flex;align-items:center;justify-content:center;border-top:1px dashed #ccc">' +
@@ -8048,14 +8063,24 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       rows += '</div>';
     });
 
+    const pageCss =
+      '@page{size:' + page.pageW + 'mm ' + page.pageH + 'mm;margin:0}' +
+      'html,body{margin:0;padding:0;width:' + page.pageW + 'mm;font-family:Arial,sans-serif}' +
+      '.bc-print-row{width:' + page.pageW + 'mm;height:' + page.pageH + 'mm;display:flex;flex-wrap:nowrap;align-items:flex-start;' +
+      'box-sizing:border-box;page-break-after:always;overflow:hidden}' +
+      '.bc-print-row:last-child{page-break-after:auto}' +
+      '.bc-label-cell{display:flex;flex-direction:column;box-sizing:border-box;flex-shrink:0}' +
+      '.mono{font-family:Consolas,monospace}' +
+      '@media print{.bc-label-cell{border:none!important}}';
+
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win) {
       if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Pop-up blocked. Please allow pop-ups and try again.');
       else alert('Pop-up blocked. Please allow pop-ups and try again.');
       return;
     }
-    win.document.write('<!DOCTYPE html><html><head><title>15×15 roll labels (6-up)</title>' +
-      '<style>@page{size:auto;margin:8mm}body{font-family:Arial,sans-serif;margin:0;padding:8mm}.mono{font-family:Consolas,monospace}</style></head>' +
+    win.document.write('<!DOCTYPE html><html><head><title>15×15 roll — ' + page.pageW + '×' + page.pageH + ' mm per row</title>' +
+      '<style>' + pageCss + '</style></head>' +
       '<body>' + rows + '<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body></html>');
     win.document.close();
   }
