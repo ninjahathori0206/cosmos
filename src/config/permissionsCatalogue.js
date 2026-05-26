@@ -88,7 +88,8 @@ const RAW_PERMISSION_GROUPS = [
     ['finance.payments.view', 'Payments — View'],
     ['finance.payments.create', 'Payments — Create'],
     ['finance.payments.edit', 'Payments — Edit / Void'],
-    ['finance.reports.view', 'Reports — View']
+    ['finance.reports.view', 'Reports — View'],
+    ['finance.invoices.view', 'Sales invoices — View all stores & share']
   ]],
   ['StorePilot (Showroom)', [
     ['storepilot.dashboard.view', 'Dashboard — View'],
@@ -109,7 +110,8 @@ const RAW_PERMISSION_GROUPS = [
     ['storepilot.lab.bypass_order_sibling', 'Lab — Bypass pair dispatch guard when HQ allows (audited)'],
     ['storepilot.transfers.view', 'Transfers — View'],
     ['storepilot.transfers.create', 'Transfers — Create'],
-    ['storepilot.transfers.edit', 'Transfers — Accept / Stock']
+    ['storepilot.transfers.edit', 'Transfers — Accept / Stock'],
+    ['storepilot.invoices.view', 'Invoices — View & share store invoices']
   ]],
   ['Store OS (POS)', [
     ['pos.catalogue.view', 'POS — Catalogue, startup & lens config'],

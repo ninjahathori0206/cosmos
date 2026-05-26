@@ -732,4 +732,37 @@
       throw err
     }
   }
+
+  function cosmosCsvEscapeCell(val) {
+    if (val == null || val === undefined) return ''
+    var s = String(val)
+    if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"'
+    return s
+  }
+
+  /**
+   * Trigger download of a CSV file (UTF-8 with BOM for Excel).
+   * @param {string} filename e.g. invoices-2026-05-25.csv
+   * @param {string[]} headers
+   * @param {Array<Array<string|number>>} rows
+   */
+  window.cosmosDownloadCsv = function (filename, headers, rows) {
+    if (!headers || !headers.length) return
+    var lineList = [headers.map(cosmosCsvEscapeCell).join(',')]
+    var dataRows = rows || []
+    for (var i = 0; i < dataRows.length; i++) {
+      lineList.push(dataRows[i].map(cosmosCsvEscapeCell).join(','))
+    }
+    var blob = new Blob(['\uFEFF' + lineList.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    a.href = url
+    a.download = filename || 'export.csv'
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(function () {
+      URL.revokeObjectURL(url)
+      a.remove()
+    }, 2000)
+  }
 })()

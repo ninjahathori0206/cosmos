@@ -3124,6 +3124,70 @@ async function fetchCxCustomerRollup(pool, mode, { search, limit = 100 } = {}) {
   }))
 }
 
+/** Store master fields for invoice share image. */
+async function fetchStoreContactForInvoice(pool, storeId) {
+  const sid = Number(storeId)
+  if (!Number.isFinite(sid) || sid < 1) {
+    return { name: null, address: null, phone: null }
+  }
+  const r = await pool.request().input('sid', sql.Int, sid).query(`
+    SELECT store_name, address, phone
+    FROM dbo.stores
+    WHERE store_id = @sid
+  `)
+  const row = (r.recordset || [])[0]
+  if (!row) return { name: null, address: null, phone: null }
+  return {
+    name: row.store_name != null ? String(row.store_name).trim() : null,
+    address: row.address != null ? String(row.address).trim() : null,
+    phone: row.phone != null ? String(row.phone).trim() : null
+  }
+}
+
+async function resolveOrderStoreId(pool, orderId, mode) {
+  const t = tableNames(mode)
+  const oid = Number(orderId)
+  if (!Number.isFinite(oid) || oid < 1) return null
+  const r = await pool.request().input('oid', sql.Int, oid).query(`
+    SELECT store_id FROM ${t.orders} WHERE order_id = @oid
+  `)
+  const row = (r.recordset || [])[0]
+  return row && row.store_id != null ? Number(row.store_id) : null
+}
+
+/**
+ * Full invoice detail for share image (items, payments, GST, store contact).
+ * @returns {Promise<object|null>} null if order not found for store
+ */
+async function buildInvoiceDetailPayloadFromBundle(pool, storeId, bundle) {
+  const store = await fetchStoreContactForInvoice(pool, storeId)
+  return {
+    order: mapOrderRowForApi(bundle.order, {
+      payment_summary: bundle.payment_summary,
+      invoice_no: bundle.invoice_no || null
+    }),
+    customer: bundle.customer || null,
+    invoice_no: bundle.invoice_no || null,
+    sub_orders: bundle.subList,
+    payments: bundle.payments,
+    payment_summary: bundle.payment_summary,
+    store
+  }
+}
+
+async function fetchInvoiceDetailForApi(pool, orderId, storeId, mode) {
+  const bundle = await fetchOrderBundle(pool, orderId, storeId, mode)
+  if (!bundle) return null
+  return buildInvoiceDetailPayloadFromBundle(pool, storeId, bundle)
+}
+
+/** Finance / HQ: resolve store from order then load invoice detail. */
+async function fetchInvoiceDetailForApiCrossStore(pool, orderId, mode) {
+  const storeId = await resolveOrderStoreId(pool, orderId, mode)
+  if (storeId == null) return null
+  return fetchInvoiceDetailForApi(pool, orderId, storeId, mode)
+}
+
 module.exports = {
   getOrdersEngineMode,
   ORDERS_ENGINE_MODE_KEY,
@@ -3132,6 +3196,10 @@ module.exports = {
   validatePaymentAgainstSummary,
   fetchOrderBundle,
   mapOrderRowForApi,
+  fetchInvoiceDetailForApi,
+  fetchInvoiceDetailForApiCrossStore,
+  resolveOrderStoreId,
+  buildInvoiceDetailPayloadFromBundle,
   assertPosOrderCreatorMutation,
   createOrderInTransaction,
   commitInventoryForPaidOrder,

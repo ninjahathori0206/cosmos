@@ -7,8 +7,10 @@ const {
   hasModuleAccess,
   hasPermission,
   isSuperAdmin,
-  isRbacStrictEmptyPermissions
+  isRbacStrictEmptyPermissions,
+  requirePermission
 } = require('../middleware/authorize')
+const { authJwt } = require('../middleware/authJwt')
 const orderService = require('../services/orderService')
 const { labCallerFromReq } = require('../services/labWorkflowAuth')
 
@@ -398,6 +400,65 @@ router.get('/:id/timeline', requireAnyModule(['storepilot', 'foundry', 'command_
     return next(err)
   }
 })
+
+// ── GET /api/orders/invoices — Finance cross-store invoice list ───────────────
+// Must be registered before GET /:id so "invoices" is not parsed as an order id.
+router.get(
+  '/invoices',
+  authJwt,
+  requireAnyModule(['finance', 'command_unit']),
+  requirePermission('finance.invoices.view'),
+  async (req, res, next) => {
+    try {
+      const search = (req.query.q || '').trim() || null
+      const days = Math.min(Math.max(parseInt(req.query.days, 10) || 7, 1), 90)
+      const storeIdRaw = req.query.store_id ? parseInt(req.query.store_id, 10) : null
+      const storeId = storeIdRaw && storeIdRaw > 0 ? storeIdRaw : null
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 500)
+      const pool = await getPool()
+      const mode = await orderService.getOrdersEngineMode(pool)
+      const orders = await orderService.fetchAllOrders(pool, mode, {
+        search: search || null,
+        invoicedQueue: true,
+        invoicedSinceDays: search ? null : days,
+        storeIdFilter: storeId,
+        limit,
+        excludeOrderStatuses: []
+      })
+      return res.json({ success: true, data: orders })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+// ── GET /api/orders/invoices/:id — Finance invoice detail (cross-store) ─────
+router.get(
+  '/invoices/:id',
+  authJwt,
+  requireAnyModule(['finance', 'command_unit']),
+  requirePermission('finance.invoices.view'),
+  async (req, res, next) => {
+    try {
+      const orderId = parseInt(req.params.id, 10)
+      if (!Number.isFinite(orderId) || orderId < 1) {
+        return res.status(400).json({ success: false, message: 'Invalid order id.' })
+      }
+      const pool = await getPool()
+      const mode = await orderService.getOrdersEngineMode(pool)
+      const data = await orderService.fetchInvoiceDetailForApiCrossStore(pool, orderId, mode)
+      if (!data) {
+        return res.status(404).json({ success: false, message: 'Order not found.' })
+      }
+      return res.json({ success: true, data })
+    } catch (err) {
+      if (err.statusCode === 404) {
+        return res.status(404).json({ success: false, message: err.message })
+      }
+      return next(err)
+    }
+  }
+)
 
 // ── Single order detail (for StorePilot handover modal) ──────────────────────
 router.get('/:id', requireAnyModule(['storepilot', 'foundry', 'command_unit', 'pos']), async (req, res, next) => {

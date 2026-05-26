@@ -1707,3 +1707,236 @@ window.ifClear = function ifClear() {
   document.getElementById('if-initial').style.display     = '';
   _ifItemRows = [];
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SALES INVOICES — Finance, all stores with store filter
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _finInvDebounce   = null;
+let _finInvAllRows    = [];
+let _finInvStoreId    = '';
+let _finInvLoaded     = false;
+
+function finInvFmtDateTime(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  const date = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
+  const time = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+  return date + ' · ' + time;
+}
+
+function finInvFmtRs(v) {
+  const n = Number(v) || 0;
+  return '₹\u202F' + n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function finInvPopulateStoreDropdown(rows) {
+  const sel = document.getElementById('fin-inv-store-filter');
+  if (!sel) return;
+  const current = sel.value;
+  const stores = new Map();
+  for (const r of rows) {
+    if (r.store_id && r.store_name) stores.set(Number(r.store_id), r.store_name);
+  }
+  sel.innerHTML = '<option value="">All stores</option>';
+  for (const [id, name] of [...stores.entries()].sort((a, b) => a[1].localeCompare(b[1]))) {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = name;
+    if (String(id) === String(current)) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+function finInvRenderRows(rows) {
+  const container = document.getElementById('fin-invoices-list');
+  if (!container) return;
+  if (!rows.length) {
+    const q = (document.getElementById('fin-inv-search') || {}).value || '';
+    const msg = q.trim()
+      ? 'No invoices matching \u201C' + escHtml(q.trim()) + '\u201D.'
+      : 'No invoices found for the selected period and store.';
+    container.innerHTML =
+      '<div style="padding:40px 20px;text-align:center">' +
+      '<div style="font-size:32px;margin-bottom:12px">🧾</div>' +
+      '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No invoices found</div>' +
+      '<div style="font-size:13px;color:var(--text2)">' + msg + '</div></div>';
+    return;
+  }
+  let html = '<div class="fin-inv-grid">';
+  for (const r of rows) {
+    const inv   = escHtml(r.invoice_no || r.order_no || '—');
+    const cust  = escHtml(r.customer_name || 'Customer');
+    const ph    = escHtml(r.customer_phone || '');
+    const store = escHtml(r.store_name || '');
+    const total = finInvFmtRs(r.total_amount);
+    const dt    = finInvFmtDateTime(r.created_at);
+    const oid   = Number(r.order_id);
+    html +=
+      '<div class="fin-inv-card" role="article">' +
+        '<div class="fin-inv-card-top">' +
+          '<div>' +
+            (store ? '<div class="fin-inv-store-badge">' + store + '</div>' : '') +
+            '<div class="fin-inv-no">' + inv + '</div>' +
+          '</div>' +
+          '<div class="fin-inv-date">' + escHtml(dt) + '</div>' +
+        '</div>' +
+        '<div class="fin-inv-cust">' + cust + '</div>' +
+        (ph ? '<div class="fin-inv-phone">' + ph + '</div>' : '') +
+        '<div class="fin-inv-card-bot">' +
+          '<div class="fin-inv-total">' + total + '</div>' +
+          '<button type="button" class="fin-inv-share" aria-label="Share invoice ' + inv + '"' +
+            ' onclick="shareFinInvoice(' + oid + ', this)">' +
+            '↗ Share</button>' +
+        '</div>' +
+      '</div>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+window.loadFinInvoices = async function () {
+  const container = document.getElementById('fin-invoices-list');
+  if (!container) return;
+  const q = ((document.getElementById('fin-inv-search') || {}).value || '').trim();
+  _finInvStoreId = ((document.getElementById('fin-inv-store-filter') || {}).value || '');
+  if (typeof cosmosSkeletonCards === 'function') cosmosSkeletonCards('fin-invoices-list', 6);
+  try {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    else params.set('days', '7');
+    const res = await apiGet('/api/orders/invoices?' + params.toString());
+    _finInvAllRows = Array.isArray(res.data) ? res.data : [];
+    _finInvLoaded = true;
+    finInvPopulateStoreDropdown(_finInvAllRows);
+    finInvApplyStoreFilter();
+  } catch (err) {
+    container.innerHTML = '<div style="padding:16px;color:var(--red)">' + escHtml(err.message) + '</div>';
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+  }
+};
+
+function finInvApplyStoreFilter() {
+  const sid = ((document.getElementById('fin-inv-store-filter') || {}).value || '').trim();
+  const rows = sid
+    ? _finInvAllRows.filter((r) => String(r.store_id) === sid)
+    : _finInvAllRows;
+  finInvRenderRows(rows);
+}
+
+window.onFinInvoiceSearch = function (val) {
+  clearTimeout(_finInvDebounce);
+  _finInvDebounce = setTimeout(function () { window.loadFinInvoices(); }, 400);
+};
+
+window.onFinStoreFilter = function () {
+  if (!_finInvLoaded) { window.loadFinInvoices(); return; }
+  finInvApplyStoreFilter();
+};
+
+function finInvCsvDateParts(createdAt) {
+  if (!createdAt) return { date: '', time: '' };
+  const d = new Date(createdAt);
+  return {
+    date: d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    time: d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
+  };
+}
+
+function finInvoiceListToCsvRows(rows) {
+  const headers = [
+    'Store',
+    'Store ID',
+    'Invoice No',
+    'Order No',
+    'Date',
+    'Time',
+    'Customer Name',
+    'Customer Mobile',
+    'Order Kind',
+    'Status',
+    'Subtotal',
+    'GST',
+    'Total',
+    'Amount Paid',
+    'Balance Due'
+  ];
+  const data = (rows || []).map(function (r) {
+    const dt = finInvCsvDateParts(r.created_at);
+    return [
+      r.store_name || '',
+      r.store_id != null ? r.store_id : '',
+      r.invoice_no || '',
+      r.order_no || '',
+      dt.date,
+      dt.time,
+      r.customer_name || '',
+      r.customer_phone || '',
+      r.order_kind || '',
+      r.status || '',
+      Number(r.subtotal_amount) || 0,
+      Number(r.gst_amount) || 0,
+      Number(r.total_amount) || 0,
+      Number(r.amount_paid) || 0,
+      Number(r.amount_remaining) || 0
+    ];
+  });
+  return { headers: headers, data: data };
+}
+
+window.exportFinInvoicesCsv = async function () {
+  if (typeof window.cosmosDownloadCsv !== 'function') {
+    if (typeof cosmosToastError === 'function') cosmosToastError('CSV export is not available.');
+    return;
+  }
+  const q = ((document.getElementById('fin-inv-search') || {}).value || '').trim();
+  const storeId = ((document.getElementById('fin-inv-store-filter') || {}).value || '').trim();
+  try {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    else params.set('days', '7');
+    if (storeId) params.set('store_id', storeId);
+    params.set('limit', '500');
+    const res = await apiGet('/api/orders/invoices?' + params.toString());
+    const rows = Array.isArray(res.data) ? res.data : [];
+    if (!rows.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No invoices to export for the current filters.');
+      return;
+    }
+    const built = finInvoiceListToCsvRows(rows);
+    const day = typeof istToday === 'function' ? istToday() : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    window.cosmosDownloadCsv('sales-invoices-' + day + '.csv', built.headers, built.data);
+    if (typeof cosmosToastSuccess === 'function') {
+      cosmosToastSuccess('Exported ' + rows.length + ' invoice(s) to CSV.');
+    }
+  } catch (err) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+  }
+};
+
+// ── Canvas receipt render + share (rich detail via API) ───────────────────────
+
+window.shareFinInvoice = async function (orderId, btnEl) {
+  const btn = btnEl || (typeof event !== 'undefined' && event.currentTarget ? event.currentTarget : null);
+  if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+  try {
+    if (typeof window.cosmosBuildInvoiceReceiptCanvas !== 'function') {
+      throw new Error('Invoice share module not loaded.');
+    }
+    const res = await apiGet('/api/orders/invoices/' + orderId);
+    const detail = res.data;
+    if (!detail) throw new Error('Invoice detail not found.');
+    const canvas = window.cosmosBuildInvoiceReceiptCanvas(detail, 'finance');
+    const invNo = detail.invoice_no || (detail.order && detail.order.invoice_no) || '';
+    const cust = (detail.customer && detail.customer.full_name) || '';
+    const total = (detail.payment_summary && detail.payment_summary.total_amount) != null
+      ? detail.payment_summary.total_amount
+      : (detail.order && detail.order.total_amount);
+    const shareText = cust + (total != null ? ' — ' + finInvFmtRs(total) : '');
+    await window.cosmosShareInvoiceCanvas(canvas, invNo, shareText);
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+  } catch (err) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+  }
+};

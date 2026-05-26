@@ -143,7 +143,8 @@ const SP_MENU_PERM_MAP = {
   'store-catalogue': ['storepilot.catalogue.view', 'foundry.catalogue.view'],
   'transfers-create': ['storepilot.transfers.create', 'foundry.transfers.create'],
   'transfers-history': ['storepilot.transfers.view', 'foundry.transfers.view'],
-  reports: ['storepilot.reports.view']
+  reports: ['storepilot.reports.view'],
+  invoices: ['storepilot.invoices.view']
 };
 
 // ── Breadcrumb map ─────────────────────────────────────────────────────────────
@@ -154,7 +155,8 @@ const spBcMap = {
   'transfers-history':    'Foundry Connect — My Requests',
   'transfers-create':     'Foundry Connect — Request Goods',
   reports:                'Store Reports',
-  'lab-orders':           'Lab Orders'
+  'lab-orders':           'Lab Orders',
+  invoices:               'Invoices'
 };
 
 const spBcShortMap = {
@@ -164,7 +166,8 @@ const spBcShortMap = {
   'transfers-history':    'My Requests',
   'transfers-create':     'Request Goods',
   reports:                'Store Reports',
-  'lab-orders':           'Lab Orders'
+  'lab-orders':           'Lab Orders',
+  invoices:               'Invoices'
 };
 
 function spIsMobileChrome() {
@@ -197,7 +200,8 @@ const SP_PAGE_PATHS = {
   'transfers-history': '/storepilot/transfers-history',
   'transfers-create': '/storepilot/transfers-create',
   reports: '/storepilot/reports',
-  'lab-orders': '/storepilot/lab-orders'
+  'lab-orders': '/storepilot/lab-orders',
+  invoices: '/storepilot/invoices'
 };
 
 let _spOpenCreateRequestOnLoad = false;
@@ -317,6 +321,7 @@ function loadStorePilotPage(id) {
   }
   if (id === 'reports')            loadReports();
   if (id === 'lab-orders')         loadSpLabOrders();
+  if (id === 'invoices')           loadSpInvoices();
 }
 
 /** '' = all lab workflow statuses for this store (no lab_status API filter). */
@@ -2687,3 +2692,190 @@ window.incStock = async function (docId, lineIds) {
 };
 
 window.expandSpMlDoc = window.expandIncTransfer;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INVOICES — store-scoped, last 7 days / global search
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _spInvDebounce = null;
+let _spInvLastQ    = null;
+let _spInvRows     = [];
+
+function fmtRupeesInv(v) {
+  const n = Number(v) || 0;
+  return '₹\u202F' + n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function spInvFormatDateTime(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  const date = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
+  const time = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+  return date + ' · ' + time;
+}
+
+window.loadSpInvoices = async function (q) {
+  const searchQ = q !== undefined ? q : (document.getElementById('sp-invoice-search') || {}).value || '';
+  _spInvLastQ = searchQ.trim();
+  const container = document.getElementById('sp-invoices-list');
+  if (!container) return;
+  if (typeof cosmosSkeletonCards === 'function') cosmosSkeletonCards('sp-invoices-list', 6);
+  try {
+    const qs = _spInvLastQ ? '?q=' + encodeURIComponent(_spInvLastQ) : '?days=7';
+    const res = await apiGet('/api/pos/invoices' + qs);
+    const rows = Array.isArray(res.data) ? res.data : [];
+    _spInvRows = rows;
+    if (!rows.length) {
+      const msg = _spInvLastQ
+        ? 'No invoices matching \u201C' + escHtml(_spInvLastQ) + '\u201D.'
+        : 'No invoices in the last 7 days.';
+      container.innerHTML =
+        '<div class="empty" style="padding:40px 20px;text-align:center">' +
+        '<div class="empty-ic">🧾</div>' +
+        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No invoices found</div>' +
+        '<div style="font-size:13px;color:var(--text2)">' + msg + '</div></div>';
+      return;
+    }
+    let html = '<div class="sp-inv-grid">';
+    for (const r of rows) {
+      const inv  = escHtml(r.invoice_no || r.order_no || '—');
+      const cust = escHtml(r.customer_name || 'Customer');
+      const ph   = escHtml(r.customer_phone || '');
+      const total = fmtRupeesInv(r.total_amount);
+      const dt   = spInvFormatDateTime(r.created_at);
+      const oid  = Number(r.order_id);
+      html +=
+        '<div class="sp-inv-card" role="article">' +
+          '<div class="sp-inv-card-top">' +
+            '<div class="sp-inv-no">' + inv + '</div>' +
+            '<div class="sp-inv-date">' + escHtml(dt) + '</div>' +
+          '</div>' +
+          '<div class="sp-inv-cust">' + cust + '</div>' +
+          (ph ? '<div class="sp-inv-phone">' + ph + '</div>' : '') +
+          '<div class="sp-inv-card-bot">' +
+            '<div class="sp-inv-total">' + total + '</div>' +
+            '<button type="button" class="sp-inv-share" aria-label="Share invoice ' + inv + '"' +
+              ' onclick="shareSpInvoice(' + oid + ', this)">' +
+              '↗ Share</button>' +
+          '</div>' +
+        '</div>';
+    }
+    html += '</div>';
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = '<div style="padding:16px;color:var(--red)">' + escHtml(err.message) + '</div>';
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+  }
+};
+
+window.onSpInvoiceSearch = function (val) {
+  clearTimeout(_spInvDebounce);
+  _spInvDebounce = setTimeout(function () { window.loadSpInvoices(val); }, 400);
+};
+
+function spInvCsvDateParts(createdAt) {
+  if (!createdAt) return { date: '', time: '' };
+  const d = new Date(createdAt);
+  return {
+    date: d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    time: d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
+  };
+}
+
+function spInvoiceListToCsvRows(rows) {
+  const headers = [
+    'Invoice No',
+    'Order No',
+    'Date',
+    'Time',
+    'Customer Name',
+    'Customer Mobile',
+    'Order Kind',
+    'Status',
+    'Subtotal',
+    'GST',
+    'Total',
+    'Amount Paid',
+    'Balance Due'
+  ];
+  const data = (rows || []).map(function (r) {
+    const dt = spInvCsvDateParts(r.created_at);
+    return [
+      r.invoice_no || '',
+      r.order_no || '',
+      dt.date,
+      dt.time,
+      r.customer_name || '',
+      r.customer_phone || '',
+      r.order_kind || '',
+      r.status || '',
+      Number(r.subtotal_amount) || 0,
+      Number(r.gst_amount) || 0,
+      Number(r.total_amount) || 0,
+      Number(r.amount_paid) || 0,
+      Number(r.amount_remaining) || 0
+    ];
+  });
+  return { headers: headers, data: data };
+}
+
+window.exportSpInvoicesCsv = async function () {
+  if (typeof window.cosmosDownloadCsv !== 'function') {
+    if (typeof cosmosToastError === 'function') cosmosToastError('CSV export is not available.');
+    return;
+  }
+  const searchQ = ((document.getElementById('sp-invoice-search') || {}).value || '').trim();
+  try {
+    const params = new URLSearchParams();
+    if (searchQ) params.set('q', searchQ);
+    else params.set('days', '7');
+    params.set('limit', '500');
+    const res = await apiGet('/api/pos/invoices?' + params.toString());
+    const rows = Array.isArray(res.data) ? res.data : [];
+    if (!rows.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No invoices to export for the current filters.');
+      return;
+    }
+    const built = spInvoiceListToCsvRows(rows);
+    const day = typeof istToday === 'function' ? istToday() : new Date().toISOString().slice(0, 10);
+    window.cosmosDownloadCsv('store-invoices-' + day + '.csv', built.headers, built.data);
+    if (typeof cosmosToastSuccess === 'function') {
+      cosmosToastSuccess('Exported ' + rows.length + ' invoice(s) to CSV.');
+    }
+  } catch (err) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+  }
+};
+
+// ── Canvas receipt render + share (rich detail via API) ───────────────────────
+
+window.shareSpInvoice = async function (orderId, btnEl) {
+  const btn = btnEl || (typeof event !== 'undefined' && event.currentTarget ? event.currentTarget : null);
+  if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+  try {
+    if (typeof window.cosmosBuildInvoiceReceiptCanvas !== 'function') {
+      throw new Error('Invoice share module not loaded.');
+    }
+    let detail = null
+    try {
+      const res = await apiGet('/api/pos/invoices/' + orderId)
+      detail = res.data
+    } catch (invErr) {
+      const resOrd = await apiGet('/api/pos/orders/' + orderId)
+      detail = resOrd.data
+    }
+    if (!detail) throw new Error('Invoice detail not found.');
+    const canvas = window.cosmosBuildInvoiceReceiptCanvas(detail, 'storepilot');
+    const invNo = detail.invoice_no || (detail.order && detail.order.invoice_no) || '';
+    const cust = (detail.customer && detail.customer.full_name) || '';
+    const total = (detail.payment_summary && detail.payment_summary.total_amount) != null
+      ? detail.payment_summary.total_amount
+      : (detail.order && detail.order.total_amount);
+    const shareText = cust + (total != null ? ' — ' + fmtRupeesInv(total) : '');
+    await window.cosmosShareInvoiceCanvas(canvas, invNo, shareText);
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+  } catch (err) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+  }
+};

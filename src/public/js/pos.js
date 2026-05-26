@@ -743,7 +743,16 @@
   let posDiscountPreviewSeq = 0
   /** Selected POS / CX customer row for cart reference (name, phone, id). */
   let posSelectedCustomerSnapshot = null
-  let posSettings = { gst_rate: 0.05, lab_advance_pct: 40, composition_scheme: false, prices_gst_inclusive: false }
+  let posSettings = {
+    gst_rate: 0.05,
+    lab_advance_pct: 40,
+    composition_scheme: false,
+    prices_gst_inclusive: false,
+    firm_name: '',
+    firm_registered_address: '',
+    firm_gstin: '',
+    pos_invoice_return_policy: ''
+  }
   let lensCatalogData = null
   let lensWizardLineIdx = -1
   let lensWizardBackRoute = POS_ROUTES.ORDER
@@ -1479,7 +1488,11 @@
         gst_rate: 0.05,
         lab_advance_pct: 40,
         composition_scheme: false,
-        prices_gst_inclusive: false
+        prices_gst_inclusive: false,
+        firm_name: '',
+        firm_registered_address: '',
+        firm_gstin: '',
+        pos_invoice_return_policy: ''
       }
       posSettings = Object.assign(defaults, st || {})
       window.posSettings = posSettings
@@ -6878,8 +6891,11 @@
         customerPhone: phone0,
         detailSnapshot: {
           order: order,
+          customer: detail.customer || null,
           sub_orders: detail.sub_orders || [],
-          payment_summary: summary
+          payments: detail.payments || [],
+          payment_summary: summary,
+          store: detail.store || null
         },
         method: 'UPI'
       }
@@ -6989,15 +7005,78 @@
     return rows
   }
 
-  function buildPosHandoverInvoicePreviewHtml(storeName, detail, prefs, invoiceNo) {
+  function posFormatInvoiceDisplayDate(iso) {
+    if (!iso) return '—'
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return '—'
+    const date = d.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    })
+    const time = d.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).toLowerCase()
+    return date + ' · ' + time
+  }
+
+  function buildPosInvoiceViewModel(storeName, detail, prefs, invoiceNo) {
     const order = detail && detail.order ? detail.order : {}
+    const customer = detail && detail.customer ? detail.customer : {}
     const p = prefs && typeof prefs === 'object' ? prefs : {}
-    const displayStore = String(storeName || 'Store outlet').trim() || 'Store outlet'
-    const dt = posFormatIstDateTime(new Date())
-    const rows = flattenPosOrderItemsForPreview(detail)
+    const summary = detail && detail.payment_summary ? detail.payment_summary : {}
+    const payments = detail && Array.isArray(detail.payments) ? detail.payments : []
+    const storeMeta = detail && detail.store ? detail.store : {}
+    const ps = posSettings || {}
+    const billName = String(p.bill_name || '').trim() || String(customer.full_name || '').trim() || 'Walk-in Customer'
+    const custGstin = String(p.gstin || '').trim()
+    const billingAddr = String(p.billing_address || '').trim()
+    const notesVal = String(p.notes || '').trim()
+    const storeAddr = String(storeMeta.address || '').trim()
+    const payMethod = payments.length && payments[0].method
+      ? String(payments[0].method).trim()
+      : '—'
+    return {
+      firm_name: String(ps.firm_name || '').trim(),
+      firm_registered_address: String(ps.firm_registered_address || '').trim(),
+      firm_gstin: String(ps.firm_gstin || '').trim(),
+      store_name: String(storeName || storeMeta.name || '').trim() || 'Store outlet',
+      store_address: storeAddr,
+      invoice_no: String(invoiceNo || order.invoice_no || '').trim() || '—',
+      invoice_date: order.created_at || null,
+      bill_name: billName,
+      customer_phone: String(p.phone || customer.phone || '').trim(),
+      customer_gstin: custGstin || null,
+      billing_address: billingAddr || null,
+      notes: notesVal || null,
+      order_no: String(order.order_no || '—'),
+      order_kind: String(order.order_kind || '').trim().toUpperCase(),
+      items: flattenPosOrderItemsForPreview(detail),
+      subtotal_amount: Number(order.subtotal_amount) || 0,
+      discount_amount: Number(order.discount_amount) || 0,
+      gst_amount: Number(order.gst_amount) || 0,
+      total_amount: Number(order.total_amount) || 0,
+      paid: Number(summary.paid_total) || 0,
+      balance: Number(summary.amount_remaining) || 0,
+      payment_method: payMethod,
+      composition_scheme: !!ps.composition_scheme,
+      return_policy: String(ps.pos_invoice_return_policy || '').trim()
+    }
+  }
+
+  function buildPosHandoverInvoicePreviewHtml(storeName, detail, prefs, invoiceNo) {
+    const inv = buildPosInvoiceViewModel(storeName, detail, prefs, invoiceNo)
+    const dt = posFormatInvoiceDisplayDate(inv.invoice_date)
+    const title = inv.composition_scheme ? 'RETAIL INVOICE' : 'TAX INVOICE'
+    const kindLabel = inv.order_kind === 'MIXED' ? 'Mixed' : inv.order_kind === 'LAB' ? 'Lab' : inv.order_kind === 'INSTANT' ? 'Instant' : inv.order_kind || '—'
+
     let bodyRows = ''
-    for (let r = 0; r < rows.length; r++) {
-      const it = rows[r]
+    for (let r = 0; r < inv.items.length; r++) {
+      const it = inv.items[r]
       const labTag = it.fulfillment === 'LAB' ? '<span class="inv-lab-tag">Lab</span>' : ''
       const skuPart = it.sku_code ? ' <span class="inv-muted">(' + escapeHtml(String(it.sku_code)) + ')</span>' : ''
       bodyRows +=
@@ -7006,112 +7085,129 @@
         escapeHtml(formatRupeesDecimals(it.line_total)) + '</td></tr>'
     }
     if (!bodyRows) {
-      bodyRows = '<tr><td colspan="3" class="inv-muted">Line items unavailable in this preview — reopen from order detail if needed.</td></tr>'
+      bodyRows = '<tr><td colspan="3" class="inv-muted">Line items unavailable in this preview.</td></tr>'
     }
 
-    const sub = Number(order.subtotal_amount) || 0
-    const disc = Number(order.discount_amount) || 0
-    const gst = Number(order.gst_amount) || 0
-    const total = Number(order.total_amount) || 0
-    const taxableAfterDisc = Math.max(0, Math.round((sub - disc) * 100) / 100)
-    const gstLabel = posGstLineLabel()
+    const firmNameHtml = inv.firm_name
+      ? '<div class="firm-name">' + escapeHtml(inv.firm_name) + '</div>'
+      : '<div class="firm-name">Eyewoot</div>'
+    const firmGstHtml = inv.firm_gstin
+      ? '<div class="firm-gstin">GSTIN: ' + escapeHtml(inv.firm_gstin) + '</div>'
+      : ''
+    const firmAddrHtml = inv.firm_registered_address
+      ? '<div class="firm-addr">' + escapeHtml(inv.firm_registered_address) + '</div>'
+      : ''
+    const storeBlock =
+      '<div class="store-block">' +
+      '<div class="store-label">Store</div>' +
+      '<div class="store-name">' + escapeHtml(inv.store_name) + '</div>' +
+      (inv.store_address ? '<div class="store-addr">' + escapeHtml(inv.store_address) + '</div>' : '') +
+      '</div>'
 
-    function line(v) {
-      const t = String(v || '').trim()
-      return t ? escapeHtml(t) : ''
-    }
-
-    const billLines = []
-    billLines.push(line(String(p.bill_name || '').trim() || '—'))
-    if (String(p.phone || '').trim()) billLines.push(line(String(p.phone).trim()))
-    if (String(p.email || '').trim()) billLines.push(line(String(p.email).trim()))
-    if (String(p.gstin || '').trim()) billLines.push('<strong>GSTIN</strong> ' + line(String(p.gstin).trim()))
-    if (String(p.billing_address || '').trim()) billLines.push(line(String(p.billing_address).trim()))
-    if (String(p.notes || '').trim()) billLines.push('<strong>Notes</strong> ' + line(String(p.notes).trim()))
-
-    let shipInner = ''
-    if (String(p.shipping_address || '').trim()) {
-      shipInner = line(String(p.shipping_address).trim())
-    } else {
-      shipInner = '<span class="inv-muted">Same as billing or handover arrangement at counter.</span>'
-    }
-
-    const css =
-      ':root{--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--head:#0f2942;--accent:#1d4ed8;--tint:#eff6ff;--soft:#f8fafc}' +
-      '*{box-sizing:border-box}body{margin:0;padding:32px 28px 48px;color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.48;background:#fff}' +
-      '.sheet{max-width:760px;margin:0 auto}' +
-      '.banner{display:flex;justify-content:space-between;gap:24px;padding-bottom:22px;border-bottom:3px solid var(--head);margin-bottom:22px}' +
-      '.brand-k{font-size:10px;font-weight:800;letter-spacing:.16em;color:var(--accent);text-transform:uppercase}' +
-      '.store-n{font-size:21px;font-weight:800;color:var(--head);margin:8px 0 0;line-height:1.2}' +
-      '.store-sub{font-size:12px;color:var(--muted);margin-top:6px}' +
-      '.inv{text-align:right;min-width:220px}' +
-      '.inv h1{margin:0 0 14px;font-size:26px;font-weight:900;color:var(--head);letter-spacing:-.03em;line-height:1}' +
-      '.inv-row{font-size:13px;color:var(--muted);margin:4px 0}' +
-      '.inv-row strong{color:var(--ink)}' +
-      '.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}' +
-      '@media(max-width:640px){.banner{flex-direction:column}.inv{text-align:left}.grid2{grid-template-columns:1fr}}' +
-      '.card{border:1px solid var(--line);border-radius:12px;padding:16px;background:linear-gradient(180deg,var(--tint) 0,#fff 36%)}' +
-      '.card h2{margin:0 0 10px;font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--accent);text-transform:uppercase}' +
-      '.addr{font-size:13px;line-height:1.55}' +
-      'table{border-collapse:collapse;width:100%;margin:14px 0}' +
-      'th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;background:var(--head);color:#fff;padding:11px 10px;text-align:left;font-weight:700}' +
-      'th:nth-child(2){text-align:center}th:last-child{text-align:right}' +
-      'td{border-bottom:1px solid var(--line);padding:11px 10px;font-size:13px}' +
-      'td:nth-child(2){text-align:center;width:48px;color:var(--muted);font-weight:600}' +
-      'td:last-child{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}' +
-      'tbody tr:nth-child(even) td{background:var(--soft)}' +
-      '.inv-muted{color:var(--muted)}' +
-      '.inv-lab-tag{display:inline-block;margin-left:8px;font-size:9px;font-weight:800;padding:2px 8px;border-radius:999px;background:#dbeafe;color:#1e40af;vertical-align:middle;text-transform:none;letter-spacing:0}' +
-      '.tot{display:flex;justify-content:flex-end;margin-top:12px}' +
-      '.totbox{min-width:300px;border:1px solid var(--line);border-radius:12px;padding:18px 20px;background:#fff}' +
-      '.totrow{display:flex;justify-content:space-between;gap:24px;margin:8px 0;font-size:13px;color:var(--muted)}' +
-      '.totrow b{color:var(--ink)}' +
-      '.grand{margin-top:14px;padding-top:14px;border-top:2px solid var(--head);font-size:18px;font-weight:900;color:var(--head);justify-content:space-between}' +
-      '.foot{margin-top:36px;text-align:center;font-size:11px;color:var(--muted);line-height:1.55;padding-top:16px;border-top:1px dashed var(--line)}' +
-      '.sig{margin-top:36px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted);gap:20px}' +
-      '.sig div:last-child{text-align:right}'
-
-    const totDiscountRow = disc > 0.005
-      ? '<div class="totrow"><span>Discount</span><span><b>− ' + escapeHtml(formatRupeesDecimals(disc)) + '</b></span></div>'
+    const custGstRow = inv.customer_gstin
+      ? '<div class="bill-line"><strong>GSTIN</strong> ' + escapeHtml(inv.customer_gstin) + '</div>'
+      : ''
+    const billAddrBlock = inv.billing_address
+      ? '<div class="bill-line">' + escapeHtml(inv.billing_address) + '</div>'
+      : ''
+    const notesBlock = inv.notes
+      ? '<div class="bill-notes"><strong>Notes:</strong> ' + escapeHtml(inv.notes) + '</div>'
       : ''
 
-    const billHtml = billLines.filter(Boolean).join('<br>')
-    const orderNoDisp = escapeHtml(String(order.order_no || '—'))
+    const discRow = inv.discount_amount > 0.005
+      ? '<div class="totrow"><span>Discount</span><span>− ' + escapeHtml(formatRupeesDecimals(inv.discount_amount)) + '</span></div>'
+      : ''
+    const gstRow = inv.gst_amount > 0.005 && !inv.composition_scheme
+      ? '<div class="totrow"><span>' + escapeHtml(posGstLineLabel()) + '</span><span>' + escapeHtml(formatRupeesDecimals(inv.gst_amount)) + '</span></div>'
+      : ''
+    const balanceClass = inv.balance > 0.009 ? 'totrow balance-due' : 'totrow balance-clear'
+
+    const css =
+      ':root{--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--head:#0f2942;--accent:#1d4ed8;--soft:#f8fafc;--green:#059669;--red:#dc2626}' +
+      '*{box-sizing:border-box}body{margin:0;padding:28px 24px 40px;color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.45;background:#fff}' +
+      '.sheet{max-width:720px;margin:0 auto}' +
+      '.head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:18px;border-bottom:2px solid var(--head);margin-bottom:18px}' +
+      '.head-left{display:flex;gap:14px;align-items:flex-start;min-width:0;flex:1}' +
+      '.logo{max-height:32px;width:auto;display:block}' +
+      '.firm-name{font-size:18px;font-weight:800;color:var(--head);line-height:1.2;margin:0 0 4px}' +
+      '.firm-gstin,.firm-addr{font-size:12px;color:var(--muted);margin:2px 0}' +
+      '.store-block{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}' +
+      '.store-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}' +
+      '.store-name{font-size:14px;font-weight:700;color:var(--head);margin-top:4px}' +
+      '.store-addr{font-size:12px;color:var(--muted);margin-top:2px}' +
+      '.head-right{text-align:right;min-width:200px;flex-shrink:0}' +
+      '.inv-title{margin:0 0 10px;font-size:22px;font-weight:900;color:var(--head);letter-spacing:-.02em}' +
+      '.inv-meta{font-size:12px;color:var(--muted);margin:3px 0}' +
+      '.inv-meta strong{color:var(--ink)}' +
+      '.party{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}' +
+      '@media(max-width:560px){.head{flex-direction:column}.head-right{text-align:left}.party{grid-template-columns:1fr}}' +
+      '.party-card{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--soft)}' +
+      '.party-label{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}' +
+      '.party-name{font-size:15px;font-weight:700;color:var(--head)}' +
+      '.party-sub{font-size:12px;color:var(--muted);margin-top:4px}' +
+      '.bill-line{font-size:13px;line-height:1.5;margin-top:6px}' +
+      '.bill-notes{font-size:12px;color:var(--muted);margin-top:8px}' +
+      'table{border-collapse:collapse;width:100%;margin:12px 0}' +
+      'th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;background:var(--head);color:#fff;padding:10px;text-align:left}' +
+      'th:nth-child(2){text-align:center;width:52px}th:last-child{text-align:right;width:120px}' +
+      'td{border-bottom:1px solid var(--line);padding:10px;font-size:13px;vertical-align:top}' +
+      'td:nth-child(2){text-align:center;color:var(--muted);font-weight:600}' +
+      'td:last-child{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}' +
+      'tbody tr:nth-child(even) td{background:#fafbfc}' +
+      '.inv-muted{color:var(--muted)}' +
+      '.inv-lab-tag{display:inline-block;margin-left:6px;font-size:9px;font-weight:800;padding:2px 7px;border-radius:999px;background:#dbeafe;color:#1e40af}' +
+      '.tot-wrap{display:flex;justify-content:flex-end;margin-top:8px}' +
+      '.totbox{min-width:280px;border:1px solid var(--line);border-radius:10px;padding:14px 16px}' +
+      '.totrow{display:flex;justify-content:space-between;gap:16px;margin:6px 0;font-size:13px;color:var(--muted)}' +
+      '.totrow span:last-child{font-weight:700;color:var(--ink)}' +
+      '.totrow.grand{margin-top:10px;padding-top:10px;border-top:2px solid var(--head);font-size:16px;font-weight:900;color:var(--head)}' +
+      '.balance-due span:last-child{color:var(--red)!important}' +
+      '.balance-clear span:last-child{color:var(--green)!important}' +
+      '.pay-block{margin-top:14px;font-size:13px;color:var(--ink)}' +
+      '.pay-block strong{font-weight:700}' +
+      '.sig{margin-top:28px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted);gap:16px}' +
+      '.sig-line{display:inline-block;min-width:160px;border-top:1px solid var(--line);margin-top:28px;padding-top:6px}' +
+      '.foot{margin-top:20px;text-align:center;font-size:11px;color:var(--muted);line-height:1.5;padding-top:14px;border-top:1px dashed var(--line)}'
+
+    const policyHtml = inv.return_policy
+      ? escapeHtml(inv.return_policy) + '<br>'
+      : ''
 
     return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-      '<title>Invoice ' + escapeHtml(String(invoiceNo || 'Preview')) + '</title>' +
-      '<style>@media print{body{padding:18px}}</style>' +
-      '<style>' + css + '</style></head><body>' +
-      '<div class="sheet">' +
-      '<header class="banner">' +
-      '<div><div class="brand-k">Store OS · Cosmos</div>' +
-      '<div class="store-n">' + escapeHtml(displayStore) + '</div>' +
-      '<div class="store-sub">Printed tax invoice (handover preview)</div></div>' +
-      '<div class="inv"><h1>' + (posSettings.composition_scheme ? 'RETAIL INVOICE' : 'TAX INVOICE') + '</h1>' +
-      '<div class="inv-row"><strong>No.</strong> ' + escapeHtml(String(invoiceNo || '—')) + '</div>' +
-      '<div class="inv-row"><strong>Order ref.</strong> ' + orderNoDisp + '</div>' +
-      '<div class="inv-row"><strong>Dated</strong> ' + escapeHtml(dt) + ' IST</div>' +
-      '</div></header>' +
-      '<div class="grid2">' +
-      '<section class="card"><h2>Bill to</h2><div class="addr">' + billHtml + '</div></section>' +
-      '<section class="card"><h2>Deliver / fulfil</h2><div class="addr">' + shipInner + '</div></section>' +
-      '</div>' +
-      '<table><thead><tr><th scope="col">Description</th><th scope="col">Qty</th>' +
-      '<th scope="col">Amount (₹)</th></tr></thead><tbody>' + bodyRows + '</tbody></table>' +
-      '<div class="tot"><div class="totbox">' +
-      '<div class="totrow"><span>Catalogue subtotal</span><span><b>' + escapeHtml(formatRupeesDecimals(sub)) + '</b></span></div>' +
-      totDiscountRow +
-      '<div class="totrow"><span>Value after discount (reference)</span><span><b>' + escapeHtml(formatRupeesDecimals(taxableAfterDisc)) + '</b></span></div>' +
-      '<div class="totrow"><span>' + escapeHtml(gstLabel) + '</span><span><b>' + escapeHtml(formatRupeesDecimals(gst)) + '</b></span></div>' +
-      '<div class="totrow grand"><span>Grand total</span><span>' + escapeHtml(formatRupeesDecimals(total)) + '</span></div>' +
+      '<title>Invoice ' + escapeHtml(inv.invoice_no) + '</title>' +
+      '<style>@media print{body{padding:16px}.sheet{max-width:100%}}</style>' +
+      '<style>' + css + '</style></head><body><div class="sheet">' +
+      '<header class="head"><div class="head-left">' +
+      '<img class="logo" src="/images/eyewoot-logo.png" alt="Eyewoot" width="120" height="32">' +
+      '<div><div class="firm-block">' + firmNameHtml + firmGstHtml + firmAddrHtml + storeBlock + '</div></div></div>' +
+      '<div class="head-right"><h1 class="inv-title">' + title + '</h1>' +
+      '<div class="inv-meta"><strong>No.</strong> ' + escapeHtml(inv.invoice_no) + '</div>' +
+      '<div class="inv-meta"><strong>Order ref.</strong> ' + escapeHtml(inv.order_no) + '</div>' +
+      '<div class="inv-meta"><strong>Date</strong> ' + escapeHtml(dt) + '</div></div></header>' +
+      '<div class="party">' +
+      '<section class="party-card"><div class="party-label">Customer</div>' +
+      '<div class="party-name">' + escapeHtml(inv.bill_name) + '</div>' +
+      (inv.customer_phone ? '<div class="party-sub">' + escapeHtml(inv.customer_phone) + '</div>' : '') +
+      custGstRow + billAddrBlock + notesBlock + '</section>' +
+      '<section class="party-card"><div class="party-label">Order</div>' +
+      '<div class="party-name">' + escapeHtml(inv.order_no) + '</div>' +
+      '<div class="party-sub">Type: ' + escapeHtml(kindLabel) + '</div></section></div>' +
+      '<table><thead><tr><th>Description</th><th>Qty</th><th>Amount (₹)</th></tr></thead><tbody>' +
+      bodyRows + '</tbody></table>' +
+      '<div class="tot-wrap"><div class="totbox">' +
+      '<div class="totrow"><span>Subtotal (taxable)</span><span>' + escapeHtml(formatRupeesDecimals(inv.subtotal_amount)) + '</span></div>' +
+      discRow + gstRow +
+      '<div class="totrow grand"><span>Total</span><span>' + escapeHtml(formatRupeesDecimals(inv.total_amount)) + '</span></div>' +
+      '<div class="totrow"><span>Paid</span><span>' + escapeHtml(formatRupeesDecimals(inv.paid)) + '</span></div>' +
+      '<div class="' + balanceClass + '"><span>Balance</span><span>' + escapeHtml(formatRupeesDecimals(inv.balance)) + '</span></div>' +
       '</div></div>' +
-      '<div class="sig"><div><span style="border-top:1px solid var(--line);display:inline-block;min-width:180px;margin-top:32px;padding-top:6px">Customer sign.</span></div>' +
-      '<div>For <strong>' + escapeHtml(displayStore) + '</strong><div style="margin-top:36px">' +
-      '<span style="border-top:1px solid var(--line);display:inline-block;min-width:200px;padding-top:6px">Authorised signatory</span>' +
-      '</div></div></div>' +
-      '<p class="foot">Computer-generated document · Review GST treatment with your Chartered Accountant · ' +
-      'Eyewoot / Cosmos ERP handover artifact</p>' +
+      '<div class="pay-block"><strong>Payment:</strong> ' + escapeHtml(inv.payment_method) + '</div>' +
+      '<div class="sig"><div><span class="sig-line">Customer sign.</span></div>' +
+      '<div style="text-align:right"><div>For <strong>' + escapeHtml(inv.store_name) + '</strong></div>' +
+      '<span class="sig-line">Authorised signatory</span></div></div>' +
+      '<p class="foot">' + policyHtml +
+      'Computer-generated document · Review GST with your Chartered Accountant · Cosmos ERP</p>' +
       '</div></body></html>'
   }
 

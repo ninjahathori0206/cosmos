@@ -7,7 +7,7 @@ const { executeStoredProcedure, getPool } = require('../config/db')
 const { authJwt }           = require('../middleware/authJwt')
 const { apiKeyAuth }        = require('../middleware/apiKeyAuth')
 const { requireTabletSession } = require('../middleware/requireTabletSession')
-const { requireModule, requirePermission, hasPermission, isSuperAdmin } = require('../middleware/authorize')
+const { requireModule, requirePermission, requireAnyModule, hasPermission, isSuperAdmin } = require('../middleware/authorize')
 const { writeAuditLog }     = require('../services/auditService')
 const { resolveProcurementMode, readSetting } = require('../services/procurementService')
 const { nowUnixSec } = require('../services/jwtPolicyService')
@@ -1075,7 +1075,11 @@ router.get('/settings', ...posCatalogue, async (req, res, next) => {
         N'pos_invoice_prefix',
         N'pos_points_maturity_days',
         N'pos_procurement_mode',
-        N'pos_msg_customer_ready'
+        N'pos_msg_customer_ready',
+        N'firm_name',
+        N'firm_registered_address',
+        N'firm_gstin',
+        N'pos_invoice_return_policy'
       )
     `)
     const map = {}
@@ -1090,7 +1094,11 @@ router.get('/settings', ...posCatalogue, async (req, res, next) => {
       invoice_prefix: map.pos_invoice_prefix || 'EW-INV-',
       points_maturity_days: Number(map.pos_points_maturity_days || 30),
       procurement_mode: map.pos_procurement_mode || 'STORE',
-      msg_customer_ready: map.pos_msg_customer_ready || ''
+      msg_customer_ready: map.pos_msg_customer_ready || '',
+      firm_name: String(map.firm_name || '').trim(),
+      firm_registered_address: String(map.firm_registered_address || '').trim(),
+      firm_gstin: String(map.firm_gstin || '').trim(),
+      pos_invoice_return_policy: String(map.pos_invoice_return_policy || '').trim()
     }
     return res.json({ success: true, data })
   } catch (err) {
@@ -1501,8 +1509,69 @@ router.get('/order-queues', ...posOrdersView, (req, res) => {
   return res.json({ success: true, data: { tabs: POS_ORDER_QUEUE_TABS, keys: POS_ORDER_QUEUE_KEYS } })
 })
 
+// ── GET /api/pos/invoices — StorePilot invoice list (last N days or global search) ──
+const posInvoicesView = [authJwt, requireModule('storepilot'), requirePermission('storepilot.invoices.view')]
+/** Order detail for POS tablets or StorePilot invoice share. */
+const posOrderDetailOrInvoiceView = [
+  authJwt,
+  requireAnyModule(['pos', 'storepilot']),
+  requirePermission('pos.orders.view', 'storepilot.invoices.view')
+]
+router.get('/invoices', ...posInvoicesView, async (req, res, next) => {
+  try {
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
+    const search = (req.query.q || '').trim() || null
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 7, 1), 90)
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500)
+    const pool = await getPool()
+    const mode = await orderService.getOrdersEngineMode(pool)
+    const orders = await orderService.fetchStoreOrders(pool, storeId, mode, {
+      search: search || null,
+      invoicedQueue: true,
+      invoicedSinceDays: search ? null : days,
+      excludeOrderStatuses: [],
+      limit
+    })
+    return res.json({ success: true, data: orders })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── GET /api/pos/invoices/:id — full detail for share image (store-scoped) ───
+router.get('/invoices/:id', ...posInvoicesView, async (req, res, next) => {
+  try {
+    const orderId = parseInt(req.params.id, 10)
+    if (!Number.isFinite(orderId) || orderId < 1) {
+      return res.status(400).json({ success: false, message: 'Invalid order id.' })
+    }
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
+    const pool = await getPool()
+    const mode = await orderService.getOrdersEngineMode(pool)
+    const data = await orderService.fetchInvoiceDetailForApi(pool, orderId, storeId, mode)
+    if (!data) {
+      const actualStoreId = await orderService.resolveOrderStoreId(pool, orderId, mode)
+      if (actualStoreId != null && actualStoreId !== storeId) {
+        return res.status(404).json({
+          success: false,
+          message: 'Order belongs to another store. Sign in with the correct store account.'
+        })
+      }
+      return res.status(404).json({ success: false, message: 'Order not found for this store.' })
+    }
+    return res.json({ success: true, data })
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ success: false, message: err.message })
+    }
+    return next(err)
+  }
+})
+
 // ── GET /api/pos/orders/:id ──────────────────────────────────────────────────
-router.get('/orders/:id', ...posOrdersView, async (req, res, next) => {
+router.get('/orders/:id', ...posOrderDetailOrInvoiceView, async (req, res, next) => {
   try {
     const orderId = parseInt(req.params.id, 10)
     if (!Number.isFinite(orderId)) {
@@ -1514,22 +1583,22 @@ router.get('/orders/:id', ...posOrdersView, async (req, res, next) => {
     const mode = await orderService.getOrdersEngineMode(pool)
     const bundle = await orderService.fetchOrderBundle(pool, orderId, storeId, mode)
     if (!bundle) {
+      const actualStoreId = await orderService.resolveOrderStoreId(pool, orderId, mode)
+      if (actualStoreId != null && actualStoreId !== storeId) {
+        return res.status(404).json({
+          success: false,
+          message: 'Order belongs to another store. Sign in with the correct store account.'
+        })
+      }
       return res.status(404).json({ success: false, message: 'Order not found for this store.' })
     }
 
     const actorId = posActorUserId(req)
+    const invoiceDetail = await orderService.buildInvoiceDetailPayloadFromBundle(pool, storeId, bundle)
     return res.json({
       success: true,
       data: {
-        order: orderService.mapOrderRowForApi(bundle.order, {
-          payment_summary: bundle.payment_summary,
-          invoice_no: bundle.invoice_no || null
-        }),
-        customer: bundle.customer || null,
-        invoice_no: bundle.invoice_no || null,
-        sub_orders: bundle.subList,
-        payments: bundle.payments,
-        payment_summary: bundle.payment_summary,
+        ...invoiceDetail,
         orders_engine_mode: mode,
         created_by_user_id: bundle.order.created_by_user_id != null ? Number(bundle.order.created_by_user_id) : null,
         can_mutate: posCanMutateOrder(req, bundle.order),
