@@ -18,7 +18,8 @@ const COMMAND_UNIT_PAGE_PATHS = {
   'cu-maker-master': '/command-unit/cu-maker-master',
   'cu-branding-agents': '/command-unit/cu-branding-agents',
   audit: '/command-unit/audit',
-  tablets: '/command-unit/tablets'
+  tablets: '/command-unit/tablets',
+  'label-templates': '/command-unit/label-templates'
 }
 
 function getCommandUnitPageFromPath(pathname) {
@@ -84,6 +85,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     cuNavTablets.style.display = cuHasPermission('command_unit.tablets.view') ? '' : 'none';
   }
 
+  const cuNavLabelTemplates = document.getElementById('cu-nav-label-templates');
+  if (cuNavLabelTemplates) {
+    cuNavLabelTemplates.style.display = cuHasPermission('foundry.label_formats.view') ? '' : 'none';
+  }
+
   /** When login returned a non-empty modules map, enforce it (missing key = allowed for backward compatibility). */
   function cosmosModuleAllowed(modKey) {
     const mods = user.modules;
@@ -132,6 +138,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       const nextPath = COMMAND_UNIT_PAGE_PATHS[id] || '/command-unit/dashboard'
       if (!showOptions.fromHistory && window.location.pathname !== nextPath) {
         window.history.pushState({ module: 'command-unit', page: id }, '', nextPath)
+      }
+      if (id === 'label-templates' && typeof window.initLabelTemplateConfigurator === 'function') {
+        window.initLabelTemplateConfigurator({
+          canEdit: cuHasPermission('foundry.label_formats.edit')
+        })
       }
     }
     const pageId = getCommandUnitPageFromPath(window.location.pathname)
@@ -4322,6 +4333,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (id === 'foundry-settings') {
         void loadFoundrySettings();
         void loadInventoryHubSettings();
+      }
+      if (id === 'label-templates' && typeof window.initLabelTemplateConfigurator === 'function') {
+        window.initLabelTemplateConfigurator({
+          canEdit: cuHasPermission('foundry.label_formats.edit')
+        });
       }
       if (id === 'store-types') void loadStoreTypeCatalogAdmin();
     };

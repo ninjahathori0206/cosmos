@@ -224,6 +224,7 @@
   @media (max-width:600px) { .fin-inv-grid { grid-template-columns:1fr; } .fin-inv-filters { flex-direction:column; } .fin-inv-store-sel,.fin-inv-search { width:100%; } }
 </style>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260525-toast-date">
+<link rel="stylesheet" href="/css/store-collections.css?v=20260527-phase2">
 <script src="/js/cosmos-ui-polish.js?v=20260528-polish-load-defer" defer></script>
 <script src="/js/cosmos-invoice-share-canvas.js?v=20260528-inv-rich" defer></script>
 </head>
@@ -249,6 +250,7 @@
     <div class="nav-item" onclick="nav('purchase-reports',this)"><span class="ic">📋</span> Purchase Reports</div>
     <div class="nav-item" onclick="nav('item-finance',this)"><span class="ic">💎</span> Item Finance</div>
     <div class="nav-item" id="fin-nav-invoices" onclick="nav('invoices',this);loadFinInvoices()"><span class="ic">🧾</span> Sales Invoices</div>
+    <div class="nav-item" id="fin-nav-collections" onclick="nav('collections',this)"><span class="ic">💰</span> Collection Book</div>
 
   </nav>
   <div class="sidebar-user sidebar-user--with-modules">
@@ -863,6 +865,63 @@
     <div id="fin-invoices-list" style="margin-top:4px"></div>
   </div>
 
+  <!-- ═══ COLLECTION BOOK ═══ -->
+  <div class="page" id="page-collections">
+    <div class="ph">
+      <div class="pt">Total Collection Book</div>
+      <div class="ps" id="sc-store-title">All stores — Store Cash, Payment Machine, and Store Bank ledgers.</div>
+    </div>
+    <div id="sc-stores-panel"><div id="sc-stores-wrap"></div></div>
+    <div id="sc-detail-panel" style="display:none">
+      <div id="sc-actions" class="sc-actions-row sc-detail-toolbar"></div>
+      <div id="sc-summary-cards" class="sc-summary-grid"></div>
+      <div class="card">
+        <div class="ch sc-ledger-head">
+          <span class="ct">Money flow ledger</span>
+          <div class="sc-ledger-head-actions">
+            <button type="button" class="btn sm" id="sc-btn-export-csv">Export CSV</button>
+          </div>
+        </div>
+        <div class="sc-ledger-toolbar">
+          <div class="sc-ledger-tabs" role="tablist" aria-label="Ledger filter">
+            <button type="button" class="sc-ledger-tab active" data-sc-ledger="">All</button>
+            <button type="button" class="sc-ledger-tab" data-sc-ledger="store_cash">Store Cash</button>
+            <button type="button" class="sc-ledger-tab" data-sc-ledger="payment_machine">Payment Machine</button>
+            <button type="button" class="sc-ledger-tab" data-sc-ledger="store_bank">Store Bank</button>
+          </div>
+          <div class="sc-ledger-filters">
+            <select id="sc-date-preset" class="sc-filter-select" aria-label="Date range preset">
+              <option value="all" selected>All time</option>
+              <option value="today">Today</option>
+              <option value="7d">Last 7 days</option>
+              <option value="month">This month</option>
+              <option value="custom">Custom range</option>
+            </select>
+            <input type="date" id="sc-date-from" class="sc-filter-date" aria-label="From date" hidden>
+            <input type="date" id="sc-date-to" class="sc-filter-date" aria-label="To date" hidden>
+          </div>
+        </div>
+        <div class="cb" style="padding:0">
+          <div class="tw">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th><th>Type</th><th>Ledger</th><th>Method</th>
+                  <th class="text-right">Amount</th><th>Reference</th><th class="text-right">Charges</th>
+                  <th class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="sc-ledger-tbody"></tbody>
+            </table>
+          </div>
+          <div class="sc-ledger-footer">
+            <button type="button" class="btn sm" id="sc-btn-load-more" hidden>Load more</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   </div><!-- /.cosmos-app-scroll -->
 
 </main>
@@ -1010,6 +1069,74 @@
   </div>
 </div>
 
+<!-- Collection Book modals -->
+<div class="overlay" id="overlay-sc-cash-deposit" onclick="if(event.target===this)scCloseCashDepositModal()">
+  <div class="modal" style="max-width:440px">
+    <div class="mh"><div class="mt-title">Record cash deposit</div><span class="mclose" onclick="scCloseCashDepositModal()">✕</span></div>
+    <div class="mb" style="padding:20px">
+      <div class="fgrp"><label>Amount <span class="req">*</span></label><input type="number" id="sc-cd-amount" min="0" step="0.01"></div>
+      <div class="fgrp"><label>Deposit date <span class="req">*</span></label><input type="date" id="sc-cd-date"></div>
+      <div class="fgrp"><label>Bank reference / UTR</label><input type="text" id="sc-cd-ref" maxlength="200"></div>
+      <div class="fgrp"><label>Notes</label><textarea id="sc-cd-notes" rows="2"></textarea></div>
+      <div id="sc-cd-error" class="err-msg" style="display:none"></div>
+    </div>
+    <div class="mf"><button class="btn" onclick="scCloseCashDepositModal()">Cancel</button><button class="btn primary" id="sc-cd-submit" onclick="scSubmitCashDeposit()">Save deposit</button></div>
+  </div>
+</div>
+<div class="overlay" id="overlay-sc-machine-settlement" onclick="if(event.target===this)scCloseMachineSettlementModal()">
+  <div class="modal" style="max-width:480px">
+    <div class="mh"><div class="mt-title" id="sc-ms-modal-title">Record machine settlement</div><span class="mclose" onclick="scCloseMachineSettlementModal()">✕</span></div>
+    <div class="mb" style="padding:20px">
+      <div class="fg2">
+        <div class="fgrp"><label>Period from</label><input type="date" id="sc-ms-from" onchange="scRefreshMachineSuggest()"></div>
+        <div class="fgrp"><label>Period to</label><input type="date" id="sc-ms-to" onchange="scRefreshMachineSuggest()"></div>
+      </div>
+      <div id="sc-ms-breakdown" class="xs td3" style="margin-bottom:10px"></div>
+      <div class="fgrp"><label>Gross collected <span class="req">*</span></label><input type="number" id="sc-ms-gross" min="0" step="0.01"></div>
+      <div class="fgrp"><label>Machine charges (MDR)</label><input type="number" id="sc-ms-charges" min="0" step="0.01" value="0"></div>
+      <div class="fgrp"><label>Net to bank</label><input type="number" id="sc-ms-net" min="0" step="0.01" readonly></div>
+      <div class="fg2">
+        <div class="fgrp"><label>Settlement date</label><input type="date" id="sc-ms-date"></div>
+        <div class="fgrp"><label>Bank reference</label><input type="text" id="sc-ms-ref" maxlength="200"></div>
+      </div>
+      <div class="fgrp"><label>Notes</label><textarea id="sc-ms-notes" rows="2"></textarea></div>
+      <div id="sc-ms-error" class="err-msg" style="display:none"></div>
+    </div>
+    <div class="mf"><button class="btn" onclick="scCloseMachineSettlementModal()">Cancel</button><button class="btn primary" id="sc-ms-submit" onclick="scSubmitMachineSettlement()">Save settlement</button></div>
+  </div>
+</div>
+<div class="overlay" id="overlay-sc-treasury-setup" onclick="if(event.target===this)scCloseTreasurySetupModal()">
+  <div class="modal" style="max-width:480px">
+    <div class="mh"><div class="mt-title">Store treasury setup</div><span class="mclose" onclick="scCloseTreasurySetupModal()">✕</span></div>
+    <div class="mb" style="padding:20px">
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Bank account</div>
+      <div class="fgrp"><label>Bank name</label><input type="text" id="sc-setup-bank-name"></div>
+      <div class="fgrp"><label>Account number</label><input type="text" id="sc-setup-account-no"></div>
+      <div class="fg2">
+        <div class="fgrp"><label>IFSC</label><input type="text" id="sc-setup-ifsc"></div>
+        <div class="fgrp"><label>Account holder</label><input type="text" id="sc-setup-holder"></div>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin:16px 0 8px">Payment machine</div>
+      <div class="fgrp"><label>Provider</label><select id="sc-setup-provider"></select></div>
+      <div class="fgrp"><label>Merchant ID</label><input type="text" id="sc-setup-merchant"></div>
+      <div class="fgrp"><label>Terminal label</label><input type="text" id="sc-setup-terminal"></div>
+      <div id="sc-setup-error" class="err-msg" style="display:none"></div>
+    </div>
+    <div class="mf"><button class="btn" onclick="scCloseTreasurySetupModal()">Cancel</button><button class="btn primary" id="sc-setup-submit" onclick="scSubmitTreasurySetup()">Save setup</button></div>
+  </div>
+</div>
+<div class="overlay" id="overlay-sc-void-transfer" onclick="if(event.target===this)scCloseVoidModal()">
+  <div class="modal" style="max-width:420px">
+    <div class="mh"><div class="mt-title">Void transfer</div><span class="mclose" onclick="scCloseVoidModal()">✕</span></div>
+    <div class="mb" style="padding:20px">
+      <p id="sc-void-desc" style="font-size:13px;color:var(--text2);margin-bottom:14px"></p>
+      <div class="fgrp"><label>Reason (optional)</label><textarea id="sc-void-reason" rows="3" maxlength="300" placeholder="Why is this entry being voided?"></textarea></div>
+      <div id="sc-void-error" class="err-msg" style="display:none"></div>
+    </div>
+    <div class="mf"><button class="btn" onclick="scCloseVoidModal()">Cancel</button><button class="btn danger" id="sc-void-submit" onclick="scSubmitVoidTransfer()">Void entry</button></div>
+  </div>
+</div>
+
 <script>
 // ── Breadcrumb map ─────────────────────────────────────────────────────────────
 const bcMap = {
@@ -1022,7 +1149,8 @@ const bcMap = {
   'payments':         'Record Payment',
   'purchase-reports': 'Purchase Reports',
   'item-finance':     'Item Finance',
-  'invoices':         'Sales Invoices'
+  'invoices':         'Sales Invoices',
+  'collections':      'Collection Book'
 };
 
 function openSidebar() {
@@ -1055,6 +1183,7 @@ document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e
 </script>
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal"></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
+<script src="/js/store-collections.js?v=20260527-phase2b"></script>
 <script src="/js/finance-prototype.js"></script>
 </body>
 </html>

@@ -96,7 +96,9 @@ const FINANCE_PAGE_PATHS = {
   'supplier-ledger': '/finance/supplier-ledger',
   payments: '/finance/payments',
   'purchase-reports': '/finance/purchase-reports',
-  'item-finance': '/finance/item-finance'
+  'item-finance': '/finance/item-finance',
+  invoices: '/finance/invoices',
+  collections: '/finance/collections'
 }
 
 function getFinancePageFromPath(pathname) {
@@ -342,6 +344,7 @@ const _origNav = window.nav ? window.nav : null;
     if (id === 'challan-list') loadChallanListPage();
     if (id === 'challan-valuation') loadChallanValuationList();
     if (id === 'purchase-invoices') initPurchaseInvoicePage();
+    if (id === 'collections' && typeof window.loadStoreCollections === 'function') loadStoreCollections('finance');
   };
 })();
 

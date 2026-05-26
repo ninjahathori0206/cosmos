@@ -1,40 +1,11 @@
 const express = require('express')
 const sql = require('mssql')
-const Joi = require('joi')
 const { getPool } = require('../config/db')
 const { authJwt } = require('../middleware/authJwt')
 const { requireModule, requireCxPermission } = require('../middleware/authorize')
 const orderService = require('../services/orderService')
-const { OFFER_DISCOUNT_TYPES } = require('../config/customerOfferDiscountTypes')
 
 const router = express.Router()
-
-const cxOfferCreateSchema = Joi.object({
-  title: Joi.string().max(200).required(),
-  description: Joi.string().max(500).allow('', null),
-  icon_emoji: Joi.string().max(10).allow('', null),
-  discount_type: Joi.string().valid(...OFFER_DISCOUNT_TYPES).default('PCT'),
-  discount_value: Joi.number().min(0).default(0),
-  valid_from: Joi.any().optional(),
-  valid_to: Joi.any().required(),
-  eligible_tier: Joi.string().max(50).allow(null, ''),
-  is_plus_only: Joi.boolean().default(false),
-  sort_order: Joi.number().integer().min(0).default(0)
-})
-
-const cxOfferPatchSchema = Joi.object({
-  title: Joi.string().max(200),
-  description: Joi.string().max(500).allow('', null),
-  icon_emoji: Joi.string().max(10).allow('', null),
-  discount_type: Joi.string().valid(...OFFER_DISCOUNT_TYPES),
-  discount_value: Joi.number().min(0),
-  valid_from: Joi.any(),
-  valid_to: Joi.any(),
-  eligible_tier: Joi.string().max(50).allow(null, ''),
-  is_plus_only: Joi.boolean(),
-  is_active: Joi.boolean(),
-  sort_order: Joi.number().integer().min(0)
-}).min(1)
 
 /** GET /api/cx/dashboard — summary + revenue_by_store */
 router.get('/dashboard', authJwt, requireModule('cx'), requireCxPermission('cx.dashboard.view'), async (req, res, next) => {
@@ -474,8 +445,15 @@ router.post('/customers/:id/eye-tests', authJwt, requireModule('cx'), requireCxP
 })
 
 /* ══════════════════════════════════════════════════════════════
-   STAFF: Customer Offers CRUD
+   STAFF: Customer Offers (view-only in CX; writes via Command Unit)
 ══════════════════════════════════════════════════════════════ */
+
+const CX_OFFERS_READONLY_MESSAGE =
+  'Customer offers are managed in Command Unit → Promotion → Configure Offer. CX offers are view-only.'
+
+function cxOffersMutateBlocked (res) {
+  return res.status(403).json({ success: false, message: CX_OFFERS_READONLY_MESSAGE })
+}
 
 /** GET /api/cx/offers */
 router.get('/offers', authJwt, requireModule('cx'), requireCxPermission('cx.offers.view', 'cx.offers.manage'), async (req, res, next) => {
@@ -483,8 +461,9 @@ router.get('/offers', authJwt, requireModule('cx'), requireCxPermission('cx.offe
     const pool = await getPool()
     const r = await pool.request().query(`
       SELECT offer_id, title, description, icon_emoji, discount_type,
-             discount_value, valid_from, valid_to, eligible_tier,
-             is_plus_only, is_active, sort_order, created_at
+             discount_value, valid_from, valid_to,
+             required_capability, cashback_rate,
+             is_active, sort_order, created_at
       FROM   dbo.customer_offers
       ORDER BY is_active DESC, sort_order ASC, created_at DESC
     `)
@@ -494,142 +473,19 @@ router.get('/offers', authJwt, requireModule('cx'), requireCxPermission('cx.offe
   }
 })
 
-/** POST /api/cx/offers */
-router.post('/offers', authJwt, requireModule('cx'), requireCxPermission('cx.offers.manage'), async (req, res, next) => {
-  try {
-    const { error, value } = cxOfferCreateSchema.validate(req.body || {})
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors: error.details.map((d) => d.message)
-      })
-    }
-
-    const pool = await getPool()
-    const {
-      title,
-      description,
-      icon_emoji,
-      discount_type,
-      discount_value,
-      valid_from,
-      valid_to,
-      eligible_tier,
-      is_plus_only,
-      sort_order
-    } = value
-
-    const r = await pool.request()
-      .input('title',          title)
-      .input('description',    description || '')
-      .input('icon_emoji',     icon_emoji  || '🎁')
-      .input('discount_type',  discount_type)
-      .input('discount_value', parseFloat(discount_value) || 0)
-      .input('valid_from',     valid_from || new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T'))
-      .input('valid_to',       valid_to)
-      .input('eligible_tier',  eligible_tier || null)
-      .input('is_plus_only',   is_plus_only ? 1 : 0)
-      .input('sort_order',     parseInt(sort_order, 10) || 0)
-      .input('uid',            req.user.user_id || null)
-      .query(`
-        INSERT INTO dbo.customer_offers
-          (title, description, icon_emoji, discount_type, discount_value,
-           valid_from, valid_to, eligible_tier, is_plus_only, sort_order,
-           created_by_user_id)
-        OUTPUT INSERTED.offer_id
-        VALUES
-          (@title, @description, @icon_emoji, @discount_type, @discount_value,
-           @valid_from, @valid_to, @eligible_tier, @is_plus_only, @sort_order,
-           @uid)
-      `)
-    return res.status(201).json({ success: true, offer_id: r.recordset[0].offer_id })
-  } catch (err) {
-    return next(err)
-  }
+/** POST /api/cx/offers — view-only; use Command Unit Configure Offer */
+router.post('/offers', authJwt, requireModule('cx'), requireCxPermission('cx.offers.manage'), (req, res) => {
+  return cxOffersMutateBlocked(res)
 })
 
-/** PATCH /api/cx/offers/:id */
-router.patch('/offers/:id', authJwt, requireModule('cx'), requireCxPermission('cx.offers.manage'), async (req, res, next) => {
-  try {
-    const pool = await getPool()
-    const offerId = parseInt(req.params.id, 10)
-    if (!offerId) return res.status(400).json({ success: false, message: 'Invalid offer ID.' })
-
-    const { error, value } = cxOfferPatchSchema.validate(req.body || {})
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors: error.details.map((d) => d.message)
-      })
-    }
-
-    const {
-      title,
-      description,
-      icon_emoji,
-      discount_type,
-      discount_value,
-      valid_from,
-      valid_to,
-      eligible_tier,
-      is_plus_only,
-      is_active,
-      sort_order
-    } = value
-
-    await pool.request()
-      .input('id',             offerId)
-      .input('title',          title          || null)
-      .input('description',    description    || null)
-      .input('icon_emoji',     icon_emoji     || null)
-      .input('discount_type',  discount_type  || null)
-      .input('discount_value', discount_value != null ? parseFloat(discount_value) : null)
-      .input('valid_from',     valid_from     || null)
-      .input('valid_to',       valid_to       || null)
-      .input('eligible_tier',  eligible_tier  !== undefined ? (eligible_tier || null) : undefined)
-      .input('is_plus_only',   is_plus_only   != null ? (is_plus_only ? 1 : 0) : null)
-      .input('is_active',      is_active      != null ? (is_active    ? 1 : 0) : null)
-      .input('sort_order',     sort_order     != null ? parseInt(sort_order, 10) : null)
-      .query(`
-        UPDATE dbo.customer_offers SET
-          title          = ISNULL(@title,          title),
-          description    = ISNULL(@description,    description),
-          icon_emoji     = ISNULL(@icon_emoji,     icon_emoji),
-          discount_type  = ISNULL(@discount_type,  discount_type),
-          discount_value = ISNULL(@discount_value, discount_value),
-          valid_from     = ISNULL(@valid_from,     valid_from),
-          valid_to       = ISNULL(@valid_to,       valid_to),
-          eligible_tier  = ISNULL(@eligible_tier,  eligible_tier),
-          is_plus_only   = ISNULL(@is_plus_only,   is_plus_only),
-          is_active      = ISNULL(@is_active,      is_active),
-          sort_order     = ISNULL(@sort_order,     sort_order),
-          updated_at     = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-        WHERE offer_id = @id
-      `)
-    return res.json({ success: true })
-  } catch (err) {
-    return next(err)
-  }
+/** PATCH /api/cx/offers/:id — view-only */
+router.patch('/offers/:id', authJwt, requireModule('cx'), requireCxPermission('cx.offers.manage'), (req, res) => {
+  return cxOffersMutateBlocked(res)
 })
 
-/** DELETE /api/cx/offers/:id — soft delete (deactivate) */
-router.delete('/offers/:id', authJwt, requireModule('cx'), requireCxPermission('cx.offers.manage'), async (req, res, next) => {
-  try {
-    const pool = await getPool()
-    const offerId = parseInt(req.params.id, 10)
-    if (!offerId) return res.status(400).json({ success: false, message: 'Invalid offer ID.' })
-
-    await pool.request().input('id', offerId).query(`
-      UPDATE dbo.customer_offers
-      SET is_active = 0, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-      WHERE offer_id = @id
-    `)
-    return res.json({ success: true })
-  } catch (err) {
-    return next(err)
-  }
+/** DELETE /api/cx/offers/:id — view-only */
+router.delete('/offers/:id', authJwt, requireModule('cx'), requireCxPermission('cx.offers.manage'), (req, res) => {
+  return cxOffersMutateBlocked(res)
 })
 
 module.exports = router

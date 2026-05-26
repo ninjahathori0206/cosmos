@@ -89,7 +89,7 @@ function cxApplyFinePermissionsUi () {
   if (cust) cust.style.display = window.cosmosCxAllows(['cx.customers.view']) ? '' : 'none'
   if (off) off.style.display = window.cosmosCxAllows(['cx.offers.view', 'cx.offers.manage']) ? '' : 'none'
   var newOfferBtn = document.getElementById('cx-btn-new-offer')
-  if (newOfferBtn) newOfferBtn.style.display = window.cosmosCxAllows(['cx.offers.manage']) ? '' : 'none'
+  if (newOfferBtn) newOfferBtn.style.display = 'none'
   var gmEye = document.getElementById('gm-eye-test-btn')
   if (gmEye) gmEye.style.display = window.cosmosCxAllows(['cx.eye_tests.create']) ? '' : 'none'
   var gmSave = document.getElementById('gm-save-btn')

@@ -16,7 +16,11 @@ const { getLabWorkflowTransitionsForApi } = require('../config/labWorkflowTransi
 const { getFoundryCatalogueNavForApi } = require('../config/foundryCatalogueNavCatalog');
 const { ALL_CATALOGUE_PERMISSION_KEYS } = require('../config/foundryCatalogueAuth');
 const { listLabelPrintFormats } = require('../services/labelPrintFormatService');
+const { ZONE_CONTENT_TOKENS, ZONE_CONTENT_PRESETS } = require('../config/labelPrintFormatSchema');
 const { FOUNDRY_LABEL_FORMAT_READ_PERMS } = require('../config/foundryLabelFormatReadPerms');
+const { getTreasuryLedgerMetaForApi } = require('../config/treasuryLedgerCatalog');
+const { getPaymentMachineProviderCatalog } = require('../config/paymentMachineProviderCatalog')
+const { MEMBERSHIP_CAPABILITY_GROUPS } = require('../config/membershipCapabilityGroups');
 
 const router = express.Router();
 
@@ -114,8 +118,23 @@ router.get(
 );
 
 router.get(
+  '/label-zone-content-tokens',
+  requireAnyModule(['command_unit', 'foundry']),
+  requirePermission(...FOUNDRY_LABEL_FORMAT_READ_PERMS),
+  (req, res) => {
+    res.json({
+      success: true,
+      data: {
+        tokens: ZONE_CONTENT_TOKENS,
+        presets: ZONE_CONTENT_PRESETS
+      }
+    });
+  }
+);
+
+router.get(
   '/label-print-formats',
-  requireModule('foundry'),
+  requireAnyModule(['command_unit', 'foundry']),
   requirePermission(...FOUNDRY_LABEL_FORMAT_READ_PERMS),
   async (req, res, next) => {
     try {
@@ -127,6 +146,38 @@ router.get(
     } catch (err) {
       return next(err);
     }
+  }
+);
+
+router.get(
+  '/treasury-ledgers',
+  requireAnyModule(['storepilot', 'finance']),
+  requirePermission('storepilot.collections.view', 'finance.collections.view'),
+  (req, res) => {
+    res.json({
+      success: true,
+      data: getTreasuryLedgerMetaForApi()
+    });
+  }
+);
+
+router.get(
+  '/payment-machine-providers',
+  requireAnyModule(['storepilot', 'finance']),
+  requirePermission('storepilot.collections.view', 'finance.collections.view'),
+  (req, res) => {
+    res.json({
+      success: true,
+      data: { providers: getPaymentMachineProviderCatalog() }
+    });
+  }
+);
+
+router.get(
+  '/membership-capability-groups',
+  requireAnyModule(['command_unit', 'cx', 'pos']),
+  (req, res) => {
+    res.json({ success: true, data: MEMBERSHIP_CAPABILITY_GROUPS });
   }
 );
 

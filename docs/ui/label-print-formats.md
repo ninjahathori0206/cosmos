@@ -1,66 +1,61 @@
-# Label print formats (named presets)
+# Label print formats (named presets + zones)
 
 **Modal:** `#modal-barcode-print` in [`Foundry_Prototype.html`](../../Foundry_Prototype.html)  
-**JS:** [`foundry-prototype.js`](../../src/public/js/foundry-prototype.js) — `_bcEnsureLabelFormatsLoaded`, `bcOnFormatSelectChange`, `bcUpdateLabelFormat`  
-**Config:** [`foundryLabelFormatReadPerms.js`](../../src/config/foundryLabelFormatReadPerms.js) — shared GET permission keys  
-**Pencil frame:** `foundry/barcode-print` (format picker + geometry controls; no unit list)
+**Configurator:** Command Unit → **Label Templates** (`/command-unit/label-templates`)  
+**JS:** [`foundry-prototype.js`](../../src/public/js/foundry-prototype.js) · [`label-template-configurator.js`](../../src/public/js/label-template-configurator.js)  
+**Schema:** [`labelPrintFormatSchema.js`](../../src/config/labelPrintFormatSchema.js)  
+**API:** `GET|PUT|POST|DELETE /api/foundry/label-print-formats` · meta `GET /api/meta/label-print-formats`
 
 ## Purpose
 
-Operators always print **QR codes** encoding the 7-digit **unit barcode**. Physical labels come in **named org-wide formats** (large roll, small sticker, eyewear strip) — set up once, reused on every PC, editable later.
+Operators print **7-digit unit QR** labels using org-wide **named formats**. Admins design layouts in Command Unit (page geometry + draggable **zones**); Foundry loads the same records at print time.
 
-## User flow
+## Permissions
 
-1. Select SKUs on Purchase View → **Print selected** / **Print all** (or warehouse publish opens modal with full batch).
-2. Modal opens → **Label format** dropdown shows “Loading formats…” then presets from `GET /api/meta/label-print-formats` (or built-in fallbacks if the request fails).
-3. Choosing a format applies geometry + QR layout fields and refreshes preview.
-4. User with `foundry.label_formats.edit` can **Update format**, **Save as new…**, or **Set as default**.
-5. **Print Labels** sends full batch (one QR per unit). USB horizontal calibration stays per browser/printer.
+| Action | Key |
+|--------|-----|
+| View formats / configurator | `foundry.label_formats.view` |
+| Edit / create / delete | `foundry.label_formats.edit` |
 
-## Modal UI (left column)
+Command Unit nav uses the same keys (module: `command_unit` or `foundry`).
 
-| Control | Behaviour |
-|---------|-----------|
-| Label format | `<select id="bc-format-select">` — named presets from API + client fallbacks |
-| Helper | Layout-specific hint (grid / compact / strip) |
-| Update format | PUT current preset with field values from modal |
-| Save as new… | Prompt name → POST new `format_key` |
-| Set as default | PUT `is_default: true` on current format |
-| Geometry / QR / TSPL blocks | Unchanged; values belong to selected format |
-| USB calibration | Unchanged; **not** saved in server format |
+## Zone templates (migration 70)
 
-Edit actions hidden when JWT lacks `foundry.label_formats.edit`.
+| `format_key` | Description |
+|--------------|-------------|
+| `small_15x15` | 15×15 · 6-up · QR + vertical unit + brand footer |
+| `small_15x15_fixed` | Brand rail + unit footer (TSPL-aligned) |
+| `small_15x15_alt` | Brand rail + unit band |
+| `strip_104x12` | 104×12 frame wrap · 33+33+34 zones |
+| `large_label` | Legacy grid (no zones — imperative layout) |
 
-## API
+Legacy keys (`small_label`, `small_15x15_continuous_109`, `eyewear_strip_12x100`, …) are deactivated after migration 70.
 
-| Method | Route | Permission |
-|--------|-------|------------|
-| GET | `/api/meta/label-print-formats` | `foundry` module + **any one** of: `foundry.label_formats.view`, `foundry.purchases.view`, `foundry.bill_verification.view`, `foundry.branding.view`, `foundry.digitisation.view`, `foundry.warehouse.view`, `foundry.stock.view` (see `FOUNDRY_LABEL_FORMAT_READ_PERMS`) |
-| POST | `/api/foundry/label-print-formats` | `foundry.label_formats.edit` |
-| PUT | `/api/foundry/label-print-formats/:formatKey` | `foundry.label_formats.edit` |
-| DELETE | `/api/foundry/label-print-formats/:formatKey` | `foundry.label_formats.edit` |
+## Data model
 
-## Seed formats (migration)
+- **`config_json`** — printer globals: `dotsPerMm`, `qrCellSize`, `textFontId`, `textXMul`, `textYMul`, `layoutType` fallback
+- **`zones_json`** — declarative zones (`qr`, `text`, `tail`) with mm geometry and content tokens
+- Denormalized mm columns on `dbo.label_print_formats` for the configurator UI
 
-| format_key | Name | Size (mm) |
-|------------|------|-----------|
-| `large_label` | Large label | 40 × 28 (default) |
-| `small_label` | Small label | 15 × 15 compact (1 per row, brand + price) |
-| `small_15x15_continuous_109` | 15×15mm Label — Continuous Roll | 15 × 15 · **6 columns** · 109 mm roll width |
-| `eyewear_strip_12x100` | Eyewear strip 12×100 | 100 × 12 (66 mm print + tail) |
+## Content tokens
 
-Deploy: `npm run migrate:64-label-print-formats`, `migrate:65-eyewear-strip-label`, `migrate:66-qr-15x15-compact-label`, `migrate:68-small-15x15-continuous-roll-109`.
+| Token | Print value |
+|-------|-------------|
+| `{unit_id}` | 7-digit unit barcode |
+| `{sku_code}` | SKU code |
+| `{brand}` | Brand segment |
+| `{model}` | Model line |
+| `{mrp}` | Integer MRP |
 
-Grant `foundry.label_formats.view` to existing roles (optional, for explicit catalogue key):  
-[`sql/maintenance/grant_label_formats_view_from_purchase_roles.sql`](../../sql/maintenance/grant_label_formats_view_from_purchase_roles.sql) — **re-login** after run.
+## Deploy
 
-## States
+```bash
+npm run migrate:70-label-print-formats-zones
+```
 
-- **Loading formats:** dropdown disabled with “Loading formats…” until GET completes.
-- **API error:** toast warns; dropdown still lists **built-in presets** (`large_label`, `small_label`, `eyewear_strip_12x100`) so printing is never blocked.
-- **Save/update error:** `cosmosToastError` with API message.
+Re-login if role permissions changed. Operators re-select default format in the barcode modal once.
 
-## Out of scope
+## Related
 
-- CODE128 barcode type (encoding is QR only).
-- Per-unit selection or qty in modal (see [`purchase-view-barcode-print.md`](purchase-view-barcode-print.md)).
+- [`label-template-configurator.md`](label-template-configurator.md)
+- [`qr-15x15-label.md`](qr-15x15-label.md)

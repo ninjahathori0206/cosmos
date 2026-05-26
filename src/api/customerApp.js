@@ -104,10 +104,10 @@ router.get('/me', async (req, res, next) => {
         ORDER BY m.expires_at DESC
       `),
       pool.request().input('cid', cid).query(`
-        SELECT ISNULL(SUM(points_delta), 0) AS balance,
-               MAX(balance_after)           AS balance_after
+        SELECT TOP 1 balance_after
         FROM   dbo.pos_points_ledger
         WHERE  customer_id = @cid
+        ORDER BY ledger_id DESC
       `)
     ]);
 
@@ -116,7 +116,7 @@ router.get('/me', async (req, res, next) => {
 
     const membership = membershipR.recordset[0] || null;
     const loyaltyRow = loyaltyR.recordset[0];
-    const balance = loyaltyRow ? Math.max(0, loyaltyRow.balance_after || 0) : 0;
+    const balance = loyaltyRow ? Math.max(0, Number(loyaltyRow.balance_after) || 0) : 0;
     const tier = await getTier(pool, balance);
 
     let prefs = null;
@@ -589,48 +589,40 @@ router.get('/offers', async (req, res, next) => {
     const pool = await getPool();
     const cid = req.customerId;
 
-    const [balR, memR] = await Promise.all([
-      pool.request().input('cid', cid).query(`
-        SELECT TOP 1 balance_after AS balance FROM dbo.pos_points_ledger
-        WHERE customer_id = @cid ORDER BY ledger_id DESC
-      `),
-      pool.request().input('cid', cid).query(`
-        SELECT TOP 1 plan_key FROM dbo.customer_memberships
-        WHERE customer_id = @cid AND is_active = 1
-          AND expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
-        ORDER BY expires_at DESC
-      `)
-    ]);
-
-    const balance   = (balR.recordset[0] && balR.recordset[0].balance) || 0;
-    const hasMem    = memR.recordset.length > 0;
-    const tier      = await getTier(pool, balance);
-    const tierName  = tier.tier_name;
+    const memR = await pool.request().input('cid', cid).query(`
+      SELECT TOP 1
+        cm.plan_key,
+        mp.has_plus_access,
+        mp.extra_cashback_pct,
+        mp.flat_discount_pct,
+        mp.has_one_time_discount,
+        mp.can_create_sub_cards
+      FROM   dbo.customer_memberships cm
+      JOIN   dbo.membership_plans mp ON mp.plan_key = cm.plan_key
+      WHERE  cm.customer_id = @cid AND cm.is_active = 1
+        AND  cm.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      ORDER BY cm.expires_at DESC
+    `);
+    const memRow = memR.recordset[0] || null;
 
     const now = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T');
     const r = await pool.request()
       .input('now', now)
       .query(`
         SELECT offer_id, title, description, icon_emoji, discount_type,
-               discount_value, valid_from, valid_to, eligible_tier,
-               is_plus_only, sort_order
+               discount_value, valid_from, valid_to,
+               required_capability, cashback_rate, sort_order
         FROM   dbo.customer_offers
         WHERE  is_active = 1
           AND  valid_from <= @now
           AND  valid_to   >= @now
-        ORDER BY is_plus_only DESC, sort_order ASC, offer_id DESC
+        ORDER BY sort_order ASC, offer_id DESC
       `);
 
-    const tierOrder = ['Silver', 'Gold', 'Platinum'];
-    const tierIdx   = tierOrder.indexOf(tierName);
-
     const offers = r.recordset.filter(o => {
-      if (o.is_plus_only && !hasMem) return false;
-      if (o.eligible_tier) {
-        const reqIdx = tierOrder.indexOf(o.eligible_tier);
-        if (reqIdx > tierIdx) return false;
-      }
-      return true;
+      if (!o.required_capability) return true;
+      if (!memRow) return false;
+      return Boolean(memRow[o.required_capability]);
     });
 
     return res.json({ success: true, data: offers });

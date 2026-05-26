@@ -1,6 +1,6 @@
 # QR 15×15 compact label (eyewear)
 
-**Modal:** `#modal-barcode-print` — presets **`small_label`**, **`small_15x15_continuous_109`**  
+**Modal:** `#modal-barcode-print` — zone presets **`small_15x15`**, **`small_15x15_fixed`**, **`small_15x15_alt`** (configure in Command Unit → Label Templates)  
 **Route:** Foundry Purchase View batch print (stages 4–5, warehouse publish)  
 **JS:** [`foundry-prototype.js`](../../src/public/js/foundry-prototype.js) — `layoutType: 'compact'`  
 **Design preview:** [`compact-15x15-alignment-preview.html`](compact-15x15-alignment-preview.html) · Pencil frame `foundry/barcode-print`

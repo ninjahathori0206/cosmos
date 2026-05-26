@@ -6230,6 +6230,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let _bcLabelFormats = [];
   let _bcLabelFormatsLoaded = false;
   let _bcActiveFormatConfig = { layoutType: 'grid' };
+  let _bcActiveFormatRow = null;
 
   const BC_STRIP_CONFIG_KEYS = ['layoutType', 'printWidthMm', 'zone1WidthMm', 'zone2WidthMm', 'tailWidthMm'];
   const BC_COMPACT_CONFIG_KEYS = ['layoutType', 'bottomBandHeightMm', 'rightRailWidthMm'];
@@ -6239,8 +6240,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const BC_LARGE_LABEL_FALLBACK = {
     format_key: 'large_label',
     name: 'Large label',
-    description: 'Roll label — 40×28 mm (default)',
-    is_default: true,
+    description: 'Roll label — 40×28 mm (legacy grid)',
+    is_default: false,
     config: {
       v: 1, layoutType: 'grid', marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0,
       gapRow: 0, gapCol: 0, labelWidthMm: 40, labelHeightMm: 28, labelsPerRow: 1, dotsPerMm: 8,
@@ -6249,69 +6250,110 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  const BC_SMALL_COMPACT_FALLBACK = {
-    format_key: 'small_label',
-    name: 'Small label',
-    description: 'Eyewear QR sticker — 15×15 mm (unit + brand/price)',
+  const BC_SMALL_15X15_FALLBACK = {
+    format_key: 'small_15x15',
+    name: '15×15mm Small Label',
+    description: '6-up on 109mm roll · QR + vertical unit id + brand/MRP footer',
+    is_default: true,
+    label_type: 'SQUARE',
+    page_width_mm: 109,
+    columns: 6,
+    col_gap_mm: 3,
+    row_gap_mm: 3,
+    margin_left_mm: 2,
+    margin_right_mm: 2,
+    margin_top_mm: 2,
+    label_width_mm: 15,
+    label_height_mm: 15,
     config: {
-      v: 1, layoutType: 'compact', marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0,
-      gapRow: 0, gapCol: 0, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 1, dotsPerMm: 8,
-      qrCellSize: 3, qrVisualSizeMm: 9, qrTopRatio: 0.02, textTopRatio: 0.68,
-      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 8,
-      bottomBandHeightMm: 4, rightRailWidthMm: 3.5
-    }
-  };
-
-  const BC_SMALL_15X15_CONTINUOUS_109_FALLBACK = {
-    format_key: 'small_15x15_continuous_109',
-    name: '15×15mm Label — Continuous Roll',
-    description: '6 columns · continuous rows · 109 mm roll · QR + unit id + brand/price on each sticker',
-    config: {
-      v: 1, layoutType: 'compact', marginTop: 0, marginBottom: 0, marginLeft: 2, marginRight: 2,
-      gapRow: 2, gapCol: 3, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 6, dotsPerMm: 8,
-      qrCellSize: 3, qrVisualSizeMm: 9, qrTopRatio: 0.02, textTopRatio: 0.68,
-      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 8,
-      bottomBandHeightMm: 4, rightRailWidthMm: 3.5, pageWidthMm: 109
-    }
+      v: 1, layoutType: 'compact', marginTop: 2, marginBottom: 0, marginLeft: 2, marginRight: 2,
+      gapRow: 3, gapCol: 3, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 6, dotsPerMm: 8,
+      qrCellSize: 3, qrVisualSizeMm: 10, textXMul: 1, textYMul: 1, textFontId: 1, textFontPt: 8, pageWidthMm: 109
+    },
+    zones: [
+      { zone_key: 'qr', zone_type: 'qr', label: 'QR Code', printable: true, x_mm: 0, y_mm: 0, width_mm: 10, height_mm: 10, content: '{unit_id}', error_level: 'L', writing_mode: 'horizontal' },
+      { zone_key: 'uid_strip', zone_type: 'text', label: 'Unit ID', printable: true, x_mm: 10.5, y_mm: 0, width_mm: 4, height_mm: 15, content: '{unit_id}', writing_mode: 'vertical', error_level: 'L' },
+      { zone_key: 'footer', zone_type: 'text', label: 'Brand - MRP', printable: true, x_mm: 0, y_mm: 10.5, width_mm: 10, height_mm: 4.5, content: '{brand}-{mrp}', writing_mode: 'horizontal', error_level: 'L', border_top: true }
+    ]
   };
 
   const BC_SMALL_15X15_ALT_FALLBACK = {
     format_key: 'small_15x15_alt',
-    name: '15×15mm — Brand Rail + Unit Band',
-    description: 'QR + brand/price rail (right, vertical) + unit code band (bottom)',
+    name: '15×15mm — Brand rail + Unit band',
+    description: 'QR + vertical brand/MRP rail + horizontal unit code band',
+    label_type: 'SQUARE',
+    page_width_mm: 109,
+    columns: 6,
+    col_gap_mm: 3,
+    row_gap_mm: 2,
+    margin_left_mm: 2,
+    margin_right_mm: 2,
+    margin_top_mm: 2,
+    label_width_mm: 15,
+    label_height_mm: 15,
     config: {
-      v: 1, layoutType: 'compact-alt', marginTop: 0, marginBottom: 0, marginLeft: 2, marginRight: 2,
+      v: 1, layoutType: 'compact-alt', marginTop: 2, marginBottom: 0, marginLeft: 2, marginRight: 2,
       gapRow: 2, gapCol: 3, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 6, dotsPerMm: 8,
-      qrCellSize: 3, qrVisualSizeMm: 9, qrTopRatio: 0.02, textTopRatio: 0.68,
-      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 8,
-      bottomBandHeightMm: 4, rightRailWidthMm: 3.5, pageWidthMm: 109
-    }
+      qrCellSize: 3, qrVisualSizeMm: 9, textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 8, pageWidthMm: 109
+    },
+    zones: [
+      { zone_key: 'qr', zone_type: 'qr', label: 'QR Code', printable: true, x_mm: 0, y_mm: 0, width_mm: 10, height_mm: 10, content: '{unit_id}', error_level: 'L', writing_mode: 'horizontal' },
+      { zone_key: 'brand_rail', zone_type: 'text', label: 'Brand - MRP', printable: true, x_mm: 10.5, y_mm: 0, width_mm: 4.5, height_mm: 15, content: '{brand}-{mrp}', writing_mode: 'vertical', error_level: 'L' },
+      { zone_key: 'unit_band', zone_type: 'text', label: 'Unit ID', printable: true, x_mm: 0, y_mm: 10.5, width_mm: 10.5, height_mm: 4.5, content: '{unit_id}', writing_mode: 'horizontal', error_level: 'L', border_top: true }
+    ]
   };
 
   const BC_SMALL_15X15_FIXED_FALLBACK = {
     format_key: 'small_15x15_fixed',
-    name: '15×15mm — Fixed (QR 10 + Brand Rail + Unit Footer)',
-    description: '10×10 QR · brand vertical rail · 7-digit unit footer · no padding inside label',
+    name: '15×15mm — Fixed (Brand rail + Unit footer)',
+    description: '10×10 QR · brand vertical rail · 7-digit unit footer',
+    label_type: 'SQUARE',
+    page_width_mm: 109,
+    columns: 6,
+    col_gap_mm: 3,
+    row_gap_mm: 2,
+    margin_left_mm: 2,
+    margin_right_mm: 2,
+    margin_top_mm: 0,
+    label_width_mm: 15,
+    label_height_mm: 15,
     config: {
       v: 1, layoutType: 'compact-fixed', marginTop: 0, marginBottom: 0, marginLeft: 2, marginRight: 2,
       gapRow: 2, gapCol: 3, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 6, dotsPerMm: 8,
-      qrCellSize: 3, qrVisualSizeMm: 10, qrTopRatio: 0.02, textTopRatio: 0.68,
-      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 8,
-      bottomBandHeightMm: 5, rightRailWidthMm: 5, pageWidthMm: 109
-    }
+      qrCellSize: 3, qrVisualSizeMm: 10, textXMul: 1, textYMul: 1, textFontId: 1, textFontPt: 8, pageWidthMm: 109
+    },
+    zones: [
+      { zone_key: 'qr', zone_type: 'qr', label: 'QR Code', printable: true, x_mm: 0, y_mm: 0, width_mm: 10, height_mm: 10, content: '{unit_id}', error_level: 'L', writing_mode: 'horizontal' },
+      { zone_key: 'brand_rail', zone_type: 'text', label: 'Brand - MRP', printable: true, x_mm: 10, y_mm: 0, width_mm: 5, height_mm: 15, content: '{brand}-{mrp}', writing_mode: 'vertical', error_level: 'L' },
+      { zone_key: 'unit_footer', zone_type: 'text', label: 'Unit ID', printable: true, x_mm: 0, y_mm: 10, width_mm: 10, height_mm: 5, content: '{unit_id}', writing_mode: 'horizontal', error_level: 'L', border_top: true }
+    ]
   };
 
-  const BC_EYEWEAR_STRIP_FALLBACK = {
-    format_key: 'eyewear_strip_12x100',
-    name: 'Eyewear strip 12×100',
-    description: 'Frame wrap — 66 mm print + 34 mm tail',
+  const BC_STRIP_104X12_FALLBACK = {
+    format_key: 'strip_104x12',
+    name: '104×12mm Frame Wrap Label',
+    description: '66 mm print (QR + brand) + 34 mm tail on 108 mm roll',
+    label_type: 'STRIP',
+    page_width_mm: 108,
+    columns: 1,
+    col_gap_mm: 0,
+    row_gap_mm: 2,
+    margin_left_mm: 2,
+    margin_right_mm: 2,
+    margin_top_mm: 2,
+    label_width_mm: 104,
+    label_height_mm: 12,
     config: {
-      v: 1, layoutType: 'strip', marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0,
-      gapRow: 0, gapCol: 0, labelWidthMm: 100, labelHeightMm: 12, labelsPerRow: 1, dotsPerMm: 8,
-      qrCellSize: 3, qrVisualSizeMm: 10, qrTopRatio: 0.06, textTopRatio: 0.72,
-      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 4,
-      printWidthMm: 66, zone1WidthMm: 33, zone2WidthMm: 33, tailWidthMm: 34
-    }
+      v: 1, layoutType: 'strip', marginTop: 2, marginBottom: 0, marginLeft: 2, marginRight: 2,
+      gapRow: 2, gapCol: 0, labelWidthMm: 104, labelHeightMm: 12, labelsPerRow: 1, dotsPerMm: 8,
+      qrCellSize: 3, qrVisualSizeMm: 10, textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 6,
+      printWidthMm: 66, zone1WidthMm: 33, zone2WidthMm: 33, tailWidthMm: 34, pageWidthMm: 108
+    },
+    zones: [
+      { zone_key: 'zone_qr_sku', zone_type: 'qr', label: 'Zone 1 — QR', printable: true, x_mm: 0, y_mm: 0, width_mm: 33, height_mm: 12, content: '{unit_id}', error_level: 'L', writing_mode: 'horizontal' },
+      { zone_key: 'zone_brand_mrp', zone_type: 'text', label: 'Zone 2 — Brand', printable: true, x_mm: 33, y_mm: 0, width_mm: 33, height_mm: 12, content: '{brand}\n{model}\nMRP {mrp}', writing_mode: 'horizontal', error_level: 'L' },
+      { zone_key: 'tail', zone_type: 'tail', label: 'Tail', printable: false, x_mm: 66, y_mm: 0, width_mm: 38, height_mm: 12, content: '' }
+    ]
   };
 
   function _bcGetActiveFormatConfig() {
@@ -6319,6 +6361,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function _bcGetLayoutType() {
+    if (_bcFormatHasZones()) {
+      if (_bcActiveFormatRow && _bcActiveFormatRow.label_type === 'STRIP') return 'strip';
+      return 'compact';
+    }
+    if (_bcActiveFormatRow && _bcActiveFormatRow.label_type === 'STRIP') return 'strip';
+    if (_bcActiveFormatRow && _bcActiveFormatRow.label_type === 'SQUARE') return 'compact';
     const t = String(_bcGetActiveFormatConfig().layoutType || 'grid').toLowerCase();
     if (t === 'strip') return 'strip';
     if (t === 'compact' || t === 'compact-alt' || t === 'compact-fixed') return 'compact';
@@ -6330,6 +6378,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function _bcCompactColumnsPerRow() {
+    if (_bcActiveFormatRow && _bcActiveFormatRow.columns > 0) {
+      return Math.round(Number(_bcActiveFormatRow.columns));
+    }
     const cfg = _bcGetActiveFormatConfig();
     const fromCfg = Number(cfg.labelsPerRow);
     if (Number.isFinite(fromCfg) && fromCfg > 0) return Math.round(fromCfg);
@@ -6345,6 +6396,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!el) return;
     const key = _bcGetSelectedFormatKey();
     let fmt = _bcLabelFormats.find(function (f) { return f.format_key === key; });
+    if (_bcFormatHasZones() && fmt) {
+      const n = (fmt.zones || []).filter(function (z) { return z.printable !== false && z.zone_type !== 'tail'; }).length;
+      el.textContent =
+        (fmt.description ? fmt.description + ' · ' : '') +
+        'Zone template (' + n + ' printable zone' + (n !== 1 ? 's' : '') + ') — matches Command Unit Label Templates.';
+      return;
+    }
     if (fmt && fmt.description) {
       el.textContent = fmt.description;
       return;
@@ -6493,12 +6551,78 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const BC_LABEL_FORMAT_FALLBACKS = [
     BC_LARGE_LABEL_FALLBACK,
-    BC_SMALL_COMPACT_FALLBACK,
-    BC_SMALL_15X15_CONTINUOUS_109_FALLBACK,
+    BC_SMALL_15X15_FALLBACK,
     BC_SMALL_15X15_ALT_FALLBACK,
     BC_SMALL_15X15_FIXED_FALLBACK,
-    BC_EYEWEAR_STRIP_FALLBACK
+    BC_STRIP_104X12_FALLBACK
   ];
+
+  function _bcFormatHasZones() {
+    const row = _bcActiveFormatRow;
+    return !!(row && Array.isArray(row.zones) && row.zones.length);
+  }
+
+  /** Zone templates from Command Unit must not fall through to legacy grid preview. */
+  function _bcNormalizeFormatRowForZones(fmt) {
+    if (!fmt) return fmt;
+    let out = Object.assign({}, fmt);
+    const zones = Array.isArray(out.zones) ? out.zones : [];
+    if (!zones.length) return _bcNormalizeSmallLabelFormat(out);
+    const isStrip = out.label_type === 'STRIP' || zones.some(function (z) { return z.zone_type === 'tail'; });
+    if (isStrip) {
+      out.label_type = 'STRIP';
+    } else {
+      out.label_type = 'SQUARE';
+      out.config = Object.assign({ layoutType: 'compact', v: 1 }, out.config || {}, { layoutType: 'compact' });
+    }
+    return _bcNormalizeSmallLabelFormat(out);
+  }
+
+  function _bcApplyZoneTokens(tpl, item) {
+    const s = String(tpl || '');
+    const parts = String(item.bottomLine || '').split('-');
+    const brand = item.brand != null ? String(item.brand) : (parts[0] || '');
+    const mrp = item.mrp != null ? String(item.mrp) : (parts[1] || '');
+    return s
+      .replace(/\{unit_id\}/g, String(item.code || item.unitText || ''))
+      .replace(/\{sku_code\}/g, String(item.sku_code || item.label || ''))
+      .replace(/\{brand\}/g, brand)
+      .replace(/\{model\}/g, String(item.model || ''))
+      .replace(/\{mrp\}/g, mrp);
+  }
+
+  function _bcZoneCellMarkup(item, fmt, qrPreviewPx, options) {
+    options = options || {};
+    const lw = fmt.label_width_mm || fmt.config.labelWidthMm || 15;
+    const lh = fmt.label_height_mm || fmt.config.labelHeightMm || 15;
+    const zones = fmt.zones || [];
+    const { qrVisualSizeMm } = _bcReadQrConfig();
+    let html = '<div class="bc-zone-row" style="position:relative;width:' + lw + 'mm;height:' + lh + 'mm;box-sizing:border-box;border:1px solid var(--border);overflow:hidden;background:var(--card);flex-shrink:0' + (options.outerExtra || '') + '">';
+    zones.forEach(function (z) {
+      const isTail = z.zone_type === 'tail' || z.printable === false;
+      const bg = isTail ? 'repeating-linear-gradient(-45deg,transparent,transparent 2px,var(--border) 2px,var(--border) 3px)' : (z.zone_type === 'qr' ? 'var(--accL)' : 'var(--bg)');
+      const borderTop = z.border_top ? 'border-top:1px dashed var(--border);' : '';
+      html += '<div style="position:absolute;left:' + z.x_mm + 'mm;top:' + z.y_mm + 'mm;width:' + z.width_mm + 'mm;height:' + z.height_mm + 'mm;box-sizing:border-box;overflow:hidden;' + borderTop + 'background:' + bg + ';opacity:' + (isTail ? '0.45' : '1') + '">';
+      if (z.zone_type === 'qr') {
+        if (options.dataUrl) {
+          html += '<img src="' + options.dataUrl + '" style="width:100%;height:100%;object-fit:contain" alt="">';
+        } else {
+          html += '<div class="qr-placeholder" data-qr-code="' + _bcEsc(item.code) + '" data-qr-px="' + qrPreviewPx + '" style="width:100%;height:100%"></div>';
+        }
+      } else if (!isTail) {
+        const txt = _bcEsc(_bcApplyZoneTokens(z.content, item));
+        const alignApi = window.cosmosLabelZoneAlign;
+        const alignCss = alignApi ? alignApi.zoneAlignCss(z) : 'display:flex;width:100%;height:100%;align-items:flex-start;';
+        const textCss = alignApi && alignApi.zonePreviewTextStyle
+          ? alignApi.zonePreviewTextStyle(z)
+          : 'font-size:' + (z.font_size_pt || 8) + 'pt;font-weight:700;line-height:1.15;color:var(--text1);white-space:pre-wrap;word-break:break-word;max-width:100%;';
+        html += '<div style="' + alignCss + '"><span class="mono" style="' + textCss + '">' + txt + '</span></div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
 
   function _bcMergeLabelFormatFallbacks(list) {
     const out = Array.isArray(list) ? list.slice() : [];
@@ -6508,8 +6632,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
     if (!out.some(function (f) { return f.is_default; }) && out[0]) {
-      const large = out.find(function (f) { return f.format_key === BC_LARGE_LABEL_FALLBACK.format_key; });
-      if (large) large.is_default = true;
+      const def = out.find(function (f) { return f.format_key === BC_SMALL_15X15_FALLBACK.format_key; }) || out[0];
+      if (def) def.is_default = true;
     }
     return out.map(_bcNormalizeSmallLabelFormat);
   }
@@ -6548,20 +6672,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     return String(document.getElementById('bc-format-select')?.value || '').trim();
   }
 
-  function _bcApplyLabelFormatByKey(formatKey) {
+  function _bcMergeFormatIntoCache(row) {
+    if (!row || !row.format_key) return null;
+    const normalized = _bcNormalizeFormatRowForZones(row);
+    const idx = _bcLabelFormats.findIndex(function (f) { return f.format_key === normalized.format_key; });
+    if (idx >= 0) _bcLabelFormats[idx] = normalized;
+    else _bcLabelFormats.push(normalized);
+    return normalized;
+  }
+
+  /** Load full template (zones_json) from server — list row can be stale vs Command Unit saves. */
+  async function _bcFetchLabelFormatDetail(formatKey) {
     const key = String(formatKey || '').trim();
-    let fmt = _bcLabelFormats.find(function (f) { return f.format_key === key; });
-    fmt = _bcNormalizeSmallLabelFormat(fmt);
+    if (!key) return null;
+    try {
+      const row = await apiGet('/api/foundry/label-print-formats/' + encodeURIComponent(key));
+      return _bcMergeFormatIntoCache(row);
+    } catch (_e) {
+      const cached = _bcLabelFormats.find(function (f) { return f.format_key === key; });
+      return cached ? _bcNormalizeSmallLabelFormat(cached) : null;
+    }
+  }
+
+  let _bcNoZonesWarnedKey = '';
+
+  async function _bcApplyLabelFormatByKey(formatKey) {
+    const key = String(formatKey || '').trim();
+    let fmt = key ? await _bcFetchLabelFormatDetail(key) : null;
+    if (!fmt && key) {
+      fmt = _bcNormalizeFormatRowForZones(_bcLabelFormats.find(function (f) { return f.format_key === key; }));
+    } else if (fmt) {
+      fmt = _bcNormalizeFormatRowForZones(fmt);
+      _bcMergeFormatIntoCache(fmt);
+    }
+    _bcActiveFormatRow = fmt || null;
     if (fmt && fmt.config) {
       _bcActiveFormatConfig = Object.assign({ layoutType: 'grid', v: 1 }, fmt.config);
       _bcApplyFormatConfig(fmt.config);
+    } else {
+      _bcActiveFormatConfig = { layoutType: 'grid', v: 1 };
     }
     if (key) _bcWriteStoredFormatKey(key);
     _bcUpdateFormatHint();
     _bcRefreshCompactTunePanel();
     _bcRefreshOperatorJobSummary();
+    if (fmt && !_bcFormatHasZones() && key && _bcNoZonesWarnedKey !== key) {
+      _bcNoZonesWarnedKey = key;
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn(
+          '“' + (fmt.name || key) + '” has no saved zone layout — Foundry is using the built-in compact sticker. ' +
+          'Open Command Unit → Label Templates, add zones, click Save, then reopen this dialog.'
+        );
+      }
+    }
     if (_bcSkus.length) _bcRenderPreviewNow();
-    else bcRenderPreview();
+    else if (typeof bcRenderPreview === 'function') bcRenderPreview();
   }
 
   async function _bcEnsureLabelFormatsLoaded() {
@@ -6583,8 +6748,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     return _bcLabelFormats;
   }
 
-  window.bcOnFormatSelectChange = function() {
-    _bcApplyLabelFormatByKey(_bcGetSelectedFormatKey());
+  window.bcOnFormatSelectChange = async function() {
+    await _bcApplyLabelFormatByKey(_bcGetSelectedFormatKey());
   };
 
   window.bcUpdateLabelFormat = async function() {
@@ -6881,6 +7046,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     _bcQrCache.clear();
     _bcLabelFormatsLoaded = false;
+    _bcNoZonesWarnedKey = '';
     try {
       await Promise.all([loadJsBarcodeLib(), loadBcQrLib()]);
     } catch (err) {
@@ -6934,7 +7100,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const formats = await _bcEnsureLabelFormatsLoaded();
     const storedKey = _bcReadStoredFormatKey();
     _bcPopulateFormatSelect(formats, storedKey);
-    _bcApplyLabelFormatByKey(_bcGetSelectedFormatKey());
+    await _bcApplyLabelFormatByKey(_bcGetSelectedFormatKey());
     _bcRefreshLabelFormatActions();
     _bcRefreshOperatorJobSummary();
     _bcSchedulePersistCalibration();
@@ -6994,6 +7160,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       return {
         code: code,
         unitText: code,
+        sku_code: sk.sku_code || '',
+        brand: _bcCompactBrandSegment(sk),
+        mrp: _bcCompactPriceSegment(sk),
+        model: _bcTruncateStripLine(_bcStripModelLine(sk), 20),
         bottomLine: _bcTruncateStripLine(_bcCompactBottomLine(sk), 14),
         copies: 1
       };
@@ -7255,11 +7425,21 @@ document.addEventListener('DOMContentLoaded', async () => {
           `Compact QR 15×15 · TSPL2 SIZE ${lay.labelW.toFixed(2)} × ${lay.labelH.toFixed(2)} mm (~${wDots} × ${hDots} dots)`
         );
       }
-      lines.push(
-        `QR ${qrVisualSizeMm} mm · unit rail ${lay.railW.toFixed(1)} mm · ${BC_COMPACT_TEXT_GAP_MM} mm gap QR→text · bottom ${lay.bottom} mm (brand top at QR+${BC_COMPACT_TEXT_GAP_MM} mm)`,
-        `Cell inset left ${lay.padL} mm · right ${lay.padR} mm · preview font ${_bcCompactFontPt()} pt`,
-        `TSPL QRCODE cell ${qrCellSize} · Text ${textXMul}×${textYMul} · Font id ${textFontId}`
-      );
+      if (lay.layoutKind === 'compact-fixed') {
+        const mod = _bcTsplQrModuleCount('0000000');
+        const qrDots = mod * qrCellSize;
+        lines.push(
+          `Fixed 15×15 · QR ${lay.qrSize} mm + rail ${lay.railW} mm + footer ${lay.footerH} mm · zero inset`,
+          `TSPL DIRECTION 1 · QRCODE 1,1 cell ${qrCellSize} (~${qrDots} dots) · unit TEXT y=${1 + qrDots} · brand TEXT x=${1 + qrDots} rot 270°`,
+          `Font id ${textFontId} · scale ${textXMul}×${textYMul} · preview ${_bcCompactFontPt()} pt`
+        );
+      } else {
+        lines.push(
+          `QR ${qrVisualSizeMm} mm · unit rail ${lay.railW.toFixed(1)} mm · ${BC_COMPACT_TEXT_GAP_MM} mm gap QR→text · bottom ${lay.bottom} mm (brand top at QR+${BC_COMPACT_TEXT_GAP_MM} mm)`,
+          `Cell inset left ${lay.padL} mm · right ${lay.padR} mm · preview font ${_bcCompactFontPt()} pt`,
+          `TSPL QRCODE cell ${qrCellSize} · Text ${textXMul}×${textYMul} · Font id ${textFontId}`
+        );
+      }
       if (calib !== 0) lines.push(`USB horizontal calibration ${calib > 0 ? '+' : ''}${calib} mm`);
       box.innerHTML = lines.map((line) => _bcEsc(line)).join('<br>');
       return;
@@ -7309,7 +7489,67 @@ document.addEventListener('DOMContentLoaded', async () => {
     _bcPreviewDebounceTimer = setTimeout(_bcRenderPreviewNow, 200);
   };
 
+  function _bcRenderZoneStripPreviewNow() {
+    const previewEl = document.getElementById('bc-preview-rows');
+    if (!previewEl || !_bcActiveFormatRow) return;
+    const fmt = _bcActiveFormatRow;
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm } = _bcReadQrConfig();
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+    const gp = _bcReadGapMm();
+    const items = _bcSelectedStripItems();
+    if (!items.length) {
+      previewEl.innerHTML = '<div class="bc-empty-preview">Nothing to preview yet. Select products on the purchase screen first.</div>';
+      return;
+    }
+    let inner = '';
+    items.forEach(function (item) {
+      inner += _bcZoneCellMarkup(item, fmt, qrPreviewPx, { outerExtra: ';margin-bottom:' + (gp.rowGap || 2) + 'mm' });
+    });
+    previewEl.innerHTML = '<div style="display:flex;flex-direction:column;align-items:flex-start">' + inner + '</div>';
+    _bcFillQrPlaceholders(previewEl);
+    _bcRefreshOperatorJobSummary();
+  }
+
+  function _bcRenderZoneCompactPreviewNow() {
+    const previewEl = document.getElementById('bc-preview-rows');
+    if (!previewEl || !_bcActiveFormatRow) return;
+    const fmt = _bcActiveFormatRow;
+    const dotsPerMm = _bcReadDotsPerMm();
+    const qrPreviewPx = _bcClamp(Math.round((fmt.config.qrVisualSizeMm || 10) * dotsPerMm), 40, 400);
+    const gp = _bcReadGapMm();
+    const cols = Number(fmt.columns) || _bcCompactColumnsPerRow();
+    const items = _bcSelectedCompactItems();
+    if (!items.length) {
+      previewEl.innerHTML = '<div class="bc-empty-preview">Nothing to preview yet. Select products on the purchase screen first.</div>';
+      return;
+    }
+    let inner = '';
+    if (cols > 1) {
+      for (let i = 0; i < items.length; i += cols) {
+        inner += '<div style="display:flex;gap:' + gp.colGap + 'mm;margin-bottom:' + (gp.rowGap || 2) + 'mm">';
+        for (let c = 0; c < cols; c++) {
+          const item = items[i + c];
+          if (item) inner += _bcZoneCellMarkup(item, fmt, qrPreviewPx);
+          else inner += '<div style="width:' + (fmt.label_width_mm || 15) + 'mm;height:' + (fmt.label_height_mm || 15) + 'mm"></div>';
+        }
+        inner += '</div>';
+      }
+    } else {
+      items.forEach(function (item) {
+        inner += _bcZoneCellMarkup(item, fmt, qrPreviewPx, { outerExtra: ';margin-bottom:2mm' });
+      });
+    }
+    previewEl.innerHTML = '<div style="display:flex;flex-direction:column;align-items:flex-start">' + inner + '</div>';
+    _bcFillQrPlaceholders(previewEl);
+    _bcRefreshOperatorJobSummary();
+  }
+
   function _bcRenderStripPreviewNow() {
+    if (_bcFormatHasZones()) {
+      _bcRenderZoneStripPreviewNow();
+      return;
+    }
     _bcUpdateBarcodeLiveSummary();
 
     const previewEl = document.getElementById('bc-preview-rows');
@@ -7418,6 +7658,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function _bcRenderCompactMultiPreviewNow() {
+    if (_bcFormatHasZones()) {
+      _bcRenderZoneCompactPreviewNow();
+      return;
+    }
     _bcUpdateBarcodeLiveSummary();
     const previewEl = document.getElementById('bc-preview-rows');
     if (!previewEl) return;
@@ -7467,6 +7711,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function _bcRenderCompactPreviewNow() {
+    if (_bcFormatHasZones()) {
+      _bcRenderZoneCompactPreviewNow();
+      return;
+    }
     _bcUpdateBarcodeLiveSummary();
 
     const previewEl = document.getElementById('bc-preview-rows');
@@ -7505,6 +7753,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function _bcRenderPreviewNow() {
+    if (_bcFormatHasZones()) {
+      if (_bcActiveFormatRow && _bcActiveFormatRow.label_type === 'STRIP') {
+        _bcRenderZoneStripPreviewNow();
+      } else {
+        _bcRenderZoneCompactPreviewNow();
+      }
+      return;
+    }
     if (_bcGetLayoutType() === 'strip') {
       _bcRenderStripPreviewNow();
       return;
@@ -7857,11 +8113,11 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const textLineGapDots = Math.max(8, Math.round(2.2 * dotsPerMm * Math.max(1, textYMul)));
 
     let cmds = '';
+    cmds += `SIZE ${sheetWidthMm} mm, ${labelH} mm\r\n`;
+    cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
+    cmds += 'DIRECTION 0\r\n';
 
     labelBatches.forEach((row) => {
-      cmds += `SIZE ${sheetWidthMm} mm, ${labelH} mm\r\n`;
-      cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
-      cmds += 'DIRECTION 0\r\n';
       cmds += 'CLS\r\n';
 
       row.forEach((item, col) => {
@@ -7912,11 +8168,11 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const line3Ymm = 8.0;
 
     let cmds = '';
+    cmds += `SIZE ${lay.totalW} mm, ${lay.labelH} mm\r\n`;
+    cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
+    cmds += 'DIRECTION 0\r\n';
     strips.forEach(function (item) {
       if (!item) return;
-      cmds += `SIZE ${lay.totalW} mm, ${lay.labelH} mm\r\n`;
-      cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
-      cmds += 'DIRECTION 0\r\n';
       cmds += 'CLS\r\n';
 
       const code = _bcTsplQuote(item.code);
@@ -7944,41 +8200,160 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     return new TextEncoder().encode(cmds);
   }
 
+  /** QR symbol module width (21 = Version 1) for TSPL dot layout — numeric L ECC. */
+  function _bcTsplQrModuleCount(data) {
+    const len = String(data || '').length;
+    if (!len) return 21;
+    if (/^\d+$/.test(String(data))) {
+      if (len <= 7) return 21;
+      if (len <= 14) return 25;
+      if (len <= 24) return 29;
+      if (len <= 34) return 33;
+      if (len <= 44) return 37;
+      if (len <= 54) return 41;
+      if (len <= 64) return 45;
+      if (len <= 84) return 49;
+    }
+    return 21;
+  }
+
+  function _bcGenerateTSPL2FromZones(itemsOrBatches, options) {
+    options = options || {};
+    const fmt = _bcActiveFormatRow;
+    if (!fmt || !fmt.zones || !fmt.zones.length) return new TextEncoder().encode('');
+    const cfg = _bcGetActiveFormatConfig();
+    const dotsPerMm = Number(cfg.dotsPerMm) || 8;
+    const qrCellSize = Number(cfg.qrCellSize) || 3;
+    const textFontId = Number(cfg.textFontId) != null ? cfg.textFontId : 1;
+    const textXMul = Number(cfg.textXMul) || 1;
+    const textYMul = Number(cfg.textYMul) || 1;
+    const mmToDot = function (mm) { return Math.round(mm * dotsPerMm); };
+    const tsplOffsetXMM = _bcReadTsplOffsetXMM();
+    const lw = fmt.label_width_mm || cfg.labelWidthMm || 15;
+    const lh = fmt.label_height_mm || cfg.labelHeightMm || 15;
+    const rowGapMm = Math.max(0, Number(fmt.row_gap_mm) || Number(cfg.gapRow) || 0);
+    const marginLeft = Number(fmt.margin_left_mm) || 0;
+    const colGap = Number(fmt.col_gap_mm) || 0;
+    const multiCol = !!options.multiCol;
+    const cols = multiCol ? (Number(fmt.columns) || cfg.labelsPerRow || 1) : 1;
+    const direction = 1;
+
+    function cellTspl(item, cellLeftMm) {
+      let block = '';
+      const cellLeftDots = mmToDot(cellLeftMm + tsplOffsetXMM);
+      fmt.zones.forEach(function (z) {
+        if (!z.printable || z.zone_type === 'tail') return;
+        const xd = mmToDot(z.x_mm) + cellLeftDots + 1;
+        const yd = mmToDot(z.y_mm) + 1;
+        if (z.zone_type === 'qr') {
+          const qrData = _bcTsplQuote(_bcApplyZoneTokens(z.content, item));
+          block += 'QRCODE ' + xd + ',' + yd + ',L,' + qrCellSize + ',A,0,"' + qrData + '"\r\n';
+        } else if (z.zone_type === 'text') {
+          const txt = _bcTsplQuote(_bcApplyZoneTokens(z.content, item));
+          const alignApi = window.cosmosLabelZoneAlign;
+          if (alignApi) {
+            block += alignApi.zoneTextTsplLine(z, xd, yd, dotsPerMm, textFontId, textXMul, textYMul, txt) + '\r\n';
+          } else {
+            const rot = z.writing_mode === 'vertical' ? 270 : 0;
+            block += 'TEXT ' + xd + ',' + yd + ',"' + textFontId + '",' + rot + ',' + textXMul + ',' + textYMul + ',"' + txt + '"\r\n';
+          }
+        }
+      });
+      return block;
+    }
+
+    let cmds = '';
+    if (multiCol) {
+      const batches = itemsOrBatches;
+      const sheetW = marginLeft + cols * lw + Math.max(0, cols - 1) * colGap + (Number(fmt.margin_right_mm) || 0);
+      cmds += 'SIZE ' + sheetW + ' mm, ' + lh + ' mm\r\n';
+      cmds += 'GAP ' + rowGapMm + ' mm, 0 mm\r\n';
+      cmds += 'DIRECTION ' + direction + '\r\n';
+      batches.forEach(function (row) {
+        cmds += 'CLS\r\n';
+        row.forEach(function (item, col) {
+          if (!item) return;
+          const cellLeftMm = marginLeft + col * (lw + colGap);
+          cmds += cellTspl(item, cellLeftMm);
+        });
+        cmds += 'PRINT 1, 1\r\n';
+      });
+    } else {
+      const items = itemsOrBatches;
+      cmds += 'SIZE ' + lw + ' mm, ' + lh + ' mm\r\n';
+      cmds += 'GAP ' + rowGapMm + ' mm, 0 mm\r\n';
+      cmds += 'DIRECTION ' + direction + '\r\n';
+      items.forEach(function (item) {
+        cmds += 'CLS\r\n';
+        cmds += cellTspl(item, 0);
+        cmds += 'PRINT 1, 1\r\n';
+      });
+    }
+    return new TextEncoder().encode(cmds);
+  }
+
+  /** compact-fixed TSPL dots: QRCODE at 1,1 · unit below QR · brand 270° flush right (zero gaps). */
+  function _bcTsplCompactFixedDots(code, qrCellSize, cellLeftDots) {
+    const pad = 1;
+    const qrDots = _bcTsplQrModuleCount(code) * qrCellSize;
+    const qrX = cellLeftDots + pad;
+    const qrY = pad;
+    return {
+      qrX: qrX,
+      qrY: qrY,
+      footerX: qrX,
+      footerY: qrY + qrDots,
+      footerRot: 0,
+      railX: qrX + qrDots,
+      railY: qrY,
+      railRot: 270
+    };
+  }
+
   function _bcGenerateTSPL2Compact(labels) {
     const lay = _bcReadCompactLayoutMm();
     const dotsPerMm = _bcReadDotsPerMm();
-    const { rowGap } = _bcReadGapMm();
+    const gp = _bcReadGapMm();
     const tsplOffsetXMM = _bcReadTsplOffsetXMM();
     const { qrCellSize } = _bcReadQrConfig();
     const { textXMul, textYMul, textFontId } = _bcReadTextConfig();
     const mmToDot = function (mm) { return Math.round(mm * dotsPerMm); };
+    const isFixed = lay.layoutKind === 'compact-fixed';
+    const gapMm = isFixed ? Math.max(gp.colGap, gp.rowGap) : gp.rowGap;
+    const direction = isFixed ? 1 : 0;
 
     let cmds = '';
+    cmds += `SIZE ${lay.labelW} mm, ${lay.labelH} mm\r\n`;
+    cmds += `GAP ${gapMm} mm, 0 mm\r\n`;
+    cmds += `DIRECTION ${direction}\r\n`;
     labels.forEach(function (item) {
       if (!item) return;
-      cmds += `SIZE ${lay.labelW} mm, ${lay.labelH} mm\r\n`;
-      cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
-      cmds += 'DIRECTION 0\r\n';
       cmds += 'CLS\r\n';
 
       const code = _bcTsplQuote(item.code);
       const unitText = _bcTsplQuote(item.unitText);
       const bottom = _bcTsplQuote(item.bottomLine);
-      const isFixed = lay.layoutKind === 'compact-fixed';
       const railStr = isFixed ? bottom : unitText;
       const footerStr = isFixed ? unitText : bottom;
 
-      const qrX = Math.max(0, mmToDot((isFixed ? 0 : lay.padL + lay.qrInsetMm) + tsplOffsetXMM));
-      const qrY = mmToDot(isFixed ? 0 : lay.qrInsetMm);
-      cmds += `QRCODE ${qrX},${qrY},L,${qrCellSize},A,0,"${code}"\r\n`;
+      if (isFixed) {
+        const g = _bcTsplCompactFixedDots(item.code, qrCellSize, mmToDot(tsplOffsetXMM));
+        cmds += `QRCODE ${g.qrX},${g.qrY},L,${qrCellSize},A,0,"${code}"\r\n`;
+        cmds += `TEXT ${g.footerX},${g.footerY},"${textFontId}",${g.footerRot},${textXMul},${textYMul},"${footerStr}"\r\n`;
+        cmds += `TEXT ${g.railX},${g.railY},"${textFontId}",${g.railRot},${textXMul},${textYMul},"${railStr}"\r\n`;
+      } else {
+        const qrX = Math.max(0, mmToDot(lay.padL + lay.qrInsetMm + tsplOffsetXMM));
+        const qrY = mmToDot(lay.qrInsetMm);
+        cmds += `QRCODE ${qrX},${qrY},L,${qrCellSize},A,0,"${code}"\r\n`;
 
-      const railX = Math.max(0, mmToDot(lay.railStartMm + tsplOffsetXMM));
-      const railY = mmToDot(isFixed ? 0 : lay.qrInsetMm);
-      cmds += `TEXT ${railX},${railY},"${textFontId}",90,${textXMul},${textYMul},"${railStr}"\r\n`;
+        const railX = Math.max(0, mmToDot(lay.railStartMm + tsplOffsetXMM));
+        const railY = mmToDot(lay.qrInsetMm);
+        cmds += `TEXT ${railX},${railY},"${textFontId}",90,${textXMul},${textYMul},"${railStr}"\r\n`;
 
-      const bottomX = Math.max(0, mmToDot((isFixed ? 0 : lay.padL + 0.5) + tsplOffsetXMM));
-      const bottomY = mmToDot(lay.brandTopMm);
-      cmds += `TEXT ${bottomX},${bottomY},"${textFontId}",0,${textXMul},${textYMul},"${footerStr}"\r\n`;
+        const bottomX = Math.max(0, mmToDot(lay.padL + 0.5 + tsplOffsetXMM));
+        const bottomY = mmToDot(lay.brandTopMm);
+        cmds += `TEXT ${bottomX},${bottomY},"${textFontId}",0,${textXMul},${textYMul},"${footerStr}"\r\n`;
+      }
 
       cmds += 'PRINT 1, 1\r\n';
     });
@@ -7990,47 +8365,60 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const lay = _bcReadCompactLayoutMm();
     const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
     const marginsMm = _bcReadMarginsMm();
-    const { rowGap, colGap } = _bcReadGapMm();
+    const gp = _bcReadGapMm();
     const tsplOffsetXMM = _bcReadTsplOffsetXMM();
     const dotsPerMm = _bcReadDotsPerMm();
     const { qrCellSize } = _bcReadQrConfig();
     const { textXMul, textYMul, textFontId } = _bcReadTextConfig();
     const mmToDot = function (mm) { return Math.round(mm * dotsPerMm); };
-    const sheetWidthMm = marginsMm.left + (cols * labelW) + (Math.max(0, cols - 1) * colGap) + marginsMm.right;
+    const sheetWidthMm = marginsMm.left + (cols * labelW) + (Math.max(0, cols - 1) * gp.colGap) + marginsMm.right;
     const maxXDots = mmToDot(sheetWidthMm);
+    const isFixed = lay.layoutKind === 'compact-fixed';
+    const gapMm = isFixed ? Math.max(gp.colGap, gp.rowGap) : gp.rowGap;
+    const direction = isFixed ? 1 : 0;
 
     let cmds = '';
+    cmds += 'SIZE ' + sheetWidthMm + ' mm, ' + labelH + ' mm\r\n';
+    cmds += 'GAP ' + gapMm + ' mm, 0 mm\r\n';
+    cmds += 'DIRECTION ' + direction + '\r\n';
     batches.forEach(function (row) {
-      cmds += 'SIZE ' + sheetWidthMm + ' mm, ' + labelH + ' mm\r\n';
-      cmds += 'GAP ' + rowGap + ' mm, 0 mm\r\n';
-      cmds += 'DIRECTION 0\r\n';
       cmds += 'CLS\r\n';
 
       row.forEach(function (item, col) {
         if (!item) return;
-        const cellLeftMm = marginsMm.left + (col * (labelW + colGap));
+        const cellLeftMm = marginsMm.left + (col * (labelW + gp.colGap));
         const code = _bcTsplQuote(item.code);
         const unitText = _bcTsplQuote(item.unitText);
         const bottom = _bcTsplQuote(item.bottomLine);
-        const isFixed = lay.layoutKind === 'compact-fixed';
         const railStr = isFixed ? bottom : unitText;
         const footerStr = isFixed ? unitText : bottom;
 
-        let qrX = mmToDot(cellLeftMm + (isFixed ? 0 : lay.padL + lay.qrInsetMm) + tsplOffsetXMM);
-        qrX = Math.max(0, Math.min(qrX, maxXDots));
-        const qrY = mmToDot(isFixed ? 0 : lay.qrInsetMm);
-        cmds += 'QRCODE ' + qrX + ',' + qrY + ',L,' + qrCellSize + ',A,0,"' + code + '"\r\n';
+        if (isFixed) {
+          const cellLeftDots = mmToDot(cellLeftMm + tsplOffsetXMM);
+          const g = _bcTsplCompactFixedDots(item.code, qrCellSize, cellLeftDots);
+          const qrX = Math.max(0, Math.min(g.qrX, maxXDots));
+          const railX = Math.max(0, Math.min(g.railX, maxXDots));
+          const footerX = Math.max(0, Math.min(g.footerX, maxXDots));
+          cmds += 'QRCODE ' + qrX + ',' + g.qrY + ',L,' + qrCellSize + ',A,0,"' + code + '"\r\n';
+          cmds += 'TEXT ' + footerX + ',' + g.footerY + ',"' + textFontId + '",' + g.footerRot + ',' + textXMul + ',' + textYMul + ',"' + footerStr + '"\r\n';
+          cmds += 'TEXT ' + railX + ',' + g.railY + ',"' + textFontId + '",' + g.railRot + ',' + textXMul + ',' + textYMul + ',"' + railStr + '"\r\n';
+        } else {
+          let qrX = mmToDot(cellLeftMm + lay.padL + lay.qrInsetMm + tsplOffsetXMM);
+          qrX = Math.max(0, Math.min(qrX, maxXDots));
+          const qrY = mmToDot(lay.qrInsetMm);
+          cmds += 'QRCODE ' + qrX + ',' + qrY + ',L,' + qrCellSize + ',A,0,"' + code + '"\r\n';
 
-        const railXmm = cellLeftMm + lay.railStartMm;
-        let railX = mmToDot(railXmm + tsplOffsetXMM);
-        railX = Math.max(0, Math.min(railX, maxXDots));
-        const railY = mmToDot(isFixed ? 0 : lay.qrInsetMm);
-        cmds += 'TEXT ' + railX + ',' + railY + ',"' + textFontId + '",90,' + textXMul + ',' + textYMul + ',"' + railStr + '"\r\n';
+          const railXmm = cellLeftMm + lay.railStartMm;
+          let railX = mmToDot(railXmm + tsplOffsetXMM);
+          railX = Math.max(0, Math.min(railX, maxXDots));
+          const railY = mmToDot(lay.qrInsetMm);
+          cmds += 'TEXT ' + railX + ',' + railY + ',"' + textFontId + '",90,' + textXMul + ',' + textYMul + ',"' + railStr + '"\r\n';
 
-        let bottomX = mmToDot(cellLeftMm + (isFixed ? 0 : lay.padL + 0.5) + tsplOffsetXMM);
-        bottomX = Math.max(0, Math.min(bottomX, maxXDots));
-        const bottomY = mmToDot(lay.brandTopMm);
-        cmds += 'TEXT ' + bottomX + ',' + bottomY + ',"' + textFontId + '",0,' + textXMul + ',' + textYMul + ',"' + footerStr + '"\r\n';
+          let bottomX = mmToDot(cellLeftMm + lay.padL + 0.5 + tsplOffsetXMM);
+          bottomX = Math.max(0, Math.min(bottomX, maxXDots));
+          const bottomY = mmToDot(lay.brandTopMm);
+          cmds += 'TEXT ' + bottomX + ',' + bottomY + ',"' + textFontId + '",0,' + textXMul + ',' + textYMul + ',"' + footerStr + '"\r\n';
+        }
       });
 
       cmds += 'PRINT 1, 1\r\n';
@@ -8051,9 +8439,111 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     return null;
   }
 
+  async function _bcPrintZoneLabels(printBtn) {
+    const isStrip = _bcActiveFormatRow && _bcActiveFormatRow.label_type === 'STRIP';
+    const compactItems = isStrip ? _bcSelectedStripItems() : _bcSelectedCompactItems();
+    if (!compactItems.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels to print. Go back and select products first.');
+      return;
+    }
+    const expanded = [];
+    compactItems.forEach(function (item) {
+      for (let c = 0; c < item.copies; c++) expanded.push(item);
+    });
+    const multiCol = !isStrip && _bcIsCompactMultiColumn();
+    const cols = _bcCompactColumnsPerRow();
+    const batches = [];
+    if (multiCol) {
+      for (let i = 0; i < expanded.length; i += cols) batches.push(expanded.slice(i, i + cols));
+    }
+    if (!_bcUsbDevice) {
+      await _bcPrintFallbackZoneLabels(multiCol ? batches : expanded, { multiCol: multiCol, isStrip: isStrip });
+      return;
+    }
+    if (printBtn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(printBtn);
+    try {
+      const endpointNumber = await _bcFindUsbBulkEndpoint();
+      if (endpointNumber === null) throw new Error('No bulk-out endpoint found on printer.');
+      const data = _bcGenerateTSPL2FromZones(multiCol ? batches : expanded, { multiCol: multiCol });
+      await _bcUsbDevice.transferOut(endpointNumber, data);
+      _bcPersistCalibrationNow(_bcUsbDevice);
+      if (printBtn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(printBtn);
+      else if (printBtn) cosmosBtnDone(printBtn);
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('Sent ' + expanded.length + ' label' + (expanded.length !== 1 ? 's' : '') + ' to printer.');
+      }
+    } catch (err) {
+      if (printBtn && typeof cosmosBtnDone === 'function') cosmosBtnDone(printBtn);
+      _bcUpdatePrinterStatus('error', err.message);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message + ' — falling back to browser print…');
+      await _bcPrintFallbackZoneLabels(multiCol ? batches : expanded, { multiCol: multiCol, isStrip: isStrip });
+    }
+  }
+
+  async function _bcPrintFallbackZoneLabels(itemsOrBatches, options) {
+    options = options || {};
+    const fmt = _bcActiveFormatRow;
+    if (!fmt) return;
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm } = _bcReadQrConfig();
+    const qrPreviewPx = _bcClamp(Math.round((fmt.config.qrVisualSizeMm || qrVisualSizeMm) * dotsPerMm), 40, 400);
+    try {
+      await loadBcQrLib();
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to load QR library for print.');
+      return;
+    }
+    const printDataUrls = new Map();
+    const flat = options.multiCol
+      ? itemsOrBatches.reduce(function (acc, row) { return acc.concat(row); }, [])
+      : itemsOrBatches;
+    await Promise.all(flat.map(async function (item) {
+      if (!item) return;
+      const url = await _bcQrDataUrl(item.code).catch(function () { return ''; });
+      printDataUrls.set(item.code, url);
+    }));
+    let rows = '';
+    if (options.multiCol) {
+      itemsOrBatches.forEach(function (row) {
+        rows += '<div style="display:flex;flex-wrap:nowrap;gap:' + (fmt.col_gap_mm || 3) + 'mm;margin-bottom:2mm">';
+        row.forEach(function (item) {
+          if (!item) return;
+          rows += _bcZoneCellMarkup(item, fmt, qrPreviewPx, {
+            dataUrl: printDataUrls.get(item.code) || '',
+            theme: 'print',
+            outerExtra: ';page-break-inside:avoid'
+          });
+        });
+        rows += '</div>';
+      });
+    } else {
+      itemsOrBatches.forEach(function (item) {
+        rows += _bcZoneCellMarkup(item, fmt, qrPreviewPx, {
+          dataUrl: printDataUrls.get(item.code) || '',
+          theme: 'print',
+          outerExtra: ';margin-bottom:2mm;page-break-inside:avoid'
+        });
+      });
+    }
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Pop-up blocked. Allow pop-ups and try again.');
+      return;
+    }
+    win.document.write('<!DOCTYPE html><html><head><title>Zone labels</title>' +
+      '<style>@page{size:auto;margin:0}body{font-family:Arial,sans-serif;margin:0;padding:4mm 4mm 0}.mono{font-family:Consolas,monospace}</style></head>' +
+      '<body>' + rows + '<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body></html>');
+    win.document.close();
+  }
+
   // ── Print via WebUSB ──────────────────────────────────────────────────
   window.bcPrint = async function() {
     const printBtn = document.getElementById('bc-print-btn');
+
+    if (_bcFormatHasZones()) {
+      await _bcPrintZoneLabels(printBtn);
+      return;
+    }
 
     if (_bcGetLayoutType() === 'compact') {
       const compactItems = _bcSelectedCompactItems();
@@ -8084,7 +8574,9 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       try {
         const endpointNumber = await _bcFindUsbBulkEndpoint();
         if (endpointNumber === null) throw new Error('No bulk-out endpoint found on printer.');
-        const data = multiCol ? _bcGenerateTSPL2CompactRows(batches) : _bcGenerateTSPL2Compact(expanded);
+        const data = _bcFormatHasZones()
+          ? _bcGenerateTSPL2FromZones(multiCol ? batches : expanded, { multiCol: multiCol })
+          : (multiCol ? _bcGenerateTSPL2CompactRows(batches) : _bcGenerateTSPL2Compact(expanded));
         await _bcUsbDevice.transferOut(endpointNumber, data);
         _bcPersistCalibrationNow(_bcUsbDevice);
         if (printBtn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(printBtn);
@@ -8136,7 +8628,9 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
           if (endpointNumber !== null) break;
         }
         if (endpointNumber === null) throw new Error('No bulk-out endpoint found on printer.');
-        const data = _bcGenerateTSPL2Strip(expanded);
+        const data = _bcFormatHasZones()
+          ? _bcGenerateTSPL2FromZones(expanded, { multiCol: false })
+          : _bcGenerateTSPL2Strip(expanded);
         await _bcUsbDevice.transferOut(endpointNumber, data);
         _bcPersistCalibrationNow(_bcUsbDevice);
         if (printBtn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(printBtn);

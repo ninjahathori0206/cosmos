@@ -7,7 +7,8 @@ const OFFER_DISCOUNT_TYPES = Object.freeze([
   'FREEBIE',
   'BOGO_LOWEST_FREE',
   'BUY_FRAME_GET_LENS_FREE',
-  'BUY_LENS_GET_FRAME_FREE'
+  'BUY_LENS_GET_FRAME_FREE',
+  'CASHBACK'
 ])
 
 /** Server-side structured rules: BOGO and LAB-combo types respect customer_offer_scope (see customerOfferDiscountService). */

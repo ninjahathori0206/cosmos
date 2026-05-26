@@ -21,6 +21,8 @@
     "migrate:66-qr-15x15-compact-label": "node scripts/run-migration-66-qr-15x15-compact-label.js",
     "migrate:68-small-15x15-continuous-roll-109": "node scripts/run-migration-68-small-15x15-continuous-roll-109.js",
     "migrate:69-small-15x15-continuous-compact": "node scripts/run-migration-69-small-15x15-continuous-compact.js",
+    "migrate:70-label-print-formats-zones": "node scripts/run-migration-70-label-print-formats-zones.js",
+    "migrate:71-store-collection-book": "node scripts/run-migration-71-store-collection-book.js",
     "migrate:48-store-type-catalog-roles": "node scripts/run-migration-48-store-type-catalog-roles.js",
     "migrate:49-store-type-catalog-is-active": "node scripts/run-migration-49-store-type-catalog-is-active.js",
     "migrate:48-foundry-lookup-update-key": "node scripts/run-migration-48-foundry-lookup-update-key.js",

@@ -18,7 +18,8 @@ const {
   SCOPE_MODES,
   isStructuredOfferType,
   structuredOfferTypeRespectsAllocation
-} = require('../config/customerOfferDiscountTypes');
+} = require('../config/customerOfferDiscountTypes')
+const { CAPABILITY_KEYS } = require('../config/membershipCapabilityGroups');
 
 const router = express.Router();
 
@@ -700,8 +701,8 @@ const customerOfferCreateSchema = Joi.object({
   scope_mode: Joi.string().valid(...SCOPE_MODES).default('ALL_PRODUCTS'),
   valid_from: Joi.any().optional(),
   valid_to: Joi.any().required(),
-  eligible_tier: Joi.string().max(50).allow(null, ''),
-  is_plus_only: Joi.boolean().default(false),
+  required_capability: Joi.string().valid(...CAPABILITY_KEYS).allow(null, '').default(null),
+  cashback_rate: Joi.number().min(0).max(100).allow(null),
   sort_order: Joi.number().integer().min(0).default(0),
   scopes: Joi.array().items(scopeItemSchema).default([])
 });
@@ -719,8 +720,8 @@ const customerOfferUpdateSchema = Joi.object({
   scope_mode: Joi.string().valid(...SCOPE_MODES),
   valid_from: Joi.any().optional(),
   valid_to: Joi.any(),
-  eligible_tier: Joi.string().max(50).allow(null, ''),
-  is_plus_only: Joi.boolean(),
+  required_capability: Joi.string().valid(...CAPABILITY_KEYS).allow(null, ''),
+  cashback_rate: Joi.number().min(0).max(100).allow(null),
   is_active: Joi.boolean(),
   sort_order: Joi.number().integer().min(0),
   scopes: Joi.array().items(scopeItemSchema)
@@ -732,8 +733,9 @@ router.get('/customer-offers', ...promotionsView, async (req, res, next) => {
     const r = await pool.request().query(`
       SELECT offer_id, title, description, icon_emoji, discount_type,
              discount_value, trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
-             valid_from, valid_to, eligible_tier,
-             is_plus_only, is_active, sort_order, created_at
+             valid_from, valid_to,
+             required_capability, cashback_rate,
+             is_active, sort_order, created_at
       FROM   dbo.customer_offers
       ORDER BY is_active DESC, sort_order ASC, created_at DESC
     `);
@@ -806,21 +808,21 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
       .input('scope_mode', value.scope_mode || 'ALL_PRODUCTS')
       .input('valid_from', vf)
       .input('valid_to', vt)
-      .input('eligible_tier', value.eligible_tier ? String(value.eligible_tier).trim() : null)
-      .input('is_plus_only', value.is_plus_only ? 1 : 0)
+      .input('required_capability', value.required_capability ? String(value.required_capability).trim() : null)
+      .input('cashback_rate', value.cashback_rate != null ? parseFloat(value.cashback_rate) : null)
       .input('sort_order', parseInt(value.sort_order, 10) || 0)
       .input('uid', req.user && req.user.user_id ? Number(req.user.user_id) : null)
       .query(`
         INSERT INTO dbo.customer_offers
           (title, description, icon_emoji, discount_type, discount_value,
            trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
-           valid_from, valid_to, eligible_tier, is_plus_only, sort_order,
+           valid_from, valid_to, required_capability, cashback_rate, sort_order,
            created_by_user_id)
         OUTPUT INSERTED.offer_id
         VALUES
           (@title, @description, @icon_emoji, @discount_type, @discount_value,
            @trigger_type, @trigger_value, @benefit_target, @max_discount_amount, @scope_mode,
-           @valid_from, @valid_to, @eligible_tier, @is_plus_only, @sort_order,
+           @valid_from, @valid_to, @required_capability, @cashback_rate, @sort_order,
            @uid)
       `);
     const offerId = r.recordset[0].offer_id;
@@ -859,7 +861,7 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
     const {
       title, description, icon_emoji, discount_type, discount_value,
       trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
-      valid_from, valid_to, eligible_tier, is_plus_only, is_active, sort_order,
+      valid_from, valid_to, required_capability, cashback_rate, is_active, sort_order,
       scopes
     } = value;
     if ((discount_type && discount_type !== 'PCT') && max_discount_amount != null) {
@@ -900,29 +902,29 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
       .input('scope_mode', scope_mode != null ? scope_mode : null)
       .input('valid_from', valid_from !== undefined ? (valid_from ? String(valid_from).trim() : null) : null)
       .input('valid_to', valid_to !== undefined ? String(valid_to).trim() : null)
-      .input('eligible_tier', eligible_tier !== undefined ? (eligible_tier ? String(eligible_tier).trim() : null) : null)
-      .input('is_plus_only', is_plus_only != null ? (is_plus_only ? 1 : 0) : null)
+      .input('required_capability', required_capability !== undefined ? (required_capability ? String(required_capability).trim() : null) : null)
+      .input('cashback_rate', cashback_rate !== undefined ? (cashback_rate != null ? parseFloat(cashback_rate) : null) : null)
       .input('is_active', is_active != null ? (is_active ? 1 : 0) : null)
       .input('sort_order', sort_order != null ? parseInt(sort_order, 10) : null)
       .query(`
         UPDATE dbo.customer_offers SET
-          title          = ISNULL(@title,          title),
-          description    = ISNULL(@description,    description),
-          icon_emoji     = ISNULL(@icon_emoji,     icon_emoji),
-          discount_type  = ISNULL(@discount_type,  discount_type),
-          discount_value = ISNULL(@discount_value, discount_value),
-          trigger_type   = ISNULL(@trigger_type,   trigger_type),
-          trigger_value  = ISNULL(@trigger_value,  trigger_value),
-          benefit_target = ISNULL(@benefit_target, benefit_target),
+          title               = ISNULL(@title,               title),
+          description         = ISNULL(@description,         description),
+          icon_emoji          = ISNULL(@icon_emoji,          icon_emoji),
+          discount_type       = ISNULL(@discount_type,       discount_type),
+          discount_value      = ISNULL(@discount_value,      discount_value),
+          trigger_type        = ISNULL(@trigger_type,        trigger_type),
+          trigger_value       = ISNULL(@trigger_value,       trigger_value),
+          benefit_target      = ISNULL(@benefit_target,      benefit_target),
           max_discount_amount = ISNULL(@max_discount_amount, max_discount_amount),
-          scope_mode     = ISNULL(@scope_mode,     scope_mode),
-          valid_from     = ISNULL(@valid_from,     valid_from),
-          valid_to       = ISNULL(@valid_to,       valid_to),
-          eligible_tier  = ISNULL(@eligible_tier,  eligible_tier),
-          is_plus_only   = ISNULL(@is_plus_only,   is_plus_only),
-          is_active      = ISNULL(@is_active,      is_active),
-          sort_order     = ISNULL(@sort_order,     sort_order),
-          updated_at     = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+          scope_mode          = ISNULL(@scope_mode,          scope_mode),
+          valid_from          = ISNULL(@valid_from,          valid_from),
+          valid_to            = ISNULL(@valid_to,            valid_to),
+          required_capability = ISNULL(@required_capability, required_capability),
+          cashback_rate       = ISNULL(@cashback_rate,       cashback_rate),
+          is_active           = ISNULL(@is_active,           is_active),
+          sort_order          = ISNULL(@sort_order,          sort_order),
+          updated_at          = DATEADD(MINUTE, 330, SYSUTCDATETIME())
         WHERE offer_id = @id
       `);
 

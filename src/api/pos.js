@@ -1073,13 +1073,13 @@ router.get('/settings', ...posCatalogue, async (req, res, next) => {
         N'pos_composition_scheme',
         N'pos_prices_gst_inclusive',
         N'pos_invoice_prefix',
-        N'pos_points_maturity_days',
         N'pos_procurement_mode',
         N'pos_msg_customer_ready',
         N'firm_name',
         N'firm_registered_address',
         N'firm_gstin',
-        N'pos_invoice_return_policy'
+        N'pos_invoice_return_policy',
+        N'coin_redemption_rate'
       )
     `)
     const map = {}
@@ -1092,7 +1092,7 @@ router.get('/settings', ...posCatalogue, async (req, res, next) => {
       composition_scheme: truthyPosSetting(map.pos_composition_scheme),
       prices_gst_inclusive: truthyPosSetting(map.pos_prices_gst_inclusive),
       invoice_prefix: map.pos_invoice_prefix || 'EW-INV-',
-      points_maturity_days: Number(map.pos_points_maturity_days || 30),
+      coin_redemption_rate: Number(map.coin_redemption_rate || 10),
       procurement_mode: map.pos_procurement_mode || 'STORE',
       msg_customer_ready: map.pos_msg_customer_ready || '',
       firm_name: String(map.firm_name || '').trim(),
@@ -1195,65 +1195,51 @@ async function fetchEligibleCartOffersForPos(pool, customerId) {
   const r = await pool.request().input('now', nowIST).query(`
     SELECT offer_id, title, description, icon_emoji, discount_type,
            discount_value, trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
-           valid_from, valid_to, eligible_tier,
-           is_plus_only, sort_order
+           valid_from, valid_to,
+           required_capability, cashback_rate, sort_order
     FROM   dbo.customer_offers
     WHERE  is_active = 1
       AND  valid_from <= @now
       AND  valid_to   >= @now
-    ORDER BY is_plus_only DESC, sort_order ASC, offer_id DESC
+    ORDER BY sort_order ASC, offer_id DESC
   `)
 
   let rows = r.recordset || []
 
   if (customerId && !Number.isNaN(customerId)) {
-    const [balR, memR] = await Promise.all([
-      pool.request().input('cid', customerId).query(`
-        SELECT TOP 1 balance_after AS balance FROM dbo.pos_points_ledger
-        WHERE customer_id = @cid ORDER BY ledger_id DESC
-      `),
-      pool.request().input('cid', customerId).query(`
-        SELECT TOP 1 plan_key FROM dbo.customer_memberships
-        WHERE customer_id = @cid AND is_active = 1
-          AND expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
-        ORDER BY expires_at DESC
-      `)
-    ])
-    const balance = (balR.recordset[0] && balR.recordset[0].balance) || 0
-    const hasPlus = memR.recordset.length > 0
-    const tierR = await pool.request().input('pts', balance).query(`
-      SELECT TOP 1 tier_name FROM dbo.loyalty_tiers
-      WHERE min_points <= @pts AND (max_points = -1 OR max_points >= @pts)
-      ORDER BY display_order DESC
+    const memR = await pool.request().input('cid', customerId).query(`
+      SELECT TOP 1
+        cm.plan_key,
+        mp.has_plus_access,
+        mp.extra_cashback_pct,
+        mp.flat_discount_pct,
+        mp.has_one_time_discount,
+        mp.can_create_sub_cards
+      FROM   dbo.customer_memberships cm
+      JOIN   dbo.membership_plans mp ON mp.plan_key = cm.plan_key
+      WHERE  cm.customer_id = @cid AND cm.is_active = 1
+        AND  cm.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      ORDER BY cm.expires_at DESC
     `)
-    const tierName = (tierR.recordset[0] && tierR.recordset[0].tier_name) || 'Silver'
-    const tierOrder = ['Silver', 'Gold', 'Platinum']
-    const tierIdx = tierOrder.indexOf(tierName)
+    const memRow = memR.recordset[0] || null
 
     rows = rows.filter((o) => {
-      if (o.is_plus_only && !hasPlus) return false
-      if (o.eligible_tier) {
-        const reqIdx = tierOrder.indexOf(o.eligible_tier)
-        if (reqIdx > tierIdx) return false
-      }
-      return true
+      if (!o.required_capability) return true
+      if (!memRow) return false
+      return Boolean(memRow[o.required_capability])
     })
   } else {
-    // Walk-in: no customer context — hide Plus-only and tier-gated offers (same as Eyewoot Go expectations).
-    rows = rows.filter((o) => {
-      if (o.is_plus_only) return false
-      const et = o.eligible_tier != null ? String(o.eligible_tier).trim() : ''
-      if (et) return false
-      return true
-    })
+    // Walk-in: no customer context — hide membership-restricted offers.
+    rows = rows.filter((o) => !o.required_capability)
   }
 
   const normalized = rows.map((row) => ({
     ...row,
     offer_id: row.offer_id != null ? Number(row.offer_id) : null,
     discount_value: row.discount_value != null ? Number(row.discount_value) : 0,
+    cashback_rate: row.cashback_rate != null ? Number(row.cashback_rate) : null,
     sort_order: row.sort_order != null ? Number(row.sort_order) : 0,
-    is_plus_only: Boolean(row.is_plus_only)
+    required_capability: row.required_capability || null
   }))
 
   const ids = normalized.map((o) => o.offer_id).filter((id) => Number.isFinite(Number(id)) && Number(id) > 0)

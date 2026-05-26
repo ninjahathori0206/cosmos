@@ -46,6 +46,7 @@ const lensConfigRouter         = require('./src/api/lensConfig');
 const ordersRouter             = require('./src/api/orders');
 const metaRouter               = require('./src/api/meta');
 const labelPrintFormatsRouter  = require('./src/api/labelPrintFormats');
+const storeCollectionsRouter   = require('./src/api/storeCollections');
 const tabletsRouter            = require('./src/api/tablets');
 const customerAuthRouter       = require('./src/api/customerAuth');
 const customerAppRouter        = require('./src/api/customerApp');
@@ -534,6 +535,7 @@ protectedApiRouter.get(
   ...metaRouter.transferRequestListViewsMiddleware
 );
 protectedApiRouter.use('/meta', metaRouter);
+protectedApiRouter.use('/collections', storeCollectionsRouter);
 protectedApiRouter.use('/tablets', tabletsRouter);
 app.use('/api', protectedApiRouter);
 

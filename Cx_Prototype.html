@@ -569,12 +569,16 @@
   <div class="page" id="page-offers">
     <div class="ph">
       <div class="pt">Customer Offers</div>
-      <div class="ps">Visible in Eyewoot Go. Primary administration: Command Unit → Promotion → Configure Offer.</div>
+      <div class="ps">View-only in CX. Create and edit offers in Command Unit → Promotion → Configure Offer.</div>
+    </div>
+    <div class="card mb4" style="background:var(--accL);border:1px solid var(--border);padding:12px 16px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--acc2);margin-bottom:4px">View only</div>
+      <div style="font-size:13px;color:var(--text2)">This list mirrors offers shown in Eyewoot Go. To add or change promotions, use <strong style="color:var(--text1)">Command Unit → Promotion → Configure Offer</strong>.</div>
     </div>
     <div class="card mb4">
       <div class="ch">
         <div style="font-weight:600;font-size:14px;color:var(--text1)">Active Offers</div>
-        <button type="button" class="btn primary sm" id="cx-btn-new-offer" onclick="openOfferModal()">+ New Offer</button>
+        <button type="button" class="btn primary sm" id="cx-btn-new-offer" onclick="openOfferModal()" hidden aria-hidden="true">+ New Offer</button>
       </div>
       <div class="tw">
         <table>
@@ -585,7 +589,6 @@
               <th>Tier / Plus</th>
               <th>Valid Until</th>
               <th>Status</th>
-              <th></th>
             </tr>
           </thead>
           <tbody id="cx-tbody-offers"></tbody>
@@ -819,8 +822,14 @@
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
 <script src="/js/cx-prototype.js?v=20260528-cx-membership-tier-link"></script>
 <script>
-/* ── CX: Offers page ─────────────────────────────────────────── */
+/* ── CX: Offers page (view-only; writes via Command Unit) ───── */
 var _cxOffersLoaded = false;
+var CX_OFFERS_READONLY_MSG = 'Offers are managed in Command Unit → Promotion → Configure Offer.';
+
+function cxOffersReadOnlyToast() {
+  if (typeof cosmosToastInfo === 'function') cosmosToastInfo(CX_OFFERS_READONLY_MSG);
+  else if (typeof cosmosToastWarn === 'function') cosmosToastWarn(CX_OFFERS_READONLY_MSG);
+}
 
 function loadOffersPage() {
   if (_cxOffersLoaded) return;
@@ -830,43 +839,34 @@ function loadOffersPage() {
 
 async function refreshOffers() {
   var tbody = document.getElementById('cx-tbody-offers');
-  var canManage = typeof window.cosmosCxAllows === 'function' && window.cosmosCxAllows(['cx.offers.manage']);
-  if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('cx-tbody-offers', 6);
+  if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('cx-tbody-offers', 5);
   else { tbody.innerHTML = ''; }
   try {
     var res = await cxApiFetch('GET', '/api/cx/offers');
     var rows = res.data || [];
     if (!rows.length) {
-      var emptyBtn = canManage
-        ? '<button class="btn primary" onclick="openOfferModal()">+ New Offer</button>'
-        : '';
-      tbody.innerHTML = '<tr><td colspan="6" style="border:none"><div class="empty"><div class="empty-ic">🎁</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No offers yet</div><div style="font-size:13px;color:var(--text2);margin-bottom:16px">Create your first offer to display in Eyewoot Go.</div>' + (emptyBtn ? '<div style="margin-top:16px">' + emptyBtn + '</div>' : '') + '</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="border:none"><div class="empty"><div class="empty-ic">🎁</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No offers configured</div><div style="font-size:13px;color:var(--text2)">Create promotions in Command Unit → Promotion → Configure Offer. They will appear here and in Eyewoot Go.</div></div></td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(function (o) {
       var discLabel = o.discount_type === 'PCT' ? o.discount_value + '%'
                     : o.discount_type === 'FLAT' ? '₹' + o.discount_value
-                    : 'Freebie';
+                    : (o.discount_type || 'Offer');
       var tierLabel = o.eligible_tier ? o.eligible_tier + '+' : 'All';
       var plusLabel = o.is_plus_only ? '<span style="font-size:11px;background:var(--accL);color:var(--acc2);padding:2px 7px;border-radius:10px">Plus</span>' : '';
       var status = o.is_active
         ? '<span style="font-size:11px;background:var(--greenL);color:var(--green);padding:2px 8px;border-radius:10px">Active</span>'
         : '<span style="font-size:11px;background:var(--bg);color:var(--text3);padding:2px 8px;border-radius:10px;border:1px solid var(--border)">Inactive</span>';
-      var actions = '';
-      if (canManage) {
-        actions = '<button class="btn sm" onclick="editOffer(' + JSON.stringify(o).replace(/"/g, '&quot;') + ')" style="margin-right:6px">Edit</button>'
-          + (o.is_active ? '<button class="btn sm" style="color:var(--red)" onclick="deactivateOffer(' + o.offer_id + ')">Deactivate</button>' : '');
-      }
       return '<tr>'
         + '<td><span style="font-size:20px;margin-right:6px">' + o.icon_emoji + '</span>' + o.title + '</td>'
         + '<td>' + discLabel + '</td>'
         + '<td>' + tierLabel + ' ' + plusLabel + '</td>'
         + '<td>' + new Date(o.valid_to).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) + '</td>'
-        + '<td>' + status + '</td>'
-        + '<td style="text-align:right">' + actions + '</td></tr>';
+        + '<td>' + status + '</td></tr>';
     }).join('');
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--red);padding:16px">' + e.message + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--red);padding:16px">' + e.message + '</td></tr>';
+    if (typeof cosmosToastError === 'function') cosmosToastError(e.message);
   }
 }
 
@@ -895,6 +895,8 @@ function ofBindPreviewListeners() {
 }
 
 function openOfferModal() {
+  cxOffersReadOnlyToast();
+  return;
   if (!window.cosmosCxAllows || !window.cosmosCxAllows(['cx.offers.manage'])) {
     if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to create or edit offers.');
     return;
@@ -920,6 +922,8 @@ function openOfferModal() {
 }
 
 function editOffer(o) {
+  cxOffersReadOnlyToast();
+  return;
   if (!window.cosmosCxAllows || !window.cosmosCxAllows(['cx.offers.manage'])) {
     if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to edit offers.');
     return;
@@ -949,6 +953,8 @@ function editOffer(o) {
 function closeOfferModal() { document.getElementById('modal-offer-overlay').style.display = 'none'; }
 
 async function saveOffer() {
+  cxOffersReadOnlyToast();
+  return;
   if (!window.cosmosCxAllows || !window.cosmosCxAllows(['cx.offers.manage'])) {
     if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to save offers.');
     return;
@@ -1007,6 +1013,8 @@ async function saveOffer() {
 }
 
 async function deactivateOffer(id) {
+  cxOffersReadOnlyToast();
+  return;
   if (!window.cosmosCxAllows || !window.cosmosCxAllows(['cx.offers.manage'])) {
     if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to deactivate offers.');
     return;

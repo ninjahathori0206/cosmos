@@ -75,6 +75,9 @@
     <div class="nav-item" onclick="showPage('foundry-settings', this)">
       <span class="icon">🔩</span> Foundry Settings
     </div>
+    <div class="nav-item" id="cu-nav-label-templates" onclick="showPage('label-templates', this)" style="display:none">
+      <span class="icon">🏷️</span> Label Templates
+    </div>
     <div class="nav-item" onclick="showPage('cu-suppliers', this)">
       <span class="icon">🏭</span> Suppliers
     </div>
@@ -782,6 +785,132 @@
             <tr><td class="fw-600">Unpaid Leave</td><td>— (no quota)</td><td><span class="badge badge-gray">No</span></td><td><span class="badge badge-gold">Yes</span></td><td><span class="badge badge-red">Yes</span></td><td><span class="badge badge-red">Unpaid</span></td><td><span class="badge badge-green">Active</span></td><td><button class="topbar-btn" style="padding:5px 10px;font-size:12px">Edit</button></td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: LABEL TEMPLATES ═══ -->
+  <div class="page" id="page-label-templates">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Label Templates</div>
+        <div class="page-subtitle">Design roll geometry and print zones — used by Foundry barcode printing</div>
+      </div>
+    </div>
+    <div class="ltc-wrap" id="ltc-root">
+      <div class="ltc-toolbar">
+        <span id="ltc-step-label" style="font-size:12px;color:var(--text2)">Step 1 of 3</span>
+        <span style="flex:1"></span>
+        <button type="button" class="topbar-btn" id="ltc-prev-btn">← Back</button>
+        <button type="button" class="topbar-btn primary" id="ltc-next-btn">Next →</button>
+        <button type="button" class="topbar-btn primary" id="ltc-save-btn" style="display:none">Save template</button>
+        <button type="button" class="topbar-btn" id="ltc-create-btn" style="display:none">+ New</button>
+        <button type="button" class="topbar-btn" id="ltc-delete-btn" style="display:none;color:var(--red)">Delete</button>
+      </div>
+      <div class="ltc-steps">
+        <div class="ltc-step active" data-step="1"><span class="ltc-step-num">1</span> Page &amp; label size</div>
+        <div class="ltc-step" data-step="2"><span class="ltc-step-num">2</span> Grid &amp; layout</div>
+        <div class="ltc-step" data-step="3"><span class="ltc-step-num">3</span> Zone designer</div>
+      </div>
+      <div id="ltc-step-panels">
+        <div class="ltc-step-panel active ltc-body" id="ltc-panel-1">
+          <div class="ltc-card">
+            <div class="ltc-field"><label for="ltc-s1-name">Template name</label><input id="ltc-s1-name" type="text"></div>
+            <div class="ltc-field"><label for="ltc-s1-type">Label type preset</label>
+              <select id="ltc-s1-type"><option value="SQUARE">Square 15×15mm</option><option value="STRIP">Frame wrap 104×12mm</option><option value="CUSTOM">Custom</option></select>
+            </div>
+            <div class="ltc-grid-2">
+              <div class="ltc-field"><label for="ltc-s1-pw">Page width (mm)</label><input id="ltc-s1-pw" type="number" step="0.1"></div>
+              <div class="ltc-field"><label for="ltc-s1-lw">Label width (mm)</label><input id="ltc-s1-lw" type="number" step="0.1"></div>
+            </div>
+            <div class="ltc-grid-2">
+              <div class="ltc-field"><label for="ltc-s1-lh">Label height (mm)</label><input id="ltc-s1-lh" type="number" step="0.1"></div>
+              <div class="ltc-field"><label for="ltc-s1-ml">Margin left (mm)</label><input id="ltc-s1-ml" type="number" step="0.1"></div>
+            </div>
+            <div class="ltc-field"><label for="ltc-s1-mr">Margin right (mm)</label><input id="ltc-s1-mr" type="number" step="0.1"></div>
+            <div id="ltc-width-proof" class="ltc-proof"></div>
+          </div>
+        </div>
+        <div class="ltc-step-panel ltc-body" id="ltc-panel-2">
+          <div class="ltc-card">
+            <div class="ltc-grid-2">
+              <div class="ltc-field"><label for="ltc-s2-cols">Columns</label><input id="ltc-s2-cols" type="number" min="1" max="12"></div>
+              <div class="ltc-field"><label for="ltc-s2-cg">Column gap (mm)</label><input id="ltc-s2-cg" type="number" step="0.1"></div>
+            </div>
+            <div class="ltc-grid-2">
+              <div class="ltc-field"><label for="ltc-s2-rg">Row gap (mm)</label><input id="ltc-s2-rg" type="number" step="0.1"></div>
+              <div class="ltc-field"><label for="ltc-s2-mt">Top margin (mm)</label><input id="ltc-s2-mt" type="number" step="0.1"></div>
+            </div>
+            <svg id="ltc-grid-svg" width="300" height="120" style="margin-top:12px;border-radius:6px"></svg>
+          </div>
+        </div>
+      </div>
+      <div class="ltc-designer" id="ltc-designer">
+        <div class="ltc-side">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text2)">TEMPLATES</div>
+          <div class="ltc-side-scroll ltc-tpl-list" id="ltc-tpl-list"></div>
+          <div style="padding:10px 12px;border-top:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text2)">ZONES</div>
+          <div class="ltc-side-scroll" id="ltc-zone-list"></div>
+          <div style="padding:8px 12px;border-top:1px solid var(--border)">
+            <button type="button" class="topbar-btn" id="ltc-add-zone" style="width:100%">+ Add zone</button>
+          </div>
+          <div class="ltc-side-scroll" id="ltc-zone-props" style="display:none">
+            <div class="ltc-field"><label for="ltc-zp-name">Name</label><input id="ltc-zp-name" type="text"></div>
+            <div class="ltc-field"><label for="ltc-zp-type">Type</label><select id="ltc-zp-type"><option value="qr">qr</option><option value="text">text</option><option value="tail">tail</option></select></div>
+            <div class="ltc-field ltc-content-field">
+              <label for="ltc-zp-content">Content</label>
+              <input id="ltc-zp-content" type="text" placeholder="{unit_id}" autocomplete="off" spellcheck="false">
+              <div class="ltc-content-insert" id="ltc-content-insert" aria-label="Insert data token"></div>
+              <div class="ltc-content-presets" id="ltc-content-presets" aria-label="Content presets"></div>
+              <p class="ltc-content-hint">Use tokens below — preview uses <strong>Sample preview data</strong> above the canvas.</p>
+            </div>
+            <div class="ltc-grid-2">
+              <div class="ltc-field"><label for="ltc-zp-x">X mm</label><input id="ltc-zp-x" type="number" step="0.1"></div>
+              <div class="ltc-field"><label for="ltc-zp-y">Y mm</label><input id="ltc-zp-y" type="number" step="0.1"></div>
+            </div>
+            <div class="ltc-grid-2">
+              <div class="ltc-field"><label for="ltc-zp-w">W mm</label><input id="ltc-zp-w" type="number" step="0.1"></div>
+              <div class="ltc-field"><label for="ltc-zp-h">H mm</label><input id="ltc-zp-h" type="number" step="0.1"></div>
+            </div>
+            <div class="ltc-grid-2">
+              <div class="ltc-field"><label for="ltc-zp-fs">Font pt</label><input id="ltc-zp-fs" type="number"></div>
+              <div class="ltc-field"><label for="ltc-zp-fw">Weight</label><select id="ltc-zp-fw"><option value="700">700</option><option value="600">600</option><option value="500">500</option><option value="400">400</option></select></div>
+            </div>
+            <div class="ltc-field"><label for="ltc-zp-wm">Writing mode</label><select id="ltc-zp-wm"><option value="horizontal">horizontal</option><option value="vertical">vertical</option></select></div>
+            <div class="ltc-grid-2" id="ltc-zp-align-rows">
+              <div class="ltc-field"><label for="ltc-zp-tah">Align horizontal</label><select id="ltc-zp-tah"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
+              <div class="ltc-field"><label for="ltc-zp-tav">Align vertical</label><select id="ltc-zp-tav"><option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option></select></div>
+            </div>
+            <div class="ltc-field" id="ltc-zp-ec-row"><label for="ltc-zp-ec">QR error level</label><select id="ltc-zp-ec"><option value="L">L</option><option value="M">M</option><option value="Q">Q</option><option value="H">H</option></select></div>
+            <button type="button" class="topbar-btn" id="ltc-del-zone" style="width:100%;color:var(--red)">Delete zone</button>
+          </div>
+        </div>
+        <div class="ltc-canvas-area">
+          <div class="ltc-canvas-toolbar">
+            <button type="button" class="topbar-btn" id="ltc-zoom-out">−</button>
+            <button type="button" class="topbar-btn" id="ltc-zoom-in">+</button>
+            <span id="ltc-scale-info"></span>
+          </div>
+          <div class="ltc-sample-bar" id="ltc-sample-panel" aria-label="Sample data for label preview">
+            <span class="ltc-sample-title">Sample preview data</span>
+            <label class="ltc-sample-field"><span>Unit</span><input id="ltc-sample-unit" type="text" maxlength="7" inputmode="numeric" placeholder="1234567"></label>
+            <label class="ltc-sample-field"><span>SKU</span><input id="ltc-sample-sku" type="text" placeholder="SKU-MAR-001"></label>
+            <label class="ltc-sample-field"><span>Brand</span><input id="ltc-sample-brand" type="text" placeholder="MAR"></label>
+            <label class="ltc-sample-field"><span>Model</span><input id="ltc-sample-model" type="text" placeholder="Aviator Classic"></label>
+            <label class="ltc-sample-field"><span>MRP</span><input id="ltc-sample-mrp" type="text" inputmode="numeric" placeholder="4000"></label>
+            <button type="button" class="topbar-btn" id="ltc-sample-reset" title="Reset sample values">Reset</button>
+          </div>
+          <div class="ltc-canvas-wrap">
+            <div class="ltc-label-canvas" id="ltc-label-canvas"></div>
+          </div>
+        </div>
+        <div class="ltc-tspl">
+          <div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:11px;font-weight:600">TSPL preview <span style="font-weight:400;color:var(--text3)">(sample data)</span></span>
+            <button type="button" class="topbar-btn" id="ltc-copy-tspl" style="font-size:11px">Copy</button>
+          </div>
+          <pre id="ltc-tspl-output"></pre>
+        </div>
       </div>
     </div>
   </div>
@@ -1951,7 +2080,8 @@ function showPage(id, el, _opts) {
     homebrands: 'Home Brand Management', locations: 'Location Type Config',
     settings: 'System Settings', 'pos-settings': 'POS Settings', membership: 'Membership Tiers',
     promotion: 'Configure Offer',
-    leavetypes: 'Leave Types', 'store-types': 'Store Types', 'foundry-settings': 'Foundry Settings', audit: 'Audit Logs',
+    leavetypes: 'Leave Types', 'store-types': 'Store Types', 'foundry-settings': 'Foundry Settings',
+    'label-templates': 'Label Templates', audit: 'Audit Logs',
     'cu-suppliers': 'Suppliers', 'cu-maker-master': 'Maker Master', 'cu-branding-agents': 'Branding Agents',
     tablets: 'Store OS Tablets'
   };
@@ -1992,6 +2122,9 @@ function switchTab(el, targetId) {
 </script>
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
-<script src="/js/command-unit-prototype.js?v=20260525-perm-search-rev" defer></script>
+<link rel="stylesheet" href="/css/label-template-configurator.css?v=20260528-ltc10">
+<script src="/js/label-zone-align.js?v=20260528-ltc10" defer></script>
+<script src="/js/label-template-configurator.js?v=20260528-ltc10" defer></script>
+<script src="/js/command-unit-prototype.js?v=20260528-ltc" defer></script>
 </body>
 </html>

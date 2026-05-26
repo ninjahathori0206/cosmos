@@ -89,7 +89,12 @@ const RAW_PERMISSION_GROUPS = [
     ['finance.payments.create', 'Payments — Create'],
     ['finance.payments.edit', 'Payments — Edit / Void'],
     ['finance.reports.view', 'Reports — View'],
-    ['finance.invoices.view', 'Sales invoices — View all stores & share']
+    ['finance.invoices.view', 'Sales invoices — View all stores & share'],
+    ['finance.collections.view', 'Collection Book — View all stores'],
+    ['finance.collections.deposit', 'Collection Book — Record cash deposit'],
+    ['finance.collections.settle', 'Collection Book — Record machine settlement / void'],
+    ['finance.collections.bank_accounts.manage', 'Collection Book — Manage store bank accounts'],
+    ['finance.collections.machine.manage', 'Collection Book — Manage payment machine config']
   ]],
   ['StorePilot (Showroom)', [
     ['storepilot.dashboard.view', 'Dashboard — View'],
@@ -111,7 +116,10 @@ const RAW_PERMISSION_GROUPS = [
     ['storepilot.transfers.view', 'Transfers — View'],
     ['storepilot.transfers.create', 'Transfers — Create'],
     ['storepilot.transfers.edit', 'Transfers — Accept / Stock'],
-    ['storepilot.invoices.view', 'Invoices — View & share store invoices']
+    ['storepilot.invoices.view', 'Invoices — View & share store invoices'],
+    ['storepilot.collections.view', 'Collection Book — View store ledgers'],
+    ['storepilot.collections.deposit', 'Collection Book — Record cash deposit'],
+    ['storepilot.collections.settle', 'Collection Book — Record machine settlement']
   ]],
   ['Store OS (POS)', [
     ['pos.catalogue.view', 'POS — Catalogue, startup & lens config'],
@@ -175,7 +183,7 @@ function buildCatalogueGroups() {
 }
 
 /** Bump when adding keys — Command Unit fetches with this revision to avoid stale catalogue. */
-const PERMISSION_CATALOGUE_REVISION = '20260525-rate-intelligence';
+const PERMISSION_CATALOGUE_REVISION = '20260527-store-collection-book';
 
 const PERMISSION_CATALOGUE_GROUPS = buildCatalogueGroups();
 

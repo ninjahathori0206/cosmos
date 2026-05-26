@@ -2,13 +2,26 @@
 
 const express = require('express');
 const Joi = require('joi');
-const { requireModule, requirePermission } = require('../middleware/authorize');
+const { requireModule, requirePermission, requireAnyModule } = require('../middleware/authorize');
 const {
-  labelPrintConfigSchema,
+  labelPrintFormatWriteSchema,
+  normalizeLabelPrintConfig,
   FORMAT_KEY_RE,
   slugifyFormatKey
 } = require('../config/labelPrintFormatSchema');
+
+const JOI_VALIDATE_OPTS = { stripUnknown: true, abortEarly: false };
+
+function prepareWriteBody(body) {
+  const out = body && typeof body === 'object' ? Object.assign({}, body) : {};
+  if (out.config != null) {
+    out.config = normalizeLabelPrintConfig(out.config);
+  }
+  return out;
+}
 const {
+  listLabelPrintFormats,
+  getLabelPrintFormat,
   createLabelPrintFormat,
   updateLabelPrintFormat,
   deleteLabelPrintFormat
@@ -16,33 +29,49 @@ const {
 
 const router = express.Router();
 
+const moduleMiddleware = [requireAnyModule(['command_unit', 'foundry'])];
+
+const viewMiddleware = [
+  ...moduleMiddleware,
+  requirePermission('foundry.label_formats.view')
+];
+
 const editMiddleware = [
-  requireModule('foundry'),
+  ...moduleMiddleware,
   requirePermission('foundry.label_formats.edit')
 ];
 
-const createSchema = Joi.object({
-  format_key: Joi.string().pattern(FORMAT_KEY_RE).optional(),
-  name: Joi.string().trim().min(1).max(120).required(),
-  description: Joi.string().trim().max(500).allow('', null).optional(),
-  config: labelPrintConfigSchema.required(),
-  is_default: Joi.boolean().optional(),
-  sort_order: Joi.number().integer().min(0).max(9999).optional(),
-  is_active: Joi.boolean().optional()
+const createSchema = labelPrintFormatWriteSchema.keys({
+  format_key: Joi.string().pattern(FORMAT_KEY_RE).optional()
 });
 
-const updateSchema = Joi.object({
-  name: Joi.string().trim().min(1).max(120).optional(),
-  description: Joi.string().trim().max(500).allow('', null).optional(),
-  config: labelPrintConfigSchema.optional(),
-  is_default: Joi.boolean().optional(),
-  sort_order: Joi.number().integer().min(0).max(9999).optional(),
-  is_active: Joi.boolean().optional()
-}).min(1);
+const updateSchema = labelPrintFormatWriteSchema.fork(
+  ['name', 'config'],
+  (s) => s.optional()
+).min(1);
+
+router.get('/', ...viewMiddleware, async (req, res, next) => {
+  try {
+    const formats = await listLabelPrintFormats({ activeOnly: true });
+    return res.json({ success: true, data: formats });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/:formatKey', ...viewMiddleware, async (req, res, next) => {
+  try {
+    const row = await getLabelPrintFormat(req.params.formatKey);
+    return res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.statusCode === 404) return res.status(404).json({ success: false, message: err.message });
+    return next(err);
+  }
+});
 
 router.post('/', ...editMiddleware, async (req, res, next) => {
   try {
-    const { error, value } = createSchema.validate(req.body);
+    const { error, value } = createSchema.validate(prepareWriteBody(req.body), JOI_VALIDATE_OPTS);
     if (error) {
       return res.status(400).json({
         success: false,
@@ -67,7 +96,7 @@ router.post('/', ...editMiddleware, async (req, res, next) => {
 router.put('/:formatKey', ...editMiddleware, async (req, res, next) => {
   try {
     const formatKey = String(req.params.formatKey || '').trim();
-    const { error, value } = updateSchema.validate(req.body);
+    const { error, value } = updateSchema.validate(prepareWriteBody(req.body), JOI_VALIDATE_OPTS);
     if (error) {
       return res.status(400).json({
         success: false,

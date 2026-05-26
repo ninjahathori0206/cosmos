@@ -1,59 +1,67 @@
 'use strict';
 
 const sql = require('mssql');
-const { getPool } = require('../config/db');
+const { executeStoredProcedure } = require('../config/db');
 const {
   SEED_LABEL_PRINT_FORMATS,
   normalizeLabelPrintConfig,
+  normalizeZones,
+  rowToLabelPrintFormatApi,
+  seedToApi,
+  validateZonesFitLabel,
+  syncConfigFromPage,
   FORMAT_KEY_RE,
   slugifyFormatKey
 } = require('../config/labelPrintFormatSchema');
 
-function rowToApi(row) {
-  let config = {};
-  try {
-    config = normalizeLabelPrintConfig(JSON.parse(String(row.config_json || '{}')));
-  } catch (_e) {
-    config = normalizeLabelPrintConfig({});
-  }
+function seedRowsToApi() {
+  return SEED_LABEL_PRINT_FORMATS.map((s) => seedToApi(s));
+}
+
+function buildSpPayload(payload) {
+  const config = normalizeLabelPrintConfig(payload.config || {});
+  const synced = syncConfigFromPage(config, {
+    label_width_mm: payload.label_width_mm,
+    label_height_mm: payload.label_height_mm,
+    page_width_mm: payload.page_width_mm,
+    columns: payload.columns,
+    col_gap_mm: payload.col_gap_mm,
+    row_gap_mm: payload.row_gap_mm,
+    margin_left_mm: payload.margin_left_mm,
+    margin_right_mm: payload.margin_right_mm,
+    margin_top_mm: payload.margin_top_mm,
+    margin_bottom_mm: payload.margin_bottom_mm
+  });
+  const zones = payload.zones != null ? normalizeZones(payload.zones) : null;
   return {
-    format_key: String(row.format_key || ''),
-    name: String(row.name || ''),
-    description: row.description != null && String(row.description).trim() !== ''
-      ? String(row.description).trim()
-      : null,
-    config,
-    is_default: row.is_default === true || row.is_default === 1,
-    sort_order: Number(row.sort_order) || 0,
-    is_active: row.is_active !== false && row.is_active !== 0
+    config: synced,
+    zones,
+    config_json: JSON.stringify(synced),
+    zones_json: zones != null ? JSON.stringify(zones) : null,
+    label_type: payload.label_type || null,
+    page_width_mm: payload.page_width_mm != null ? payload.page_width_mm : synced.pageWidthMm,
+    page_height_mm: payload.page_height_mm != null ? payload.page_height_mm : null,
+    margin_left_mm: payload.margin_left_mm != null ? payload.margin_left_mm : synced.marginLeft,
+    margin_right_mm: payload.margin_right_mm != null ? payload.margin_right_mm : synced.marginRight,
+    margin_top_mm: payload.margin_top_mm != null ? payload.margin_top_mm : synced.marginTop,
+    margin_bottom_mm: payload.margin_bottom_mm != null ? payload.margin_bottom_mm : synced.marginBottom,
+    columns_count: payload.columns != null ? payload.columns : synced.labelsPerRow,
+    col_gap_mm: payload.col_gap_mm != null ? payload.col_gap_mm : synced.gapCol,
+    row_gap_mm: payload.row_gap_mm != null ? payload.row_gap_mm : synced.gapRow,
+    label_width_mm: payload.label_width_mm != null ? payload.label_width_mm : synced.labelWidthMm,
+    label_height_mm: payload.label_height_mm != null ? payload.label_height_mm : synced.labelHeightMm
   };
 }
 
-function seedRowsToApi() {
-  return SEED_LABEL_PRINT_FORMATS.map((s) => ({
-    format_key: s.format_key,
-    name: s.name,
-    description: s.description || null,
-    config: normalizeLabelPrintConfig(s.config),
-    is_default: !!s.is_default,
-    sort_order: Number(s.sort_order) || 0,
-    is_active: true
-  }));
-}
-
 async function listLabelPrintFormats({ activeOnly = true } = {}) {
-  const pool = await getPool();
   try {
-    const q = await pool.request().query(`
-      SELECT format_key, name, description, config_json, is_default, sort_order, is_active
-      FROM dbo.label_print_formats
-      ${activeOnly ? 'WHERE is_active = 1' : ''}
-      ORDER BY sort_order, format_key
-    `);
-    const rows = (q.recordset || []).map(rowToApi);
+    const result = await executeStoredProcedure('sp_LabelPrintFormat_GetAll', {
+      active_only: { type: sql.Bit, value: activeOnly ? 1 : 0 }
+    });
+    const rows = (result.recordset || []).map(rowToLabelPrintFormatApi);
     if (rows.length) return rows;
   } catch (err) {
-    if (!/Invalid object name/i.test(String(err.message || ''))) throw err;
+    if (!/Could not find stored procedure|Invalid object name/i.test(String(err.message || ''))) throw err;
   }
   return seedRowsToApi();
 }
@@ -65,31 +73,19 @@ async function getLabelPrintFormat(formatKey) {
     err.statusCode = 400;
     throw err;
   }
-  const pool = await getPool();
   try {
-    const q = await pool.request()
-      .input('format_key', sql.VarChar(50), key)
-      .query(`
-        SELECT format_key, name, description, config_json, is_default, sort_order, is_active
-        FROM dbo.label_print_formats
-        WHERE format_key = @format_key
-      `);
-    if (q.recordset && q.recordset[0]) return rowToApi(q.recordset[0]);
+    const result = await executeStoredProcedure('sp_LabelPrintFormat_GetByKey', {
+      format_key: { type: sql.VarChar(50), value: key }
+    });
+    if (result.recordset && result.recordset[0]) return rowToLabelPrintFormatApi(result.recordset[0]);
   } catch (err) {
-    if (!/Invalid object name/i.test(String(err.message || ''))) throw err;
+    if (!/Could not find stored procedure|Invalid object name/i.test(String(err.message || ''))) throw err;
   }
   const seed = seedRowsToApi().find((r) => r.format_key === key);
   if (seed) return seed;
   const err = new Error('Label format not found.');
   err.statusCode = 404;
   throw err;
-}
-
-async function clearDefaultFormats(pool) {
-  await pool.request().query(`
-    UPDATE dbo.label_print_formats SET is_default = 0, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-    WHERE is_default = 1
-  `);
 }
 
 async function createLabelPrintFormat(payload) {
@@ -105,142 +101,142 @@ async function createLabelPrintFormat(payload) {
     err.statusCode = 400;
     throw err;
   }
-  const config = normalizeLabelPrintConfig(payload.config);
-  const pool = await getPool();
-  const isDefault = payload.is_default === true;
-
-  if (isDefault) await clearDefaultFormats(pool);
-
-  try {
-    await pool.request()
-      .input('format_key', sql.VarChar(50), formatKey)
-      .input('name', sql.NVarChar(120), name)
-      .input('description', sql.NVarChar(500), payload.description || null)
-      .input('config_json', sql.NVarChar(sql.MAX), JSON.stringify(config))
-      .input('is_default', sql.Bit, isDefault ? 1 : 0)
-      .input('sort_order', sql.Int, Number(payload.sort_order) || 0)
-      .input('is_active', sql.Bit, payload.is_active === false ? 0 : 1)
-      .query(`
-        INSERT INTO dbo.label_print_formats (format_key, name, description, config_json, is_default, sort_order, is_active)
-        VALUES (@format_key, @name, @description, @config_json, @is_default, @sort_order, @is_active)
-      `);
-  } catch (err) {
-    if (/Invalid object name/i.test(String(err.message || ''))) {
-      const e = new Error('label_print_formats table missing. Run migration 64.');
-      e.statusCode = 503;
-      throw e;
+  const built = buildSpPayload(payload);
+  const zones = built.zones || [];
+  const labelW = built.label_width_mm;
+  const labelH = built.label_height_mm;
+  if (zones.length) {
+    const zoneErr = validateZonesFitLabel(zones, labelW, labelH);
+    if (zoneErr) {
+      const err = new Error(zoneErr);
+      err.statusCode = 400;
+      throw err;
     }
+  }
+  try {
+    const result = await executeStoredProcedure('sp_LabelPrintFormat_Create', {
+      format_key: { type: sql.VarChar(50), value: formatKey },
+      name: { type: sql.NVarChar(120), value: name },
+      description: { type: sql.NVarChar(500), value: payload.description || null },
+      config_json: { type: sql.NVarChar(sql.MAX), value: built.config_json },
+      is_default: { type: sql.Bit, value: payload.is_default === true ? 1 : 0 },
+      sort_order: { type: sql.Int, value: Number(payload.sort_order) || 0 },
+      is_active: { type: sql.Bit, value: payload.is_active === false ? 0 : 1 },
+      label_type: { type: sql.NVarChar(20), value: built.label_type },
+      page_width_mm: { type: sql.Decimal(6, 2), value: built.page_width_mm },
+      page_height_mm: { type: sql.Decimal(6, 2), value: built.page_height_mm },
+      margin_left_mm: { type: sql.Decimal(6, 2), value: built.margin_left_mm },
+      margin_right_mm: { type: sql.Decimal(6, 2), value: built.margin_right_mm },
+      margin_top_mm: { type: sql.Decimal(6, 2), value: built.margin_top_mm },
+      margin_bottom_mm: { type: sql.Decimal(6, 2), value: built.margin_bottom_mm },
+      columns_count: { type: sql.Int, value: built.columns_count },
+      col_gap_mm: { type: sql.Decimal(6, 2), value: built.col_gap_mm },
+      row_gap_mm: { type: sql.Decimal(6, 2), value: built.row_gap_mm },
+      label_width_mm: { type: sql.Decimal(6, 2), value: built.label_width_mm },
+      label_height_mm: { type: sql.Decimal(6, 2), value: built.label_height_mm },
+      zones_json: { type: sql.NVarChar(sql.MAX), value: built.zones_json }
+    });
+    if (result.recordset && result.recordset[0]) return rowToLabelPrintFormatApi(result.recordset[0]);
+    return getLabelPrintFormat(formatKey);
+  } catch (err) {
     if (/duplicate key|UNIQUE|PK_label_print_formats/i.test(String(err.message || ''))) {
       const e = new Error('A label format with this key already exists.');
       e.statusCode = 409;
       throw e;
     }
+    if (/Invalid object name|stored procedure/i.test(String(err.message || ''))) {
+      const e = new Error('label_print_formats not ready. Run migration 70.');
+      e.statusCode = 503;
+      throw e;
+    }
     throw err;
   }
-  return getLabelPrintFormat(formatKey);
 }
 
 async function updateLabelPrintFormat(formatKey, payload) {
   const key = String(formatKey || '').trim();
-  await getLabelPrintFormat(key);
+  const existing = await getLabelPrintFormat(key);
+  const merged = {
+    name: payload.name !== undefined ? payload.name : existing.name,
+    description: payload.description !== undefined ? payload.description : existing.description,
+    config: payload.config !== undefined ? payload.config : existing.config,
+    label_type: payload.label_type !== undefined ? payload.label_type : existing.label_type,
+    page_width_mm: payload.page_width_mm !== undefined ? payload.page_width_mm : existing.page_width_mm,
+    page_height_mm: payload.page_height_mm !== undefined ? payload.page_height_mm : existing.page_height_mm,
+    margin_left_mm: payload.margin_left_mm !== undefined ? payload.margin_left_mm : existing.margin_left_mm,
+    margin_right_mm: payload.margin_right_mm !== undefined ? payload.margin_right_mm : existing.margin_right_mm,
+    margin_top_mm: payload.margin_top_mm !== undefined ? payload.margin_top_mm : existing.margin_top_mm,
+    margin_bottom_mm: payload.margin_bottom_mm !== undefined ? payload.margin_bottom_mm : existing.margin_bottom_mm,
+    columns: payload.columns !== undefined ? payload.columns : existing.columns,
+    col_gap_mm: payload.col_gap_mm !== undefined ? payload.col_gap_mm : existing.col_gap_mm,
+    row_gap_mm: payload.row_gap_mm !== undefined ? payload.row_gap_mm : existing.row_gap_mm,
+    label_width_mm: payload.label_width_mm !== undefined ? payload.label_width_mm : existing.label_width_mm,
+    label_height_mm: payload.label_height_mm !== undefined ? payload.label_height_mm : existing.label_height_mm,
+    zones: payload.zones !== undefined ? payload.zones : existing.zones
+  };
 
-  const pool = await getPool();
-  const sets = [];
-  const req = pool.request().input('format_key', sql.VarChar(50), key);
-
-  if (payload.name !== undefined) {
-    const name = String(payload.name || '').trim();
-    if (!name) {
-      const err = new Error('Name cannot be empty.');
+  const built = buildSpPayload(merged);
+  const zones = built.zones || [];
+  if (zones.length) {
+    const zoneErr = validateZonesFitLabel(zones, built.label_width_mm, built.label_height_mm);
+    if (zoneErr) {
+      const err = new Error(zoneErr);
       err.statusCode = 400;
       throw err;
     }
-    req.input('name', sql.NVarChar(120), name);
-    sets.push('name = @name');
   }
-  if (payload.description !== undefined) {
-    req.input('description', sql.NVarChar(500), payload.description || null);
-    sets.push('description = @description');
-  }
-  if (payload.config !== undefined) {
-    const config = normalizeLabelPrintConfig(payload.config);
-    req.input('config_json', sql.NVarChar(sql.MAX), JSON.stringify(config));
-    sets.push('config_json = @config_json');
-  }
-  if (payload.sort_order !== undefined) {
-    req.input('sort_order', sql.Int, Number(payload.sort_order) || 0);
-    sets.push('sort_order = @sort_order');
-  }
-  if (payload.is_active !== undefined) {
-    req.input('is_active', sql.Bit, payload.is_active === false ? 0 : 1);
-    sets.push('is_active = @is_active');
-  }
-  if (payload.is_default === true) {
-    await clearDefaultFormats(pool);
-    req.input('is_default', sql.Bit, 1);
-    sets.push('is_default = @is_default');
-  } else if (payload.is_default === false) {
-    req.input('is_default', sql.Bit, 0);
-    sets.push('is_default = @is_default');
-  }
-
-  if (!sets.length) {
-    return getLabelPrintFormat(key);
-  }
-
-  sets.push('updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())');
 
   try {
-    await req.query(`
-      UPDATE dbo.label_print_formats
-      SET ${sets.join(', ')}
-      WHERE format_key = @format_key
-    `);
+    const result = await executeStoredProcedure('sp_LabelPrintFormat_Update', {
+      format_key: { type: sql.VarChar(50), value: key },
+      name: { type: sql.NVarChar(120), value: merged.name },
+      description: { type: sql.NVarChar(500), value: merged.description || null },
+      config_json: { type: sql.NVarChar(sql.MAX), value: built.config_json },
+      is_default: { type: sql.Bit, value: payload.is_default === undefined ? (existing.is_default ? 1 : 0) : (payload.is_default ? 1 : 0) },
+      sort_order: { type: sql.Int, value: payload.sort_order === undefined ? (existing.sort_order || 0) : (Number(payload.sort_order) || 0) },
+      is_active: { type: sql.Bit, value: payload.is_active === undefined ? (existing.is_active !== false ? 1 : 0) : (payload.is_active === false ? 0 : 1) },
+      label_type: { type: sql.NVarChar(20), value: built.label_type },
+      page_width_mm: { type: sql.Decimal(6, 2), value: built.page_width_mm },
+      page_height_mm: { type: sql.Decimal(6, 2), value: built.page_height_mm },
+      margin_left_mm: { type: sql.Decimal(6, 2), value: built.margin_left_mm },
+      margin_right_mm: { type: sql.Decimal(6, 2), value: built.margin_right_mm },
+      margin_top_mm: { type: sql.Decimal(6, 2), value: built.margin_top_mm },
+      margin_bottom_mm: { type: sql.Decimal(6, 2), value: built.margin_bottom_mm },
+      columns_count: { type: sql.Int, value: built.columns_count },
+      col_gap_mm: { type: sql.Decimal(6, 2), value: built.col_gap_mm },
+      row_gap_mm: { type: sql.Decimal(6, 2), value: built.row_gap_mm },
+      label_width_mm: { type: sql.Decimal(6, 2), value: built.label_width_mm },
+      label_height_mm: { type: sql.Decimal(6, 2), value: built.label_height_mm },
+      zones_json: { type: sql.NVarChar(sql.MAX), value: built.zones_json }
+    });
+    if (result.recordset && result.recordset[0]) return rowToLabelPrintFormatApi(result.recordset[0]);
+    return getLabelPrintFormat(key);
   } catch (err) {
-    if (/Invalid object name/i.test(String(err.message || ''))) {
-      const e = new Error('label_print_formats table missing. Run migration 64.');
+    if (/Invalid object name|stored procedure/i.test(String(err.message || ''))) {
+      const e = new Error('label_print_formats not ready. Run migration 70.');
       e.statusCode = 503;
       throw e;
     }
     throw err;
   }
-  return getLabelPrintFormat(key);
 }
 
 async function deleteLabelPrintFormat(formatKey) {
   const key = String(formatKey || '').trim();
-  const existing = await getLabelPrintFormat(key);
-  const pool = await getPool();
+  await getLabelPrintFormat(key);
   try {
-    await pool.request()
-      .input('format_key', sql.VarChar(50), key)
-      .query(`
-        UPDATE dbo.label_print_formats
-        SET is_active = 0, is_default = 0, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-        WHERE format_key = @format_key
-      `);
+    const result = await executeStoredProcedure('sp_LabelPrintFormat_Delete', {
+      format_key: { type: sql.VarChar(50), value: key }
+    });
+    return result.recordset && result.recordset[0] ? result.recordset[0] : { format_key: key, deleted: true };
   } catch (err) {
-    if (/Invalid object name/i.test(String(err.message || ''))) {
-      const e = new Error('label_print_formats table missing. Run migration 64.');
+    if (/Invalid object name|stored procedure/i.test(String(err.message || ''))) {
+      const e = new Error('label_print_formats not ready. Run migration 70.');
       e.statusCode = 503;
       throw e;
     }
     throw err;
   }
-  if (existing.is_default) {
-    try {
-      await pool.request()
-        .input('format_key', sql.VarChar(50), key)
-        .query(`
-          UPDATE TOP (1) dbo.label_print_formats
-          SET is_default = 1, updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-          WHERE is_active = 1 AND format_key <> @format_key
-        `);
-    } catch (_e) {
-      /* ignore */
-    }
-  }
-  return { format_key: key, deleted: true };
 }
 
 module.exports = {

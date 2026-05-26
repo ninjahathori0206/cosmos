@@ -144,7 +144,8 @@ const SP_MENU_PERM_MAP = {
   'transfers-create': ['storepilot.transfers.create', 'foundry.transfers.create'],
   'transfers-history': ['storepilot.transfers.view', 'foundry.transfers.view'],
   reports: ['storepilot.reports.view'],
-  invoices: ['storepilot.invoices.view']
+  invoices: ['storepilot.invoices.view'],
+  collections: ['storepilot.collections.view']
 };
 
 // ── Breadcrumb map ─────────────────────────────────────────────────────────────
@@ -156,7 +157,8 @@ const spBcMap = {
   'transfers-create':     'Foundry Connect — Request Goods',
   reports:                'Store Reports',
   'lab-orders':           'Lab Orders',
-  invoices:               'Invoices'
+  invoices:               'Invoices',
+  collections:            'Collection Book'
 };
 
 const spBcShortMap = {
@@ -167,7 +169,8 @@ const spBcShortMap = {
   'transfers-create':     'Request Goods',
   reports:                'Store Reports',
   'lab-orders':           'Lab Orders',
-  invoices:               'Invoices'
+  invoices:               'Invoices',
+  collections:            'Collection Book'
 };
 
 function spIsMobileChrome() {
@@ -201,7 +204,8 @@ const SP_PAGE_PATHS = {
   'transfers-create': '/storepilot/transfers-create',
   reports: '/storepilot/reports',
   'lab-orders': '/storepilot/lab-orders',
-  invoices: '/storepilot/invoices'
+  invoices: '/storepilot/invoices',
+  collections: '/storepilot/collections'
 };
 
 let _spOpenCreateRequestOnLoad = false;
@@ -322,6 +326,7 @@ function loadStorePilotPage(id) {
   if (id === 'reports')            loadReports();
   if (id === 'lab-orders')         loadSpLabOrders();
   if (id === 'invoices')           loadSpInvoices();
+  if (id === 'collections' && typeof window.loadStoreCollections === 'function') loadStoreCollections('storepilot');
 }
 
 /** '' = all lab workflow statuses for this store (no lab_status API filter). */
