@@ -2,7 +2,7 @@
 
 Shared popup modal: [`src/public/js/cosmos-bucket-scan.js`](../../src/public/js/cosmos-bucket-scan.js)
 
-Loaded on **Foundry** and **StorePilot** prototypes with `#modal-bucket-scan`.
+Loaded on **Foundry**, **StorePilot**, and **POS** prototypes with `#modal-bucket-scan`.
 
 Styles: [`cosmos-ui-polish.css`](../../src/public/css/cosmos-ui-polish.css) — `#modal-bucket-scan`.
 
@@ -28,36 +28,28 @@ All call `window.openBucket({ mode, expected, onSubmit, ... })`.
 ## Modal flow (three screens)
 
 1. **Idle** — “Start scanning”
-2. **Scan** — live camera preview, static QR frame, tap to scan, manual entry, Show QR list
+2. **Scan** — live camera preview, static QR frame, tap to focus / scan, manual entry, optional torch, Show QR list
 3. **Review** — submit bucket
 
-## Camera viewport (tap to scan)
+## Camera (native-like, per device)
 
-| Element | Behaviour |
-|---------|-----------|
-| Moving blue line | **Removed** (was misleading laser-scanner UX) |
-| Static corner frame | `.bucket-scan-frame` — four brackets, no animation |
-| Focus reticle | `#bucket-focus-reticle` — visible ~900ms **only on tap** |
-| Hint | **“Aim QR in frame · tap to scan”** |
+On stream start, `bucketProbeDeviceCamera()` reads `track.getCapabilities()` and builds a **device profile**: best rear resolution, continuous AF at preview, tap `single-shot` + `pointsOfInterest`, optional zoom/torch.
 
-### Tap = one scan attempt
+| Phase | Behaviour |
+|-------|-----------|
+| **Start** | `getUserMedia` (environment) → continuous/autofocus → warm-up ~600ms |
+| **Tap (pointerup)** | POI at tap (clamped 0.05–0.95) → tap focus mode → macro zoom on **all mobile** when supported → settle 1–2s → **Scanning…** loop |
+| **Decode** | `ImageCapture.grabFrame()` when available, else video frame; ROI jsQR + BarcodeDetector; **2×/3× ROI upscale**; full frame without downscale when width ≤ 1280px; mobile `BarcodeDetector` on live video each tick |
+| **Torch** | `#bucket-torch-btn` when `caps.torch` / flash supported |
+| **Background** | `bucketScheduleCameraResume` restarts stream when modal still scanning |
 
-While the camera is on, the feed is **preview only** — nothing is decoded until the user **taps** the viewport.
+Hint: **“Aim at QR · tap to focus · release to scan”**
 
-`pointerdown` on `#bucket-scan-viewport` → `bucketTapToScan()`:
+Tap debounce: **400ms**. Per-unit cooldown: **2s**.
 
-1. Focus reticle + ROI at tap (`bucketApplyTapFocus`)
-2. Android autofocus (`pointsOfInterest` / `single-shot`) when supported
-3. **One** `bucketDecodeFrame()` — ROI crop first (jsQR), then full frame if needed
-4. If code found → `bucketHandleScan()`; else inline `No QR detected — tap again`
+### Small frame QRs (15×15 labels)
 
-Tap debounce: **400ms** (`TAP_DEBOUNCE_MS`). Per-unit cooldown: **2s** (`DEBOUNCE_MS`).
-
-Native `BarcodeDetector` (when available): single full-frame detect on each tap.
-
-### “Show QR” button
-
-Toggles text list of scanned unit barcodes (not QR images). Collapsed by default on mobile.
+Eyewear labels use a ~10 mm QR ([`qr-15x15-label.md`](qr-15x15-label.md)). If camera decode fails, use **manual 7-digit entry** — same `bucketHandleScan()` path.
 
 ## Manual entry
 
@@ -67,13 +59,14 @@ Toggles text list of scanned unit barcodes (not QR images). Collapsed by default
 
 ## Script version
 
-`cosmos-bucket-scan.js?v=20260521-tap-scan`
+`cosmos-bucket-scan.js?v=20260526-native-camera-profile`
 
 ## Manual test
 
-1. Start scanning — no moving line; corner frame visible.
+1. Start scanning — corner frame visible; hint shows tap-to-focus copy.
 2. Point at QR **without tap** — bucket count unchanged.
-3. **Tap** on QR — unit added or duplicate/status message once.
-4. Manual entry still works.
-5. Show QR lists scanned codes.
-6. **Foundry request dispatch:** With Request details open, tap **Open bucket** — bucket appears on top (do not close detail). Scan → Submit → **Confirm shipment** without reopening the request.
+3. **Tap and release** on QR on **Android Chrome** and **iPhone Safari** — wait Focusing → Scanning; unit added or duplicate message (not persistent “No QR detected”).
+4. Manual entry of same 7 digits works.
+5. Torch button appears only when device supports it.
+6. Background app → return — camera resumes without console errors.
+7. **Foundry request dispatch:** bucket on top of request detail; scan → submit without closing detail.

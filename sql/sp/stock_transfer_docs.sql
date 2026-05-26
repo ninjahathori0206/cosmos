@@ -412,7 +412,8 @@ BEGIN
     disp.full_name  AS dispatched_by_name,
     acc.full_name   AS accepted_by_name,
     stk.full_name   AS stocked_by_name,
-    (SELECT COUNT(*) FROM dbo.stock_transfer_doc_lines WHERE doc_id = d.doc_id) AS line_count
+    (SELECT COUNT(*) FROM dbo.stock_transfer_doc_lines WHERE doc_id = d.doc_id) AS line_count,
+    (SELECT ISNULL(SUM(dl.qty_sent), 0) FROM dbo.stock_transfer_doc_lines dl WHERE dl.doc_id = d.doc_id) AS total_qty_sent
   FROM dbo.stock_transfer_docs d
   JOIN  dbo.stores st            ON st.store_id  = d.to_store_id
   LEFT JOIN dbo.users disp       ON disp.user_id = d.dispatched_by

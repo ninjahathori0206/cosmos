@@ -83,13 +83,13 @@ const SMALL_LABEL_CONFIG = buildDefaultConfig({
   labelHeightMm: 15,
   labelsPerRow: 1,
   qrCellSize: 3,
-  qrVisualSizeMm: 10,
+  qrVisualSizeMm: 9,
   qrTopRatio: 0.02,
   textTopRatio: 0.68,
   textXMul: 1,
   textYMul: 1,
   textFontId: 2,
-  textFontPt: 6,
+  textFontPt: 8,
   bottomBandHeightMm: 4,
   rightRailWidthMm: 3.5
 });
@@ -105,15 +105,63 @@ const SMALL_15X15_CONTINUOUS_109_CONFIG = buildDefaultConfig({
   gapRow: 2,
   gapCol: 3,
   qrCellSize: 3,
+  qrVisualSizeMm: 9,
+  qrTopRatio: 0.02,
+  textTopRatio: 0.68,
+  textXMul: 1,
+  textYMul: 1,
+  textFontId: 2,
+  textFontPt: 8,
+  bottomBandHeightMm: 4,
+  rightRailWidthMm: 3.5,
+  pageWidthMm: 109
+});
+
+/** 15×15 alt: QR + brand rail (right, vertical) + unit code band (bottom, horizontal). */
+const SMALL_15X15_ALT_CONFIG = buildDefaultConfig({
+  layoutType: 'compact-alt',
+  labelWidthMm: 15,
+  labelHeightMm: 15,
+  labelsPerRow: 6,
+  marginLeft: 2,
+  marginRight: 2,
+  gapRow: 2,
+  gapCol: 3,
+  qrCellSize: 3,
+  qrVisualSizeMm: 9,
+  qrTopRatio: 0.02,
+  textTopRatio: 0.68,
+  textXMul: 1,
+  textYMul: 1,
+  textFontId: 2,
+  textFontPt: 8,
+  bottomBandHeightMm: 4,
+  rightRailWidthMm: 3.5,
+  pageWidthMm: 109
+});
+
+/** 15×15 fixed: 10×10 QR, 5mm brand rail (full height), 10×5 unit footer — zero padding inside cell. */
+const SMALL_15X15_FIXED_CONFIG = buildDefaultConfig({
+  layoutType: 'compact-fixed',
+  labelWidthMm: 15,
+  labelHeightMm: 15,
+  labelsPerRow: 6,
+  marginTop: 0,
+  marginBottom: 0,
+  marginLeft: 2,
+  marginRight: 2,
+  gapRow: 2,
+  gapCol: 3,
+  qrCellSize: 3,
   qrVisualSizeMm: 10,
   qrTopRatio: 0.02,
   textTopRatio: 0.68,
   textXMul: 1,
   textYMul: 1,
   textFontId: 2,
-  textFontPt: 6,
-  bottomBandHeightMm: 4,
-  rightRailWidthMm: 3.5,
+  textFontPt: 8,
+  bottomBandHeightMm: 5,
+  rightRailWidthMm: 5,
   pageWidthMm: 109
 });
 
@@ -163,6 +211,22 @@ const SEED_LABEL_PRINT_FORMATS = Object.freeze([
     sort_order: 25
   },
   {
+    format_key: 'small_15x15_alt',
+    name: '15×15mm — Brand Rail + Unit Band',
+    description: 'QR + brand/price rail (right, vertical) + unit code band (bottom)',
+    config: SMALL_15X15_ALT_CONFIG,
+    is_default: false,
+    sort_order: 26
+  },
+  {
+    format_key: 'small_15x15_fixed',
+    name: '15×15mm — Fixed (QR 10 + Brand Rail + Unit Footer)',
+    description: '10×10 QR · brand vertical rail · 7-digit unit footer · no padding inside label',
+    config: SMALL_15X15_FIXED_CONFIG,
+    is_default: false,
+    sort_order: 27
+  },
+  {
     format_key: 'eyewear_strip_12x100',
     name: 'Eyewear strip 12×100',
     description: 'Frame wrap — 66 mm print (QR + brand) + 34 mm tail',
@@ -205,7 +269,7 @@ const labelPrintConfigSchema = Joi.object({
   textYMul: Joi.number().integer().min(1).max(10),
   textFontId: Joi.number().integer().min(0).max(3),
   textFontPt: Joi.number().min(0.5).max(20),
-  layoutType: Joi.string().valid('grid', 'strip', 'compact'),
+  layoutType: Joi.string().valid('grid', 'strip', 'compact', 'compact-alt', 'compact-fixed'),
   bottomBandHeightMm: Joi.number().min(1).max(20),
   rightRailWidthMm: Joi.number().min(1).max(20),
   printWidthMm: Joi.number().min(0).max(200),
@@ -235,6 +299,8 @@ module.exports = {
   SEED_LABEL_PRINT_FORMATS,
   LARGE_LABEL_CONFIG,
   SMALL_LABEL_CONFIG,
+  SMALL_15X15_ALT_CONFIG,
+  SMALL_15X15_FIXED_CONFIG,
   EYEWEAR_STRIP_CONFIG,
   buildDefaultConfig,
   normalizeLabelPrintConfig,

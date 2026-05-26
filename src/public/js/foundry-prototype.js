@@ -6082,9 +6082,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     'rate-intelligence': '/foundry/rate-intelligence',
     'stock-transfer': '/foundry/stock-transfer',
     'transfer-requests': '/foundry/transfer-requests',
-    'movement-list': '/foundry/movement-list',
     'lab-orders': '/foundry/lab-orders'
   };
+
+  function foundryNormalizeNavPageId(pageId) {
+    const id = String(pageId || '');
+    if (id === 'movement-list') return 'transfer-requests';
+    return id;
+  }
 
   function getFoundryPageFromPath(pathname) {
     const normalized = String(pathname || '').replace(/\/+$/, '') || '/foundry';
@@ -6105,6 +6110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ─────────────────────────────────────────────────────────────────────────
   const origNav = window.nav;
   window.nav = function(id, el, skipList, options) {
+    id = foundryNormalizeNavPageId(id);
     const navOptions = options || {};
     if (FOUNDRY_PAGE_VIEW_BY_PAGE[id] && !foundryPageCanView(id)) {
       if (typeof cosmosToastWarn === 'function') {
@@ -6227,7 +6233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const BC_STRIP_CONFIG_KEYS = ['layoutType', 'printWidthMm', 'zone1WidthMm', 'zone2WidthMm', 'tailWidthMm'];
   const BC_COMPACT_CONFIG_KEYS = ['layoutType', 'bottomBandHeightMm', 'rightRailWidthMm'];
-  const BC_COMPACT_QR_INSET_MM = 0.4;
+  const BC_COMPACT_QR_INSET_MM = 0;
   const BC_COMPACT_TEXT_GAP_MM = 1;
 
   const BC_LARGE_LABEL_FALLBACK = {
@@ -6250,8 +6256,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     config: {
       v: 1, layoutType: 'compact', marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0,
       gapRow: 0, gapCol: 0, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 1, dotsPerMm: 8,
-      qrCellSize: 3, qrVisualSizeMm: 10, qrTopRatio: 0.02, textTopRatio: 0.68,
-      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 6,
+      qrCellSize: 3, qrVisualSizeMm: 9, qrTopRatio: 0.02, textTopRatio: 0.68,
+      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 8,
       bottomBandHeightMm: 4, rightRailWidthMm: 3.5
     }
   };
@@ -6263,9 +6269,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     config: {
       v: 1, layoutType: 'compact', marginTop: 0, marginBottom: 0, marginLeft: 2, marginRight: 2,
       gapRow: 2, gapCol: 3, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 6, dotsPerMm: 8,
-      qrCellSize: 3, qrVisualSizeMm: 10, qrTopRatio: 0.02, textTopRatio: 0.68,
-      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 6,
+      qrCellSize: 3, qrVisualSizeMm: 9, qrTopRatio: 0.02, textTopRatio: 0.68,
+      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 8,
       bottomBandHeightMm: 4, rightRailWidthMm: 3.5, pageWidthMm: 109
+    }
+  };
+
+  const BC_SMALL_15X15_ALT_FALLBACK = {
+    format_key: 'small_15x15_alt',
+    name: '15×15mm — Brand Rail + Unit Band',
+    description: 'QR + brand/price rail (right, vertical) + unit code band (bottom)',
+    config: {
+      v: 1, layoutType: 'compact-alt', marginTop: 0, marginBottom: 0, marginLeft: 2, marginRight: 2,
+      gapRow: 2, gapCol: 3, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 6, dotsPerMm: 8,
+      qrCellSize: 3, qrVisualSizeMm: 9, qrTopRatio: 0.02, textTopRatio: 0.68,
+      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 8,
+      bottomBandHeightMm: 4, rightRailWidthMm: 3.5, pageWidthMm: 109
+    }
+  };
+
+  const BC_SMALL_15X15_FIXED_FALLBACK = {
+    format_key: 'small_15x15_fixed',
+    name: '15×15mm — Fixed (QR 10 + Brand Rail + Unit Footer)',
+    description: '10×10 QR · brand vertical rail · 7-digit unit footer · no padding inside label',
+    config: {
+      v: 1, layoutType: 'compact-fixed', marginTop: 0, marginBottom: 0, marginLeft: 2, marginRight: 2,
+      gapRow: 2, gapCol: 3, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 6, dotsPerMm: 8,
+      qrCellSize: 3, qrVisualSizeMm: 10, qrTopRatio: 0.02, textTopRatio: 0.68,
+      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 8,
+      bottomBandHeightMm: 5, rightRailWidthMm: 5, pageWidthMm: 109
     }
   };
 
@@ -6289,8 +6321,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   function _bcGetLayoutType() {
     const t = String(_bcGetActiveFormatConfig().layoutType || 'grid').toLowerCase();
     if (t === 'strip') return 'strip';
-    if (t === 'compact') return 'compact';
+    if (t === 'compact' || t === 'compact-alt' || t === 'compact-fixed') return 'compact';
     return 'grid';
+  }
+
+  function _bcIsCompactFixedLayout() {
+    return String(_bcGetActiveFormatConfig().layoutType || '').toLowerCase() === 'compact-fixed';
   }
 
   function _bcCompactColumnsPerRow() {
@@ -6459,6 +6495,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     BC_LARGE_LABEL_FALLBACK,
     BC_SMALL_COMPACT_FALLBACK,
     BC_SMALL_15X15_CONTINUOUS_109_FALLBACK,
+    BC_SMALL_15X15_ALT_FALLBACK,
+    BC_SMALL_15X15_FIXED_FALLBACK,
     BC_EYEWEAR_STRIP_FALLBACK
   ];
 
@@ -6968,13 +7006,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     const labelH = Number(cfg.labelHeightMm) || 15;
     const bottom = Number(cfg.bottomBandHeightMm) || 4;
     const { qrVisualSizeMm } = _bcReadQrConfig();
+    const layoutType = cfg.layoutType || 'compact';
+    if (layoutType === 'compact-fixed') {
+      const qrSize = Math.min(qrVisualSizeMm, labelW, labelH);
+      const leftColW = qrSize;
+      const railW = Math.max(1, labelW - leftColW);
+      const footerH = Math.max(1, labelH - qrSize);
+      return {
+        labelW: labelW,
+        labelH: labelH,
+        bottom: footerH,
+        contentH: labelH,
+        padL: 0,
+        padR: 0,
+        innerW: labelW,
+        qrInsetMm: 0,
+        textGapMm: 0,
+        qrZoneW: leftColW,
+        qrBlockW: leftColW,
+        railStartMm: leftColW,
+        railW: railW,
+        qrBottomMm: qrSize,
+        brandTopMm: qrSize,
+        bottomPadTopMm: 0,
+        rail: railW,
+        qrMainW: leftColW,
+        layoutKind: 'compact-fixed',
+        leftColW: leftColW,
+        footerH: footerH,
+        qrSize: qrSize,
+        swapBands: true
+      };
+    }
     const mm = _bcReadMarginsMm();
     const padL = mm.left;
     const padR = mm.right;
+    const swapBands = layoutType === 'compact-alt';
     const qrInsetMm = BC_COMPACT_QR_INSET_MM;
     const textGapMm = BC_COMPACT_TEXT_GAP_MM;
     const innerW = Math.max(1, labelW - padL - padR);
-    const qrBlockW = qrInsetMm + qrVisualSizeMm;
+    const qrBlockW = 2 * qrInsetMm + qrVisualSizeMm;
     const railStartMm = padL + qrBlockW + textGapMm;
     const railW = Math.max(1, labelW - railStartMm - padR);
     const qrBottomMm = qrInsetMm + qrVisualSizeMm;
@@ -6999,13 +7070,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       brandTopMm: brandTopMm,
       bottomPadTopMm: bottomPadTopMm,
       rail: railW,
-      qrMainW: qrBlockW
+      qrMainW: qrBlockW,
+      swapBands: swapBands,
+      layoutKind: layoutType
     };
   }
 
   function _bcCompactFontPt() {
     const { textFontPt } = _bcReadTextConfig();
     return Math.max(4, textFontPt);
+  }
+
+  function _bcCompactRailFontPt(text, maxRunwayMm, preferredPt) {
+    const MM_PER_PT = 25.4 / 72;
+    const CHAR_W = 0.62;
+    const len = Math.max(1, String(text || '').length);
+    let pt = Math.max(4, preferredPt);
+    while (pt > 4 && len * pt * MM_PER_PT * CHAR_W > maxRunwayMm - 0.3) {
+      pt -= 0.5;
+    }
+    return pt;
   }
 
   function _bcSyncCompactTuneFromAdvanced() {
@@ -7038,7 +7122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function _bcRefreshCompactTunePanel() {
     const wrap = document.getElementById('bc-compact-tune');
     if (!wrap) return;
-    const show = _bcGetLayoutType() === 'compact';
+    const show = _bcGetLayoutType() === 'compact' && !_bcIsCompactFixedLayout();
     wrap.hidden = !show;
     wrap.style.display = show ? 'block' : 'none';
     if (show) _bcSyncCompactTuneFromAdvanced();
@@ -7289,20 +7373,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     const qrBlock = options.dataUrl
       ? '<img src="' + options.dataUrl + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm;display:block" alt="">'
       : '<div class="qr-placeholder" data-qr-code="' + _bcEsc(item.code) + '" data-qr-px="' + qrPreviewPx + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm;flex-shrink:0;background:' + qrPhBg + ';border-radius:1px"></div>';
-    const bottomPadL = (lay.padL || 0) + 0.5;
-    return '<div class="bc-compact-row" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;box-sizing:border-box;' + borderCss + ';overflow:hidden;' + cardBg + ';display:flex;flex-direction:column;flex-shrink:0' + outerExtra + '">' +
-      '<div style="box-sizing:border-box;padding-left:' + (lay.padL || 0) + 'mm;padding-right:' + (lay.padR || 0) + 'mm;height:100%;display:flex;flex-direction:column">' +
-      '<div style="display:flex;height:' + lay.contentH + 'mm;box-sizing:border-box">' +
-      '<div style="width:' + lay.qrZoneW + 'mm;flex-shrink:0;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;padding:' + lay.qrInsetMm + 'mm;box-sizing:border-box;border-right:1px dashed ' + lineColor + '">' +
+    if (lay.layoutKind === 'compact-fixed') {
+      const railText = item.bottomLine;
+      const footerText = item.unitText;
+      const railFontPt = _bcCompactRailFontPt(railText, lay.labelH, bottomPt);
+      return '<div class="bc-compact-row" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;box-sizing:border-box;' + borderCss + ';overflow:hidden;' + cardBg + ';position:relative;flex-shrink:0' + outerExtra + '">' +
+        '<div style="width:' + lay.leftColW + 'mm;height:' + lay.labelH + 'mm;box-sizing:border-box;display:flex;flex-direction:column;flex-shrink:0">' +
+        '<div style="height:' + lay.qrSize + 'mm;flex-shrink:0;display:flex;align-items:flex-start;justify-content:flex-start;overflow:hidden;border-bottom:1px dashed ' + lineColor + ';box-sizing:border-box">' +
+        qrBlock +
+        '</div>' +
+        '<div style="height:' + lay.footerH + 'mm;flex-shrink:0;display:flex;align-items:center;justify-content:flex-start;overflow:hidden;box-sizing:border-box">' +
+        '<span class="mono" style="font-size:' + bottomPt + 'pt;font-weight:700;line-height:1;color:' + textColor + ';white-space:nowrap;overflow:hidden">' + e(footerText) + '</span>' +
+        '</div></div>' +
+        '<div style="position:absolute;left:' + lay.leftColW + 'mm;top:0;bottom:0;width:' + lay.railW + 'mm;box-sizing:border-box;display:flex;align-items:flex-start;justify-content:center;overflow:visible;border-left:1px dashed ' + lineColor + ';' + railBg + '">' +
+        '<span class="mono" style="writing-mode:vertical-rl;text-orientation:mixed;font-size:' + railFontPt + 'pt;font-weight:700;line-height:1;color:' + textColor + ';white-space:nowrap">' + e(railText) + '</span>' +
+        '</div></div>';
+    }
+    const padL = lay.padL || 0;
+    const padR = lay.padR || 0;
+    const bottomPadL = padL;
+    const bottomPadR = padR;
+    // compact-alt: rail shows brand, bottom shows unit code; compact: rail shows unit code, bottom shows brand
+    const railText = lay.swapBands ? item.bottomLine : item.unitText;
+    const bottomText = lay.swapBands ? item.unitText : item.bottomLine;
+    const railReserveMm = (lay.textGapMm || 0) + lay.railW + padR;
+    const railFontPt = _bcCompactRailFontPt(railText, lay.labelH, bottomPt);
+    const railRightMm = padR;
+    return '<div class="bc-compact-row" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;box-sizing:border-box;' + borderCss + ';overflow:hidden;' + cardBg + ';position:relative;flex-shrink:0' + outerExtra + '">' +
+      '<div style="width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;padding-left:' + padL + 'mm;padding-right:' + railReserveMm + 'mm">' +
+      '<div style="flex:1;min-height:0;display:flex;align-items:flex-start;justify-content:flex-start;overflow:hidden">' +
       qrBlock +
       '</div>' +
-      '<div style="width:' + lay.textGapMm + 'mm;flex-shrink:0" aria-hidden="true"></div>' +
-      '<div style="width:' + lay.railW + 'mm;flex-shrink:0;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;box-sizing:border-box;overflow:hidden;' + railBg + '">' +
-      '<span class="mono" style="font-size:' + railPt + 'pt;font-weight:600;line-height:1;color:' + textColor + ';writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:0.02em">' + e(item.unitText) + '</span>' +
+      '<div style="height:' + lay.bottom + 'mm;flex-shrink:0;display:flex;align-items:center;justify-content:flex-start;border-top:1px dashed ' + lineColor + ';box-sizing:border-box;padding:0 ' + bottomPadR + 'mm 0 ' + bottomPadL + 'mm;overflow:hidden">' +
+      '<span class="mono" style="font-size:' + bottomPt + 'pt;font-weight:700;line-height:1;color:' + textColor + ';white-space:nowrap;overflow:hidden">' + e(bottomText) + '</span>' +
       '</div></div>' +
-      '<div style="height:' + lay.bottom + 'mm;display:flex;align-items:flex-start;justify-content:flex-start;border-top:1px dashed ' + lineColor + ';box-sizing:border-box;padding:' + lay.bottomPadTopMm + 'mm ' + (lay.padR || 0) + 'mm 0 ' + bottomPadL + 'mm;overflow:hidden">' +
-      '<span class="mono" style="font-size:' + bottomPt + 'pt;font-weight:700;line-height:1;color:' + textColor + ';white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:100%">' + e(item.bottomLine) + '</span>' +
-      '</div></div></div>';
+      '<div style="position:absolute;right:' + railRightMm + 'mm;top:0;bottom:0;width:' + lay.railW + 'mm;box-sizing:border-box;display:flex;align-items:flex-start;justify-content:center;overflow:visible;border-left:1px dashed ' + lineColor + ';' + railBg + '">' +
+      '<span class="mono" style="writing-mode:vertical-rl;text-orientation:mixed;font-size:' + railFontPt + 'pt;font-weight:700;line-height:1;color:' + textColor + ';white-space:nowrap">' + e(railText) + '</span>' +
+      '</div></div>';
   }
 
   function _bcCompactCellPreviewHtml(item, lay, qrVisualSizeMm, qrPreviewPx, railPt, bottomPt, extraStyle) {
@@ -7857,18 +7964,21 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       const code = _bcTsplQuote(item.code);
       const unitText = _bcTsplQuote(item.unitText);
       const bottom = _bcTsplQuote(item.bottomLine);
+      const isFixed = lay.layoutKind === 'compact-fixed';
+      const railStr = isFixed ? bottom : unitText;
+      const footerStr = isFixed ? unitText : bottom;
 
-      const qrX = Math.max(0, mmToDot(lay.padL + lay.qrInsetMm + tsplOffsetXMM));
-      const qrY = mmToDot(lay.qrInsetMm);
+      const qrX = Math.max(0, mmToDot((isFixed ? 0 : lay.padL + lay.qrInsetMm) + tsplOffsetXMM));
+      const qrY = mmToDot(isFixed ? 0 : lay.qrInsetMm);
       cmds += `QRCODE ${qrX},${qrY},L,${qrCellSize},A,0,"${code}"\r\n`;
 
       const railX = Math.max(0, mmToDot(lay.railStartMm + tsplOffsetXMM));
-      const railY = mmToDot(lay.qrInsetMm);
-      cmds += `TEXT ${railX},${railY},"${textFontId}",90,${textXMul},${textYMul},"${unitText}"\r\n`;
+      const railY = mmToDot(isFixed ? 0 : lay.qrInsetMm);
+      cmds += `TEXT ${railX},${railY},"${textFontId}",90,${textXMul},${textYMul},"${railStr}"\r\n`;
 
-      const bottomX = Math.max(0, mmToDot(lay.padL + 0.5 + tsplOffsetXMM));
+      const bottomX = Math.max(0, mmToDot((isFixed ? 0 : lay.padL + 0.5) + tsplOffsetXMM));
       const bottomY = mmToDot(lay.brandTopMm);
-      cmds += `TEXT ${bottomX},${bottomY},"${textFontId}",0,${textXMul},${textYMul},"${bottom}"\r\n`;
+      cmds += `TEXT ${bottomX},${bottomY},"${textFontId}",0,${textXMul},${textYMul},"${footerStr}"\r\n`;
 
       cmds += 'PRINT 1, 1\r\n';
     });
@@ -7902,22 +8012,25 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
         const code = _bcTsplQuote(item.code);
         const unitText = _bcTsplQuote(item.unitText);
         const bottom = _bcTsplQuote(item.bottomLine);
+        const isFixed = lay.layoutKind === 'compact-fixed';
+        const railStr = isFixed ? bottom : unitText;
+        const footerStr = isFixed ? unitText : bottom;
 
-        let qrX = mmToDot(cellLeftMm + lay.padL + lay.qrInsetMm + tsplOffsetXMM);
+        let qrX = mmToDot(cellLeftMm + (isFixed ? 0 : lay.padL + lay.qrInsetMm) + tsplOffsetXMM);
         qrX = Math.max(0, Math.min(qrX, maxXDots));
-        const qrY = mmToDot(lay.qrInsetMm);
+        const qrY = mmToDot(isFixed ? 0 : lay.qrInsetMm);
         cmds += 'QRCODE ' + qrX + ',' + qrY + ',L,' + qrCellSize + ',A,0,"' + code + '"\r\n';
 
         const railXmm = cellLeftMm + lay.railStartMm;
         let railX = mmToDot(railXmm + tsplOffsetXMM);
         railX = Math.max(0, Math.min(railX, maxXDots));
-        const railY = mmToDot(lay.qrInsetMm);
-        cmds += 'TEXT ' + railX + ',' + railY + ',"' + textFontId + '",90,' + textXMul + ',' + textYMul + ',"' + unitText + '"\r\n';
+        const railY = mmToDot(isFixed ? 0 : lay.qrInsetMm);
+        cmds += 'TEXT ' + railX + ',' + railY + ',"' + textFontId + '",90,' + textXMul + ',' + textYMul + ',"' + railStr + '"\r\n';
 
-        let bottomX = mmToDot(cellLeftMm + lay.padL + 0.5 + tsplOffsetXMM);
+        let bottomX = mmToDot(cellLeftMm + (isFixed ? 0 : lay.padL + 0.5) + tsplOffsetXMM);
         bottomX = Math.max(0, Math.min(bottomX, maxXDots));
         const bottomY = mmToDot(lay.brandTopMm);
-        cmds += 'TEXT ' + bottomX + ',' + bottomY + ',"' + textFontId + '",0,' + textXMul + ',' + textYMul + ',"' + bottom + '"\r\n';
+        cmds += 'TEXT ' + bottomX + ',' + bottomY + ',"' + textFontId + '",0,' + textXMul + ',' + textYMul + ',"' + footerStr + '"\r\n';
       });
 
       cmds += 'PRINT 1, 1\r\n';
@@ -9068,6 +9181,10 @@ ${initScript}
     }
 
     window.stOpenDispatchDoc = function stOpenDispatchDoc(docId) {
+      if (typeof window.expandMlDoc === 'function') {
+        window.expandMlDoc(docId);
+        return;
+      }
       if (typeof expandMlDoc === 'function') expandMlDoc(docId);
     };
 
@@ -9168,6 +9285,119 @@ ${initScript}
     }
     if (!parts.length) return '';
     return '<div class="hint cosmos-detail-qty-bar" style="margin-bottom:12px;font-size:13px">' + parts.join(' · ') + '</div>';
+  }
+
+  function ftrChallanQtyTotal(shipments) {
+    let n = 0;
+    (shipments || []).forEach(function (d) {
+      n += Math.max(0, Number(d.total_qty_sent) || 0);
+    });
+    return n;
+  }
+
+  async function ftrFetchShipmentDocDetails(shipments) {
+    const docs = [];
+    for (let i = 0; i < (shipments || []).length; i++) {
+      const s = shipments[i];
+      if (!s || !s.doc_id) continue;
+      try {
+        const res = await apiGet('/api/stock-transfer-docs/' + s.doc_id);
+        const doc = res.data || res;
+        if (doc) docs.push(doc);
+      } catch (_) { /* skip */ }
+    }
+    return docs;
+  }
+
+  function ftrBuildShipmentSkuMismatchBanner(req, docDetails) {
+    const lines = req.lines || [];
+    if (!lines.length || !docDetails.length) return '';
+
+    const reqBySku = {};
+    lines.forEach(function (l) {
+      reqBySku[l.sku_id] = {
+        sku_code: l.sku_code || String(l.sku_id),
+        cap: ftrApprovedCap(l),
+        disp: Math.max(0, Number(l.dispatched_qty) || 0)
+      };
+    });
+
+    const docBySku = {};
+    docDetails.forEach(function (doc) {
+      (doc.lines || []).forEach(function (l) {
+        const sid = l.sku_id;
+        if (sid == null) return;
+        if (!docBySku[sid]) docBySku[sid] = { sku_code: l.sku_code || String(sid), qty: 0 };
+        docBySku[sid].qty += Math.max(0, Number(l.qty_sent) || 0);
+      });
+    });
+
+    const onChallanNotRequest = [];
+    Object.keys(docBySku).forEach(function (sid) {
+      if (!reqBySku[sid]) {
+        onChallanNotRequest.push(docBySku[sid].sku_code + ' (' + docBySku[sid].qty + ')');
+      }
+    });
+
+    const stillToShip = [];
+    lines.forEach(function (l) {
+      const cap = ftrApprovedCap(l);
+      const disp = Math.max(0, Number(l.dispatched_qty) || 0);
+      const rem = cap - disp;
+      if (rem > 0) {
+        stillToShip.push(trEsc(l.sku_code || l.sku_id) + ' (' + rem + ' pc' + (rem !== 1 ? 's' : '') + ')');
+      }
+    });
+
+    let challanTotal = 0;
+    Object.keys(docBySku).forEach(function (sid) {
+      challanTotal += docBySku[sid].qty;
+    });
+    const requestDisp = lines.reduce(function (s, l) {
+      return s + Math.max(0, Number(l.dispatched_qty) || 0);
+    }, 0);
+
+    if (challanTotal === requestDisp && !onChallanNotRequest.length) return '';
+
+    let msg = '<strong>Challan vs request:</strong> Transfer documents show <strong>' + challanTotal +
+      '</strong> pcs sent in total; this request counts <strong>' + requestDisp +
+      '</strong> pcs toward approved lines (by matching SKU).';
+    if (onChallanNotRequest.length) {
+      msg += ' On challan but not on this request: <span class="mono">' + onChallanNotRequest.join(', ') + '</span>.';
+    }
+    if (stillToShip.length) {
+      msg += ' Still to ship on request: <span class="mono">' + stillToShip.join(', ') + '</span>.';
+    }
+    msg += ' Open each doc below and confirm SKUs match what the store ordered.';
+
+    return '<div class="hint" style="margin-bottom:12px;background:var(--goldL);border-color:var(--gold);font-size:13px">' + msg + '</div>';
+  }
+
+  async function ftrRefreshShipmentQtyInsight(requestId, req) {
+    const el = document.getElementById('ftr-shipment-qty-insight');
+    if (!el || !req) return;
+    try {
+      const shipments = await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50') || [];
+      if (!shipments.length) {
+        el.innerHTML = '';
+        return;
+      }
+      const challanTotal = ftrChallanQtyTotal(shipments);
+      const qtySummary = ftrRequestQtySummary(req);
+      let html = '';
+      if (challanTotal > 0 && challanTotal !== qtySummary.totalDisp) {
+        html += '<div class="hint" style="margin-bottom:10px;font-size:13px">' +
+          '<strong>Total on challans:</strong> ' + challanTotal + ' pcs sent · ' +
+          '<strong>Counted on request lines:</strong> ' + qtySummary.totalDisp + ' pcs' +
+          (qtySummary.remainingToShip > 0 ? ' · <strong>' + qtySummary.remainingToShip + '</strong> still to ship' : '') +
+          '</div>';
+      }
+      const docDetails = await ftrFetchShipmentDocDetails(shipments);
+      html += ftrBuildShipmentSkuMismatchBanner(req, docDetails);
+      el.innerHTML = html;
+    } catch (_) {
+      el.innerHTML = '';
+    }
   }
 
   function ftrComputeRemainderLines(lines) {
@@ -9772,9 +10002,11 @@ ${initScript}
         return [];
       }
       wrap.innerHTML = '<ul style="margin:0;padding-left:18px">' + list.map(function (d) {
+        const qtySent = Math.max(0, Number(d.total_qty_sent) || 0);
+        const qtyPart = qtySent > 0 ? ' · <strong>' + qtySent + '</strong> pcs sent' : '';
         return '<li class="tr-link" style="margin-bottom:6px;cursor:pointer" onclick="expandMlDoc(' + d.doc_id + ')">Doc <span class="mono">#' + d.doc_id + '</span> · ' +
           fmtDate(d.dispatched_at || d.created_at) + ' · ' + trEsc(d.status || '') +
-          ' · ' + (d.line_count || 0) + ' line(s)</li>';
+          ' · ' + (d.line_count || 0) + ' line(s)' + qtyPart + '</li>';
       }).join('') + '</ul>';
       if (options.qtySummary && options.qtySummary.totalDisp === 0) {
         ftrShowShipmentSyncBanner(requestId);
@@ -10986,6 +11218,8 @@ ${initScript}
         qtyPre.totalDisp === 0;
       if (
         needsStatusReconcile
+        || req.status === 'PARTIALLY_DISPATCHED'
+        || req.status === 'DISPATCHED'
         || (needsDocSync && (req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED' || req.status === 'RECEIVED'))
       ) {
         try {
@@ -11065,12 +11299,14 @@ ${initScript}
       } else if (canDispatch) {
         const partialBanner = qtySummary.remainingToShip > 0 && qtySummary.totalDisp > 0
           ? `<div class="hint" style="margin-bottom:12px;background:var(--tealL);border-color:var(--teal)">
-              <strong>Partial dispatch:</strong> ${qtySummary.totalDisp} of ${qtySummary.totalCap} pcs already shipped on this request.
-              Scan up to <strong>${qtySummary.remainingToShip}</strong> more in this shipment.
+              <strong>Partial dispatch:</strong> ${qtySummary.totalDisp} of ${qtySummary.totalCap} pcs counted on approved request lines.
+              Scan up to <strong>${qtySummary.remainingToShip}</strong> more (matching SKU on each line).
+              Challan totals may differ if a shipment used a different SKU — see insight below.
             </div>`
           : '';
         tableBlock = `
           ${partialBanner}
+          <div id="ftr-shipment-qty-insight"></div>
           <div class="hint" style="margin-bottom:14px">
             <strong>Goods Transfer shipment:</strong> Scan each <strong>7-digit unit barcode</strong> (camera or wedge). This shipment only — count follows scans (no manual qty).
           </div>
@@ -11096,6 +11332,7 @@ ${initScript}
           </div>`;
       } else {
         tableBlock = `
+          <div id="ftr-shipment-qty-insight"></div>
           <div class="tw mb4">
             <table>
               <thead>
@@ -11164,12 +11401,14 @@ ${initScript}
       if (canDispatch) {
         ftrRenderDispatchTable();
         ftrLoadRequestShipments(req.request_id, { qtySummary: qtySummary });
+        void ftrRefreshShipmentQtyInsight(req.request_id, req);
       } else if (req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED' || req.status === 'PARTIALLY_RECEIVED') {
         const shipBlock = document.createElement('div');
         shipBlock.style.padding = '0 20px 16px';
         shipBlock.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px">Shipments</div><div id="ftr-shipments-wrap">Loading…</div>';
         body.appendChild(shipBlock);
         ftrLoadRequestShipments(req.request_id);
+        void ftrRefreshShipmentQtyInsight(req.request_id, req);
       }
     } catch (err) {
       if (body) body.innerHTML = `<div style="padding:16px;color:var(--red)">Error: ${trEsc(err.message)}</div>`;
@@ -11442,6 +11681,20 @@ ${initScript}
   // ─────────────────────────────────────────────────────────────────────────
   // MOVEMENT LIST  (Store Connect › Movement List)
   // ─────────────────────────────────────────────────────────────────────────
+  function mlStatusBadge(status) {
+    const s = String(status || '').toUpperCase();
+    const cls = FTR_DOC_STATUS_BADGE[s] || 'b-gray';
+    return '<span class="b ' + cls + '">' + trEsc(ftrDocStatusLabel(s)) + '</span> ';
+  }
+
+  window.closeMlDetail = function () {
+    if (window.cosmosDetailPanel && typeof window.cosmosDetailPanel.close === 'function') {
+      window.cosmosDetailPanel.close('ml-detail', 'ml-detail-backdrop');
+    } else if (typeof window.cosmosCloseExtendedDetail === 'function') {
+      window.cosmosCloseExtendedDetail('ml-detail', 'ml-detail-backdrop');
+    }
+  };
+
   window.expandMlDoc = async function (docId) {
     const titleEl = document.getElementById('ml-detail-title');
     const bodyEl  = document.getElementById('ml-detail-body');
