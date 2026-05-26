@@ -184,13 +184,7 @@ async function getRestockContext(headerId, itemId, colourId) {
 
 // Any action permission implies the right to read purchase data needed to perform that action.
 // requirePermission uses OR logic — passing multiple keys allows any one of them.
-const purchaseReadPerms = [
-  'foundry.purchases.view',
-  'foundry.bill_verification.view',
-  'foundry.branding.view',
-  'foundry.digitisation.view',
-  'foundry.warehouse.view'
-];
+const { FOUNDRY_PURCHASE_READ_PERMS: purchaseReadPerms } = require('../config/foundryLabelFormatReadPerms');
 
 // ── GET dashboard stats ─────────────────────────────────────────────────────
 router.get(

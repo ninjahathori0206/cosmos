@@ -16,6 +16,7 @@ const { getLabWorkflowTransitionsForApi } = require('../config/labWorkflowTransi
 const { getFoundryCatalogueNavForApi } = require('../config/foundryCatalogueNavCatalog');
 const { ALL_CATALOGUE_PERMISSION_KEYS } = require('../config/foundryCatalogueAuth');
 const { listLabelPrintFormats } = require('../services/labelPrintFormatService');
+const { FOUNDRY_LABEL_FORMAT_READ_PERMS } = require('../config/foundryLabelFormatReadPerms');
 
 const router = express.Router();
 
@@ -115,12 +116,7 @@ router.get(
 router.get(
   '/label-print-formats',
   requireModule('foundry'),
-  requirePermission(
-    'foundry.label_formats.view',
-    'foundry.digitisation.view',
-    'foundry.warehouse.view',
-    'foundry.purchases.view'
-  ),
+  requirePermission(...FOUNDRY_LABEL_FORMAT_READ_PERMS),
   async (req, res, next) => {
     try {
       const formats = await listLabelPrintFormats({ activeOnly: true });

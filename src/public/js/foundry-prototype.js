@@ -6228,6 +6228,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const BC_STRIP_CONFIG_KEYS = ['layoutType', 'printWidthMm', 'zone1WidthMm', 'zone2WidthMm', 'tailWidthMm'];
   const BC_COMPACT_CONFIG_KEYS = ['layoutType', 'bottomBandHeightMm', 'rightRailWidthMm'];
 
+  const BC_LARGE_LABEL_FALLBACK = {
+    format_key: 'large_label',
+    name: 'Large label',
+    description: 'Roll label — 40×28 mm (default)',
+    is_default: true,
+    config: {
+      v: 1, layoutType: 'grid', marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0,
+      gapRow: 0, gapCol: 0, labelWidthMm: 40, labelHeightMm: 28, labelsPerRow: 1, dotsPerMm: 8,
+      qrCellSize: 4, qrVisualSizeMm: 14, qrTopRatio: 0, textTopRatio: 0.72,
+      textXMul: 2, textYMul: 2, textFontId: 2, textFontPt: 5
+    }
+  };
+
   const BC_SMALL_COMPACT_FALLBACK = {
     format_key: 'small_label',
     name: 'Small label',
@@ -6332,10 +6345,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  const BC_LABEL_FORMAT_FALLBACKS = [
+    BC_LARGE_LABEL_FALLBACK,
+    BC_SMALL_COMPACT_FALLBACK,
+    BC_EYEWEAR_STRIP_FALLBACK
+  ];
+
+  function _bcMergeLabelFormatFallbacks(list) {
+    const out = Array.isArray(list) ? list.slice() : [];
+    BC_LABEL_FORMAT_FALLBACKS.forEach(function (fb) {
+      if (!out.some(function (f) { return f.format_key === fb.format_key; })) {
+        out.push(Object.assign({}, fb));
+      }
+    });
+    if (!out.some(function (f) { return f.is_default; }) && out[0]) {
+      const large = out.find(function (f) { return f.format_key === BC_LARGE_LABEL_FALLBACK.format_key; });
+      if (large) large.is_default = true;
+    }
+    return out.map(_bcNormalizeSmallLabelFormat);
+  }
+
+  function _bcSetFormatSelectLoading(loading) {
+    const sel = document.getElementById('bc-format-select');
+    if (!sel) return;
+    if (loading) {
+      sel.disabled = true;
+      sel.innerHTML = '<option value="">Loading formats…</option>';
+    } else {
+      sel.disabled = false;
+    }
+  }
+
   function _bcPopulateFormatSelect(formats, selectedKey) {
     const sel = document.getElementById('bc-format-select');
     if (!sel) return;
     const list = Array.isArray(formats) ? formats : [];
+    sel.disabled = false;
     sel.innerHTML = list.map(function (f) {
       const key = _bcEsc(f.format_key || '');
       const name = _bcEsc(f.name || f.format_key || 'Format');
@@ -6374,17 +6419,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const res = await apiGet('/api/meta/label-print-formats');
       const list = res && res.formats ? res.formats : (Array.isArray(res) ? res : []);
-      _bcLabelFormats = Array.isArray(list) ? list.map(_bcNormalizeSmallLabelFormat) : [];
-      if (!_bcLabelFormats.some(function (f) { return f.format_key === BC_EYEWEAR_STRIP_FALLBACK.format_key; })) {
-        _bcLabelFormats.push(Object.assign({}, BC_EYEWEAR_STRIP_FALLBACK));
-      }
-      if (!_bcLabelFormats.some(function (f) { return f.format_key === BC_SMALL_COMPACT_FALLBACK.format_key; })) {
-        _bcLabelFormats.push(Object.assign({}, BC_SMALL_COMPACT_FALLBACK));
-      }
+      _bcLabelFormats = _bcMergeLabelFormatFallbacks(list);
     } catch (err) {
-      _bcLabelFormats = [];
+      _bcLabelFormats = _bcMergeLabelFormatFallbacks([]);
       if (typeof cosmosToastWarn === 'function') {
-        cosmosToastWarn(err.message || 'Could not load label formats — using on-screen defaults.');
+        cosmosToastWarn(
+          'Using built-in label presets (could not sync from server). ' +
+          (err && err.message ? err.message : '')
+        );
       }
     }
     _bcLabelFormatsLoaded = true;
@@ -6718,6 +6760,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     openM('modal-barcode-print');
+    _bcSetFormatSelectLoading(true);
 
     const formats = await _bcEnsureLabelFormatsLoaded();
     const storedKey = _bcReadStoredFormatKey();
