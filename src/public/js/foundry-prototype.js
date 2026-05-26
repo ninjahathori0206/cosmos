@@ -2456,7 +2456,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function _bcCompactBottomLine(sk) {
-    return _bcCompactBrandSegment(sk) + ' - ' + _bcCompactPriceSegment(sk);
+    return _bcCompactBrandSegment(sk) + '-' + _bcCompactPriceSegment(sk);
   }
 
   function _pvBarcodeToolbarHtml() {
@@ -6227,6 +6227,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const BC_STRIP_CONFIG_KEYS = ['layoutType', 'printWidthMm', 'zone1WidthMm', 'zone2WidthMm', 'tailWidthMm'];
   const BC_COMPACT_CONFIG_KEYS = ['layoutType', 'bottomBandHeightMm', 'rightRailWidthMm'];
+  const BC_COMPACT_QR_INSET_MM = 0.4;
+  const BC_COMPACT_TEXT_GAP_MM = 1;
 
   const BC_LARGE_LABEL_FALLBACK = {
     format_key: 'large_label',
@@ -6249,7 +6251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       v: 1, layoutType: 'compact', marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0,
       gapRow: 0, gapCol: 0, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 1, dotsPerMm: 8,
       qrCellSize: 3, qrVisualSizeMm: 10, qrTopRatio: 0.02, textTopRatio: 0.68,
-      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 3.5,
+      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 6,
       bottomBandHeightMm: 4, rightRailWidthMm: 3.5
     }
   };
@@ -6262,7 +6264,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       v: 1, layoutType: 'compact', marginTop: 0, marginBottom: 0, marginLeft: 2, marginRight: 2,
       gapRow: 2, gapCol: 3, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 6, dotsPerMm: 8,
       qrCellSize: 3, qrVisualSizeMm: 10, qrTopRatio: 0.02, textTopRatio: 0.68,
-      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 3.5,
+      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 6,
       bottomBandHeightMm: 4, rightRailWidthMm: 3.5, pageWidthMm: 109
     }
   };
@@ -6518,6 +6520,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (key) _bcWriteStoredFormatKey(key);
     _bcUpdateFormatHint();
+    _bcRefreshCompactTunePanel();
     _bcRefreshOperatorJobSummary();
     if (_bcSkus.length) _bcRenderPreviewNow();
     else bcRenderPreview();
@@ -6964,10 +6967,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     const labelW = Number(cfg.labelWidthMm) || 15;
     const labelH = Number(cfg.labelHeightMm) || 15;
     const bottom = Number(cfg.bottomBandHeightMm) || 4;
-    const rail = Number(cfg.rightRailWidthMm) || 3.5;
+    const { qrVisualSizeMm } = _bcReadQrConfig();
+    const mm = _bcReadMarginsMm();
+    const padL = mm.left;
+    const padR = mm.right;
+    const qrInsetMm = BC_COMPACT_QR_INSET_MM;
+    const textGapMm = BC_COMPACT_TEXT_GAP_MM;
+    const innerW = Math.max(1, labelW - padL - padR);
+    const qrBlockW = qrInsetMm + qrVisualSizeMm;
+    const railStartMm = padL + qrBlockW + textGapMm;
+    const railW = Math.max(1, labelW - railStartMm - padR);
+    const qrBottomMm = qrInsetMm + qrVisualSizeMm;
+    const brandTopMm = qrBottomMm + textGapMm;
     const contentH = Math.max(1, labelH - bottom);
-    const qrMainW = Math.max(1, labelW - rail);
-    return { labelW: labelW, labelH: labelH, bottom: bottom, rail: rail, contentH: contentH, qrMainW: qrMainW };
+    const bottomPadTopMm = Math.max(0, brandTopMm - contentH);
+    return {
+      labelW: labelW,
+      labelH: labelH,
+      bottom: bottom,
+      contentH: contentH,
+      padL: padL,
+      padR: padR,
+      innerW: innerW,
+      qrInsetMm: qrInsetMm,
+      textGapMm: textGapMm,
+      qrZoneW: qrBlockW,
+      qrBlockW: qrBlockW,
+      railStartMm: railStartMm,
+      railW: railW,
+      qrBottomMm: qrBottomMm,
+      brandTopMm: brandTopMm,
+      bottomPadTopMm: bottomPadTopMm,
+      rail: railW,
+      qrMainW: qrBlockW
+    };
+  }
+
+  function _bcCompactFontPt() {
+    const { textFontPt } = _bcReadTextConfig();
+    return Math.max(4, textFontPt);
+  }
+
+  function _bcSyncCompactTuneFromAdvanced() {
+    const pairs = [
+      ['bc-op-margin-left', 'bc-margin-left'],
+      ['bc-op-margin-right', 'bc-margin-right'],
+      ['bc-op-font-pt', 'bc-text-font-pt']
+    ];
+    pairs.forEach(function (pair) {
+      const op = document.getElementById(pair[0]);
+      const adv = document.getElementById(pair[1]);
+      if (op && adv) op.value = adv.value;
+    });
+  }
+
+  window.bcOnCompactTuneInput = function () {
+    const pairs = [
+      ['bc-op-margin-left', 'bc-margin-left'],
+      ['bc-op-margin-right', 'bc-margin-right'],
+      ['bc-op-font-pt', 'bc-text-font-pt']
+    ];
+    pairs.forEach(function (pair) {
+      const op = document.getElementById(pair[0]);
+      const adv = document.getElementById(pair[1]);
+      if (op && adv) adv.value = op.value;
+    });
+    if (typeof window.bcRenderPreview === 'function') window.bcRenderPreview();
+  };
+
+  function _bcRefreshCompactTunePanel() {
+    const wrap = document.getElementById('bc-compact-tune');
+    if (!wrap) return;
+    const show = _bcGetLayoutType() === 'compact';
+    wrap.hidden = !show;
+    wrap.style.display = show ? 'block' : 'none';
+    if (show) _bcSyncCompactTuneFromAdvanced();
   }
 
   /** One 6-up row on 109 mm continuous roll — browser @page size for fallback print. */
@@ -7098,8 +7172,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
       }
       lines.push(
-        `QR ${qrVisualSizeMm} mm · right rail ${lay.rail} mm (vertical unit) · bottom ${lay.bottom} mm (brand - price)`,
-        `TSPL QRCODE cell ${qrCellSize} · Text ${textXMul}×${textYMul} · Preview ${textFontPt} pt · Font id ${textFontId}`
+        `QR ${qrVisualSizeMm} mm · unit rail ${lay.railW.toFixed(1)} mm · ${BC_COMPACT_TEXT_GAP_MM} mm gap QR→text · bottom ${lay.bottom} mm (brand top at QR+${BC_COMPACT_TEXT_GAP_MM} mm)`,
+        `Cell inset left ${lay.padL} mm · right ${lay.padR} mm · preview font ${_bcCompactFontPt()} pt`,
+        `TSPL QRCODE cell ${qrCellSize} · Text ${textXMul}×${textYMul} · Font id ${textFontId}`
       );
       if (calib !== 0) lines.push(`USB horizontal calibration ${calib > 0 ? '+' : ''}${calib} mm`);
       box.innerHTML = lines.map((line) => _bcEsc(line)).join('<br>');
@@ -7145,6 +7220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Render the visual preview of labels in the modal (debounced; QR filled client-side in batches)
   window.bcRenderPreview = function() {
+    if (_bcGetLayoutType() === 'compact') _bcSyncCompactTuneFromAdvanced();
     if (_bcPreviewDebounceTimer) clearTimeout(_bcPreviewDebounceTimer);
     _bcPreviewDebounceTimer = setTimeout(_bcRenderPreviewNow, 200);
   };
@@ -7199,19 +7275,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     _bcRefreshOperatorJobSummary();
   }
 
+  function _bcCompactCellMarkup(item, lay, qrVisualSizeMm, qrPreviewPx, railPt, bottomPt, options) {
+    options = options || {};
+    const e = options.rawText ? function (s) { return s; } : _bcEsc;
+    const outerExtra = options.outerExtra ? String(options.outerExtra) : '';
+    const isPrint = options.theme === 'print';
+    const lineColor = isPrint ? '#ccc' : 'var(--border)';
+    const textColor = isPrint ? '#111827' : 'var(--text1)';
+    const qrPhBg = isPrint ? '#e5e7eb' : 'var(--border)';
+    const borderCss = options.borderCss != null ? options.borderCss : 'border:1px solid var(--border);border-radius:2px';
+    const cardBg = options.cardBg != null ? options.cardBg : 'background:var(--card)';
+    const railBg = options.railBg != null ? options.railBg : 'background:var(--bg2)';
+    const qrBlock = options.dataUrl
+      ? '<img src="' + options.dataUrl + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm;display:block" alt="">'
+      : '<div class="qr-placeholder" data-qr-code="' + _bcEsc(item.code) + '" data-qr-px="' + qrPreviewPx + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm;flex-shrink:0;background:' + qrPhBg + ';border-radius:1px"></div>';
+    const bottomPadL = (lay.padL || 0) + 0.5;
+    return '<div class="bc-compact-row" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;box-sizing:border-box;' + borderCss + ';overflow:hidden;' + cardBg + ';display:flex;flex-direction:column;flex-shrink:0' + outerExtra + '">' +
+      '<div style="box-sizing:border-box;padding-left:' + (lay.padL || 0) + 'mm;padding-right:' + (lay.padR || 0) + 'mm;height:100%;display:flex;flex-direction:column">' +
+      '<div style="display:flex;height:' + lay.contentH + 'mm;box-sizing:border-box">' +
+      '<div style="width:' + lay.qrZoneW + 'mm;flex-shrink:0;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;padding:' + lay.qrInsetMm + 'mm;box-sizing:border-box;border-right:1px dashed ' + lineColor + '">' +
+      qrBlock +
+      '</div>' +
+      '<div style="width:' + lay.textGapMm + 'mm;flex-shrink:0" aria-hidden="true"></div>' +
+      '<div style="width:' + lay.railW + 'mm;flex-shrink:0;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;box-sizing:border-box;overflow:hidden;' + railBg + '">' +
+      '<span class="mono" style="font-size:' + railPt + 'pt;font-weight:600;line-height:1;color:' + textColor + ';writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:0.02em">' + e(item.unitText) + '</span>' +
+      '</div></div>' +
+      '<div style="height:' + lay.bottom + 'mm;display:flex;align-items:flex-start;justify-content:flex-start;border-top:1px dashed ' + lineColor + ';box-sizing:border-box;padding:' + lay.bottomPadTopMm + 'mm ' + (lay.padR || 0) + 'mm 0 ' + bottomPadL + 'mm;overflow:hidden">' +
+      '<span class="mono" style="font-size:' + bottomPt + 'pt;font-weight:700;line-height:1;color:' + textColor + ';white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:100%">' + e(item.bottomLine) + '</span>' +
+      '</div></div></div>';
+  }
+
   function _bcCompactCellPreviewHtml(item, lay, qrVisualSizeMm, qrPreviewPx, railPt, bottomPt, extraStyle) {
     const extra = extraStyle ? String(extraStyle) : '';
-    return '<div class="bc-compact-row" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;box-sizing:border-box;border:1px solid var(--border);border-radius:2px;overflow:hidden;background:var(--card);display:flex;flex-direction:column;flex-shrink:0' + extra + '">' +
-      '<div style="display:flex;height:' + lay.contentH + 'mm;box-sizing:border-box">' +
-      '<div style="width:' + lay.qrMainW + 'mm;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;padding:0.4mm;box-sizing:border-box;border-right:1px dashed var(--border)">' +
-      '<div class="qr-placeholder" data-qr-code="' + _bcEsc(item.code) + '" data-qr-px="' + qrPreviewPx + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm;flex-shrink:0;background:var(--border);border-radius:1px"></div>' +
-      '</div>' +
-      '<div style="width:' + lay.rail + 'mm;height:100%;display:flex;align-items:center;justify-content:center;box-sizing:border-box;overflow:hidden;background:var(--bg2)">' +
-      '<span class="mono" style="font-size:' + railPt + 'pt;font-weight:600;line-height:1;color:var(--text1);writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:0.02em">' + _bcEsc(item.unitText) + '</span>' +
-      '</div></div>' +
-      '<div style="height:' + lay.bottom + 'mm;display:flex;align-items:center;justify-content:center;border-top:1px dashed var(--border);box-sizing:border-box;padding:0 0.5mm;overflow:hidden">' +
-      '<span class="mono" style="font-size:' + bottomPt + 'pt;font-weight:700;line-height:1;color:var(--text1);white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:100%">' + _bcEsc(item.bottomLine) + '</span>' +
-      '</div></div>';
+    return _bcCompactCellMarkup(item, lay, qrVisualSizeMm, qrPreviewPx, railPt, bottomPt, { outerExtra: extra });
   }
 
   function _bcRenderCompactMultiPreviewNow() {
@@ -7226,8 +7322,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
     const gp = _bcReadGapMm();
     const cols = _bcCompactColumnsPerRow();
-    const railPt = Math.max(2.5, textFontPt - 0.5);
-    const bottomPt = Math.max(2.5, textFontPt);
+    const fontPt = _bcCompactFontPt();
+    const railPt = fontPt;
+    const bottomPt = fontPt;
 
     const items = _bcSelectedCompactItems();
     if (!items.length) {
@@ -7274,8 +7371,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const { textFontPt } = _bcReadTextConfig();
     const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
     const gp = _bcReadGapMm();
-    const railPt = Math.max(2.5, textFontPt - 0.5);
-    const bottomPt = Math.max(2.5, textFontPt);
+    const fontPt = _bcCompactFontPt();
+    const railPt = fontPt;
+    const bottomPt = fontPt;
 
     const items = _bcSelectedCompactItems();
     if (!items.length) {
@@ -7744,12 +7842,9 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const dotsPerMm = _bcReadDotsPerMm();
     const { rowGap } = _bcReadGapMm();
     const tsplOffsetXMM = _bcReadTsplOffsetXMM();
-    const { qrCellSize, qrVisualSizeMm } = _bcReadQrConfig();
+    const { qrCellSize } = _bcReadQrConfig();
     const { textXMul, textYMul, textFontId } = _bcReadTextConfig();
     const mmToDot = function (mm) { return Math.round(mm * dotsPerMm); };
-    const qrInsetMm = 0.4;
-    const railTextXmm = lay.labelW - lay.rail + 0.25;
-    const bottomYmm = lay.contentH + 0.35;
 
     let cmds = '';
     labels.forEach(function (item) {
@@ -7763,16 +7858,16 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       const unitText = _bcTsplQuote(item.unitText);
       const bottom = _bcTsplQuote(item.bottomLine);
 
-      const qrX = Math.max(0, mmToDot(qrInsetMm + tsplOffsetXMM));
-      const qrY = mmToDot(qrInsetMm);
+      const qrX = Math.max(0, mmToDot(lay.padL + lay.qrInsetMm + tsplOffsetXMM));
+      const qrY = mmToDot(lay.qrInsetMm);
       cmds += `QRCODE ${qrX},${qrY},L,${qrCellSize},A,0,"${code}"\r\n`;
 
-      const railX = Math.max(0, mmToDot(railTextXmm + tsplOffsetXMM));
-      const railY = mmToDot(0.5);
+      const railX = Math.max(0, mmToDot(lay.railStartMm + tsplOffsetXMM));
+      const railY = mmToDot(lay.qrInsetMm);
       cmds += `TEXT ${railX},${railY},"${textFontId}",90,${textXMul},${textYMul},"${unitText}"\r\n`;
 
-      const bottomX = Math.max(0, mmToDot(0.5 + tsplOffsetXMM));
-      const bottomY = mmToDot(bottomYmm);
+      const bottomX = Math.max(0, mmToDot(lay.padL + 0.5 + tsplOffsetXMM));
+      const bottomY = mmToDot(lay.brandTopMm);
       cmds += `TEXT ${bottomX},${bottomY},"${textFontId}",0,${textXMul},${textYMul},"${bottom}"\r\n`;
 
       cmds += 'PRINT 1, 1\r\n';
@@ -7788,11 +7883,9 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const { rowGap, colGap } = _bcReadGapMm();
     const tsplOffsetXMM = _bcReadTsplOffsetXMM();
     const dotsPerMm = _bcReadDotsPerMm();
-    const { qrCellSize, qrVisualSizeMm } = _bcReadQrConfig();
+    const { qrCellSize } = _bcReadQrConfig();
     const { textXMul, textYMul, textFontId } = _bcReadTextConfig();
     const mmToDot = function (mm) { return Math.round(mm * dotsPerMm); };
-    const qrInsetMm = 0.4;
-    const bottomYmm = lay.contentH + 0.35;
     const sheetWidthMm = marginsMm.left + (cols * labelW) + (Math.max(0, cols - 1) * colGap) + marginsMm.right;
     const maxXDots = mmToDot(sheetWidthMm);
 
@@ -7810,20 +7903,20 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
         const unitText = _bcTsplQuote(item.unitText);
         const bottom = _bcTsplQuote(item.bottomLine);
 
-        let qrX = mmToDot(cellLeftMm + qrInsetMm + tsplOffsetXMM);
+        let qrX = mmToDot(cellLeftMm + lay.padL + lay.qrInsetMm + tsplOffsetXMM);
         qrX = Math.max(0, Math.min(qrX, maxXDots));
-        const qrY = mmToDot(qrInsetMm);
+        const qrY = mmToDot(lay.qrInsetMm);
         cmds += 'QRCODE ' + qrX + ',' + qrY + ',L,' + qrCellSize + ',A,0,"' + code + '"\r\n';
 
-        const railXmm = cellLeftMm + labelW - lay.rail + 0.25;
+        const railXmm = cellLeftMm + lay.railStartMm;
         let railX = mmToDot(railXmm + tsplOffsetXMM);
         railX = Math.max(0, Math.min(railX, maxXDots));
-        const railY = mmToDot(0.5);
+        const railY = mmToDot(lay.qrInsetMm);
         cmds += 'TEXT ' + railX + ',' + railY + ',"' + textFontId + '",90,' + textXMul + ',' + textYMul + ',"' + unitText + '"\r\n';
 
-        let bottomX = mmToDot(cellLeftMm + 0.5 + tsplOffsetXMM);
+        let bottomX = mmToDot(cellLeftMm + lay.padL + 0.5 + tsplOffsetXMM);
         bottomX = Math.max(0, Math.min(bottomX, maxXDots));
-        const bottomY = mmToDot(bottomYmm);
+        const bottomY = mmToDot(lay.brandTopMm);
         cmds += 'TEXT ' + bottomX + ',' + bottomY + ',"' + textFontId + '",0,' + textXMul + ',' + textYMul + ',"' + bottom + '"\r\n';
       });
 
@@ -8018,8 +8111,9 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const cols = _bcCompactColumnsPerRow();
     const { qrVisualSizeMm } = _bcReadQrConfig();
     const { textFontPt } = _bcReadTextConfig();
-    const railPt = Math.max(2.5, textFontPt - 0.5);
-    const bottomPt = Math.max(2.5, textFontPt);
+    const fontPt = _bcCompactFontPt();
+    const railPt = fontPt;
+    const bottomPt = fontPt;
 
     try {
       await loadBcQrLib();
@@ -8048,17 +8142,13 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
           continue;
         }
         const dataUrl = printDataUrls.get(item.code) || '';
-        rows += '<div class="bc-label-cell compact" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm">' +
-          '<div style="display:flex;height:' + lay.contentH + 'mm">' +
-          '<div style="width:' + lay.qrMainW + 'mm;padding:0.4mm;box-sizing:border-box">' +
-          '<img src="' + dataUrl + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm" alt="">' +
-          '</div>' +
-          '<div style="width:' + lay.rail + 'mm;display:flex;align-items:center;justify-content:center">' +
-          '<span class="mono" style="font-size:' + railPt + 'pt;font-weight:600;writing-mode:vertical-rl">' + _bcEsc(item.unitText) + '</span>' +
-          '</div></div>' +
-          '<div style="height:' + lay.bottom + 'mm;display:flex;align-items:center;justify-content:center;border-top:1px dashed #ccc">' +
-          '<span class="mono" style="font-size:' + bottomPt + 'pt;font-weight:700">' + _bcEsc(item.bottomLine) + '</span>' +
-          '</div></div>';
+        rows += _bcCompactCellMarkup(item, lay, qrVisualSizeMm, 0, railPt, bottomPt, {
+          dataUrl: dataUrl,
+          theme: 'print',
+          borderCss: '',
+          cardBg: '',
+          railBg: 'background:#f5f5f5'
+        });
       }
       rows += '</div>';
     });
@@ -8091,8 +8181,9 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const { qrVisualSizeMm } = _bcReadQrConfig();
     const { textFontPt } = _bcReadTextConfig();
     const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
-    const railPt = Math.max(2.5, textFontPt - 0.5);
-    const bottomPt = Math.max(2.5, textFontPt);
+    const fontPt = _bcCompactFontPt();
+    const railPt = fontPt;
+    const bottomPt = fontPt;
 
     try {
       await loadBcQrLib();
@@ -8111,17 +8202,14 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     let rows = '';
     labels.forEach(function (item) {
       const dataUrl = printDataUrls.get(item.code) || '';
-      rows += '<div class="compact" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;display:flex;flex-direction:column;margin-bottom:2mm;border:1px solid #ccc;box-sizing:border-box;page-break-inside:avoid">' +
-        '<div style="display:flex;height:' + lay.contentH + 'mm">' +
-        '<div style="width:' + lay.qrMainW + 'mm;padding:0.4mm;box-sizing:border-box;border-right:1px dashed #ccc">' +
-        '<img src="' + dataUrl + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm" alt="">' +
-        '</div>' +
-        '<div style="width:' + lay.rail + 'mm;display:flex;align-items:center;justify-content:center">' +
-        '<span class="mono" style="font-size:' + railPt + 'pt;font-weight:600;writing-mode:vertical-rl">' + _bcEsc(item.unitText) + '</span>' +
-        '</div></div>' +
-        '<div style="height:' + lay.bottom + 'mm;display:flex;align-items:center;justify-content:center;border-top:1px dashed #ccc">' +
-        '<span class="mono" style="font-size:' + bottomPt + 'pt;font-weight:700">' + _bcEsc(item.bottomLine) + '</span>' +
-        '</div></div>';
+      rows += _bcCompactCellMarkup(item, lay, qrVisualSizeMm, 0, railPt, bottomPt, {
+        dataUrl: dataUrl,
+        theme: 'print',
+        borderCss: 'border:1px solid #ccc',
+        cardBg: '',
+        railBg: 'background:#f5f5f5',
+        outerExtra: ';margin-bottom:2mm;page-break-inside:avoid'
+      });
     });
 
     const win = window.open('', '_blank', 'width=900,height=700');

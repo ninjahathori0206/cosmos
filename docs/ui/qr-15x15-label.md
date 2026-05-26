@@ -1,111 +1,70 @@
 # QR 15×15 compact label (eyewear)
 
-**Modal:** `#modal-barcode-print` — replaces preset **`small_label`**  
+**Modal:** `#modal-barcode-print` — presets **`small_label`**, **`small_15x15_continuous_109`**  
 **Route:** Foundry Purchase View batch print (stages 4–5, warehouse publish)  
-**JS (planned):** [`foundry-prototype.js`](../../src/public/js/foundry-prototype.js) — `layoutType: 'compact'`  
-**Pencil frame (planned):** `foundry/barcode-print` — compact 15×15 preview state
+**JS:** [`foundry-prototype.js`](../../src/public/js/foundry-prototype.js) — `layoutType: 'compact'`  
+**Design preview:** [`compact-15x15-alignment-preview.html`](compact-15x15-alignment-preview.html) · Pencil frame `foundry/barcode-print`
 
 ## Purpose
 
-Small **15×15 mm** square sticker for **eyewear** units: dense QR + human-readable unit id + brand/price at a glance. Replaces the legacy Small label layout (centered QR + SKU code below).
+Small **15×15 mm** square sticker for **eyewear** units: dense QR + human-readable unit id + brand/price at a glance.
 
 ## Physical layout (15 × 15 mm)
 
+**Gaps:** `textGapFromQrMm = 1` (fixed in JS as `BC_COMPACT_TEXT_GAP_MM`).
+
 ```
-┌────────────────┬──┐
-│                │ 1│
-│      QR        │ 2│  ← unit barcode, vertical (90° CW)
-│                │ 3│
-├────────────────┴──┤
-│    MAR - 800      │  ← brand + price, horizontal, centred
-└───────────────────┘
+┌──────────┬─┬──┐
+│          │1│0 │  ← unit: vertical, left-aligned in rail (toward QR)
+│   QR     │m│0 │
+│  10mm    │m│6 │
+│          │ │1 │
+├──────────┴─┴──┤  ← brand top = QR bottom + 1 mm
+│ MAR-4000      │  ← bottom band, top-aligned (not centred)
+└───────────────┘
 ```
 
-| Zone | Approx. area | Content |
-|------|----------------|---------|
-| **QR** | Top-left, ~11×11 mm | QR encoding **7-digit unit barcode** |
-| **Right rail** | ~3 mm wide × ~11 mm tall | Same **unit barcode** as text, rotated vertical |
-| **Bottom band** | Full width × ~3–4 mm | **`{brand} - {price}`** |
+| Zone | Size / rule | Content |
+|------|-------------|---------|
+| **QR** | `qrInset` (0.4 mm) + `qrVisualSizeMm` (10 mm) | 7-digit unit barcode |
+| **Gap** | **1 mm** between QR right edge and unit text | — |
+| **Unit rail** | Remaining width to label edge | Same 7-digit code, **vertical**, **top/left** aligned toward QR |
+| **Brand band** | `bottomBandHeightMm` (~4 mm) | `{brand}-{price}` (no spaces); text top at **QR bottom + 1 mm** |
 
-No non-print tail. One label per unit; one label per print row (`labelsPerRow: 1`).
+Applies to **single** (`small_label`, 1 per row) and **6-up continuous** (`small_15x15_continuous_109` on 109 mm roll).
+
+**Operator tuning (15×15 formats):** In the print modal, **15×15 label spacing & text** exposes **left/right margin (mm)** per sticker and **font size (pt)** — default **6 pt**. Same values sync to advanced **Inset left/right** and **Preview font (pt)**. Roll-level sheet margins (6-up) still use those insets on each 15 mm cell plus row padding on the 109 mm roll.
 
 ## Data mapping
 
 | Field | Source | Notes |
 |-------|--------|--------|
-| QR payload | `unit_barcode` — **exactly 7 digits** | No PID, SKU code, or legacy barcode fallback; rows without a valid code are excluded from print |
-| Right column | Same 7-digit `unit_barcode` | Duplicate of QR payload for human read at arm’s length |
-| Bottom — brand | `home_brands.brand_code` via product `home_brand_id` | Uppercase as stored |
-| Bottom — brand fallback | First **3 letters** of `brand_name`, uppercase | When `brand_code` empty/missing (**decision B**) |
-| Bottom — price | `sale_price` as **integer** | No ₹, no decimals in label text (e.g. `800`) |
-| Bottom — price missing | `—` or omit price segment | TBD at implementation: prefer `MAR - —` vs `MAR` only |
-
-### Brand resolution chain (bottom line)
-
-1. `brand_code` from `home_brands` (join via SKU → `product_master.home_brand_id`)
-2. Else first 3 chars of `brand_name` (uppercase), from purchase item merge / SKU API enrichment (same chain as eyewear strip)
-3. If still empty: show `—` for brand segment → `— - 800`
-
-### Bottom line format
-
-- Template: **`{brand} - {price}`**
-- Example: `MAR - 800`
-- Max brand segment: **6 chars** (truncate with ellipsis in preview if needed)
-- Separator: space-hyphen-space (` - `)
-
-## User flow
-
-1. Purchase View → select SKUs (eyewear) → **Print selected** / **Print all**
-2. **Label format** → **Small label** (15×15 — compact QR layout; same preset key `small_label`, new layout)
-3. Preview shows compact square rows; **Print Labels** sends TSPL batch (TSC P210)
-
-Warehouse publish path (`handleWarehouseReady`) uses the same modal and format dropdown.
+| QR payload | `unit_barcode` — **exactly 7 digits** | No PID/SKU fallback |
+| Right column | Same 7-digit `unit_barcode` | Vertical, 1 mm from QR |
+| Bottom — brand | `home_brands.brand_code` via `home_brand_id` | Uppercase |
+| Bottom — brand fallback | First **3 letters** of `brand_name`, uppercase | When `brand_code` missing |
+| Bottom — price | `sale_price` as **integer** | e.g. `4000` |
+| Bottom line | `{brand}-{price}` | e.g. `MAR-4000` |
 
 ## Print stack
 
-- **USB:** TSPL2 (TSC P210) — `SIZE 15 mm, 15 mm`
-- **Preview:** HTML/CSS mm layout in modal (`layoutType: 'compact'`)
-- **Fallback:** Browser print HTML (same as other formats)
+- **USB:** TSPL2 (TSC P210) — `SIZE 15 mm, 15 mm` (or 109 mm × 15 mm per row for 6-up)
+- **Preview:** HTML/CSS mm in modal
+- **Fallback:** Browser print with roll-sized `@page`
 
-### QR encoding (all label formats)
+### QR encoding
 
-- **Content:** 7-digit numeric `unit_barcode` only (e.g. `1234567`).
-- **Raster (preview / browser print):** `QRCode.toDataURL` with `errorCorrectionLevel: 'L'`, `version: 1`, `margin: 2`, `width: 120` (display size still follows `qrVisualSizeMm` in CSS).
-- **TSPL:** `QRCODE …,L,<cell>,A,0,"1234567"` — same 7-digit string quoted in the command.
+- 7-digit numeric only; `QRCode.toDataURL` EC-L, version 1, margin 2, width 120 px
+- TSPL: `QRCODE …,L,<cell>,A,0,"1234567"`
 
-### TSPL notes (implementation)
+### TSPL alignment
 
-- `QRCODE` top-left with tight margins (~0.5 mm)
-- `TEXT` rotation **90°** for right-rail unit barcode
-- Bottom band: single `TEXT` line, centred or left-aligned within bottom zone
-- Font: smallest readable TSC built-in (font id 2, x/y mul 1) — tune in calibration
-
-## Format preset
-
-- **Replace** existing seed `small_label` — same `format_key`, new `config_json` with `layoutType: 'compact'` and zone mm fields (e.g. `qrZoneWidthMm`, `rightRailWidthMm`, `bottomBandHeightMm`).
-- **Do not** add a second 15×15 preset; operators keep selecting “Small label”.
-- Eyewear-only is **documented intent**; enforcement is by operator choice (no category gate in v1).
-
-## States
-
-| State | Preview |
-|-------|---------|
-| Default | Sample row with QR, vertical unit id, `MAR - 800` |
-| Loading | Skeleton rows in preview panel (existing polish) |
-| Empty batch | “No labels in batch” (existing) |
-| Missing brand | `ABC - 800` (3-letter fallback) or `— - 800` |
-| Missing price | `MAR - —` (or brand only — pick at implement) |
-
-## Out of scope (v1)
-
-- ZPL / Zebra
-- SKU code on label (unit barcode only)
-- Per-label editing in modal
-- Non–Purchase View entry points (SKU catalogue, POS)
-- New DB column for brand abbrev (`brand_code` already exists)
+- `QRCODE` at `(qrInset, qrInset)`
+- Unit `TEXT` rotation **90°** at `X = qrInset + qrVisualSizeMm + 1 mm`, `Y = qrInset` (top-aligned with QR)
+- Brand `TEXT` rotation **0°** at `Y = qrInset + qrVisualSizeMm + 1 mm`, `X ≈ 0.5 mm` from cell left
 
 ## Approval checklist
 
-- [x] This spec approved
-- [ ] Pencil frame approved (`foundry/barcode-print` compact preview) — skipped (Pencil MCP unavailable); approved from spec + mockup
-- [x] Schema + migration update `small_label`, JS preview + TSPL, cache bust
+- [x] Spec + alignment preview HTML
+- [ ] Pencil frame (optional when MCP available)
+- [x] JS preview + TSPL + cache bust after layout approval

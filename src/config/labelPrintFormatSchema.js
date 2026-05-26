@@ -89,7 +89,7 @@ const SMALL_LABEL_CONFIG = buildDefaultConfig({
   textXMul: 1,
   textYMul: 1,
   textFontId: 2,
-  textFontPt: 3.5,
+  textFontPt: 6,
   bottomBandHeightMm: 4,
   rightRailWidthMm: 3.5
 });
@@ -111,7 +111,7 @@ const SMALL_15X15_CONTINUOUS_109_CONFIG = buildDefaultConfig({
   textXMul: 1,
   textYMul: 1,
   textFontId: 2,
-  textFontPt: 3.5,
+  textFontPt: 6,
   bottomBandHeightMm: 4,
   rightRailWidthMm: 3.5,
   pageWidthMm: 109

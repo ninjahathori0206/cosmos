@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>15×15 compact label — alignment preview</title>
+  <style>
+    :root {
+      --border: #d1d5db;
+      --card: #fff;
+      --text1: #111827;
+      --bg2: #f3f4f6;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 24px;
+      background: #f9fafb;
+      color: var(--text1);
+    }
+    h1 { font-size: 18px; margin-bottom: 8px; }
+    p { font-size: 13px; color: #4b5563; max-width: 52rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 6mm; align-items: flex-start; margin-top: 16px; }
+    .mono { font-family: Consolas, monospace; }
+    /* One cell — matches foundry-prototype compact layout */
+    .cell {
+      width: 15mm;
+      height: 15mm;
+      box-sizing: border-box;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      background: var(--card);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .content {
+      display: flex;
+      height: 11mm;
+      box-sizing: border-box;
+    }
+    .qr-zone {
+      width: 10.4mm;
+      padding: 0.4mm;
+      box-sizing: border-box;
+      border-right: 1px dashed var(--border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+    }
+    .qr {
+      width: 10mm;
+      height: 10mm;
+      background: #e5e7eb;
+      border-radius: 1px;
+    }
+    .gap { width: 1mm; flex-shrink: 0; }
+    .rail {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      background: var(--bg2);
+      overflow: hidden;
+    }
+    .unit {
+      font-size: 8pt;
+      font-weight: 600;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      line-height: 1;
+    }
+    .bottom {
+      height: 4mm;
+      box-sizing: border-box;
+      border-top: 1px dashed var(--border);
+      padding-top: 0.4mm;
+      padding-left: 0.5mm;
+      display: flex;
+      align-items: flex-start;
+      overflow: hidden;
+    }
+    .brand {
+      font-size: 8pt;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .scale-wrap { transform: scale(3); transform-origin: top left; margin-bottom: 60px; }
+  </style>
+</head>
+<body>
+  <h1>15×15 compact label — 1 mm gaps (design preview)</h1>
+  <p>
+    Unit code: vertical, left-aligned in the rail, <strong>1 mm</strong> from the QR.
+    Brand/price: top of the bottom band, <strong>1 mm</strong> below the QR bottom (not centred in the band).
+    Same geometry for <code>small_label</code> and <code>small_15x15_continuous_109</code> (6-up row below).
+  </p>
+
+  <div class="scale-wrap">
+    <div class="row">
+      <div class="cell">
+        <div class="content">
+          <div class="qr-zone"><div class="qr" title="QR ~10mm"></div></div>
+          <div class="gap" title="1mm"></div>
+          <div class="rail"><span class="unit mono">0006125</span></div>
+        </div>
+        <div class="bottom"><span class="brand mono">MAR-4000</span></div>
+      </div>
+      <div class="cell">
+        <div class="content">
+          <div class="qr-zone"><div class="qr"></div></div>
+          <div class="gap"></div>
+          <div class="rail"><span class="unit mono">0006126</span></div>
+        </div>
+        <div class="bottom"><span class="brand mono">MAR-4000</span></div>
+      </div>
+      <div class="cell">
+        <div class="content">
+          <div class="qr-zone"><div class="qr"></div></div>
+          <div class="gap"></div>
+          <div class="rail"><span class="unit mono">0006127</span></div>
+        </div>
+        <div class="bottom"><span class="brand mono">MAR-4000</span></div>
+      </div>
+      <div class="cell">
+        <div class="content">
+          <div class="qr-zone"><div class="qr"></div></div>
+          <div class="gap"></div>
+          <div class="rail"><span class="unit mono">0006128</span></div>
+        </div>
+        <div class="bottom"><span class="brand mono">MAR-4000</span></div>
+      </div>
+      <div class="cell">
+        <div class="content">
+          <div class="qr-zone"><div class="qr"></div></div>
+          <div class="gap"></div>
+          <div class="rail"><span class="unit mono">0006129</span></div>
+        </div>
+        <div class="bottom"><span class="brand mono">MAR-4000</span></div>
+      </div>
+      <div class="cell">
+        <div class="content">
+          <div class="qr-zone"><div class="qr"></div></div>
+          <div class="gap"></div>
+          <div class="rail"><span class="unit mono">0006130</span></div>
+        </div>
+        <div class="bottom"><span class="brand mono">MAR-4000</span></div>
+      </div>
+    </div>
+  </div>
+  <p><em>3× scale for review. Approve in chat before production JS ships.</em></p>
+</body>
+</html>

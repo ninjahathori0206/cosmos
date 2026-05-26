@@ -14,7 +14,7 @@
 >
 <link rel="preload" href="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" as="script">
 <link rel="preload" href="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" as="script">
-<link rel="preload" href="/js/foundry-prototype.js?v=20260525-compact-roll-print-page" as="script">
+<link rel="preload" href="/js/foundry-prototype.js?v=20260525-compact-footer-nospace" as="script">
 <link rel="preload" href="/css/cosmos-ui.css" as="style">
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/foundry-prototype.css?v=20260528-label-print-friendly">
@@ -1431,6 +1431,22 @@
           <label class="section-lbl" for="bc-format-select">Choose label type</label>
           <select id="bc-format-select" onchange="bcOnFormatSelectChange()" style="margin-top:6px;width:100%;min-height:44px;font-size:14px" aria-label="Label type"></select>
           <div id="bc-format-hint" style="font-size:13px;color:var(--text2);margin-top:8px;line-height:1.45">Each label has a QR code for scanning and text for staff to read.</div>
+
+        <div id="bc-compact-tune" class="mt3" hidden style="display:none;border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg2)">
+          <div class="section-lbl mb2">15×15 label spacing &amp; text</div>
+          <p style="font-size:12px;color:var(--text2);margin:0 0 10px;line-height:1.45">Adjust left/right inset inside each sticker and font size. Default font is <strong>6 pt</strong>.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;align-items:end">
+            <label style="display:flex;flex-direction:column;gap:4px">Left margin (mm)
+              <input id="bc-op-margin-left" type="number" min="0" max="60" step="0.5" value="0" style="width:100%;padding:6px 8px;min-height:40px" oninput="bcOnCompactTuneInput()" aria-label="Left margin millimetres">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px">Right margin (mm)
+              <input id="bc-op-margin-right" type="number" min="0" max="60" step="0.5" value="0" style="width:100%;padding:6px 8px;min-height:40px" oninput="bcOnCompactTuneInput()" aria-label="Right margin millimetres">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px">Font size (pt)
+              <input id="bc-op-font-pt" type="number" min="4" max="20" step="0.5" value="6" style="width:100%;padding:6px 8px;min-height:40px" oninput="bcOnCompactTuneInput()" aria-label="Label text font size points">
+            </label>
+          </div>
+        </div>
           <div id="bc-format-actions" class="flex ic g2 mt2" style="flex-wrap:wrap;display:none">
             <button type="button" class="btn btn-sm btn-primary" id="bc-format-update-btn" onclick="bcUpdateLabelFormat()">Save changes for everyone</button>
             <button type="button" class="btn btn-sm" id="bc-format-save-new-btn" onclick="bcSaveLabelFormatAsNew()">Save as new label type…</button>
@@ -1702,7 +1718,7 @@ function addColour() {
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260522-camera-resume" defer></script>
-<script src="/js/foundry-prototype.js?v=20260525-compact-roll-print-page" defer></script>
+<script src="/js/foundry-prototype.js?v=20260525-compact-footer-nospace" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)
 document.addEventListener('DOMContentLoaded', function() {
