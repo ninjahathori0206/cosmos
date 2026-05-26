@@ -9204,14 +9204,14 @@ ${initScript}
         }
         tbody.innerHTML = rows.map((d) => {
           const dest = [d.store_name, d.store_code].filter(Boolean).join(' · ') || '—';
-          const lines = Number(d.line_count);
+          const pcs = Number(d.total_qty_sent);
           const docId = Number(d.doc_id);
           return `<tr class="tr-link" onclick="stOpenDispatchDoc(${docId})">
           <td class="mono fw6" style="color:var(--acc2)">${stEsc(String(d.doc_id))}</td>
           <td class="xs td2" style="white-space:nowrap">${stFmtDate(d.dispatched_at || d.created_at)}</td>
           <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${stEsc(dest)}">${stEsc(dest)}</td>
           <td><span class="b ${stDocStatusBadgeClass(d.status)}">${stEsc(d.status || '—')}</span></td>
-          <td class="tc fw6">${Number.isFinite(lines) ? lines : '—'}</td>
+          <td class="tc fw6">${Number.isFinite(pcs) ? pcs : '—'}</td>
         </tr>`;
         }).join('');
       } catch (err) {
