@@ -45,10 +45,11 @@ Edit actions hidden when JWT lacks `foundry.label_formats.edit`.
 | format_key | Name | Size (mm) |
 |------------|------|-----------|
 | `large_label` | Large label | 40 × 28 (default) |
-| `small_label` | Small label | 15 × 15 compact |
+| `small_label` | Small label | 15 × 15 compact (1 per row, brand + price) |
+| `small_15x15_continuous_109` | 15×15mm Label — Continuous Roll | 15 × 15 · **6 columns** · 109 mm roll width |
 | `eyewear_strip_12x100` | Eyewear strip 12×100 | 100 × 12 (66 mm print + tail) |
 
-Deploy: `npm run migrate:64-label-print-formats`, `migrate:65-eyewear-strip-label`, `migrate:66-qr-15x15-compact-label`.
+Deploy: `npm run migrate:64-label-print-formats`, `migrate:65-eyewear-strip-label`, `migrate:66-qr-15x15-compact-label`, `migrate:68-small-15x15-continuous-roll-109`.
 
 Grant `foundry.label_formats.view` to existing roles (optional, for explicit catalogue key):  
 [`sql/maintenance/grant_label_formats_view_from_purchase_roles.sql`](../../sql/maintenance/grant_label_formats_view_from_purchase_roles.sql) — **re-login** after run.

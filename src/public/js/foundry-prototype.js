@@ -2460,8 +2460,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function _pvBarcodeToolbarHtml() {
-    return `<button type="button" class="btn btn-sm primary pv-print-selected-btn" onclick="pvPrintSelectedBarcodes()" disabled style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print selected</button>
-      <button type="button" class="btn btn-sm" onclick="window.openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:5px 12px;white-space:nowrap">🏷️ Print all</button>`;
+    return `<button type="button" class="btn btn-sm primary pv-print-selected-btn" onclick="pvPrintSelectedBarcodes()" disabled style="font-size:12px;padding:6px 12px;white-space:nowrap;min-height:40px" title="Print labels only for checked rows">Print labels (selected)</button>
+      <button type="button" class="btn btn-sm" onclick="window.openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:6px 12px;white-space:nowrap;min-height:40px" title="Print a label for every SKU on this purchase">Print all labels</button>`;
   }
 
   function _pvSkuSelectCellHtml(sk) {
@@ -6254,6 +6254,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
+  const BC_SMALL_15X15_CONTINUOUS_109_FALLBACK = {
+    format_key: 'small_15x15_continuous_109',
+    name: '15×15mm Label — Continuous Roll',
+    description: '6 columns · continuous rows · 109 mm roll · QR + unit id + brand/price on each sticker',
+    config: {
+      v: 1, layoutType: 'compact', marginTop: 0, marginBottom: 0, marginLeft: 2, marginRight: 2,
+      gapRow: 2, gapCol: 3, labelWidthMm: 15, labelHeightMm: 15, labelsPerRow: 6, dotsPerMm: 8,
+      qrCellSize: 3, qrVisualSizeMm: 10, qrTopRatio: 0.02, textTopRatio: 0.68,
+      textXMul: 1, textYMul: 1, textFontId: 2, textFontPt: 3.5,
+      bottomBandHeightMm: 4, rightRailWidthMm: 3.5, pageWidthMm: 109
+    }
+  };
+
   const BC_EYEWEAR_STRIP_FALLBACK = {
     format_key: 'eyewear_strip_12x100',
     name: 'Eyewear strip 12×100',
@@ -6278,15 +6291,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     return 'grid';
   }
 
+  function _bcCompactColumnsPerRow() {
+    const cfg = _bcGetActiveFormatConfig();
+    const fromCfg = Number(cfg.labelsPerRow);
+    if (Number.isFinite(fromCfg) && fromCfg > 0) return Math.round(fromCfg);
+    return _bcReadLabelGeometryMm().cols;
+  }
+
+  function _bcIsCompactMultiColumn() {
+    return _bcGetLayoutType() === 'compact' && _bcCompactColumnsPerRow() > 1;
+  }
+
   function _bcUpdateFormatHint() {
     const el = document.getElementById('bc-format-hint');
     if (!el) return;
+    const key = _bcGetSelectedFormatKey();
+    let fmt = _bcLabelFormats.find(function (f) { return f.format_key === key; });
+    if (fmt && fmt.description) {
+      el.textContent = fmt.description;
+      return;
+    }
     if (_bcGetLayoutType() === 'strip') {
-      el.textContent = 'Strip layout — Zone 1: QR + unit text · Zone 2: brand (bold), model, MRP · tail non-print';
+      el.textContent = 'For frames: QR and product details on the wrap. The grey tail is not printed — only for wrapping.';
     } else if (_bcGetLayoutType() === 'compact') {
-      el.textContent = 'Compact 15×15 — QR + vertical unit id · bottom: brand code/abbrev - price';
+      el.textContent = 'Small sticker: QR on top, product code on the side, brand and price along the bottom.';
+    } else if (_bcIsCompactMultiColumn()) {
+      const cols = _bcCompactColumnsPerRow();
+      el.textContent =
+        'Each sticker: QR (left), unit number down the right side, brand and price along the bottom. ' +
+        cols + ' stickers per row on a 109 mm roll.';
     } else {
-      el.textContent = 'QR encodes unit barcode · text shows SKU code';
+      el.textContent = 'Standard sticker: scan the QR at billing; staff can read the product code printed below it.';
     }
   }
 
@@ -6296,8 +6331,81 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function _bcRefreshLabelFormatActions() {
     const wrap = document.getElementById('bc-format-actions');
-    if (wrap) wrap.style.display = _bcCanEditLabelFormats() ? '' : 'none';
+    if (wrap) wrap.style.display = _bcCanEditLabelFormats() ? 'flex' : 'none';
   }
+
+  function _bcFormatOptionLabel(fmt) {
+    if (!fmt) return 'Label type';
+    const key = String(fmt.format_key || '');
+    const cfg = fmt.config && typeof fmt.config === 'object' ? fmt.config : {};
+    const w = cfg.labelWidthMm;
+    const h = cfg.labelHeightMm;
+    const size = w && h ? ' (' + w + '×' + h + ' mm)' : '';
+    const def = fmt.is_default ? ' — recommended' : '';
+    if (key === 'large_label') return 'Large roll label — standard shelf tag' + size + def;
+    if (key === 'small_label') return 'Small square sticker — one per row (brand + price)' + size;
+    if (key === 'small_15x15_continuous_109') return '15×15 continuous roll — 6 per row (QR + unit # + brand/price)' + size;
+    if (key === 'eyewear_strip_12x100') return 'Frame wrap strip — for spectacle frames' + size;
+    const name = String(fmt.name || key || 'Label').trim();
+    return name + size + def;
+  }
+
+  function _bcComputePrintJobStats() {
+    let totalLabels = 0;
+    const layout = _bcGetLayoutType();
+    if (layout === 'strip') {
+      _bcSelectedStripItems().forEach(function (item) { totalLabels += item.copies; });
+    } else if (layout === 'compact') {
+      _bcSelectedCompactItems().forEach(function (item) { totalLabels += item.copies; });
+    } else {
+      _bcSelectedItems().forEach(function (item) { totalLabels += item.copies; });
+    }
+    const skuCount = new Set(_bcSkus.map(function (sk) { return sk.sku_code; }).filter(Boolean)).size;
+    const key = _bcGetSelectedFormatKey();
+    let fmt = _bcLabelFormats.find(function (f) { return f.format_key === key; });
+    if (!fmt && key) fmt = { format_key: key, name: key };
+    return {
+      totalLabels: totalLabels,
+      skuCount: skuCount,
+      formatLabel: _bcFormatOptionLabel(fmt)
+    };
+  }
+
+  function _bcRefreshOperatorJobSummary() {
+    const jobEl = document.getElementById('bc-job-summary');
+    const summaryEl = document.getElementById('bc-summary');
+    const stats = _bcComputePrintJobStats();
+    const n = stats.totalLabels;
+    const s = stats.skuCount;
+    if (jobEl) {
+      if (!n) {
+        jobEl.innerHTML = 'No labels to print. Go back and select products with checkboxes, or use <strong>Print all labels</strong>.';
+        return;
+      }
+      const labelWord = n === 1 ? 'label' : 'labels';
+      const skuWord = s === 1 ? 'product type' : 'product types';
+      jobEl.innerHTML =
+        '<strong>' + n + ' ' + labelWord + '</strong> will be printed (' +
+        s + ' ' + skuWord + '). Check the preview on the right, then press <strong>Print now</strong>.';
+    }
+    if (summaryEl) {
+      summaryEl.textContent = stats.formatLabel ? ('Label type: ' + stats.formatLabel) : '';
+    }
+  }
+
+  window.bcToggleAdvancedSettings = function () {
+    const wrap = document.getElementById('bc-advanced-wrap');
+    const btn = document.getElementById('bc-advanced-toggle');
+    if (!wrap) return;
+    const opening = wrap.style.display === 'none' || !wrap.style.display;
+    wrap.style.display = opening ? 'block' : 'none';
+    wrap.hidden = !opening;
+    if (btn) {
+      btn.textContent = opening ? 'Hide advanced printer settings' : 'Show advanced printer settings';
+      btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    }
+    if (opening && typeof bcRenderPreview === 'function') bcRenderPreview();
+  };
 
   function _bcReadStoredFormatKey() {
     try { return String(localStorage.getItem(BC_FORMAT_KEY_STORAGE) || '').trim(); } catch (_e) { return ''; }
@@ -6348,6 +6456,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const BC_LABEL_FORMAT_FALLBACKS = [
     BC_LARGE_LABEL_FALLBACK,
     BC_SMALL_COMPACT_FALLBACK,
+    BC_SMALL_15X15_CONTINUOUS_109_FALLBACK,
     BC_EYEWEAR_STRIP_FALLBACK
   ];
 
@@ -6383,9 +6492,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     sel.disabled = false;
     sel.innerHTML = list.map(function (f) {
       const key = _bcEsc(f.format_key || '');
-      const name = _bcEsc(f.name || f.format_key || 'Format');
-      const def = f.is_default ? ' (default)' : '';
-      return '<option value="' + key + '">' + name + def + '</option>';
+      const label = _bcEsc(_bcFormatOptionLabel(f));
+      return '<option value="' + key + '">' + label + '</option>';
     }).join('');
     if (selectedKey && list.some(function (f) { return f.format_key === selectedKey; })) {
       sel.value = selectedKey;
@@ -6410,6 +6518,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (key) _bcWriteStoredFormatKey(key);
     _bcUpdateFormatHint();
+    _bcRefreshOperatorJobSummary();
     if (_bcSkus.length) _bcRenderPreviewNow();
     else bcRenderPreview();
   }
@@ -6712,7 +6821,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.openBarcodeModal = async function(skus, opts) {
     opts = opts || {};
     if (!skus || !skus.length) {
-      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No SKUs available to print.');
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No products selected to print.');
       return;
     }
     _bcQrCache.clear();
@@ -6726,7 +6835,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     _bcSkus = await _bcExpandSkusWithUnits(skus);
     if (!_bcSkus.length) {
-      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels in batch to print.');
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels to print. Go back and select products first.');
       return;
     }
     if (!_bcSkus.some(function (sk) { return sk.unit_barcode; }) && skus.some(function (sk) { return (Number(sk.quantity) || 0) > 0; })) {
@@ -6767,6 +6876,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     _bcPopulateFormatSelect(formats, storedKey);
     _bcApplyLabelFormatByKey(_bcGetSelectedFormatKey());
     _bcRefreshLabelFormatActions();
+    _bcRefreshOperatorJobSummary();
     _bcSchedulePersistCalibration();
 
   };
@@ -6930,13 +7040,27 @@ document.addEventListener('DOMContentLoaded', async () => {
       const lay = _bcReadCompactLayoutMm();
       const { qrCellSize, qrVisualSizeMm } = _bcReadQrConfig();
       const { textFontPt, textXMul, textYMul, textFontId } = _bcReadTextConfig();
-      const wDots = Math.round(lay.labelW * dotsPerMm);
+      const cols = _bcCompactColumnsPerRow();
+      const mm = _bcReadMarginsMm();
+      const gp = _bcReadGapMm();
+      const sheetW = mm.left + cols * lay.labelW + Math.max(0, cols - 1) * gp.colGap + mm.right;
+      const wDots = Math.round((_bcIsCompactMultiColumn() ? sheetW : lay.labelW) * dotsPerMm);
       const hDots = Math.round(lay.labelH * dotsPerMm);
-      const lines = [
-        `Compact QR 15×15 · TSPL2 SIZE ${lay.labelW.toFixed(2)} × ${lay.labelH.toFixed(2)} mm (~${wDots} × ${hDots} dots)`,
+      const lines = [];
+      if (_bcIsCompactMultiColumn()) {
+        lines.push(
+          `Compact 15×15 roll · TSPL2 row SIZE ${sheetW.toFixed(2)} × ${lay.labelH.toFixed(2)} mm (~${wDots} × ${hDots} dots)`,
+          `${cols} stickers/row · cell ${lay.labelW}×${lay.labelH} mm · QR + vertical unit id + brand/price footer`
+        );
+      } else {
+        lines.push(
+          `Compact QR 15×15 · TSPL2 SIZE ${lay.labelW.toFixed(2)} × ${lay.labelH.toFixed(2)} mm (~${wDots} × ${hDots} dots)`
+        );
+      }
+      lines.push(
         `QR ${qrVisualSizeMm} mm · right rail ${lay.rail} mm (vertical unit) · bottom ${lay.bottom} mm (brand - price)`,
         `TSPL QRCODE cell ${qrCellSize} · Text ${textXMul}×${textYMul} · Preview ${textFontPt} pt · Font id ${textFontId}`
-      ];
+      );
       if (calib !== 0) lines.push(`USB horizontal calibration ${calib > 0 ? '+' : ''}${calib} mm`);
       box.innerHTML = lines.map((line) => _bcEsc(line)).join('<br>');
       return;
@@ -7001,8 +7125,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const items = _bcSelectedStripItems();
     if (!items.length) {
-      previewEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text2);font-size:13px">No labels in batch</div>';
-      if (summaryEl) summaryEl.textContent = '';
+      previewEl.innerHTML = '<div class="bc-empty-preview">Nothing to preview yet. Select products on the purchase screen first.</div>';
+      _bcRefreshOperatorJobSummary();
       return;
     }
 
@@ -7032,18 +7156,76 @@ document.addEventListener('DOMContentLoaded', async () => {
     previewEl.innerHTML = `<div style="display:flex;flex-direction:column;align-items:flex-start">${inner}</div>`;
     _bcFillQrPlaceholders(previewEl);
 
-    const unitCount = expanded.length;
-    const skuCount = new Set(_bcSkus.map(function (sk) { return sk.sku_code; }).filter(Boolean)).size;
-    if (summaryEl) {
-      summaryEl.textContent = `${unitCount} strip${unitCount !== 1 ? 's' : ''} · ${skuCount} SKU${skuCount !== 1 ? 's' : ''} · eyewear layout`;
+    _bcRefreshOperatorJobSummary();
+  }
+
+  function _bcCompactCellPreviewHtml(item, lay, qrVisualSizeMm, qrPreviewPx, railPt, bottomPt, extraStyle) {
+    const extra = extraStyle ? String(extraStyle) : '';
+    return '<div class="bc-compact-row" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;box-sizing:border-box;border:1px solid var(--border);border-radius:2px;overflow:hidden;background:var(--card);display:flex;flex-direction:column;flex-shrink:0' + extra + '">' +
+      '<div style="display:flex;height:' + lay.contentH + 'mm;box-sizing:border-box">' +
+      '<div style="width:' + lay.qrMainW + 'mm;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;padding:0.4mm;box-sizing:border-box;border-right:1px dashed var(--border)">' +
+      '<div class="qr-placeholder" data-qr-code="' + _bcEsc(item.code) + '" data-qr-px="' + qrPreviewPx + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm;flex-shrink:0;background:var(--border);border-radius:1px"></div>' +
+      '</div>' +
+      '<div style="width:' + lay.rail + 'mm;height:100%;display:flex;align-items:center;justify-content:center;box-sizing:border-box;overflow:hidden;background:var(--bg2)">' +
+      '<span class="mono" style="font-size:' + railPt + 'pt;font-weight:600;line-height:1;color:var(--text1);writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:0.02em">' + _bcEsc(item.unitText) + '</span>' +
+      '</div></div>' +
+      '<div style="height:' + lay.bottom + 'mm;display:flex;align-items:center;justify-content:center;border-top:1px dashed var(--border);box-sizing:border-box;padding:0 0.5mm;overflow:hidden">' +
+      '<span class="mono" style="font-size:' + bottomPt + 'pt;font-weight:700;line-height:1;color:var(--text1);white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:100%">' + _bcEsc(item.bottomLine) + '</span>' +
+      '</div></div>';
+  }
+
+  function _bcRenderCompactMultiPreviewNow() {
+    _bcUpdateBarcodeLiveSummary();
+    const previewEl = document.getElementById('bc-preview-rows');
+    if (!previewEl) return;
+
+    const lay = _bcReadCompactLayoutMm();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm } = _bcReadQrConfig();
+    const { textFontPt } = _bcReadTextConfig();
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+    const gp = _bcReadGapMm();
+    const cols = _bcCompactColumnsPerRow();
+    const railPt = Math.max(2.5, textFontPt - 0.5);
+    const bottomPt = Math.max(2.5, textFontPt);
+
+    const items = _bcSelectedCompactItems();
+    if (!items.length) {
+      previewEl.innerHTML = '<div class="bc-empty-preview">Nothing to preview yet. Select products on the purchase screen first.</div>';
+      _bcRefreshOperatorJobSummary();
+      return;
     }
+
+    const expanded = [];
+    items.forEach(function (item) {
+      for (let c = 0; c < item.copies; c++) expanded.push(item);
+    });
+
+    const rollRows = [];
+    for (let i = 0; i < expanded.length; i += cols) rollRows.push(expanded.slice(i, i + cols));
+
+    let inner = '';
+    rollRows.forEach(function (row) {
+      inner += '<div class="bc-compact-roll-row" style="display:flex;flex-wrap:nowrap;gap:' + gp.colGap + 'mm;margin-bottom:' + (gp.rowGap || 2) + 'mm;align-items:flex-start">';
+      for (let col = 0; col < cols; col++) {
+        const item = row[col];
+        if (!item) {
+          inner += '<div style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;flex-shrink:0"></div>';
+          continue;
+        }
+        inner += _bcCompactCellPreviewHtml(item, lay, qrVisualSizeMm, qrPreviewPx, railPt, bottomPt);
+      }
+      inner += '</div>';
+    });
+    previewEl.innerHTML = '<div style="display:flex;flex-direction:column;align-items:flex-start">' + inner + '</div>';
+    _bcFillQrPlaceholders(previewEl);
+    _bcRefreshOperatorJobSummary();
   }
 
   function _bcRenderCompactPreviewNow() {
     _bcUpdateBarcodeLiveSummary();
 
     const previewEl = document.getElementById('bc-preview-rows');
-    const summaryEl = document.getElementById('bc-summary');
     if (!previewEl) return;
 
     const lay = _bcReadCompactLayoutMm();
@@ -7057,8 +7239,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const items = _bcSelectedCompactItems();
     if (!items.length) {
-      previewEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text2);font-size:13px">No labels in batch</div>';
-      if (summaryEl) summaryEl.textContent = '';
+      previewEl.innerHTML = '<div class="bc-empty-preview">Nothing to preview yet. Select products on the purchase screen first.</div>';
+      _bcRefreshOperatorJobSummary();
       return;
     }
 
@@ -7069,29 +7251,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let inner = '';
     expanded.forEach(function (item) {
-      inner += `<div class="bc-compact-row" style="width:${lay.labelW}mm;height:${lay.labelH}mm;box-sizing:border-box;border:1px solid var(--border);border-radius:2px;overflow:hidden;background:var(--card);display:flex;flex-direction:column;margin-bottom:${gp.rowGap || 2}mm">
-        <div style="display:flex;height:${lay.contentH}mm;box-sizing:border-box">
-          <div style="width:${lay.qrMainW}mm;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;padding:0.4mm;box-sizing:border-box;border-right:1px dashed var(--border)">
-            <div class="qr-placeholder" data-qr-code="${_bcEsc(item.code)}" data-qr-px="${qrPreviewPx}"
-              style="width:${qrVisualSizeMm}mm;height:${qrVisualSizeMm}mm;flex-shrink:0;background:var(--border);border-radius:1px"></div>
-          </div>
-          <div style="width:${lay.rail}mm;height:100%;display:flex;align-items:center;justify-content:center;box-sizing:border-box;overflow:hidden">
-            <span class="mono" style="font-size:${railPt}pt;font-weight:600;line-height:1;color:var(--text1);writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:0.02em">${_bcEsc(item.unitText)}</span>
-          </div>
-        </div>
-        <div style="height:${lay.bottom}mm;display:flex;align-items:center;justify-content:center;border-top:1px dashed var(--border);box-sizing:border-box;padding:0 0.5mm;overflow:hidden">
-          <span class="mono" style="font-size:${bottomPt}pt;font-weight:700;line-height:1;color:var(--text1);white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:100%">${_bcEsc(item.bottomLine)}</span>
-        </div>
-      </div>`;
+      inner += _bcCompactCellPreviewHtml(item, lay, qrVisualSizeMm, qrPreviewPx, railPt, bottomPt, ';margin-bottom:' + (gp.rowGap || 2) + 'mm');
     });
     previewEl.innerHTML = inner;
     _bcFillQrPlaceholders(previewEl);
 
-    const unitCount = _bcSkus.filter(_bcIsUnitRow).length;
-    const skuCount = new Set(_bcSkus.map(function (sk) { return sk.sku_code; }).filter(Boolean)).size;
-    if (summaryEl) {
-      summaryEl.textContent = `${expanded.length} compact label${expanded.length !== 1 ? 's' : ''} · ${unitCount || expanded.length} unit${(unitCount || expanded.length) !== 1 ? 's' : ''} · ${skuCount} SKU${skuCount !== 1 ? 's' : ''}`;
-    }
+    _bcRefreshOperatorJobSummary();
   }
 
   function _bcRenderPreviewNow() {
@@ -7100,7 +7265,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     if (_bcGetLayoutType() === 'compact') {
-      _bcRenderCompactPreviewNow();
+      if (_bcIsCompactMultiColumn()) _bcRenderCompactMultiPreviewNow();
+      else _bcRenderCompactPreviewNow();
       return;
     }
 
@@ -7128,8 +7294,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const items = _bcSelectedItems();
 
     if (!items.length) {
-      previewEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text2);font-size:13px">No labels in batch</div>';
-      if (summaryEl) summaryEl.textContent = '';
+      previewEl.innerHTML = '<div class="bc-empty-preview">Nothing to preview yet. Select products on the purchase screen first.</div>';
+      _bcRefreshOperatorJobSummary();
       return;
     }
 
@@ -7169,14 +7335,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     _bcFillQrPlaceholders(previewEl);
 
-    const totalLabels = expanded.length;
-    const totalRows   = rows.length;
-    const unitCount = _bcSkus.filter(_bcIsUnitRow).length;
-    const skuCount = new Set(_bcSkus.map((sk) => sk.sku_code).filter(Boolean)).size;
-    const pieceCount = unitCount > 0 ? unitCount : totalLabels;
-    if (summaryEl) {
-      summaryEl.textContent = `${totalLabels} label${totalLabels !== 1 ? 's' : ''} · ${totalRows} row${totalRows !== 1 ? 's' : ''} of ${cols} · ${pieceCount} unit${pieceCount !== 1 ? 's' : ''} · ${skuCount} SKU${skuCount !== 1 ? 's' : ''}`;
-    }
+    _bcRefreshOperatorJobSummary();
   }
 
   function _bcCalibrationStorageKey(device) {
@@ -7335,14 +7494,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const text = document.getElementById('bc-status-text');
     if (!dot || !text) return;
     const map = {
-      null:        ['#ccc',  'Printer not connected'],
-      connecting:  ['#f59e0b','Connecting…'],
-      connected:   ['#10b981', `Connected: ${msg}`],
-      error:       ['#ef4444', `Error: ${msg}`],
+      null:        ['var(--text3)', 'Label printer not connected — click Connect label printer, or printing will open in your browser.'],
+      connecting:  ['var(--gold)', 'Connecting to label printer…'],
+      connected:   ['var(--green)', 'Ready to print — ' + (msg || 'printer connected') + '.'],
+      error:       ['var(--red)', 'Could not connect to the printer' + (msg ? ' (' + msg + ')' : '') + '. You can still print using the browser window.'],
     };
-    const [color, label] = map[state] || map[null];
-    dot.style.background = color;
-    text.textContent = label;
+    const pair = map[state] || map[null];
+    dot.style.background = pair[0];
+    text.textContent = pair[1];
   }
 
   // ── TSPL2 Command Generator ────────────────────────────────────────────
@@ -7582,6 +7741,70 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     return new TextEncoder().encode(cmds);
   }
 
+  function _bcGenerateTSPL2CompactRows(batches) {
+    const lay = _bcReadCompactLayoutMm();
+    const { labelW, labelH, cols } = _bcReadLabelGeometryMm();
+    const marginsMm = _bcReadMarginsMm();
+    const { rowGap, colGap } = _bcReadGapMm();
+    const tsplOffsetXMM = _bcReadTsplOffsetXMM();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrCellSize, qrVisualSizeMm } = _bcReadQrConfig();
+    const { textXMul, textYMul, textFontId } = _bcReadTextConfig();
+    const mmToDot = function (mm) { return Math.round(mm * dotsPerMm); };
+    const qrInsetMm = 0.4;
+    const bottomYmm = lay.contentH + 0.35;
+    const sheetWidthMm = marginsMm.left + (cols * labelW) + (Math.max(0, cols - 1) * colGap) + marginsMm.right;
+    const maxXDots = mmToDot(sheetWidthMm);
+
+    let cmds = '';
+    batches.forEach(function (row) {
+      cmds += 'SIZE ' + sheetWidthMm + ' mm, ' + labelH + ' mm\r\n';
+      cmds += 'GAP ' + rowGap + ' mm, 0 mm\r\n';
+      cmds += 'DIRECTION 0\r\n';
+      cmds += 'CLS\r\n';
+
+      row.forEach(function (item, col) {
+        if (!item) return;
+        const cellLeftMm = marginsMm.left + (col * (labelW + colGap));
+        const code = _bcTsplQuote(item.code);
+        const unitText = _bcTsplQuote(item.unitText);
+        const bottom = _bcTsplQuote(item.bottomLine);
+
+        let qrX = mmToDot(cellLeftMm + qrInsetMm + tsplOffsetXMM);
+        qrX = Math.max(0, Math.min(qrX, maxXDots));
+        const qrY = mmToDot(qrInsetMm);
+        cmds += 'QRCODE ' + qrX + ',' + qrY + ',L,' + qrCellSize + ',A,0,"' + code + '"\r\n';
+
+        const railXmm = cellLeftMm + labelW - lay.rail + 0.25;
+        let railX = mmToDot(railXmm + tsplOffsetXMM);
+        railX = Math.max(0, Math.min(railX, maxXDots));
+        const railY = mmToDot(0.5);
+        cmds += 'TEXT ' + railX + ',' + railY + ',"' + textFontId + '",90,' + textXMul + ',' + textYMul + ',"' + unitText + '"\r\n';
+
+        let bottomX = mmToDot(cellLeftMm + 0.5 + tsplOffsetXMM);
+        bottomX = Math.max(0, Math.min(bottomX, maxXDots));
+        const bottomY = mmToDot(bottomYmm);
+        cmds += 'TEXT ' + bottomX + ',' + bottomY + ',"' + textFontId + '",0,' + textXMul + ',' + textYMul + ',"' + bottom + '"\r\n';
+      });
+
+      cmds += 'PRINT 1, 1\r\n';
+    });
+
+    return new TextEncoder().encode(cmds);
+  }
+
+  async function _bcFindUsbBulkEndpoint() {
+    if (!_bcUsbDevice) return null;
+    for (const iface of _bcUsbDevice.configuration.interfaces) {
+      for (const alt of iface.alternates) {
+        for (const ep of alt.endpoints) {
+          if (ep.direction === 'out' && ep.type === 'bulk') return ep.endpointNumber;
+        }
+      }
+    }
+    return null;
+  }
+
   // ── Print via WebUSB ──────────────────────────────────────────────────
   window.bcPrint = async function() {
     const printBtn = document.getElementById('bc-print-btn');
@@ -7589,8 +7812,8 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     if (_bcGetLayoutType() === 'compact') {
       const compactItems = _bcSelectedCompactItems();
       if (!compactItems.length) {
-        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels in batch to print.');
-        else alert('No labels in batch to print.');
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels to print. Go back and select products first.');
+        else alert('No labels to print. Go back and select products first.');
         return;
       }
       const expanded = [];
@@ -7598,41 +7821,38 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
         for (let c = 0; c < item.copies; c++) expanded.push(item);
       });
 
+      const multiCol = _bcIsCompactMultiColumn();
+      const cols = _bcCompactColumnsPerRow();
+      const batches = [];
+      if (multiCol) {
+        for (let i = 0; i < expanded.length; i += cols) batches.push(expanded.slice(i, i + cols));
+      }
+
       if (!_bcUsbDevice) {
-        await _bcPrintFallbackCompact(expanded);
+        if (multiCol) await _bcPrintFallbackCompactMulti(batches);
+        else await _bcPrintFallbackCompact(expanded);
         return;
       }
 
       if (printBtn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(printBtn);
       try {
-        let endpointNumber = null;
-        for (const iface of _bcUsbDevice.configuration.interfaces) {
-          for (const alt of iface.alternates) {
-            for (const ep of alt.endpoints) {
-              if (ep.direction === 'out' && ep.type === 'bulk') {
-                endpointNumber = ep.endpointNumber;
-                break;
-              }
-            }
-            if (endpointNumber !== null) break;
-          }
-          if (endpointNumber !== null) break;
-        }
+        const endpointNumber = await _bcFindUsbBulkEndpoint();
         if (endpointNumber === null) throw new Error('No bulk-out endpoint found on printer.');
-        const data = _bcGenerateTSPL2Compact(expanded);
+        const data = multiCol ? _bcGenerateTSPL2CompactRows(batches) : _bcGenerateTSPL2Compact(expanded);
         await _bcUsbDevice.transferOut(endpointNumber, data);
         _bcPersistCalibrationNow(_bcUsbDevice);
         if (printBtn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(printBtn);
         else if (printBtn) cosmosBtnDone(printBtn);
         if (typeof cosmosToastSuccess === 'function') {
-          cosmosToastSuccess(`Sent ${expanded.length} compact label${expanded.length !== 1 ? 's' : ''} to printer.`);
+          cosmosToastSuccess('Sent ' + expanded.length + ' label' + (expanded.length !== 1 ? 's' : '') + ' to printer.');
         }
       } catch (err) {
         if (printBtn && typeof cosmosBtnDone === 'function') cosmosBtnDone(printBtn);
         _bcUpdatePrinterStatus('error', err.message);
         if (typeof cosmosToastError === 'function') cosmosToastError(err.message + ' — falling back to browser print…');
-        else alert(`Print failed: ${err.message}\n\nFalling back to browser print…`);
-        await _bcPrintFallbackCompact(expanded);
+        else alert('Print failed: ' + err.message + '\n\nFalling back to browser print…');
+        if (multiCol) await _bcPrintFallbackCompactMulti(batches);
+        else await _bcPrintFallbackCompact(expanded);
       }
       return;
     }
@@ -7640,8 +7860,8 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     if (_bcGetLayoutType() === 'strip') {
       const stripItems = _bcSelectedStripItems();
       if (!stripItems.length) {
-        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels in batch to print.');
-        else alert('No labels in batch to print.');
+        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels to print. Go back and select products first.');
+        else alert('No labels to print. Go back and select products first.');
         return;
       }
       const expanded = [];
@@ -7692,8 +7912,8 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const type = 'QR';
 
     if (!items.length) {
-      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels in batch to print.');
-      else alert('No labels in batch to print.');
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No labels to print. Go back and select products first.');
+      else alert('No labels to print. Go back and select products first.');
       return;
     }
 
@@ -7752,6 +7972,71 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
   };
 
   // ── Browser-print fallback (generates printable HTML) ─────────────────
+  async function _bcPrintFallbackCompactMulti(batches) {
+    const lay = _bcReadCompactLayoutMm();
+    const gp = _bcReadGapMm();
+    const cols = _bcCompactColumnsPerRow();
+    const dotsPerMm = _bcReadDotsPerMm();
+    const { qrVisualSizeMm } = _bcReadQrConfig();
+    const { textFontPt } = _bcReadTextConfig();
+    const qrPreviewPx = _bcClamp(Math.round(qrVisualSizeMm * dotsPerMm), 40, 400);
+    const railPt = Math.max(2.5, textFontPt - 0.5);
+    const bottomPt = Math.max(2.5, textFontPt);
+
+    try {
+      await loadBcQrLib();
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to load QR library for print.');
+      else alert(err.message || 'Failed to load QR library for print.');
+      return;
+    }
+
+    const printDataUrls = new Map();
+    const flat = [];
+    batches.forEach(function (row) { row.forEach(function (item) { if (item) flat.push(item); }); });
+    await Promise.all(flat.map(async function (item) {
+      const key = item.code + '|' + qrPreviewPx;
+      const url = await _bcQrDataUrl(item.code, qrPreviewPx).catch(function () { return ''; });
+      printDataUrls.set(key, url);
+    }));
+
+    let rows = '';
+    batches.forEach(function (row) {
+      rows += '<div style="display:flex;flex-wrap:nowrap;gap:' + gp.colGap + 'mm;margin-bottom:' + (gp.rowGap || 2) + 'mm">';
+      for (let col = 0; col < cols; col++) {
+        const item = row[col];
+        if (!item) {
+          rows += '<div style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm"></div>';
+          continue;
+        }
+        const dataUrl = printDataUrls.get(item.code + '|' + qrPreviewPx) || '';
+        rows += '<div class="compact" style="width:' + lay.labelW + 'mm;height:' + lay.labelH + 'mm;display:flex;flex-direction:column;border:1px solid #ccc;box-sizing:border-box;page-break-inside:avoid">' +
+          '<div style="display:flex;height:' + lay.contentH + 'mm">' +
+          '<div style="width:' + lay.qrMainW + 'mm;padding:0.4mm;box-sizing:border-box;border-right:1px dashed #ccc">' +
+          '<img src="' + dataUrl + '" style="width:' + qrVisualSizeMm + 'mm;height:' + qrVisualSizeMm + 'mm" alt="">' +
+          '</div>' +
+          '<div style="width:' + lay.rail + 'mm;display:flex;align-items:center;justify-content:center;background:#f5f5f5">' +
+          '<span class="mono" style="font-size:' + railPt + 'pt;font-weight:600;writing-mode:vertical-rl">' + _bcEsc(item.unitText) + '</span>' +
+          '</div></div>' +
+          '<div style="height:' + lay.bottom + 'mm;display:flex;align-items:center;justify-content:center;border-top:1px dashed #ccc">' +
+          '<span class="mono" style="font-size:' + bottomPt + 'pt;font-weight:700">' + _bcEsc(item.bottomLine) + '</span>' +
+          '</div></div>';
+      }
+      rows += '</div>';
+    });
+
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Pop-up blocked. Please allow pop-ups and try again.');
+      else alert('Pop-up blocked. Please allow pop-ups and try again.');
+      return;
+    }
+    win.document.write('<!DOCTYPE html><html><head><title>15×15 roll labels (6-up)</title>' +
+      '<style>@page{size:auto;margin:8mm}body{font-family:Arial,sans-serif;margin:0;padding:8mm}.mono{font-family:Consolas,monospace}</style></head>' +
+      '<body>' + rows + '<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body></html>');
+    win.document.close();
+  }
+
   async function _bcPrintFallbackCompact(labels) {
     const lay = _bcReadCompactLayoutMm();
     const dotsPerMm = _bcReadDotsPerMm();

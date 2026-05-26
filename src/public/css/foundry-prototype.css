@@ -1490,3 +1490,65 @@
         #page-stock-transfer .st-header { flex-direction:row;align-items:flex-end }
         #page-stock-transfer .st-scan-area { min-height:280px }
       }
+
+/* ── Print labels modal — operator-friendly ───────────────────────────── */
+.bc-operator-steps {
+  margin: 0 0 14px;
+  padding: 12px 12px 12px 28px;
+  background: var(--accL);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text1);
+}
+.bc-operator-steps li { margin-bottom: 6px; }
+.bc-operator-steps li:last-child { margin-bottom: 0; }
+.bc-job-summary {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1.5px solid var(--acc2);
+  background: var(--card);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text1);
+  margin-bottom: 4px;
+}
+.bc-job-summary strong { color: var(--acc2); font-weight: 700; }
+.bc-advanced-toggle {
+  width: 100%;
+  max-width: 320px;
+  justify-content: center;
+  min-height: 40px;
+}
+.bc-advanced-wrap {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+}
+.bc-printer-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text2);
+}
+.bc-status-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text3);
+  margin-top: 4px;
+}
+#modal-barcode-print .bc-empty-preview {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text2);
+  font-size: 14px;
+  line-height: 1.45;
+}

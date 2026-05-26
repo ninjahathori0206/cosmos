@@ -28,7 +28,8 @@ const LABEL_PRINT_FORMAT_FIELDS = Object.freeze([
   { configKey: 'zone2WidthMm', inputId: null, type: 'float', default: 33, min: 1, max: 100 },
   { configKey: 'tailWidthMm', inputId: null, type: 'float', default: 34, min: 0, max: 100 },
   { configKey: 'bottomBandHeightMm', inputId: null, type: 'float', default: 4, min: 1, max: 20 },
-  { configKey: 'rightRailWidthMm', inputId: null, type: 'float', default: 3.5, min: 1, max: 20 }
+  { configKey: 'rightRailWidthMm', inputId: null, type: 'float', default: 3.5, min: 1, max: 20 },
+  { configKey: 'pageWidthMm', inputId: null, type: 'float', default: 0, min: 0, max: 300 }
 ]);
 
 const FORMAT_KEY_RE = /^[a-z][a-z0-9_]{0,48}$/;
@@ -93,6 +94,29 @@ const SMALL_LABEL_CONFIG = buildDefaultConfig({
   rightRailWidthMm: 3.5
 });
 
+/** 6-up 15×15 on 109 mm continuous roll (compact: QR + vertical unit id + brand/price). */
+const SMALL_15X15_CONTINUOUS_109_CONFIG = buildDefaultConfig({
+  layoutType: 'compact',
+  labelWidthMm: 15,
+  labelHeightMm: 15,
+  labelsPerRow: 6,
+  marginLeft: 2,
+  marginRight: 2,
+  gapRow: 2,
+  gapCol: 3,
+  qrCellSize: 3,
+  qrVisualSizeMm: 10,
+  qrTopRatio: 0.02,
+  textTopRatio: 0.68,
+  textXMul: 1,
+  textYMul: 1,
+  textFontId: 2,
+  textFontPt: 3.5,
+  bottomBandHeightMm: 4,
+  rightRailWidthMm: 3.5,
+  pageWidthMm: 109
+});
+
 const EYEWEAR_STRIP_CONFIG = buildDefaultConfig({
   layoutType: 'strip',
   labelWidthMm: 100,
@@ -129,6 +153,14 @@ const SEED_LABEL_PRINT_FORMATS = Object.freeze([
     config: SMALL_LABEL_CONFIG,
     is_default: false,
     sort_order: 20
+  },
+  {
+    format_key: 'small_15x15_continuous_109',
+    name: '15×15mm Label — Continuous Roll',
+    description: '6 columns · continuous rows · 109 mm page width',
+    config: SMALL_15X15_CONTINUOUS_109_CONFIG,
+    is_default: false,
+    sort_order: 25
   },
   {
     format_key: 'eyewear_strip_12x100',
