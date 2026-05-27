@@ -14,7 +14,7 @@
 >
 <link rel="preload" href="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" as="script">
 <link rel="preload" href="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" as="script">
-<link rel="preload" href="/js/foundry-prototype.js?v=20260528-ltc12" as="script">
+<link rel="preload" href="/js/foundry-prototype.js?v=20260525-compact-footer-nospace" as="script">
 <link rel="preload" href="/css/cosmos-ui.css" as="style">
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/foundry-prototype.css?v=20260528-label-print-friendly">
@@ -757,7 +757,7 @@
               <th>Dispatched</th>
               <th>Destination</th>
               <th>Status</th>
-              <th class="tc">PCs</th>
+              <th class="tc">SKUs</th>
             </tr>
           </thead>
           <tbody id="st-history-tbody">
@@ -1443,7 +1443,7 @@
               <input id="bc-op-margin-right" type="number" min="0" max="60" step="0.5" value="0" style="width:100%;padding:6px 8px;min-height:40px" oninput="bcOnCompactTuneInput()" aria-label="Right margin millimetres">
             </label>
             <label style="display:flex;flex-direction:column;gap:4px">Font size (pt)
-              <input id="bc-op-font-pt" type="number" min="4" max="20" step="0.5" value="8" style="width:100%;padding:6px 8px;min-height:40px" oninput="bcOnCompactTuneInput()" aria-label="Label text font size points">
+              <input id="bc-op-font-pt" type="number" min="4" max="20" step="0.5" value="6" style="width:100%;padding:6px 8px;min-height:40px" oninput="bcOnCompactTuneInput()" aria-label="Label text font size points">
             </label>
           </div>
         </div>
@@ -1602,12 +1602,11 @@
           <div id="bucket-focus-reticle" class="bucket-focus-reticle" aria-hidden="true"></div>
           <div id="bucket-scan-flash" class="bucket-scan-flash"></div>
         </div>
-        <p class="bucket-scan-focus-hint">Aim at QR · tap to focus · release to scan</p>
+        <p class="bucket-scan-focus-hint">Aim QR in frame · tap to scan</p>
         <div style="margin-top:12px;font-size:14px;font-weight:600;color:var(--text1)" id="bucket-score-label">0 units</div>
         <div class="bucket-score-bar"><div id="bucket-score-bar-fill" class="bucket-score-bar-fill"></div></div>
         <div id="bucket-scan-status" class="bucket-scan-status" role="status" aria-live="polite"></div>
         <div class="bucket-show-qr-row">
-          <button type="button" class="btn sm" id="bucket-torch-btn" style="display:none" aria-pressed="false" onclick="bucketToggleTorch()">Torch</button>
           <button type="button" class="btn sm" id="bucket-show-qr-btn" aria-expanded="false" onclick="bucketToggleScannedList()">Show QR</button>
         </div>
         <div id="bucket-scanned-list-wrap" class="bucket-scanned-list-wrap is-collapsed" hidden>
@@ -1657,15 +1656,11 @@ const bcMap = {
 };
 
 function nav(id, el) {
-  if (id === 'movement-list') id = 'transfer-requests';
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const pageEl = document.getElementById('page-' + id);
-  if (!pageEl) return;
-  pageEl.classList.add('active');
+  document.getElementById('page-' + id).classList.add('active');
   if (el) el.classList.add('active');
-  const bcEl = document.getElementById('bc');
-  if (bcEl) bcEl.textContent = bcMap[id] || id;
+  document.getElementById('bc').textContent = bcMap[id] || id;
   if (typeof closeSidebar === 'function') closeSidebar();
   if (window.cosmosResetAppScroll) window.cosmosResetAppScroll();
   // lazy-load Transfer Requests list when navigating to that page
@@ -1722,9 +1717,8 @@ function addColour() {
 ></script>
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
-<script src="/js/cosmos-bucket-scan.js?v=20260526-native-camera-profile" defer></script>
-<script src="/js/label-zone-align.js?v=20260528-ltc12" defer></script>
-<script src="/js/foundry-prototype.js?v=20260528-ltc12" defer></script>
+<script src="/js/cosmos-bucket-scan.js?v=20260522-camera-resume" defer></script>
+<script src="/js/foundry-prototype.js?v=20260525-compact-footer-nospace" defer></script>
 <script>
 // Initialise Flatpickr on all static date inputs (dd/MM/yyyy display, ISO value stored in _fp hidden)
 document.addEventListener('DOMContentLoaded', function() {

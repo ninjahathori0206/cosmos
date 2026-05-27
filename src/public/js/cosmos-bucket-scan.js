@@ -7,18 +7,7 @@
 
   const DEBOUNCE_MS = 2000;
   const TAP_DEBOUNCE_MS = 400;
-  const SCAN_TICK_MS = 100;
-  const TAP_ROI_SIZE = 0.52;
-  const TAP_ROI_SIZE_MACRO = 0.68;
-  const JSQR_MAX_WIDTH = 640;
-  const JSQR_MAX_WIDTH_CAP = 960;
-  const MACRO_ZOOM_RATIO_TAP = 0.35;
-  const MACRO_ZOOM_RATIO_FALLBACK = 0.2;
-  const FOCUS_REAPPLY_MS = 350;
-  const TAP_ZOOM_SETTLE_MS = 500;
-  const STREAM_WARMUP_MS = 600;
-  const ANDROID_WEAK_AF_SETTLE_BUMP_MS = 200;
-  const MOBILE_SETTLE_FACTOR = 1.25;
+  const ROI_SIZE = 0.42;
   const MODAL_ID = 'modal-bucket-scan';
 
   const _bucket = {
@@ -30,6 +19,8 @@
     verifiedSlots: {},
     status: 'IDLE',
     onSubmit: null,
+    onTransferScan: null,
+    maxTransferUnits: 0,
     _lastScanKey: '',
     _lastScanTs: 0
   };
@@ -46,14 +37,9 @@
   let _lastTapAttemptTs = 0;
   let _tapScanBusy = false;
   let _highlightTimer = null;
-  let _camFocusProfile = null;
-  let _camMacroZoomActive = false;
-  let _camLastFocusAppliedTs = 0;
   let _camStartPromise = null;
   let _camResumeTimer = null;
   let _camIgnoreTrackEnd = false;
-  let _camDeviceProfile = null;
-  let _camTorchOn = false;
 
   function bucketEsc(s) {
     return String(s == null ? '' : s)
@@ -469,6 +455,40 @@
         bucketDuplicateFeedback(unitBc, unitBc + ' already in bucket');
         return;
       }
+      if (_bucket.maxTransferUnits > 0 && _bucket.scanned.length >= _bucket.maxTransferUnits) {
+        bucketRecordCooldown(cdKey);
+        bucketFlash('err');
+        bucketSetScanStatus('All required units are already scanned', 'err');
+        return;
+      }
+      if (typeof _bucket.onTransferScan === 'function') {
+        let accepted = false;
+        let rejectMessage = 'Not needed on this cart';
+        try {
+          const verdict = await _bucket.onTransferScan(sku, {
+            scanned: _bucket.scanned.slice(),
+            count: _bucket.scanned.length,
+            maxTransferUnits: _bucket.maxTransferUnits,
+            mode: _bucket.mode
+          });
+          if (verdict === true) {
+            accepted = true;
+          } else if (verdict && typeof verdict === 'object') {
+            accepted = verdict.ok !== false;
+            rejectMessage = verdict.message || rejectMessage;
+          } else {
+            accepted = Boolean(verdict);
+          }
+        } catch (err) {
+          rejectMessage = err && err.message ? err.message : rejectMessage;
+        }
+        if (!accepted) {
+          bucketRecordCooldown(cdKey);
+          bucketFlash('err');
+          bucketSetScanStatus(rejectMessage, 'err');
+          return;
+        }
+      }
       _bucket.scanned.push({
         unit_barcode: unitBc,
         unit_id: Number(sku.unit_id),
@@ -490,233 +510,6 @@
     }
   }
 
-  function bucketGetVideoCaps(track) {
-    if (!track || typeof track.getCapabilities !== 'function') {
-      return { focusMode: [], zoom: null };
-    }
-    try {
-      return track.getCapabilities() || { focusMode: [], zoom: null };
-    } catch (_) {
-      return { focusMode: [], zoom: null };
-    }
-  }
-
-  function bucketPickFocusMode(caps, phase) {
-    const modes = caps.focusMode || [];
-    if (phase === 'start') {
-      if (modes.indexOf('continuous') >= 0) return 'continuous';
-      if (modes.indexOf('auto') >= 0) return 'auto';
-      return modes.length ? modes[0] : null;
-    }
-    if (modes.indexOf('single-shot') >= 0) return 'single-shot';
-    if (modes.indexOf('continuous') >= 0) return 'continuous';
-    if (modes.indexOf('auto') >= 0) return 'auto';
-    return null;
-  }
-
-  function bucketIsMobileDevice() {
-    if (bucketIsAndroidChrome()) return true;
-    if (/iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '')) return true;
-    return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 768px)').matches;
-  }
-
-  function bucketFocusProfile(caps) {
-    const modes = caps.focusMode || [];
-    let profile;
-    if (modes.indexOf('single-shot') >= 0) {
-      profile = { settleMs: 1200, scanLoopMs: 3600, tier: 'single-shot' };
-    } else if (modes.indexOf('continuous') >= 0 || modes.indexOf('auto') >= 0 || modes.length > 0) {
-      profile = { settleMs: 1600, scanLoopMs: 4500, tier: 'continuous' };
-    } else {
-      profile = { settleMs: 1800, scanLoopMs: 5000, tier: 'none' };
-    }
-    if (bucketIsMobileDevice()) {
-      profile.settleMs = Math.round(profile.settleMs * MOBILE_SETTLE_FACTOR);
-      profile.scanLoopMs = Math.round(profile.scanLoopMs * 1.1);
-    }
-    return profile;
-  }
-
-  function bucketProbeDeviceCamera(track) {
-    const caps = bucketGetVideoCaps(track);
-    const focusProfile = bucketFocusProfile(caps);
-    const mobile = bucketIsMobileDevice();
-    let idealW = mobile ? 1920 : 1920;
-    let idealH = mobile ? 1080 : 1080;
-    let maxW = mobile ? 1920 : 3840;
-    let maxH = mobile ? 1080 : 2160;
-    if (caps.width && caps.width.max != null) {
-      maxW = Math.min(maxW, caps.width.max);
-      idealW = Math.min(idealW, Math.max(caps.width.min || 640, caps.width.max));
-    }
-    if (caps.height && caps.height.max != null) {
-      maxH = Math.min(maxH, caps.height.max);
-      idealH = Math.min(idealH, Math.max(caps.height.min || 480, caps.height.max));
-    }
-    const supported = navigator.mediaDevices && navigator.mediaDevices.getSupportedConstraints
-      ? navigator.mediaDevices.getSupportedConstraints()
-      : {};
-    const supportsPoi = supported.pointsOfInterest === true || caps.pointsOfInterest != null;
-    const z = caps.zoom;
-    const supportsZoom = !!(z && z.max != null && z.min != null && z.max > z.min);
-    const supportsTorch = caps.torch === true
-      || (Array.isArray(caps.fillLightMode) && caps.fillLightMode.indexOf('flash') >= 0);
-    return {
-      idealWidth: idealW,
-      idealHeight: idealH,
-      maxWidth: maxW,
-      maxHeight: maxH,
-      startFocusMode: bucketPickFocusMode(caps, 'start'),
-      tapFocusMode: bucketPickFocusMode(caps, 'tap'),
-      supportsPoi: supportsPoi,
-      supportsZoom: supportsZoom,
-      supportsTorch: supportsTorch,
-      settleMs: focusProfile.settleMs,
-      scanLoopMs: focusProfile.scanLoopMs,
-      tier: focusProfile.tier
-    };
-  }
-
-  function bucketMacroZoomLevel(caps, ratio) {
-    const z = caps.zoom;
-    if (!z || z.max == null || z.min == null) return null;
-    const min = z.min;
-    const max = z.max;
-    const range = max - min;
-    if (range <= 0) return null;
-    const r = ratio != null ? ratio : MACRO_ZOOM_RATIO_TAP;
-    let level = min + range * r;
-    const step = z.step;
-    if (step && step > 0) {
-      level = Math.round(level / step) * step;
-    }
-    return Math.min(max, Math.max(min, level));
-  }
-
-  function bucketBuildGetUserMediaVideoConstraints() {
-    const video = { facingMode: { ideal: 'environment' } };
-    const supported = navigator.mediaDevices && navigator.mediaDevices.getSupportedConstraints
-      ? navigator.mediaDevices.getSupportedConstraints()
-      : {};
-    const mobile = bucketIsMobileDevice();
-    const profile = _camDeviceProfile;
-    if (supported.width && supported.height) {
-      if (profile) {
-        video.width = { ideal: profile.idealWidth, max: profile.maxWidth };
-        video.height = { ideal: profile.idealHeight, max: profile.maxHeight };
-      } else if (mobile) {
-        video.width = { ideal: 1920, max: 1920 };
-        video.height = { ideal: 1080, max: 1080 };
-      } else {
-        video.width = { ideal: 1920, min: 1280 };
-        video.height = { ideal: 1080, min: 720 };
-      }
-    } else {
-      video.width = { ideal: profile ? profile.idealWidth : 1280 };
-      video.height = { ideal: profile ? profile.idealHeight : 720 };
-    }
-    return video;
-  }
-
-  async function bucketApplyTrackConstraints(track, constraintObj) {
-    if (!track || typeof track.applyConstraints !== 'function' || !constraintObj) return false;
-    try {
-      await track.applyConstraints(constraintObj);
-      _camLastFocusAppliedTs = Date.now();
-      return true;
-    } catch (_) { /* try advanced */ }
-    try {
-      await track.applyConstraints({ advanced: [constraintObj] });
-      _camLastFocusAppliedTs = Date.now();
-      return true;
-    } catch (_) { /* ignore */ }
-    return false;
-  }
-
-  function bucketJsqrMaxWidth(frameW) {
-    const w = frameW || 0;
-    if (w < 1) return JSQR_MAX_WIDTH;
-    return Math.min(JSQR_MAX_WIDTH_CAP, Math.max(JSQR_MAX_WIDTH, Math.floor(w * 0.5)));
-  }
-
-  async function bucketApplyStreamFocusAtStart(track, caps) {
-    const mode = bucketPickFocusMode(caps, 'start');
-    if (!mode) return;
-    await bucketApplyTrackConstraints(track, { focusMode: mode });
-  }
-
-  async function bucketApplyTapMacroZoom(track, caps) {
-    if (!track) return false;
-    _camMacroZoomActive = false;
-    let level = bucketMacroZoomLevel(caps, MACRO_ZOOM_RATIO_TAP);
-    if (level == null) return false;
-    if (await bucketApplyTrackConstraints(track, { zoom: level })) {
-      _camMacroZoomActive = true;
-      return true;
-    }
-    level = bucketMacroZoomLevel(caps, MACRO_ZOOM_RATIO_FALLBACK);
-    if (level == null) return false;
-    if (await bucketApplyTrackConstraints(track, { zoom: level })) {
-      _camMacroZoomActive = true;
-      return true;
-    }
-    return false;
-  }
-
-  async function bucketEnhanceVideoTrack(track) {
-    _camDeviceProfile = bucketProbeDeviceCamera(track);
-    _camFocusProfile = {
-      settleMs: _camDeviceProfile.settleMs,
-      scanLoopMs: _camDeviceProfile.scanLoopMs,
-      tier: _camDeviceProfile.tier
-    };
-    let settings = {};
-    try {
-      settings = typeof track.getSettings === 'function' ? track.getSettings() : {};
-    } catch (_) { /* ignore */ }
-    if (_camDeviceProfile.idealWidth && (!settings.width || settings.width < _camDeviceProfile.idealWidth * 0.85)) {
-      await bucketApplyTrackConstraints(track, {
-        width: { ideal: _camDeviceProfile.idealWidth },
-        height: { ideal: _camDeviceProfile.idealHeight }
-      });
-    }
-    if (_camDeviceProfile.startFocusMode) {
-      await bucketApplyTrackConstraints(track, { focusMode: _camDeviceProfile.startFocusMode });
-    } else {
-      await bucketApplyStreamFocusAtStart(track, bucketGetVideoCaps(track));
-    }
-    bucketSyncTorchButton();
-    await bucketDelay(STREAM_WARMUP_MS);
-  }
-
-  function bucketSyncTorchButton() {
-    const btn = document.getElementById('bucket-torch-btn');
-    if (!btn) return;
-    const show = _camDeviceProfile && _camDeviceProfile.supportsTorch && _bucket.status === 'SCANNING';
-    btn.style.display = show ? '' : 'none';
-    btn.setAttribute('aria-pressed', _camTorchOn ? 'true' : 'false');
-    btn.textContent = _camTorchOn ? 'Torch on' : 'Torch';
-  }
-
-  window.bucketToggleTorch = async function bucketToggleTorch() {
-    if (!_camStream || !_camDeviceProfile || !_camDeviceProfile.supportsTorch) return;
-    const track = _camStream.getVideoTracks()[0];
-    if (!track) return;
-    _camTorchOn = !_camTorchOn;
-    const ok = await bucketApplyTrackConstraints(track, { torch: _camTorchOn });
-    if (!ok) _camTorchOn = !_camTorchOn;
-    bucketSyncTorchButton();
-  };
-
-  function bucketTapSettleMs(profile) {
-    const p = profile || _camFocusProfile || { settleMs: 900, tier: 'single-shot' };
-    let ms = p.settleMs;
-    if (bucketIsAndroidChrome() && p.tier === 'none') {
-      ms += ANDROID_WEAK_AF_SETTLE_BUMP_MS;
-    }
-    return ms;
-  }
-
   function bucketShowFocusReticle(clientX, clientY, viewportEl) {
     const reticle = document.getElementById('bucket-focus-reticle');
     if (!reticle || !viewportEl) return;
@@ -729,235 +522,28 @@
     setTimeout(function () { reticle.classList.remove('is-visible'); }, 900);
   }
 
-  async function bucketApplyTapFocus(clientX, clientY, viewportEl) {
+  function bucketApplyTapFocus(clientX, clientY, viewportEl) {
     if (!viewportEl) return;
     const r = viewportEl.getBoundingClientRect();
     if (r.width < 8 || r.height < 8) return;
-
-    const raw_nx = (clientX - r.left) / r.width;
-    const raw_ny = (clientY - r.top) / r.height;
-    if (raw_nx < 0 || raw_nx > 1 || raw_ny < 0 || raw_ny > 1) {
-      _camRoi = { x: 0.5, y: 0.5 };
-    } else {
-      _camRoi = {
-        x: Math.min(0.95, Math.max(0.05, raw_nx)),
-        y: Math.min(0.95, Math.max(0.05, raw_ny))
-      };
-    }
-
+    const nx = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    const ny = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    _camRoi = { x: nx, y: ny };
     bucketShowFocusReticle(clientX, clientY, viewportEl);
 
     if (!_camStream) return;
     const track = _camStream.getVideoTracks()[0];
     if (!track || typeof track.applyConstraints !== 'function') return;
-    const caps = bucketGetVideoCaps(track);
-    const constraintObj = { pointsOfInterest: [{ x: _camRoi.x, y: _camRoi.y }] };
-    const tapMode = (_camDeviceProfile && _camDeviceProfile.tapFocusMode)
-      || bucketPickFocusMode(caps, 'tap');
-    if (tapMode) constraintObj.focusMode = tapMode;
-    await bucketApplyTrackConstraints(track, constraintObj);
-  }
-
-  function bucketIsAndroidChrome() {
-    const ua = navigator.userAgent || '';
-    return /Android/i.test(ua) && /Chrome/i.test(ua) && !/EdgA/i.test(ua);
-  }
-
-  function bucketWaitNextFrame(video) {
-    return new Promise(function (resolve) {
-      if (video && typeof video.requestVideoFrameCallback === 'function') {
-        video.requestVideoFrameCallback(function () { resolve(); });
-        return;
+    try {
+      const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {};
+      const advanced = { pointsOfInterest: [{ x: nx, y: ny }] };
+      if (caps.focusMode && caps.focusMode.indexOf('single-shot') >= 0) {
+        advanced.focusMode = 'single-shot';
+      } else if (caps.focusMode && caps.focusMode.indexOf('continuous') >= 0) {
+        advanced.focusMode = 'continuous';
       }
-      requestAnimationFrame(function () { resolve(); });
-    });
-  }
-
-  function bucketTapRoiSize() {
-    return _camMacroZoomActive ? TAP_ROI_SIZE_MACRO : TAP_ROI_SIZE;
-  }
-
-  function bucketDelay(ms) {
-    return new Promise(function (resolve) { setTimeout(resolve, ms); });
-  }
-
-  function bucketEnsureCanvas() {
-    if (!_camCanvas) {
-      _camCanvas = document.createElement('canvas');
-      _camCtx = _camCanvas.getContext('2d', { willReadFrequently: true });
-    }
-    return _camCtx;
-  }
-
-  function bucketDrawFrameToCanvas(video) {
-    const ctx = bucketEnsureCanvas();
-    if (!ctx || video.readyState < 2) return null;
-    const w = video.videoWidth || 0;
-    const h = video.videoHeight || 0;
-    if (w < 16 || h < 16) return null;
-    _camCanvas.width = w;
-    _camCanvas.height = h;
-    ctx.drawImage(video, 0, 0, w, h);
-    return { w: w, h: h };
-  }
-
-  async function bucketGrabFrameToCanvas(video, track) {
-    const focusSettledEnough = Date.now() - _camLastFocusAppliedTs > 400;
-    if (focusSettledEnough && track && typeof ImageCapture !== 'undefined') {
-      try {
-        const ic = new ImageCapture(track);
-        const bmp = await ic.grabFrame();
-        const ctx = bucketEnsureCanvas();
-        if (ctx && bmp.width >= 16 && bmp.height >= 16) {
-          _camCanvas.width = bmp.width;
-          _camCanvas.height = bmp.height;
-          ctx.drawImage(bmp, 0, 0);
-          bmp.close();
-          return { w: bmp.width, h: bmp.height };
-        }
-        bmp.close();
-      } catch (_) { /* fall back to video frame */ }
-    }
-    return bucketDrawFrameToCanvas(video);
-  }
-
-  function bucketDecodeQrFromImageData(imageData, w, h) {
-    if (!window.jsQR) return '';
-    const code = window.jsQR(imageData.data, w, h, { inversionAttempts: 'attemptBoth' });
-    return code && code.data ? code.data : '';
-  }
-
-  async function bucketDetectOnVideo(video) {
-    if (!_camDetector || !video || video.readyState < 2) return '';
-    try {
-      const codes = await _camDetector.detect(video);
-      return codes && codes.length && codes[0].rawValue ? codes[0].rawValue : '';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  async function bucketDetectOnCanvas(canvasEl) {
-    if (!_camDetector || !canvasEl) return '';
-    try {
-      const codes = await _camDetector.detect(canvasEl);
-      return codes && codes.length && codes[0].rawValue ? codes[0].rawValue : '';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  async function bucketDecodeCanvasMultiScale(canvasEl, w, h) {
-    const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return '';
-    let roiData = ctx.getImageData(0, 0, w, h);
-    let jsqrVal = bucketDecodeQrFromImageData(roiData, w, h);
-    if (jsqrVal) return jsqrVal;
-    let nativeVal = await bucketDetectOnCanvas(canvasEl);
-    if (nativeVal) return nativeVal;
-    const scales = [2, 3];
-    for (let i = 0; i < scales.length; i++) {
-      const scale = scales[i];
-      const uw = Math.min(Math.floor(w * scale), 1920);
-      const uh = Math.min(Math.floor(h * scale), 1920);
-      const up = document.createElement('canvas');
-      up.width = uw;
-      up.height = uh;
-      const uctx = up.getContext('2d', { willReadFrequently: true });
-      if (!uctx) continue;
-      uctx.imageSmoothingEnabled = false;
-      uctx.drawImage(canvasEl, 0, 0, uw, uh);
-      roiData = uctx.getImageData(0, 0, uw, uh);
-      jsqrVal = bucketDecodeQrFromImageData(roiData, uw, uh);
-      if (jsqrVal) return jsqrVal;
-      nativeVal = await bucketDetectOnCanvas(up);
-      if (nativeVal) return nativeVal;
-    }
-    return '';
-  }
-
-  async function bucketDecodeCropAtRoi(frameSize, roi, roiSize) {
-    if (!frameSize || !roi || !_camCtx) return '';
-    const w = frameSize.w;
-    const h = frameSize.h;
-    const rw = Math.max(64, Math.floor(w * roiSize));
-    const rh = Math.max(64, Math.floor(h * roiSize));
-    const sx = Math.min(w - rw, Math.max(0, Math.floor(roi.x * w - rw / 2)));
-    const sy = Math.min(h - rh, Math.max(0, Math.floor(roi.y * h - rh / 2)));
-
-    const roiCanvas = document.createElement('canvas');
-    roiCanvas.width = rw;
-    roiCanvas.height = rh;
-    const roiCtx = roiCanvas.getContext('2d', { willReadFrequently: true });
-    if (!roiCtx) return '';
-    roiCtx.drawImage(_camCanvas, sx, sy, rw, rh, 0, 0, rw, rh);
-
-    return bucketDecodeCanvasMultiScale(roiCanvas, rw, rh);
-  }
-
-  async function bucketDecodeFullFrameJsqrDownscaled(frameSize) {
-    if (!frameSize || !_camCtx || !window.jsQR) return '';
-    let dw = frameSize.w;
-    let dh = frameSize.h;
-    const maxW = frameSize.w <= 1280 ? frameSize.w : bucketJsqrMaxWidth(frameSize.w);
-    if (dw > maxW) {
-      dh = Math.max(1, Math.floor(dh * maxW / dw));
-      dw = maxW;
-    }
-    const small = document.createElement('canvas');
-    small.width = dw;
-    small.height = dh;
-    const sctx = small.getContext('2d', { willReadFrequently: true });
-    if (!sctx) return '';
-    sctx.drawImage(_camCanvas, 0, 0, dw, dh);
-    const data = sctx.getImageData(0, 0, dw, dh);
-    return bucketDecodeQrFromImageData(data, dw, dh);
-  }
-
-  async function bucketDecodeFullFrame(frameSize) {
-    if (!frameSize || !_camCtx) return '';
-
-    const jsVal = await bucketDecodeFullFrameJsqrDownscaled(frameSize);
-    if (jsVal) return jsVal;
-
-    return bucketDetectOnCanvas(_camCanvas);
-  }
-
-  async function bucketDecodeAtRoi(video, track, roi, roiSize) {
-    if (!video || video.readyState < 2) return '';
-    const frameSize = await bucketGrabFrameToCanvas(video, track);
-    if (!frameSize) return '';
-
-    if (roi) {
-      const roiVal = await bucketDecodeCropAtRoi(frameSize, roi, roiSize);
-      if (roiVal) return roiVal;
-    }
-
-    return bucketDecodeFullFrame(frameSize);
-  }
-
-  async function bucketDecodeAllPaths(video, track, roi, roiSize) {
-    const roiVal = await bucketDecodeAtRoi(video, track, roi, roiSize);
-    if (roiVal) return roiVal;
-
-    if (bucketIsAndroidChrome() && _camDetector) {
-      const videoVal = await bucketDetectOnVideo(video);
-      if (videoVal) return videoVal;
-    }
-
-    return '';
-  }
-
-  async function bucketScanAfterFocus(video, track, scanLoopMs) {
-    const loopMs = scanLoopMs || (_camFocusProfile && _camFocusProfile.scanLoopMs) || 3200;
-    const deadline = Date.now() + loopMs;
-    while (Date.now() < deadline) {
-      const val = await bucketDecodeAllPaths(video, track, _camRoi, bucketTapRoiSize());
-      if (val) return val;
-      await bucketWaitNextFrame(video);
-      await bucketDelay(SCAN_TICK_MS);
-    }
-    return '';
+      track.applyConstraints({ advanced: [advanced] }).catch(function () { /* unsupported */ });
+    } catch (_) { /* ignore */ }
   }
 
   async function bucketTapToScan(clientX, clientY, viewportEl) {
@@ -969,6 +555,7 @@
     if (!video || !_camStream) return;
 
     _tapScanBusy = true;
+    bucketApplyTapFocus(clientX, clientY, viewportEl);
 
     try {
       if (video.readyState < 2) {
@@ -981,27 +568,11 @@
           setTimeout(resolve, 300);
         });
       }
-
-      const track = _camStream.getVideoTracks()[0];
-      const caps = bucketGetVideoCaps(track);
-      const profile = _camFocusProfile || bucketFocusProfile(caps);
-      bucketSetScanStatus('Focusing…', 'ok');
-      await bucketApplyTapFocus(clientX, clientY, viewportEl);
-      if (bucketIsMobileDevice() && (_camDeviceProfile == null || _camDeviceProfile.supportsZoom)) {
-        await bucketApplyTapMacroZoom(track, caps);
-      }
-      let settleMs = bucketTapSettleMs(profile);
-      if (_camMacroZoomActive) settleMs += TAP_ZOOM_SETTLE_MS;
-      await bucketDelay(settleMs);
-
-      bucketSetScanStatus('Scanning…', 'ok');
-      const scannedValue = await bucketScanAfterFocus(video, track, profile.scanLoopMs);
-
+      const scannedValue = await bucketDecodeFrame(video);
       if (scannedValue) {
-        bucketClearScanStatus();
         await bucketHandleScan(scannedValue);
       } else {
-        bucketSetScanStatus('No QR detected — aim at QR, tap to focus, release to scan, or enter 7 digits below', 'warn');
+        bucketSetScanStatus('No QR detected — tap again', 'warn');
         bucketFlash('warn');
       }
     } catch (_) {
@@ -1016,26 +587,44 @@
     const viewport = document.getElementById('bucket-scan-viewport');
     if (!viewport) return;
     _camViewportBound = true;
+    viewport.addEventListener('pointerdown', function (e) {
+      if (e.isPrimary === false) return;
+      bucketTapToScan(e.clientX, e.clientY, viewport);
+    });
+  }
 
-    function handleTap(clientX, clientY) {
-      bucketTapToScan(clientX, clientY, viewport);
+  function bucketDecodeQrFromImageData(imageData, w, h) {
+    if (!window.jsQR) return '';
+    const code = window.jsQR(imageData.data, w, h, { inversionAttempts: 'attemptBoth' });
+    return code && code.data ? code.data : '';
+  }
+
+  async function bucketDecodeFrame(video) {
+    if (_camDecodeMode === 'native' && _camDetector) {
+      const codes = await _camDetector.detect(video);
+      return codes && codes.length && codes[0].rawValue ? codes[0].rawValue : '';
+    }
+    if (_camDecodeMode !== 'jsqr' || !_camCtx || !window.jsQR || video.readyState < 2) return '';
+    const w = video.videoWidth || 0;
+    const h = video.videoHeight || 0;
+    if (w < 16 || h < 16) return '';
+
+    _camCanvas.width = w;
+    _camCanvas.height = h;
+    _camCtx.drawImage(video, 0, 0, w, h);
+
+    if (_camRoi) {
+      const rw = Math.max(64, Math.floor(w * ROI_SIZE));
+      const rh = Math.max(64, Math.floor(h * ROI_SIZE));
+      const sx = Math.min(w - rw, Math.max(0, Math.floor(_camRoi.x * w - rw / 2)));
+      const sy = Math.min(h - rh, Math.max(0, Math.floor(_camRoi.y * h - rh / 2)));
+      const roiData = _camCtx.getImageData(sx, sy, rw, rh);
+      const roiVal = bucketDecodeQrFromImageData(roiData, rw, rh);
+      if (roiVal) return roiVal;
     }
 
-    // Use pointerup for ALL pointer types — avoids Android Chrome double-fire
-    viewport.addEventListener('pointerup', function (e) {
-      if (e.isPrimary === false) return;
-      e.preventDefault();
-      handleTap(e.clientX, e.clientY);
-    }, { passive: false });
-
-    // Fallback only for browsers without PointerEvent support (very rare)
-    viewport.addEventListener('touchend', function (e) {
-      if (window.PointerEvent) return;
-      e.preventDefault();
-      const t = e.changedTouches && e.changedTouches[0];
-      if (!t) return;
-      handleTap(t.clientX, t.clientY);
-    }, { passive: false });
+    const fullData = _camCtx.getImageData(0, 0, w, h);
+    return bucketDecodeQrFromImageData(fullData, w, h);
   }
 
   function bucketIsModalOpen() {
@@ -1067,10 +656,6 @@
     _camDecodeMode = null;
     _camCanvas = null;
     _camCtx = null;
-    _camDeviceProfile = null;
-    _camFocusProfile = null;
-    _camMacroZoomActive = false;
-    _camTorchOn = false;
     bucketScheduleCameraResume('Camera interrupted. Resuming...', 650);
   }
 
@@ -1101,15 +686,7 @@
     _camRoi = null;
     _lastTapAttemptTs = 0;
     _tapScanBusy = false;
-    _camFocusProfile = null;
-    _camMacroZoomActive = false;
-    _camDeviceProfile = null;
     if (_camStream) {
-      if (_camTorchOn) {
-        const tr = _camStream.getVideoTracks()[0];
-        if (tr) bucketApplyTrackConstraints(tr, { torch: false }).catch(function () { /* ignore */ });
-      }
-      _camTorchOn = false;
       _camIgnoreTrackEnd = true;
       _camStream.getTracks().forEach(function (t) { t.stop(); });
       _camIgnoreTrackEnd = false;
@@ -1121,7 +698,6 @@
     _camDecodeMode = null;
     _camCanvas = null;
     _camCtx = null;
-    bucketSyncTorchButton();
   }
 
   async function bucketStartCamera() {
@@ -1142,26 +718,27 @@
 
     _camStartPromise = (async function () {
       bucketStopCamera();
-      await bucketLoadJsQr();
-      if (!window.jsQR && !('BarcodeDetector' in window)) {
-        throw new Error('QR decoder unavailable');
-      }
-      bucketEnsureCanvas();
       if ('BarcodeDetector' in window) {
         _camDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
-        _camDecodeMode = 'hybrid';
+        _camDecodeMode = 'native';
       } else {
+        await bucketLoadJsQr();
+        if (!window.jsQR) throw new Error('QR decoder unavailable');
         _camDecodeMode = 'jsqr';
+        _camCanvas = document.createElement('canvas');
+        _camCtx = _camCanvas.getContext('2d', { willReadFrequently: true });
       }
       _camStream = await navigator.mediaDevices.getUserMedia({
-        video: bucketBuildGetUserMediaVideoConstraints(),
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
         audio: false
       });
       bucketBindCameraTrackLifecycle(_camStream);
       video.srcObject = _camStream;
       await video.play().catch(function () { /* autoplay */ });
-      const track = _camStream.getVideoTracks()[0];
-      if (track) await bucketEnhanceVideoTrack(track);
       bucketSetScanStatus('', '');
     })().catch(function (err) {
       bucketStopCamera();
@@ -1199,10 +776,6 @@
     bucketClearScanStatus();
     bucketRenderScannedList();
     bucketRenderScore();
-    const hint = document.querySelector('#modal-bucket-scan .bucket-scan-focus-hint');
-    if (hint) {
-      hint.textContent = 'Aim at QR · tap to focus · release to scan';
-    }
     bucketStartCamera();
   };
 
@@ -1252,6 +825,11 @@
     const inp = document.getElementById('bucket-manual-input');
     const v = inp ? String(inp.value || '').trim() : '';
     if (!v) return;
+    if (!/^\d{7}$/.test(v)) {
+      bucketFlash('err');
+      bucketSetScanStatus('Enter a 7-digit unit barcode.', 'err');
+      return;
+    }
     bucketHandleScan(v);
     if (inp) inp.value = '';
   };
@@ -1264,7 +842,7 @@
   };
 
   /**
-   * @param {{ mode: 'TRANSFER'|'RECEIVE', sessionId?: *, label?: string, expected?: Array, onSubmit?: Function }} opts
+   * @param {{ mode: 'TRANSFER'|'RECEIVE', sessionId?: *, label?: string, expected?: Array, onSubmit?: Function, onTransferScan?: Function, maxTransferUnits?: number }} opts
    */
   window.openBucket = function openBucket(opts) {
     opts = opts || {};
@@ -1290,6 +868,8 @@
     _bucket.scanned = [];
     _bucket.verifiedSlots = {};
     _bucket.onSubmit = typeof opts.onSubmit === 'function' ? opts.onSubmit : null;
+    _bucket.onTransferScan = typeof opts.onTransferScan === 'function' ? opts.onTransferScan : null;
+    _bucket.maxTransferUnits = Math.max(0, Number(opts.maxTransferUnits) || 0);
     _bucket._lastScanKey = '';
     _bucket._lastScanTs = 0;
 
@@ -1313,18 +893,21 @@
     if (_bucket.status !== 'SCANNING') return;
     if (document.visibilityState === 'hidden') {
       bucketStopCamera();
+      bucketSetScanStatus('Camera paused while app is in background.', 'warn');
       return;
     }
     bucketScheduleCameraResume('Resuming camera...', 300);
   });
 
   window.addEventListener('pagehide', function () {
-    if (_bucket.status !== 'SCANNING') return;
-    bucketStopCamera();
+    if (_bucket.status === 'SCANNING') bucketStopCamera();
+  });
+
+  window.addEventListener('pageshow', function () {
+    bucketScheduleCameraResume('Resuming camera...', 350);
   });
 
   window.addEventListener('focus', function () {
-    if (_bucket.status !== 'SCANNING') return;
     bucketScheduleCameraResume('', 250);
   });
 })();
