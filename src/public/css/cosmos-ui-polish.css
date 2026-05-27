@@ -2189,6 +2189,41 @@ body.cosmos-extended-detail-open {
   flex-direction: column;
   gap: 10px;
 }
+.cosmos-extended-detail__toolbar-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cosmos-extended-detail__toolbar-top .cosmos-extended-detail__head {
+  flex: 1;
+  min-width: 0;
+}
+.cosmos-extended-detail__close {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: -4px -4px 0 0;
+  border: none;
+  border-radius: 8px;
+  line-height: 1;
+  color: var(--text2, #64748b);
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cosmos-extended-detail__close:hover,
+.cosmos-extended-detail__close:focus-visible {
+  background: var(--border, #e2e8f0);
+  color: var(--text1, #0f172a);
+  outline: none;
+}
 .cosmos-extended-detail__head {
   min-width: 0;
 }

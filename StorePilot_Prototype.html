@@ -874,13 +874,15 @@
   <div id="sp-tr-detail-backdrop" class="cosmos-extended-detail__backdrop" hidden aria-hidden="true" onclick="closeSpTrDetail()"></div>
   <div id="sp-tr-detail" class="cosmos-extended-detail__panel" role="dialog" aria-modal="true" aria-labelledby="sp-tr-detail-title" hidden>
     <div class="cosmos-extended-detail__toolbar">
-      <div class="cosmos-extended-detail__head">
-        <div id="sp-tr-detail-title" class="cosmos-extended-detail__title">Request details</div>
-        <div id="sp-tr-detail-meta" class="cosmos-extended-detail__meta"></div>
+      <div class="cosmos-extended-detail__toolbar-top">
+        <div class="cosmos-extended-detail__head">
+          <div id="sp-tr-detail-title" class="cosmos-extended-detail__title">Request details</div>
+          <div id="sp-tr-detail-meta" class="cosmos-extended-detail__meta"></div>
+        </div>
+        <button type="button" class="cosmos-extended-detail__close modal-close" onclick="closeSpTrDetail()" aria-label="Close request details">&times;</button>
       </div>
       <div class="cosmos-extended-detail__actions-row">
         <div id="sp-tr-detail-actions" class="cosmos-extended-detail__actions"></div>
-        <button type="button" class="btn sm" onclick="closeSpTrDetail()" aria-label="Close request details">Close</button>
       </div>
     </div>
     <div id="sp-tr-detail-body" class="cosmos-extended-detail__body"></div>

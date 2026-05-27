@@ -1683,11 +1683,19 @@ function spSyncFilterTabs(containerId, activeKey) {
   if (el && window.cosmosFilterTabs) window.cosmosFilterTabs.sync(el, activeKey);
 }
 
+function spNormalizeShipmentsResponse(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && Array.isArray(raw.data)) return raw.data;
+  return [];
+}
+
 async function spLoadRequestShipments(requestId, wrapId) {
   const wrap = document.getElementById(wrapId);
   if (!wrap) return [];
   try {
-    const list = await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50') || [];
+    const list = spNormalizeShipmentsResponse(
+      await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50')
+    );
     if (!list.length) {
       wrap.innerHTML = '<span style="color:var(--text3)">No transfer documents yet.</span>';
       return [];
@@ -1712,7 +1720,9 @@ async function spLoadRequestShipments(requestId, wrapId) {
 
 window.spOpenFirstActionableShipment = async function (requestId) {
   try {
-    const list = await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50') || [];
+    const list = spNormalizeShipmentsResponse(
+      await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50')
+    );
     const actionable = list.find(function (d) {
       return d.status === 'DISPATCHED' || d.status === 'ACCEPTED';
     });
