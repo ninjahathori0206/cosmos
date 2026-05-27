@@ -398,6 +398,13 @@ posSpaRouter.use(sendPosShellForSpa);
 app.use('/storeos', posSpaRouter);
 app.use('/pos', posSpaRouter);
 
+const { sendPwaServiceWorker, PWA_BUILD_STAMP } = require('./src/utils/sendPwaServiceWorker');
+
+// PWA service workers — before express.static so CACHE_NAME is injected from git/deploy stamp.
+app.get('/go-sw.js', (req, res) => sendPwaServiceWorker(res, 'go'));
+app.get('/storeos-sw.js', (req, res) => sendPwaServiceWorker(res, 'storeos'));
+app.get('/storepilot-sw.js', (req, res) => sendPwaServiceWorker(res, 'storepilot'));
+
 // Static assets
 // - Long-cache defaults for images/other; JS/CSS always revalidate (ERP UI changes often).
 // - HTML under src/public is non-cached; module shells remain root *_Prototype.html routes.
@@ -461,29 +468,15 @@ app.get('/go', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'src', 'public', 'go.html'));
 });
-app.get('/go-sw.js', (req, res) => {
-  res.setHeader('Content-Type', 'application/javascript');
-  res.sendFile(path.join(__dirname, 'src', 'public', 'go-sw.js'));
-});
 
-// Store OS PWA manifest + service worker
-app.get('/storeos-sw.js', (req, res) => {
-  res.setHeader('Content-Type', 'application/javascript');
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.sendFile(path.join(__dirname, 'src', 'public', 'storeos-sw.js'));
-});
+// Store OS PWA manifest
 app.get('/storeos-manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'src', 'public', 'storeos-manifest.json'));
 });
 
-// Store Pilot PWA manifest + service worker
-app.get('/storepilot-sw.js', (req, res) => {
-  res.setHeader('Content-Type', 'application/javascript');
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.sendFile(path.join(__dirname, 'src', 'public', 'storepilot-sw.js'));
-});
+// Store Pilot PWA manifest
 app.get('/storepilot-manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
@@ -548,6 +541,8 @@ assertAuthEnv();
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Cosmos ERP server listening on port ${PORT}`);
+  // eslint-disable-next-line no-console
+  console.log(`[PWA] service worker cache stamp: ${PWA_BUILD_STAMP}`);
   const { warmStoreTypesCache } = require('./src/config/storeTypesCatalog');
   warmStoreTypesCache().catch((err) => {
     // eslint-disable-next-line no-console

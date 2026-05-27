@@ -1,20 +1,27 @@
 /* Eyewoot Go — Service Worker
    Strategy: network-first for API, cache-first for static shell */
 
-var CACHE_NAME = 'eyewoot-go-v1';
+var CACHE_NAME = 'eyewoot-go-v2-pwa-update';
 var SHELL_URLS = [
   '/go',
   '/css/go.css',
+  '/css/cosmos-ui-polish.css',
+  '/js/cosmos-ui-polish.js',
+  '/js/cosmos-pwa-update.js',
   '/js/go.js',
   '/go-manifest.json'
 ];
+
+self.addEventListener('message', function (e) {
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
 self.addEventListener('install', function (e) {
   e.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
       return cache.addAll(SHELL_URLS);
-    }).then(function () {
-      return self.skipWaiting();
     })
   );
 });

@@ -2,7 +2,7 @@
    Scope: registered at / — only caches Store Pilot shell + shared static assets + login.
    Strategy: network-only for /api/*; network-first for /js/* and /css/*; cache-first fallback for other static. */
 
-var CACHE_NAME = 'storepilot-v5-shipments-fix';
+var CACHE_NAME = 'storepilot-v6-pwa-update';
 
 var SHELL_URLS = [
   '/',
@@ -17,6 +17,7 @@ var SHELL_URLS = [
   '/js/cosmos-record-list.js',
   '/js/storepilot-prototype.js',
   '/js/storepilot-pwa.js',
+  '/js/cosmos-pwa-update.js',
   '/js/login.js',
   '/storepilot-manifest.json',
   '/config/bootstrap.json',
@@ -73,12 +74,16 @@ function networkFirstStatic(request, url) {
   });
 }
 
+self.addEventListener('message', function (e) {
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('install', function (e) {
   e.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
       return cache.addAll(SHELL_URLS);
-    }).then(function () {
-      return self.skipWaiting();
     })
   );
 });

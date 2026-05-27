@@ -891,8 +891,13 @@ var GO = (function () {
      INIT
   ══════════════════════════════════════════════════════════════ */
   function init() {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/go-sw.js').catch(function () {});
+    if (typeof window.cosmosPwaUpdateInit === 'function') {
+      void window.cosmosPwaUpdateInit({
+        prefix: 'go',
+        appLabel: 'Eyewoot Go',
+        swUrl: '/go-sw.js',
+        versionHint: 'eyewoot-go-v2-pwa-update'
+      });
     }
     var token = getToken();
     if (token) {

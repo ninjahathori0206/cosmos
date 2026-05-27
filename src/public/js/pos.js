@@ -1046,7 +1046,10 @@
 
   function renderCartCustomerRef() {
     const body = document.getElementById('pos-lk-cart-customer-body')
+    const actions = document.getElementById('pos-lk-cart-customer-actions')
     if (!body) return
+    const hasCustomer = !!(posSelectedCustomerSnapshot && posSelectedCustomerId)
+    if (actions) actions.hidden = !hasCustomer
     body.classList.remove('pos-lk-cart-cust--required')
     const snap = posSelectedCustomerSnapshot
     if (snap && posSelectedCustomerId) {

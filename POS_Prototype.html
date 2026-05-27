@@ -14,7 +14,8 @@
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
 <link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260523-unit-search">
 <script src="/js/cosmos-ui-polish.js?v=20260528-mobile-back-block" defer></script>
-<script src="/js/storeos-pwa.js?v=20260523-pwa-sw-v5" defer></script>
+<script src="/js/cosmos-pwa-update.js?v=20260528-pwa-update" defer></script>
+<script src="/js/storeos-pwa.js?v=20260528-pwa-update" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260523-cart-bucket" defer></script>
 <script src="/js/pos.js?v=storeos-20260525-invoiced-queue" defer></script>
@@ -518,7 +519,7 @@
       <div class="pos-lk-side-card pos-lk-cart-customer-card pos-lk-bill-customer-strip" id="pos-lk-cart-customer-card">
         <h3 class="pos-lk-bill-customer-h">Customer</h3>
         <div id="pos-lk-cart-customer-body" class="pos-lk-cart-customer-body"></div>
-        <div class="pos-lk-cart-customer-actions">
+        <div id="pos-lk-cart-customer-actions" class="pos-lk-cart-customer-actions" hidden>
           <button type="button" id="btn-cart-customer-change" class="pos-lk-cart-customer-btn" tabindex="0">Change customer</button>
           <button type="button" id="btn-cart-customer-search" class="pos-lk-cart-customer-btn pos-lk-cart-customer-btn--search" tabindex="0">Search customer</button>
         </div>

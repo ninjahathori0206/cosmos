@@ -131,11 +131,14 @@
   }
 
   function registerServiceWorker() {
-    if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.register('/storeos-sw.js', { scope: '/storeos/' })
-      .catch(function (err) {
-        console.warn('[Store OS SW] Registration failed:', err);
-      });
+    if (typeof window.cosmosPwaUpdateInit !== 'function') return;
+    void window.cosmosPwaUpdateInit({
+      prefix: 'sos',
+      appLabel: 'Store OS',
+      swUrl: '/storeos-sw.js',
+      scope: '/storeos/',
+      versionHint: 'storeos-v6-pwa-update'
+    });
   }
 
   window.addEventListener('beforeinstallprompt', function (e) {

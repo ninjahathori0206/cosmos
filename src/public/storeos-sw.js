@@ -2,7 +2,7 @@
    Scope: /storeos/ — caches Store OS shell + shared static assets under allowed paths.
    Strategy: network-only for /api/*; network-first for /storeos navigations; cache-first for allowed static GET. */
 
-var CACHE_NAME = 'storeos-v5-unit-search-b2';
+var CACHE_NAME = 'storeos-v6-pwa-update';
 
 var SHELL_URLS = [
   '/storeos/login',
@@ -16,6 +16,7 @@ var SHELL_URLS = [
   '/js/pos-order-queue-catalog.js',
   '/js/pos.js',
   '/js/storeos-pwa.js',
+  '/js/cosmos-pwa-update.js',
   '/storeos-manifest.json',
   '/config/bootstrap.json',
   '/img/storeos-icon-192.png',
@@ -45,12 +46,16 @@ function shouldHandleFetch(url, request) {
   return isAllowedStaticPath(url.pathname);
 }
 
+self.addEventListener('message', function (e) {
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('install', function (e) {
   e.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
       return cache.addAll(SHELL_URLS);
-    }).then(function () {
-      return self.skipWaiting();
     })
   );
 });

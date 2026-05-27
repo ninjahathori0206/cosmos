@@ -131,35 +131,14 @@
   }
 
   function registerServiceWorker() {
-    if (!('serviceWorker' in navigator)) return;
-    var reloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', function () {
-      if (reloaded) return;
-      reloaded = true;
-      if (isStandalone()) {
-        if (typeof window.cosmosToastInfo === 'function') {
-          window.cosmosToastInfo('Store Pilot updated — refreshing…');
-        }
-        window.setTimeout(function () { window.location.reload(); }, 600);
-      } else if (typeof window.cosmosToastInfo === 'function') {
-        window.cosmosToastInfo('Update available — refresh the page.');
-      }
+    if (typeof window.cosmosPwaUpdateInit !== 'function') return;
+    void window.cosmosPwaUpdateInit({
+      prefix: 'sp',
+      appLabel: 'Store Pilot',
+      swUrl: '/storepilot-sw.js',
+      scope: '/',
+      versionHint: 'storepilot-v6-pwa-update'
     });
-    navigator.serviceWorker.register('/storepilot-sw.js', { scope: '/' })
-      .then(function (reg) {
-        reg.addEventListener('updatefound', function () {
-          var nw = reg.installing;
-          if (!nw) return;
-          nw.addEventListener('statechange', function () {
-            if (nw.state === 'installed' && navigator.serviceWorker.controller && typeof window.cosmosToastInfo === 'function') {
-              window.cosmosToastInfo('Update available — reopen the app or refresh.');
-            }
-          });
-        });
-      })
-      .catch(function (err) {
-        console.warn('[Store Pilot SW] Registration failed:', err);
-      });
   }
 
   window.addEventListener('beforeinstallprompt', function (e) {
