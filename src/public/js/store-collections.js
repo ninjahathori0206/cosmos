@@ -326,6 +326,37 @@
     });
   }
 
+  function scCsvEscapeCell(val) {
+    if (val == null || val === undefined) return '';
+    const s = String(val);
+    if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function scDownloadCsv(filename, headers, rows) {
+    if (typeof window.cosmosDownloadCsv === 'function') {
+      window.cosmosDownloadCsv(filename, headers, rows);
+      return;
+    }
+    if (!headers || !headers.length) return;
+    const lineList = [headers.map(scCsvEscapeCell).join(',')];
+    const dataRows = rows || [];
+    for (let i = 0; i < dataRows.length; i++) {
+      lineList.push(dataRows[i].map(scCsvEscapeCell).join(','));
+    }
+    const blob = new Blob(['\uFEFF' + lineList.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'export.csv';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 2000);
+  }
+
   function scLedgerRowToCsvArray(r) {
     const dir = r.direction === 'out' ? 'Out' : 'In';
     const amt = Number(r.amount) || 0;
@@ -352,10 +383,6 @@
       if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Open a store to export its ledger.');
       return;
     }
-    if (typeof window.cosmosDownloadCsv !== 'function') {
-      if (typeof cosmosToastError === 'function') cosmosToastError('CSV export is not available.');
-      return;
-    }
     const btn = document.getElementById('sc-btn-export-csv');
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
     try {
@@ -370,7 +397,7 @@
       const data = rows.map((r) => scLedgerRowToCsvArray(r));
       const slug = _scStoreCode || ('store-' + _scStoreId);
       const day = scIstToday();
-      window.cosmosDownloadCsv('collection-ledger-' + slug + '-' + day + '.csv', headers, data);
+      scDownloadCsv('collection-ledger-' + slug + '-' + day + '.csv', headers, data);
       if (typeof cosmosToastSuccess === 'function') {
         cosmosToastSuccess('Exported ' + rows.length + ' row(s) to CSV.');
       }

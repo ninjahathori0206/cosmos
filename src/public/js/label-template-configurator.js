@@ -779,7 +779,8 @@
     const lines = [];
     lines.push('SIZE ' + template.label_width_mm + ' mm, ' + template.label_height_mm + ' mm');
     lines.push('GAP ' + (template.row_gap_mm || 0) + ' mm, 0 mm');
-    lines.push('DIRECTION 1');
+    const layoutType = (template.config && template.config.layoutType) || 'compact';
+    lines.push('DIRECTION ' + (layoutType === 'compact-fixed' ? '1' : '0'));
     lines.push('CLS');
     template.zones.forEach(function (z) {
       if (!z.printable || z.zone_type === 'tail') return;

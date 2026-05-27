@@ -6391,6 +6391,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     return _bcGetLayoutType() === 'compact' && _bcCompactColumnsPerRow() > 1;
   }
 
+  function _bcRefreshZoneMarginUi() {
+    const hasZones = _bcFormatHasZones();
+    const topEl = document.getElementById('bc-margin-top');
+    const bottomEl = document.getElementById('bc-margin-bottom');
+    const noteId = 'bc-zone-margin-note';
+    let note = document.getElementById(noteId);
+    if (topEl) topEl.disabled = !!hasZones;
+    if (bottomEl) bottomEl.disabled = !!hasZones;
+    if (hasZones) {
+      if (!note) {
+        const box = document.querySelector('#bc-advanced-wrap .mt3');
+        if (box) {
+          note = document.createElement('div');
+          note.id = noteId;
+          note.style.cssText = 'font-size:10px;color:var(--gold);margin-bottom:8px;line-height:1.4';
+          const anchor = box.querySelector('.section-lbl');
+          if (anchor && anchor.nextSibling) box.insertBefore(note, anchor.nextSibling);
+          else box.insertBefore(note, box.firstChild);
+        }
+      }
+      if (note) {
+        note.textContent =
+          'Zone templates (Command Unit): top/bottom inset does not apply — use zone Y positions only. ' +
+          'Left/right inset and row gap still apply to the roll row. In the print dialog set Margins to None.';
+      }
+    } else if (note) {
+      note.remove();
+    }
+  }
+
   function _bcUpdateFormatHint() {
     const el = document.getElementById('bc-format-hint');
     if (!el) return;
@@ -6714,6 +6744,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (key) _bcWriteStoredFormatKey(key);
     _bcUpdateFormatHint();
+    _bcRefreshZoneMarginUi();
     _bcRefreshCompactTunePanel();
     _bcRefreshOperatorJobSummary();
     if (fmt && !_bcFormatHasZones() && key && _bcNoZonesWarnedKey !== key) {
@@ -8236,7 +8267,8 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const colGap = Number(fmt.col_gap_mm) || 0;
     const multiCol = !!options.multiCol;
     const cols = multiCol ? (Number(fmt.columns) || cfg.labelsPerRow || 1) : 1;
-    const direction = 1;
+    /** DIRECTION 1 = 180° — only for compact-fixed dot layout; zone y_mm is top-down from label origin. */
+    const direction = String(cfg.layoutType || '').toLowerCase() === 'compact-fixed' ? 1 : 0;
 
     function cellTspl(item, cellLeftMm) {
       let block = '';
@@ -8262,7 +8294,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       return block;
     }
 
-    let cmds = '';
+    let cmds = 'CLS\r\n';
     if (multiCol) {
       const batches = itemsOrBatches;
       const sheetW = marginLeft + cols * lw + Math.max(0, cols - 1) * colGap + (Number(fmt.margin_right_mm) || 0);
@@ -8270,13 +8302,15 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       cmds += 'GAP ' + rowGapMm + ' mm, 0 mm\r\n';
       cmds += 'DIRECTION ' + direction + '\r\n';
       batches.forEach(function (row) {
+        const hasItem = row && row.some(function (item) { return !!item; });
+        if (!hasItem) return;
         cmds += 'CLS\r\n';
         row.forEach(function (item, col) {
           if (!item) return;
           const cellLeftMm = marginLeft + col * (lw + colGap);
           cmds += cellTspl(item, cellLeftMm);
         });
-        cmds += 'PRINT 1, 1\r\n';
+        cmds += 'PRINT 1,1\r\n';
       });
     } else {
       const items = itemsOrBatches;
@@ -8284,9 +8318,10 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       cmds += 'GAP ' + rowGapMm + ' mm, 0 mm\r\n';
       cmds += 'DIRECTION ' + direction + '\r\n';
       items.forEach(function (item) {
+        if (!item) return;
         cmds += 'CLS\r\n';
         cmds += cellTspl(item, 0);
-        cmds += 'PRINT 1, 1\r\n';
+        cmds += 'PRINT 1,1\r\n';
       });
     }
     return new TextEncoder().encode(cmds);
@@ -8487,6 +8522,14 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const dotsPerMm = _bcReadDotsPerMm();
     const { qrVisualSizeMm } = _bcReadQrConfig();
     const qrPreviewPx = _bcClamp(Math.round((fmt.config.qrVisualSizeMm || qrVisualSizeMm) * dotsPerMm), 40, 400);
+    const lw = fmt.label_width_mm || fmt.config.labelWidthMm || 15;
+    const lh = fmt.label_height_mm || fmt.config.labelHeightMm || 15;
+    const marginLeft = Number(fmt.margin_left_mm) || 0;
+    const marginRight = Number(fmt.margin_right_mm) || 0;
+    const colGap = Number(fmt.col_gap_mm) || 0;
+    const cols = options.multiCol ? (Number(fmt.columns) || 6) : 1;
+    const pageW = marginLeft + cols * lw + Math.max(0, cols - 1) * colGap + marginRight;
+    const pageH = lh;
     try {
       await loadBcQrLib();
     } catch (err) {
@@ -8505,33 +8548,46 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     let rows = '';
     if (options.multiCol) {
       itemsOrBatches.forEach(function (row) {
-        rows += '<div style="display:flex;flex-wrap:nowrap;gap:' + (fmt.col_gap_mm || 3) + 'mm;margin-bottom:2mm">';
+        const hasItem = row && row.some(function (item) { return !!item; });
+        if (!hasItem) return;
+        rows += '<div class="bc-print-row" style="padding-left:' + marginLeft + 'mm;gap:' + colGap + 'mm">';
         row.forEach(function (item) {
           if (!item) return;
           rows += _bcZoneCellMarkup(item, fmt, qrPreviewPx, {
             dataUrl: printDataUrls.get(item.code) || '',
             theme: 'print',
-            outerExtra: ';page-break-inside:avoid'
+            outerExtra: ''
           });
         });
         rows += '</div>';
       });
     } else {
       itemsOrBatches.forEach(function (item) {
+        if (!item) return;
+        rows += '<div class="bc-print-row" style="padding-left:' + marginLeft + 'mm">';
         rows += _bcZoneCellMarkup(item, fmt, qrPreviewPx, {
           dataUrl: printDataUrls.get(item.code) || '',
           theme: 'print',
-          outerExtra: ';margin-bottom:2mm;page-break-inside:avoid'
+          outerExtra: ''
         });
+        rows += '</div>';
       });
     }
+    const pageCss =
+      '@page{size:' + pageW + 'mm ' + pageH + 'mm;margin:0}' +
+      'html,body{margin:0;padding:0;width:' + pageW + 'mm;font-family:Arial,sans-serif}' +
+      '.bc-print-row{width:' + pageW + 'mm;height:' + pageH + 'mm;display:flex;flex-wrap:nowrap;align-items:flex-start;' +
+      'box-sizing:border-box;page-break-after:always;overflow:hidden}' +
+      '.bc-print-row:last-child{page-break-after:auto}' +
+      '.mono{font-family:Consolas,monospace}' +
+      '@media print{.bc-zone-row{border:none!important}}';
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win) {
       if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Pop-up blocked. Allow pop-ups and try again.');
       return;
     }
-    win.document.write('<!DOCTYPE html><html><head><title>Zone labels</title>' +
-      '<style>@page{size:auto;margin:0}body{font-family:Arial,sans-serif;margin:0;padding:4mm 4mm 0}.mono{font-family:Consolas,monospace}</style></head>' +
+    win.document.write('<!DOCTYPE html><html><head><title>Zone labels — ' + pageW + '×' + pageH + ' mm per row</title>' +
+      '<style>' + pageCss + '</style></head>' +
       '<body>' + rows + '<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body></html>');
     win.document.close();
   }
