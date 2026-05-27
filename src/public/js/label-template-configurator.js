@@ -17,14 +17,44 @@
   let ltcQrLoader = null;
   let contentTokensCatalog = null;
   let contentPresetsCatalog = null;
+  let printOrientationsCatalog = null;
+
+  const LTC_PRINT_ORIENTATIONS_FALLBACK = [
+    { key: 'portrait', label: 'Portrait', tsplDirection: 0 },
+    { key: 'portrait_180', label: 'Portrait 180°', tsplDirection: 1 },
+    { key: 'landscape', label: 'Landscape', tsplDirection: 0 },
+    { key: 'landscape_180', label: 'Landscape 180°', tsplDirection: 1 }
+  ];
 
   const LTC_CONFIG_KEYS = [
     'v', 'marginTop', 'marginBottom', 'marginLeft', 'marginRight', 'gapRow', 'gapCol',
     'labelWidthMm', 'labelHeightMm', 'labelsPerRow', 'dotsPerMm', 'qrCellSize', 'qrVisualSizeMm',
     'qrTopRatio', 'textTopRatio', 'textXMul', 'textYMul', 'textFontId', 'textFontPt', 'layoutType',
-    'bottomBandHeightMm', 'rightRailWidthMm', 'printWidthMm', 'zone1WidthMm', 'zone2WidthMm',
-    'tailWidthMm'
+    'printOrientation', 'bottomBandHeightMm', 'rightRailWidthMm', 'printWidthMm', 'zone1WidthMm',
+    'zone2WidthMm', 'tailWidthMm'
   ];
+
+  function ltcNormalizePrintOrientation(value) {
+    const keys = (printOrientationsCatalog || LTC_PRINT_ORIENTATIONS_FALLBACK).map(function (o) { return o.key; });
+    const s = String(value == null ? '' : value).trim().toLowerCase();
+    return keys.indexOf(s) >= 0 ? s : 'portrait';
+  }
+
+  function ltcTsplDirectionFromOrientation(value) {
+    const key = ltcNormalizePrintOrientation(value);
+    const list = printOrientationsCatalog || LTC_PRINT_ORIENTATIONS_FALLBACK;
+    const row = list.find(function (o) { return o.key === key; });
+    if (row && row.tsplDirection != null) return row.tsplDirection;
+    if (key === 'portrait_180' || key === 'landscape_180') return 1;
+    return 0;
+  }
+
+  function ltcPrintOrientationLabel(value) {
+    const key = ltcNormalizePrintOrientation(value);
+    const list = printOrientationsCatalog || LTC_PRINT_ORIENTATIONS_FALLBACK;
+    const row = list.find(function (o) { return o.key === key; });
+    return row ? row.label : 'Portrait';
+  }
 
   /** Client-side zone presets when API returns empty zones_json (matches migration seeds). */
   const CLIENT_ZONE_PRESETS = {
@@ -323,6 +353,9 @@
     template.col_gap_mm = +ltcEl('ltc-s2-cg').value || 0;
     template.row_gap_mm = +ltcEl('ltc-s2-rg').value || 0;
     template.margin_top_mm = +ltcEl('ltc-s2-mt').value || 0;
+    if (!template.config) template.config = {};
+    const orientEl = ltcEl('ltc-s2-orient');
+    template.config.printOrientation = ltcNormalizePrintOrientation(orientEl ? orientEl.value : template.config.printOrientation);
   }
 
   function widthProof() {
@@ -381,6 +414,11 @@
     ltcEl('ltc-s2-cg').value = template.col_gap_mm || 0;
     ltcEl('ltc-s2-rg').value = template.row_gap_mm || 0;
     ltcEl('ltc-s2-mt').value = template.margin_top_mm || 0;
+    const orientSel = ltcEl('ltc-s2-orient');
+    if (orientSel) {
+      const cur = ltcNormalizePrintOrientation((template.config && template.config.printOrientation) || 'portrait');
+      orientSel.value = cur;
+    }
   }
 
   function normalizeFormatsList(data) {
@@ -779,8 +817,9 @@
     const lines = [];
     lines.push('SIZE ' + template.label_width_mm + ' mm, ' + template.label_height_mm + ' mm');
     lines.push('GAP ' + (template.row_gap_mm || 0) + ' mm, 0 mm');
-    const layoutType = (template.config && template.config.layoutType) || 'compact';
-    lines.push('DIRECTION ' + (layoutType === 'compact-fixed' ? '1' : '0'));
+    const orient = (template.config && template.config.printOrientation) ||
+      ((template.config && template.config.layoutType) === 'compact-fixed' ? 'portrait_180' : 'portrait');
+    lines.push('DIRECTION ' + ltcTsplDirectionFromOrientation(orient));
     lines.push('CLS');
     template.zones.forEach(function (z) {
       if (!z.printable || z.zone_type === 'tail') return;
@@ -820,6 +859,30 @@
       if (src[k] !== undefined && src[k] !== null) out[k] = src[k];
     });
     return out;
+  }
+
+  function renderPrintOrientationSelect() {
+    const sel = ltcEl('ltc-s2-orient');
+    if (!sel) return;
+    const list = printOrientationsCatalog || LTC_PRINT_ORIENTATIONS_FALLBACK;
+    const cur = template && template.config
+      ? ltcNormalizePrintOrientation(template.config.printOrientation)
+      : 'portrait';
+    sel.innerHTML = list.map(function (o) {
+      return '<option value="' + escapeHtml(o.key) + '">' + escapeHtml(o.label) + '</option>';
+    }).join('');
+    sel.value = cur;
+  }
+
+  async function loadPrintOrientationCatalog() {
+    if (printOrientationsCatalog) return;
+    try {
+      const data = await ltcApi('GET', '/api/meta/label-print-orientations');
+      printOrientationsCatalog = (data && data.orientations) || LTC_PRINT_ORIENTATIONS_FALLBACK;
+    } catch (_e) {
+      printOrientationsCatalog = LTC_PRINT_ORIENTATIONS_FALLBACK;
+    }
+    renderPrintOrientationSelect();
   }
 
   async function loadContentTokenCatalog() {
@@ -925,7 +988,8 @@
       marginRight: template.margin_right_mm,
       marginTop: template.margin_top_mm,
       marginBottom: template.margin_bottom_mm,
-      layoutType: labelType === 'STRIP' ? 'strip' : 'compact'
+      layoutType: labelType === 'STRIP' ? 'strip' : 'compact',
+      printOrientation: ltcNormalizePrintOrientation(template.config && template.config.printOrientation)
     }));
     return {
       name: template.template_name,
@@ -976,7 +1040,7 @@
     try {
       const row = await ltcApi('POST', '/api/foundry/label-print-formats', {
         name: name.trim(),
-        config: { v: 1, dotsPerMm: 8, qrCellSize: 3, textFontId: 1, textXMul: 1, textYMul: 1, layoutType: 'compact' },
+        config: { v: 1, dotsPerMm: 8, qrCellSize: 3, textFontId: 1, textXMul: 1, textYMul: 1, layoutType: 'compact', printOrientation: 'portrait' },
         label_type: 'SQUARE',
         page_width_mm: 109,
         columns: 6,
@@ -1053,6 +1117,7 @@
       }
       template = formatToTemplate(fmt);
       loadError = null;
+      renderPrintOrientationSelect();
       syncFieldsFromTemplate();
       selectedZoneId = null;
       const props = ltcEl('ltc-zone-props');
@@ -1161,6 +1226,10 @@
     safeOn(ltcEl('ltc-s1-type'), 'change', function () {
       applyPreset(ltcEl('ltc-s1-type').value);
     });
+    safeOn(ltcEl('ltc-s2-orient'), 'change', function () {
+      readStep2();
+      renderTspl();
+    });
     ['ltc-s1-pw', 'ltc-s1-lw', 'ltc-s1-lh', 'ltc-s1-ml', 'ltc-s1-mr', 'ltc-s2-cols', 'ltc-s2-cg'].forEach(function (id) {
       safeOn(ltcEl(id), 'input', updateWidthProof);
     });
@@ -1209,6 +1278,7 @@
     sampleItem = ltcDefaultSample();
     writeSampleToPanel();
     await loadContentTokenCatalog();
+    await loadPrintOrientationCatalog();
     await loadFormatsList();
     if (formatsList.length) {
       await loadTemplate(formatsList[0].format_key);

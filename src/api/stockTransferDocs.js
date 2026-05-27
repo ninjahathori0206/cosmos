@@ -154,7 +154,7 @@ router.get('/:id', ...docListAccess, async (req, res, next) => {
 
 // ── PUT /api/stock-transfer-docs/:id/accept ───────────────────────────────────
 // Store accepts the incoming transfer.  DISPATCHED → ACCEPTED.
-router.put('/:id/accept', requireModule('storepilot'), requirePermission('storepilot.transfers.edit'), async (req, res, next) => {
+router.put('/:id/accept', requireAnyModule(['storepilot', 'foundry']), requirePermission('storepilot.transfers.edit'), async (req, res, next) => {
   try {
     const docId = Number(req.params.id);
     if (!Number.isFinite(docId) || docId <= 0) {
@@ -199,7 +199,7 @@ router.put('/:id/accept', requireModule('storepilot'), requirePermission('storep
 // Store verifies quantities received.  ACCEPTED → STOCKED.
 // Increments STORE balance per verified line.
 // Body: { lines: [{ line_id, qty_received }] }
-router.put('/:id/stock', requireModule('storepilot'), requirePermission('storepilot.transfers.edit'), async (req, res, next) => {
+router.put('/:id/stock', requireAnyModule(['storepilot', 'foundry']), requirePermission('storepilot.transfers.edit'), async (req, res, next) => {
   try {
     const docId = Number(req.params.id);
     if (!Number.isFinite(docId) || docId <= 0) {

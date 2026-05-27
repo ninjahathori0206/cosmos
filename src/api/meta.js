@@ -16,7 +16,11 @@ const { getLabWorkflowTransitionsForApi } = require('../config/labWorkflowTransi
 const { getFoundryCatalogueNavForApi } = require('../config/foundryCatalogueNavCatalog');
 const { ALL_CATALOGUE_PERMISSION_KEYS } = require('../config/foundryCatalogueAuth');
 const { listLabelPrintFormats } = require('../services/labelPrintFormatService');
-const { ZONE_CONTENT_TOKENS, ZONE_CONTENT_PRESETS } = require('../config/labelPrintFormatSchema');
+const {
+  ZONE_CONTENT_TOKENS,
+  ZONE_CONTENT_PRESETS,
+  PRINT_ORIENTATION_CATALOG
+} = require('../config/labelPrintFormatSchema');
 const { FOUNDRY_LABEL_FORMAT_READ_PERMS } = require('../config/foundryLabelFormatReadPerms');
 const { getTreasuryLedgerMetaForApi } = require('../config/treasuryLedgerCatalog');
 const { getPaymentMachineProviderCatalog } = require('../config/paymentMachineProviderCatalog')
@@ -128,6 +132,18 @@ router.get(
         tokens: ZONE_CONTENT_TOKENS,
         presets: ZONE_CONTENT_PRESETS
       }
+    });
+  }
+);
+
+router.get(
+  '/label-print-orientations',
+  requireAnyModule(['command_unit', 'foundry']),
+  requirePermission(...FOUNDRY_LABEL_FORMAT_READ_PERMS),
+  (req, res) => {
+    res.json({
+      success: true,
+      data: { orientations: PRINT_ORIENTATION_CATALOG }
     });
   }
 );

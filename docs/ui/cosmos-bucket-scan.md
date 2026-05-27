@@ -6,7 +6,7 @@ Loaded on **Foundry** and **StorePilot** prototypes with `#modal-bucket-scan`.
 
 Styles: [`cosmos-ui-polish.css`](../../src/public/css/cosmos-ui-polish.css) — `#modal-bucket-scan`.
 
-**Stacking:** The bucket opens as a stacked overlay (`z-index: 260`) above extended detail panels (request / transfer details at 240–250). Do not close the request before scanning — dispatch cart state lives in the open detail panel.
+**Stacking:** CSS variables in `cosmos-ui-polish.css`: `--cosmos-z-detail-backdrop` (240), `--cosmos-z-detail-panel` (250), `--cosmos-z-bucket-overlay` (400, above shell `.overlay` 300). Extended detail and bucket layers are portaled to `document.body` (`cosmosOpenExtendedDetail`, `bucketModalOpen`) so StorePilot’s `overflow:hidden` `.main` does not trap them. Opening a shipment transfer detail closes the request sheet first. Do not close the transfer detail before bucket submit — receive state lives in that panel.
 
 ## Entry points
 

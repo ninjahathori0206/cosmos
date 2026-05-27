@@ -19,6 +19,15 @@
 
 You do **not** need to change numbers in “Advanced printer settings” unless your IT team asks you to.
 
+### USB vs browser print
+
+| Path | What controls layout |
+|------|----------------------|
+| **USB (recommended)** | Template saved in **Command Unit → Label Templates** — roll width, zones, and **Print orientation** → TSPL `SIZE`, `GAP`, `DIRECTION` |
+| **Browser print (fallback)** | Pop-up uses template mm for `@page` size; set **Margins → None**. Chrome “Portrait” does **not** apply to USB jobs. |
+
+**BarTender alignment:** In Command Unit, set **Page width** to match stock (e.g. **110 mm** for `QR (110 × 15)`), **label height** 15 mm, row gap = physical roll gap, **Print orientation: Portrait**. Ignore browser orientation when printing via USB.
+
 ## Buttons on the purchase screen
 
 | Button | Meaning |
@@ -42,6 +51,7 @@ You do **not** need to change numbers in “Advanced printer settings” unless 
 
 ## If something looks wrong
 
+- Labels rotated or stuck at bottom of strip → in **Command Unit → Label Templates → Step 2**, set **Print orientation** (Portrait vs Portrait 180°) to match BarTender Page Setup; save, then reprint via USB.
 - Wrong sticker size → change **Choose label type** and check preview again.
 - Missing QR → SKU has no **7-digit unit barcode**; run unit backfill or re-generate SKUs, then try again. Labels without a valid 7-digit code are skipped (QR never falls back to PID or SKU text).
 - Blank dropdown → wait a moment; built-in sizes load even if the server is slow.

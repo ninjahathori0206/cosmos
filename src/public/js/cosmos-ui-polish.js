@@ -186,9 +186,16 @@
     }
   }
 
+  function cosmosPortalOverlayLayer(el) {
+    if (!el || el.parentNode === document.body) return
+    document.body.appendChild(el)
+  }
+
   window.cosmosOpenExtendedDetail = function cosmosOpenExtendedDetail(panelId, backdropId) {
     var panel = panelId ? document.getElementById(panelId) : null
     var backdrop = backdropId ? document.getElementById(backdropId) : null
+    if (backdrop) cosmosPortalOverlayLayer(backdrop)
+    if (panel) cosmosPortalOverlayLayer(panel)
     if (backdrop) backdrop.classList.add('is-open')
     if (panel) {
       panel.classList.add('is-open')

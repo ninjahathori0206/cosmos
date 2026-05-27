@@ -24,7 +24,7 @@ No new catalogue keys — reuse existing Foundry label format permissions.
 1. Open **Command Unit → Foundry Masters → Label Templates**.
 2. Pick a template from the left list (loads via API).
 3. **Step 1 — Page & label size:** name, type preset, roll width, margins, label W×H, width proof (`margin + cols×label + gaps = page`).
-4. **Step 2 — Grid:** columns, col/row gap, top margin; SVG roll preview.
+4. **Step 2 — Grid:** columns, col/row gap, top margin, **Print orientation** (USB TSPL preset); SVG roll preview.
 5. **Step 3 — Zone designer:** drag/resize zones; property panel; live TSPL panel; **Save** (PUT), **New template** (POST), **Delete** (hard delete).
 6. Foundry operators select the same `format_key` in barcode print modal.
 
@@ -66,6 +66,18 @@ Default: **left** + **top** (same as legacy TSPL `TEXT` at X,Y). Other combinati
 5. Print via **USB (TSPL)** or browser print — zone layout and tokens apply automatically.
 
 Operators do **not** reconfigure zones in Foundry unless they have edit permission and use **Update format** in the modal. Day-to-day printing only requires choosing the saved format name.
+
+**USB print orientation (BarTender Page Setup):** Set once in **Step 2 → Print orientation**. Stored as `config.printOrientation` in `config_json` (no DB migration). Foundry USB jobs emit TSPL `DIRECTION` from this preset — **not** from Chrome/Edge Portrait/Landscape.
+
+| Preset | TSPL `DIRECTION` | Use when |
+|--------|------------------|----------|
+| Portrait (default) | `0` | Wide roll row (e.g. BarTender **QR 110×15 mm**, Portrait) |
+| Portrait 180° | `1` | BarTender Portrait 180° |
+| Landscape / Landscape 180° | `0` / `1` | Strip or alternate layouts |
+
+Catalog: `GET /api/meta/label-print-orientations`. Legacy `compact-fixed` seeds default to **Portrait 180°** when unset.
+
+**Roll width:** Match BarTender stock in **Step 1 → Page width** (e.g. **110 mm** for `QR (110.0 × 15.0 mm)`; Cosmos SQUARE preset was 109 mm).
 
 **Default format:** In CU or Foundry, set one template as default (`is_default`) so the modal pre-selects it.
 

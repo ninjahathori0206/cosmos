@@ -6198,6 +6198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let _bcSkus = [];        // current set of SKUs in the modal
   let _bcUsbDevice = null; // connected WebUSB device
+  let _bcUsbOrientationHintShown = false;
   let _bcPreviewDebounceTimer = null;
 
   // TSC P210 USB vendor/product IDs (TSC Auto ID)
@@ -6360,6 +6361,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     return Object.assign({ layoutType: 'grid' }, _bcActiveFormatConfig || {});
   }
 
+  function _bcTsplDirectionFromFormat(fmtOptional) {
+    const fmt = fmtOptional || _bcActiveFormatRow;
+    const cfg = fmt && fmt.config && typeof fmt.config === 'object'
+      ? fmt.config
+      : _bcGetActiveFormatConfig();
+    const orient = cfg && cfg.printOrientation;
+    if (orient) {
+      const s = String(orient).trim().toLowerCase();
+      if (s === 'portrait_180' || s === 'landscape_180') return 1;
+      if (s === 'portrait' || s === 'landscape') return 0;
+    }
+    if (String(cfg.layoutType || '').toLowerCase() === 'compact-fixed') return 1;
+    return 0;
+  }
+
+  function _bcPrintOrientationLabel(fmtOptional) {
+    const fmt = fmtOptional || _bcActiveFormatRow;
+    const cfg = fmt && fmt.config && typeof fmt.config === 'object'
+      ? fmt.config
+      : _bcGetActiveFormatConfig();
+    const labels = {
+      portrait: 'Portrait',
+      portrait_180: 'Portrait 180°',
+      landscape: 'Landscape',
+      landscape_180: 'Landscape 180°'
+    };
+    const orient = cfg && cfg.printOrientation;
+    if (orient && labels[String(orient).toLowerCase()]) return labels[String(orient).toLowerCase()];
+    if (String(cfg.layoutType || '').toLowerCase() === 'compact-fixed') return 'Portrait 180°';
+    return 'Portrait';
+  }
+
+  function _bcRollSizeHintMm(fmt) {
+    if (!fmt) return '';
+    const cfg = fmt.config && typeof fmt.config === 'object' ? fmt.config : {};
+    const lw = fmt.label_width_mm || cfg.labelWidthMm || 15;
+    const lh = fmt.label_height_mm || cfg.labelHeightMm || 15;
+    const cols = Number(fmt.columns) || Number(cfg.labelsPerRow) || 1;
+    if (cols > 1) {
+      const ml = Number(fmt.margin_left_mm) || Number(cfg.marginLeft) || 0;
+      const mr = Number(fmt.margin_right_mm) || Number(cfg.marginRight) || 0;
+      const cg = Number(fmt.col_gap_mm) || Number(cfg.gapCol) || 0;
+      const pw = fmt.page_width_mm != null ? fmt.page_width_mm : (ml + cols * lw + Math.max(0, cols - 1) * cg + mr);
+      return pw + '×' + lh + ' mm';
+    }
+    return lw + '×' + lh + ' mm';
+  }
+
+  function _bcMaybeUsbOrientationHint() {
+    if (_bcUsbOrientationHintShown || typeof cosmosToastInfo !== 'function') return;
+    _bcUsbOrientationHintShown = true;
+    cosmosToastInfo('USB labels use template orientation — browser print dialog is not used.');
+  }
+
   function _bcGetLayoutType() {
     if (_bcFormatHasZones()) {
       if (_bcActiveFormatRow && _bcActiveFormatRow.label_type === 'STRIP') return 'strip';
@@ -6430,6 +6485,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const n = (fmt.zones || []).filter(function (z) { return z.printable !== false && z.zone_type !== 'tail'; }).length;
       el.textContent =
         (fmt.description ? fmt.description + ' · ' : '') +
+        'USB: ' + _bcPrintOrientationLabel(fmt) + ' · roll ' + _bcRollSizeHintMm(fmt) + ' · ' +
         'Zone template (' + n + ' printable zone' + (n !== 1 ? 's' : '') + ') — matches Command Unit Label Templates.';
       return;
     }
@@ -8146,7 +8202,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     let cmds = '';
     cmds += `SIZE ${sheetWidthMm} mm, ${labelH} mm\r\n`;
     cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
-    cmds += 'DIRECTION 0\r\n';
+    cmds += 'DIRECTION ' + _bcTsplDirectionFromFormat() + '\r\n';
 
     labelBatches.forEach((row) => {
       cmds += 'CLS\r\n';
@@ -8201,7 +8257,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     let cmds = '';
     cmds += `SIZE ${lay.totalW} mm, ${lay.labelH} mm\r\n`;
     cmds += `GAP ${rowGap} mm, 0 mm\r\n`;
-    cmds += 'DIRECTION 0\r\n';
+    cmds += 'DIRECTION ' + _bcTsplDirectionFromFormat() + '\r\n';
     strips.forEach(function (item) {
       if (!item) return;
       cmds += 'CLS\r\n';
@@ -8267,8 +8323,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const colGap = Number(fmt.col_gap_mm) || 0;
     const multiCol = !!options.multiCol;
     const cols = multiCol ? (Number(fmt.columns) || cfg.labelsPerRow || 1) : 1;
-    /** DIRECTION 1 = 180° — only for compact-fixed dot layout; zone y_mm is top-down from label origin. */
-    const direction = String(cfg.layoutType || '').toLowerCase() === 'compact-fixed' ? 1 : 0;
+    const direction = _bcTsplDirectionFromFormat(fmt);
 
     function cellTspl(item, cellLeftMm) {
       let block = '';
@@ -8355,7 +8410,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const mmToDot = function (mm) { return Math.round(mm * dotsPerMm); };
     const isFixed = lay.layoutKind === 'compact-fixed';
     const gapMm = isFixed ? Math.max(gp.colGap, gp.rowGap) : gp.rowGap;
-    const direction = isFixed ? 1 : 0;
+    const direction = _bcTsplDirectionFromFormat();
 
     let cmds = '';
     cmds += `SIZE ${lay.labelW} mm, ${lay.labelH} mm\r\n`;
@@ -8410,7 +8465,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     const maxXDots = mmToDot(sheetWidthMm);
     const isFixed = lay.layoutKind === 'compact-fixed';
     const gapMm = isFixed ? Math.max(gp.colGap, gp.rowGap) : gp.rowGap;
-    const direction = isFixed ? 1 : 0;
+    const direction = _bcTsplDirectionFromFormat();
 
     let cmds = '';
     cmds += 'SIZE ' + sheetWidthMm + ' mm, ' + labelH + ' mm\r\n';
@@ -8499,6 +8554,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
     try {
       const endpointNumber = await _bcFindUsbBulkEndpoint();
       if (endpointNumber === null) throw new Error('No bulk-out endpoint found on printer.');
+      _bcMaybeUsbOrientationHint();
       const data = _bcGenerateTSPL2FromZones(multiCol ? batches : expanded, { multiCol: multiCol });
       await _bcUsbDevice.transferOut(endpointNumber, data);
       _bcPersistCalibrationNow(_bcUsbDevice);
@@ -8630,6 +8686,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
       try {
         const endpointNumber = await _bcFindUsbBulkEndpoint();
         if (endpointNumber === null) throw new Error('No bulk-out endpoint found on printer.');
+        _bcMaybeUsbOrientationHint();
         const data = _bcFormatHasZones()
           ? _bcGenerateTSPL2FromZones(multiCol ? batches : expanded, { multiCol: multiCol })
           : (multiCol ? _bcGenerateTSPL2CompactRows(batches) : _bcGenerateTSPL2Compact(expanded));
@@ -8684,6 +8741,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
           if (endpointNumber !== null) break;
         }
         if (endpointNumber === null) throw new Error('No bulk-out endpoint found on printer.');
+        _bcMaybeUsbOrientationHint();
         const data = _bcFormatHasZones()
           ? _bcGenerateTSPL2FromZones(expanded, { multiCol: false })
           : _bcGenerateTSPL2Strip(expanded);
@@ -8749,6 +8807,7 @@ function _bcSplitTextForLabel(raw, maxLineLength = 18) {
 
       if (endpointNumber === null) throw new Error('No bulk-out endpoint found on printer.');
 
+      _bcMaybeUsbOrientationHint();
       const data = _bcGenerateTSPL2(batches, type);
       await _bcUsbDevice.transferOut(endpointNumber, data);
       _bcPersistCalibrationNow(_bcUsbDevice);

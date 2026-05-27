@@ -23,6 +23,7 @@ const LABEL_PRINT_FORMAT_FIELDS = Object.freeze([
   { configKey: 'textFontId', inputId: 'bc-text-font-id', type: 'int', default: 2, min: 0, max: 3 },
   { configKey: 'textFontPt', inputId: 'bc-text-font-pt', type: 'float', default: 5, min: 0.5, max: 20 },
   { configKey: 'layoutType', inputId: null, type: 'string', default: 'grid' },
+  { configKey: 'printOrientation', inputId: null, type: 'string', default: 'portrait' },
   { configKey: 'printWidthMm', inputId: null, type: 'float', default: 0, min: 0, max: 200 },
   { configKey: 'zone1WidthMm', inputId: null, type: 'float', default: 33, min: 1, max: 100 },
   { configKey: 'zone2WidthMm', inputId: null, type: 'float', default: 33, min: 1, max: 100 },
@@ -34,12 +35,44 @@ const LABEL_PRINT_FORMAT_FIELDS = Object.freeze([
 
 const FORMAT_KEY_RE = /^[a-z][a-z0-9_]{0,48}$/;
 
+/** USB TSPL print orientation — BarTender Page Setup equivalent (not browser Portrait/Landscape). */
+const PRINT_ORIENTATION_CATALOG = Object.freeze([
+  { key: 'portrait', label: 'Portrait', tsplDirection: 0, description: 'Default — wide roll row, content top-left (BarTender Portrait)' },
+  { key: 'portrait_180', label: 'Portrait 180°', tsplDirection: 1, description: 'BarTender Portrait 180°' },
+  { key: 'landscape', label: 'Landscape', tsplDirection: 0, description: 'Strip / alternate roll layouts' },
+  { key: 'landscape_180', label: 'Landscape 180°', tsplDirection: 1, description: 'Landscape rotated 180°' }
+]);
+
+const PRINT_ORIENTATION_KEYS = PRINT_ORIENTATION_CATALOG.map((o) => o.key);
+const DEFAULT_PRINT_ORIENTATION = 'portrait';
+
+function normalizePrintOrientation(value) {
+  const s = String(value == null ? '' : value).trim().toLowerCase();
+  return PRINT_ORIENTATION_KEYS.includes(s) ? s : DEFAULT_PRINT_ORIENTATION;
+}
+
+function tsplDirectionFromPrintOrientation(value) {
+  const key = normalizePrintOrientation(value);
+  const row = PRINT_ORIENTATION_CATALOG.find((o) => o.key === key);
+  return row ? row.tsplDirection : 0;
+}
+
+function printOrientationLabel(value) {
+  const key = normalizePrintOrientation(value);
+  const row = PRINT_ORIENTATION_CATALOG.find((o) => o.key === key);
+  return row ? row.label : 'Portrait';
+}
+
 function clampField(field, value) {
   if (field.type === 'string') {
     const s = String(value == null ? '' : value).trim().toLowerCase();
     if (field.configKey === 'layoutType') {
-      if (s === 'strip' || s === 'compact') return s;
+      const allowed = ['grid', 'strip', 'compact', 'compact-alt', 'compact-fixed'];
+      if (allowed.includes(s)) return s;
       return 'grid';
+    }
+    if (field.configKey === 'printOrientation') {
+      return normalizePrintOrientation(s);
     }
     return s || field.default;
   }
@@ -162,7 +195,8 @@ const SMALL_15X15_FIXED_CONFIG = buildDefaultConfig({
   textFontPt: 8,
   bottomBandHeightMm: 5,
   rightRailWidthMm: 5,
-  pageWidthMm: 109
+  pageWidthMm: 109,
+  printOrientation: 'portrait_180'
 });
 
 const EYEWEAR_STRIP_CONFIG = buildDefaultConfig({
@@ -278,6 +312,14 @@ function normalizeLabelPrintConfig(raw) {
     if (src[f.configKey] !== undefined) {
       base[f.configKey] = clampField(f, src[f.configKey]);
     }
+  }
+  const rawLayout = String(src.layoutType || base.layoutType || '').toLowerCase();
+  if (src.printOrientation !== undefined) {
+    base.printOrientation = normalizePrintOrientation(src.printOrientation);
+  } else if (rawLayout === 'compact-fixed') {
+    base.printOrientation = 'portrait_180';
+  } else if (!base.printOrientation) {
+    base.printOrientation = DEFAULT_PRINT_ORIENTATION;
   }
   base.v = 1;
   return base;
@@ -508,7 +550,8 @@ const labelPrintConfigSchema = Joi.object({
   zone1WidthMm: Joi.number().min(1).max(100),
   zone2WidthMm: Joi.number().min(1).max(100),
   tailWidthMm: Joi.number().min(0).max(100),
-  pageWidthMm: Joi.number().min(0).max(300)
+  pageWidthMm: Joi.number().min(0).max(300),
+  printOrientation: Joi.string().valid(...PRINT_ORIENTATION_KEYS)
 }).unknown(false);
 
 /** Tokens for zone `content` — keep in sync with Foundry `_bcApplyZoneTokens`. */
@@ -568,6 +611,12 @@ const labelPrintFormatWriteSchema = Joi.object({
 module.exports = {
   LABEL_PRINT_FORMAT_FIELDS,
   FORMAT_KEY_RE,
+  PRINT_ORIENTATION_CATALOG,
+  PRINT_ORIENTATION_KEYS,
+  DEFAULT_PRINT_ORIENTATION,
+  normalizePrintOrientation,
+  tsplDirectionFromPrintOrientation,
+  printOrientationLabel,
   SEED_LABEL_PRINT_FORMATS,
   ZONES_SMALL_15X15,
   ZONES_SMALL_15X15_FIXED,

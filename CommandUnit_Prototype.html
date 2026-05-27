@@ -841,6 +841,11 @@
               <div class="ltc-field"><label for="ltc-s2-rg">Row gap (mm)</label><input id="ltc-s2-rg" type="number" step="0.1"></div>
               <div class="ltc-field"><label for="ltc-s2-mt">Top margin (mm)</label><input id="ltc-s2-mt" type="number" step="0.1"></div>
             </div>
+            <div class="ltc-field" style="margin-top:10px">
+              <label for="ltc-s2-orient">Print orientation</label>
+              <select id="ltc-s2-orient" aria-describedby="ltc-s2-orient-hint"></select>
+              <div id="ltc-s2-orient-hint" style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.4">Applies to USB TSPL. Does not use browser print settings.</div>
+            </div>
             <svg id="ltc-grid-svg" width="300" height="120" style="margin-top:12px;border-radius:6px"></svg>
           </div>
         </div>
@@ -2124,7 +2129,7 @@ function switchTab(el, targetId) {
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <link rel="stylesheet" href="/css/label-template-configurator.css?v=20260528-ltc11">
 <script src="/js/label-zone-align.js?v=20260528-ltc11" defer></script>
-<script src="/js/label-template-configurator.js?v=20260528-ltc11" defer></script>
+<script src="/js/label-template-configurator.js?v=20260528-ltc13" defer></script>
 <script src="/js/command-unit-prototype.js?v=20260528-ltc" defer></script>
 </body>
 </html>

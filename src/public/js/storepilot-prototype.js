@@ -254,6 +254,14 @@ function canSpCreateTransferRequest() {
   return hasAnyPermission(['storepilot.transfers.create', 'foundry.transfers.create']);
 }
 
+function canSpMutateTransfers() {
+  return _spPermissions.includes('storepilot.transfers.edit');
+}
+
+function spTransferMutateDeniedMessage() {
+  return 'You need Transfers — Accept / Stock permission (storepilot.transfers.edit) for your store. Ask Command Unit admin, then sign out and sign in again.';
+}
+
 function spSyncCreateRequestBtn() {
   const btn = document.getElementById('sp-tr-create-btn');
   if (!btn) return;
@@ -2277,6 +2285,287 @@ function loadReports() {
   });
 }
 
+// ── Incoming transfer detail (My Requests shipments, bucket verify) ─────────
+/** @type {Record<number, { units: Record<number, boolean>, lines: Record<number, boolean> }>} */
+let _incQrVerificationByDoc = {};
+let _incDocLinesByDoc = {};
+
+function spNormUnitBarcode(bc) {
+  const s = String(bc || '').trim();
+  if (/^\d+$/.test(s)) return s.padStart(7, '0');
+  return s;
+}
+
+function spLineRequiresUnitScans(line) {
+  if (!line) return false;
+  const units = Array.isArray(line.units) ? line.units : [];
+  return units.length > 0;
+}
+
+function spFindUnitOnDocLines(lines, scanned) {
+  const norm = spNormUnitBarcode(scanned);
+  const scanRaw = String(scanned || '').trim();
+  for (const line of lines) {
+    for (const u of (line.units || [])) {
+      const bc = spNormUnitBarcode(u.unit_barcode);
+      if (bc === norm || String(u.unit_id) === scanRaw) return { line, unit: u };
+    }
+  }
+  return null;
+}
+
+function spNormalizeIncScan(raw) {
+  let s = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      const qSku = u.searchParams.get('sku') || u.searchParams.get('code') || u.searchParams.get('unit');
+      if (qSku) return qSku.trim();
+      const parts = u.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+      if (parts.length) return decodeURIComponent(parts[parts.length - 1]);
+    } catch (_) { /* ignore */ }
+  }
+  if (s.startsWith('{') && s.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(s);
+      const unitBc = parsed.unit_barcode || parsed.unit || parsed.barcode;
+      if (unitBc) return String(unitBc).trim();
+      return String(parsed.sku_code || parsed.sku || parsed.code || '').trim() || s;
+    } catch (_) { /* ignore */ }
+  }
+  if (/^\d{1,7}$/.test(s)) return s.padStart(7, '0');
+  return s;
+}
+
+function spFreshIncVerification() {
+  return { units: {}, lines: {} };
+}
+
+function spIsLineQrVerified(docId, line) {
+  const v = _incQrVerificationByDoc[docId] || spFreshIncVerification();
+  if (spLineRequiresUnitScans(line)) {
+    const units = line.units || [];
+    return units.length > 0 && units.every((u) => v.units[Number(u.unit_id)]);
+  }
+  return !!v.lines[Number(line.line_id)];
+}
+
+function spIsDocQrVerified(docId, lines) {
+  if (!lines.length) return true;
+  return lines.every((line) => spIsLineQrVerified(docId, line));
+}
+
+function spUpdateIncStockBtn(docId, lines) {
+  const stockBtn = document.getElementById('sp-inc-stock-btn');
+  if (stockBtn) stockBtn.disabled = !spIsDocQrVerified(docId, lines);
+}
+
+function spIncVerifiedUnitCount(docId, line) {
+  const v = _incQrVerificationByDoc[docId] || spFreshIncVerification();
+  return (line.units || []).filter((u) => v.units[Number(u.unit_id)]).length;
+}
+
+function spLineUsesSkuScanOnly(line) {
+  if (!line) return true;
+  const units = Array.isArray(line.units) ? line.units : [];
+  return units.length === 0;
+}
+
+function spIncRefreshLineUi(docId, line) {
+  const lineId = line.line_id;
+  const verified = spIsLineQrVerified(docId, line);
+  const badgeEl = document.getElementById('sp-qr-v-' + lineId);
+  if (badgeEl) {
+    if (spLineRequiresUnitScans(line)) {
+      const n = spIncVerifiedUnitCount(docId, line);
+      const total = (line.units || []).length;
+      badgeEl.className = 'b ' + (verified ? 'b-green' : 'b-gray');
+      badgeEl.textContent = n + '/' + total + ' units';
+    } else {
+      badgeEl.className = 'b ' + (verified ? 'b-green' : 'b-gray');
+      badgeEl.textContent = verified ? 'QR Verified' : 'Pending QR';
+    }
+  }
+  (line.units || []).forEach((u) => {
+    const rowEl = document.getElementById('sp-qr-u-' + u.unit_id);
+    if (!rowEl) return;
+    const uv = !!((_incQrVerificationByDoc[docId] || spFreshIncVerification()).units[Number(u.unit_id)]);
+    const badge = rowEl.querySelector('.sp-unit-v-badge');
+    if (badge) {
+      badge.className = 'b sp-unit-v-badge ' + (uv ? 'b-green' : 'b-gray');
+      badge.textContent = uv ? 'Verified' : 'Pending';
+    }
+  });
+  const recvEl = document.getElementById('sp-recv-' + lineId);
+  if (recvEl && spLineRequiresUnitScans(line)) {
+    recvEl.value = String(spIncVerifiedUnitCount(docId, line));
+    recvEl.readOnly = true;
+  }
+}
+
+function spIncDocHasUnitScanLines(lines) {
+  return (lines || []).some((l) => spLineRequiresUnitScans(l));
+}
+
+function _spApplyBucketReceiveResult(docId, result) {
+  const lines = _incDocLinesByDoc[docId] || [];
+  _incQrVerificationByDoc[docId] = spFreshIncVerification();
+  (result.scanned || []).forEach(function (s) {
+    const hit = spFindUnitOnDocLines(lines, s.unit_barcode || String(s.unit_id));
+    if (hit && hit.unit && hit.unit.unit_id) {
+      _incQrVerificationByDoc[docId].units[Number(hit.unit.unit_id)] = true;
+    }
+  });
+  lines.forEach(function (l) {
+    spIncRefreshLineUi(docId, l);
+    const recvInp = document.getElementById('sp-recv-' + l.line_id);
+    if (recvInp && spLineRequiresUnitScans(l)) {
+      recvInp.value = spIncVerifiedUnitCount(docId, l);
+    }
+  });
+  spUpdateIncStockBtn(docId, lines);
+  const msgEl = document.getElementById('sp-inc-action-msg');
+  const sc = result.score || {};
+  if (msgEl) {
+    if (sc.total > 0 && sc.verified === sc.total) {
+      msgEl.style.color = 'var(--green)';
+      msgEl.textContent = 'All units verified. You can Verify & Stock.';
+    } else {
+      msgEl.style.color = 'var(--text2)';
+      msgEl.textContent = (sc.verified || 0) + ' / ' + (sc.total || 0) + ' units verified.';
+    }
+  }
+}
+
+window.openIncomingTransferBucket = function openIncomingTransferBucket(docId) {
+  if (!canSpMutateTransfers()) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(spTransferMutateDeniedMessage());
+    return;
+  }
+  const lines = _incDocLinesByDoc[docId] || [];
+  const expected = [];
+  lines.forEach(function (l) {
+    (l.units || []).forEach(function (u) {
+      expected.push({
+        unit_barcode: u.unit_barcode,
+        unit_id: u.unit_id,
+        sku_code: l.sku_code,
+        sku_id: l.sku_id,
+        line_id: l.line_id
+      });
+    });
+  });
+  if (!expected.length) {
+    if (typeof cosmosToastError === 'function') {
+      cosmosToastError('No units on this transfer document. Ask HQ to re-dispatch with unit scans.');
+    }
+    return;
+  }
+  if (typeof window.openBucket !== 'function') {
+    if (typeof cosmosToastError === 'function') cosmosToastError('Scan bucket is not loaded.');
+    return;
+  }
+  stopIncQrCamera();
+  window.openBucket({
+    mode: 'RECEIVE',
+    sessionId: docId,
+    label: 'Transfer #' + docId,
+    expected: expected,
+    onSubmit: function (result) {
+      _spApplyBucketReceiveResult(docId, result);
+    }
+  });
+};
+
+let _incCameraStream = null;
+let _incCameraRafId = null;
+let _incCameraDocId = null;
+let _incCameraDetector = null;
+let _incCameraDecodeMode = null;
+let _incCameraCanvas = null;
+let _incCameraCanvasCtx = null;
+
+function _isCameraSecureOrigin() {
+  const host = window.location && window.location.hostname ? window.location.hostname.toLowerCase() : '';
+  const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+  return !!window.isSecureContext || isLocalHost;
+}
+
+function _getCameraStartBlockedReason() {
+  if (!_isCameraSecureOrigin()) {
+    return 'Camera requires HTTPS or localhost. Open this app on secure URL and retry. Use scanner input as fallback.';
+  }
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+    return 'Camera API is unavailable in this browser. Use scanner input to verify SKUs.';
+  }
+  return '';
+}
+
+function _getCameraErrorMessage(err) {
+  const errName = err && err.name ? err.name : '';
+  if (errName === 'NotAllowedError' || errName === 'SecurityError') {
+    return 'Camera permission denied or blocked. Allow camera for this site and ensure you are on HTTPS or localhost.';
+  }
+  if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+    return 'No camera device found. Connect a camera or use scanner input.';
+  }
+  if (errName === 'NotReadableError' || errName === 'TrackStartError') {
+    return 'Camera is busy in another app/tab. Close it there and retry.';
+  }
+  if (errName === 'OverconstrainedError' || errName === 'ConstraintNotSatisfiedError') {
+    return 'Requested camera settings are unsupported on this device. Try another browser/device or scanner input.';
+  }
+  return 'Unable to start camera scanner. Check permissions and secure origin (HTTPS/localhost).';
+}
+
+const INC_STATUS_BADGE = {
+  DISPATCHED: '<span class="b b-orange">Dispatched</span>',
+  ACCEPTED: '<span class="b b-blue">Accepted</span>',
+  STOCKED: '<span class="b b-green">Stocked</span>'
+};
+
+function spIncRenderDetailToolbar(doc, lines, lineIds) {
+  const actionsEl = document.getElementById('sp-inc-detail-actions');
+  const metaEl = document.getElementById('sp-inc-detail-meta');
+  if (!actionsEl) return;
+  const isDispatched = doc.status === 'DISPATCHED';
+  const isAccepted = doc.status === 'ACCEPTED';
+  const allQrVerified = isAccepted ? spIsDocQrVerified(doc.doc_id, lines) : true;
+  const hasUnitLines = spIncDocHasUnitScanLines(lines);
+  if (metaEl) {
+    metaEl.innerHTML = (INC_STATUS_BADGE[doc.status] || doc.status) +
+      '<span>' + escHtml(fmtDate(doc.dispatched_at)) + '</span>';
+  }
+  let html = '';
+  const canMutate = canSpMutateTransfers();
+  if (isDispatched) {
+    if (canMutate) {
+      html += '<button type="button" class="btn sm primary" id="sp-inc-accept-btn" onclick="incAccept(' + doc.doc_id + ')">Accept</button>';
+    } else {
+      html += '<span style="font-size:12px;color:var(--text2);max-width:280px;line-height:1.4">View only — cannot accept. ' + escHtml(spTransferMutateDeniedMessage()) + '</span>';
+    }
+  }
+  if (isAccepted) {
+    if (canMutate) {
+      if (hasUnitLines) {
+        html += '<button type="button" class="btn sm primary" id="sp-inc-bucket-btn" onclick="openIncomingTransferBucket(' + doc.doc_id + ')">Open bucket</button>';
+      }
+      html += '<button type="button" class="btn sm primary" id="sp-inc-stock-btn" onclick="incStock(' + doc.doc_id + ',[' + lineIds.join(',') + '])"' +
+        (allQrVerified ? '' : ' disabled title="Verify all units first"') + '>Verify &amp; Stock</button>';
+      if (hasUnitLines) {
+        html += '<button type="button" class="btn sm" onclick="incResetQrVerification(' + doc.doc_id + ')">Reset</button>';
+      }
+    } else {
+      html += '<span style="font-size:12px;color:var(--text2);max-width:280px;line-height:1.4">View only — cannot stock. ' + escHtml(spTransferMutateDeniedMessage()) + '</span>';
+    }
+  }
+  if (doc.status === 'STOCKED') {
+    html += '<span style="font-size:13px;font-weight:600;color:var(--green)">Stocked ' + escHtml(fmtDate(doc.stocked_at)) + '</span>';
+  }
+  actionsEl.innerHTML = html;
+}
+
 window.expandIncTransfer = async function (docId) {
   const detailEl = document.getElementById('sp-inc-detail');
   const titleEl  = document.getElementById('sp-inc-detail-title');
@@ -2284,6 +2573,10 @@ window.expandIncTransfer = async function (docId) {
   const msgEl    = document.getElementById('sp-inc-action-msg');
   if (!detailEl || !bodyEl) return;
   stopIncQrCamera();
+  const trPanel = document.getElementById('sp-tr-detail');
+  if (trPanel && trPanel.classList.contains('is-open') && typeof window.closeSpTrDetail === 'function') {
+    window.closeSpTrDetail();
+  }
 
   if (typeof window.cosmosOpenExtendedDetail === 'function') {
     window.cosmosOpenExtendedDetail('sp-inc-detail', 'sp-inc-detail-backdrop');
@@ -2412,6 +2705,10 @@ window.closeIncDetail = function () {
 };
 
 window.incAccept = async function (docId) {
+  if (!canSpMutateTransfers()) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(spTransferMutateDeniedMessage());
+    return;
+  }
   const msgEl = document.getElementById('sp-inc-action-msg');
   const btn = document.getElementById('sp-inc-accept-btn');
   if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
@@ -2675,6 +2972,10 @@ window.incResetQrVerification = function (docId) {
 };
 
 window.incStock = async function (docId, lineIds) {
+  if (!canSpMutateTransfers()) {
+    if (typeof cosmosToastError === 'function') cosmosToastError(spTransferMutateDeniedMessage());
+    return;
+  }
   const msgEl = document.getElementById('sp-inc-action-msg');
   if (msgEl) msgEl.textContent = '';
   const linesMeta = _incDocLinesByDoc[docId] || [];
