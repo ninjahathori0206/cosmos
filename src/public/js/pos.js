@@ -1060,14 +1060,7 @@
         '<div class="pos-lk-cart-cust-name">' + escapeHtml(snap.full_name) + '</div>' +
         phoneRow +
         coinRow +
-        '<div class="pos-lk-cart-cust-meta">Customer ID · ' + escapeHtml(String(snap.customer_id)) + '</div>' +
-        '<button type="button" class="pos-lk-text-link" id="pos-cart-change-customer" style="margin-top:10px;padding:0">Change customer</button>'
-      const ch = document.getElementById('pos-cart-change-customer')
-      if (ch) {
-        ch.addEventListener('click', function () {
-          openPosCustomerPickerModal()
-        })
-      }
+        '<div class="pos-lk-cart-cust-meta">Customer ID · ' + escapeHtml(String(snap.customer_id)) + '</div>'
       return
     }
     body.innerHTML =
