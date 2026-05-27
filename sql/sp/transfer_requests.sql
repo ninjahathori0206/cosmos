@@ -621,7 +621,8 @@ BEGIN
     FROM dbo.stock_transfer_docs d
     INNER JOIN dbo.stock_transfer_doc_lines dl ON dl.doc_id = d.doc_id
     WHERE d.source_request_id = @request_id
-      AND d.status = N'STOCKED'
+      AND d.status IN (N'ACCEPTED', N'STOCKED')
+      AND ISNULL(dl.qty_received, 0) > 0
     GROUP BY d.source_request_id, dl.sku_id
   ) agg ON agg.request_id = l.request_id AND agg.sku_id = l.sku_id
   WHERE l.request_id = @request_id;
@@ -788,7 +789,7 @@ BEGIN
 
   END TRY
   BEGIN CATCH
-    IF @@TRANCOUNT > 0
+    IF @started_here = 1 AND @@TRANCOUNT > 0
       ROLLBACK TRANSACTION;
     IF OBJECT_ID('tempdb..#doc_out') IS NOT NULL DROP TABLE #doc_out;
     IF OBJECT_ID('tempdb..#sync_out') IS NOT NULL DROP TABLE #sync_out;

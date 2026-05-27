@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/command-unit.css">
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260525-toast-date">
-<script src="/js/cosmos-ui-polish.js?v=20260528-polish-load-defer" defer></script>
+<script src="/js/cosmos-ui-polish.js?v=20260528-mobile-back-block" defer></script>
 
 </head>
 <body class="cosmos-app-shell">
@@ -58,6 +58,9 @@
 
     <div class="nav-item" onclick="showPage('membership', this)">
       <span class="icon">🌟</span> Membership Tiers
+    </div>
+    <div class="nav-item" onclick="showPage('membership-plans', this)">
+      <span class="icon">🃏</span> Membership Plans
     </div>
     <div class="nav-item" onclick="showPage('store-types', this)">
       <span class="icon">🏪</span> Store Types
@@ -703,6 +706,35 @@
     </div>
   </div>
 
+  <!-- ═══ PAGE: MEMBERSHIP PLANS ═══ -->
+  <div class="page" id="page-membership-plans">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">Membership Plans</div>
+        <div class="page-subtitle">Define plan capabilities — Plus access, cashback rates, flat discounts, one-time entitlements, and sub-card issuance.</div>
+      </div>
+      <button type="button" class="topbar-btn primary ml-auto" onclick="window.openCuMembershipPlanModal && window.openCuMembershipPlanModal()">+ New Plan</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th>Key</th>
+              <th>Price</th>
+              <th>Validity</th>
+              <th>Capabilities</th>
+              <th>Status</th>
+              <th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="cu-membership-plans-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══ PAGE: PROMOTION — CUSTOMER OFFERS ═══ -->
   <div class="page" id="page-promotion">
     <div class="page-header flex items-center">
@@ -719,7 +751,7 @@
             <tr>
               <th>Offer</th>
               <th>Discount</th>
-              <th>Tier / Plus</th>
+              <th>Member Req.</th>
               <th>Valid until</th>
               <th>Status</th>
               <th class="text-right">Actions</th>
@@ -1960,6 +1992,7 @@
           <select id="cu-offer-type">
             <option value="PCT">Percentage (%)</option>
             <option value="FLAT">Flat (₹)</option>
+            <option value="CASHBACK">Cashback Coins ✨</option>
             <option value="FREEBIE">Freebie</option>
             <option value="BOGO_LOWEST_FREE">BOGO · lab eg + frame-only / lowest lab pairs</option>
             <option value="BUY_FRAME_GET_LENS_FREE">Lens value off (LAB combo)</option>
@@ -1970,6 +2003,11 @@
           <label>Value</label><input id="cu-offer-value" type="number" min="0" step="any" placeholder="20">
           <div class="form-hint" id="cu-offer-value-hint">For % or ₹ off. BOGO and some structured promos use Value as optional max discount cap in ₹ (&gt;0).</div>
           <div class="form-hint" id="cu-offer-structured-hint" style="display:none;margin-top:4px;color:var(--text2);">LAB lines with lens package only. Allocation does not apply. Use Value as optional ₹ cap.</div>
+        </div>
+        <div class="form-group span2" id="cu-offer-cashback-rate-row" style="display:none">
+          <label>Cashback Rate % <span class="label-req">*</span></label>
+          <input id="cu-offer-cashback-rate" type="number" min="0" max="100" step="any" placeholder="e.g. 5">
+          <div class="form-hint">% of order value awarded as Coins. The coin-to-rupee rate is configured in App Settings (coin_redemption_rate).</div>
         </div>
         <div class="form-group">
           <label>Trigger</label>
@@ -1997,28 +2035,22 @@
         </div>
 
         <div class="cu-offer-section-label">Eligibility &amp; validity</div>
-        <div class="form-group"><label>Eligible tier</label>
-          <select id="cu-offer-tier">
-            <option value="">All tiers</option>
-            <option value="Silver">Silver+</option>
-            <option value="Gold">Gold+</option>
-            <option value="Platinum">Platinum only</option>
+        <div class="form-group span2">
+          <label>Member Requirement</label>
+          <select id="cu-offer-required-capability">
+            <option value="">No restriction — visible to all customers</option>
+            <option value="has_plus_access">Plus Access members</option>
+            <option value="extra_cashback_pct">Extra Cashback plan members</option>
+            <option value="flat_discount_pct">Flat Discount plan members</option>
+            <option value="has_one_time_discount">One-Time Discount plan members</option>
+            <option value="can_create_sub_cards">Sub-Card Issuer members (Franchisee)</option>
           </select>
+          <div class="form-hint">Only customers whose membership plan has this capability will see this offer in Eyewoot Go and POS cart. <em>No restriction</em> shows it to everyone.</div>
         </div>
         <div class="form-group"><label>Sort order <span class="td-muted" style="font-weight:400">(lower = higher)</span></label><input id="cu-offer-sort" type="number" min="0" value="10"></div>
         <div class="form-group"><label>Valid from <span class="label-req">*</span></label><input id="cu-offer-from" type="date"></div>
         <div class="form-group"><label>Valid until <span class="label-req">*</span></label><input id="cu-offer-to" type="date">
           <div class="form-hint">Required for Eyewoot Go and POS cart — offers outside this window are hidden.</div>
-        </div>
-
-        <div class="cu-offer-plus-block">
-          <label class="cu-offer-plus-row" for="cu-offer-plus-only">
-            <input id="cu-offer-plus-only" type="checkbox" class="cu-offer-plus-check">
-            <span>
-              <span class="cu-offer-plus-title">Plus members only</span>
-              <span class="form-hint" style="display:block;margin-top:4px">Hide this offer from non-subscribers.</span>
-            </span>
-          </label>
         </div>
 
         <div class="form-group" id="cu-offer-status-wrap" style="display:none">
@@ -2047,6 +2079,108 @@
     <div class="modal-footer">
       <button type="button" class="topbar-btn primary" id="cu-offer-save-btn">Save offer</button>
       <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-customer-offer')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Membership Plan create / edit modal -->
+<div class="modal-overlay" id="modal-cu-membership-plan">
+  <div class="modal" style="width:660px;max-width:96vw">
+    <div class="modal-header">
+      <div class="modal-title" id="cu-plan-modal-title">New Membership Plan</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-membership-plan')">×</div>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cu-plan-edit-id" value="">
+      <div class="form-grid">
+
+        <div class="form-group span2"><label>Display Name <span class="label-req">*</span></label>
+          <input id="cu-plan-name" type="text" placeholder="e.g. Plus Annual" autocomplete="off"></div>
+
+        <div class="form-group"><label>Plan Key <span class="label-req">*</span></label>
+          <input id="cu-plan-key" type="text" placeholder="e.g. PLUS_ANNUAL" autocomplete="off" style="font-family:'JetBrains Mono',monospace;font-size:12.5px">
+          <div class="form-hint" id="cu-plan-key-hint">Uppercase letters, digits, underscores. Immutable after creation.</div>
+        </div>
+        <div class="form-group"><label>Price ₹ <span class="label-req">*</span></label>
+          <input id="cu-plan-price" type="number" min="0" step="any" placeholder="e.g. 1499"></div>
+
+        <div class="form-group"><label>Validity Type</label>
+          <select id="cu-plan-validity-type">
+            <option value="DAYS">Fixed duration (days)</option>
+            <option value="LIFETIME">Lifetime — never expires</option>
+          </select>
+        </div>
+        <div class="form-group" id="cu-plan-validity-days-wrap">
+          <label>Validity Days <span class="label-req">*</span></label>
+          <input id="cu-plan-validity-days" type="number" min="0" placeholder="e.g. 365">
+          <div class="form-hint">0 = no expiry for DAYS type.</div>
+        </div>
+
+        <div class="form-group"><label>Max Dependents</label>
+          <input id="cu-plan-max-dep" type="number" min="0" value="5">
+          <div class="form-hint">Max family members linkable under this plan.</div>
+        </div>
+        <div class="form-group" id="cu-plan-status-wrap" style="display:none">
+          <label>Status</label>
+          <select id="cu-plan-active"><option value="1">Active</option><option value="0">Inactive</option></select>
+        </div>
+
+        <!-- Capabilities -->
+        <div class="cu-offer-section-label span2" style="grid-column:span 2">Plan Capabilities</div>
+
+        <div class="form-group span2" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px 16px;grid-column:span 2">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-size:13.5px;font-weight:500">Plus Access</div>
+              <div class="form-hint" style="margin-top:2px">Grants access to Plus-gated offers in Eyewoot Go and POS cart.</div>
+            </div>
+            <div class="toggle" id="cu-plan-cap-plus-toggle" onclick="cuPlanToggleCap('plus')"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13.5px;font-weight:500">Extra Cashback %</div>
+              <div class="form-hint" style="margin-top:2px">Auto-applies this cashback % on every purchase.</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <input id="cu-plan-extra-cashback" type="number" min="0" max="100" step="any" placeholder="%" style="width:80px;padding:6px 8px;font-size:13px;display:none" id="cu-plan-extra-cashback-inp">
+              <div class="toggle" id="cu-plan-cap-cashback-toggle" onclick="cuPlanToggleCap('cashback')"></div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13.5px;font-weight:500">Flat Discount %</div>
+              <div class="form-hint" style="margin-top:2px">Applies a flat % discount on every purchase.</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <input id="cu-plan-flat-discount" type="number" min="0" max="100" step="any" placeholder="%" style="width:80px;padding:6px 8px;font-size:13px;display:none">
+              <div class="toggle" id="cu-plan-cap-flat-toggle" onclick="cuPlanToggleCap('flat')"></div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13.5px;font-weight:500">One-Time Discount %</div>
+              <div class="form-hint" style="margin-top:2px">Single-use entitlement for a one-time % discount (e.g. Bright Eye 50%).</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <input id="cu-plan-one-time-pct" type="number" min="0" max="100" step="any" placeholder="%" style="width:80px;padding:6px 8px;font-size:13px;display:none">
+              <div class="toggle" id="cu-plan-cap-onetime-toggle" onclick="cuPlanToggleCap('onetime')"></div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0">
+            <div>
+              <div style="font-size:13.5px;font-weight:500">Can Issue Sub-Cards</div>
+              <div class="form-hint" style="margin-top:2px">Holder can create membership cards on behalf of others (Franchisee).</div>
+            </div>
+            <div class="toggle" id="cu-plan-cap-sub-toggle" onclick="cuPlanToggleCap('sub')"></div>
+          </div>
+        </div>
+
+      </div>
+      <div id="cu-plan-modal-error" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn primary" id="cu-plan-save-btn" onclick="window.handleCuMembershipPlanSave && window.handleCuMembershipPlanSave()">Save plan</button>
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-membership-plan')">Cancel</button>
     </div>
   </div>
 </div>
@@ -2084,6 +2218,7 @@ function showPage(id, el, _opts) {
     roles: 'Roles & Permissions', modules: 'Module Access Control',
     homebrands: 'Home Brand Management', locations: 'Location Type Config',
     settings: 'System Settings', 'pos-settings': 'POS Settings', membership: 'Membership Tiers',
+    'membership-plans': 'Membership Plans',
     promotion: 'Configure Offer',
     leavetypes: 'Leave Types', 'store-types': 'Store Types', 'foundry-settings': 'Foundry Settings',
     'label-templates': 'Label Templates', audit: 'Audit Logs',
@@ -2130,6 +2265,6 @@ function switchTab(el, targetId) {
 <link rel="stylesheet" href="/css/label-template-configurator.css?v=20260528-ltc11">
 <script src="/js/label-zone-align.js?v=20260528-ltc11" defer></script>
 <script src="/js/label-template-configurator.js?v=20260528-ltc13" defer></script>
-<script src="/js/command-unit-prototype.js?v=20260528-ltc" defer></script>
+<script src="/js/command-unit-prototype.js?v=20260528-offer-tier-fix" defer></script>
 </body>
 </html>

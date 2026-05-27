@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-bucket-z">
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
 <link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260523-unit-search">
-<script src="/js/cosmos-ui-polish.js?v=20260528-polish-load-defer" defer></script>
+<script src="/js/cosmos-ui-polish.js?v=20260528-mobile-back-block" defer></script>
 <script src="/js/storeos-pwa.js?v=20260523-pwa-sw-v5" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260523-cart-bucket" defer></script>
@@ -743,18 +743,19 @@
         <div id="pay-cash-change" style="font-size:12px;color:var(--green);font-weight:600;margin-top:4px;display:none"></div>
       </div>
 
-      <!-- Store Wallet (coming soon) -->
-      <h4 class="pos-lk-pay-section-head">Store Wallet</h4>
-      <label class="pos-lk-pay-row disabled" data-method-row="WALLET">
-        <span class="pos-lk-pay-row-left">
-          <span class="pos-lk-pay-row-logo wallet-icon" aria-hidden="true">◈</span>
-          <span class="pos-lk-pay-row-info">
-            <span class="pos-lk-pay-row-title">Loyalty Wallet</span>
-            <span class="pos-lk-pay-row-sub">Coming soon</span>
+      <!-- Coins Wallet -->
+      <h4 class="pos-lk-pay-section-head">Coins Wallet</h4>
+      <div id="pos-lk-pay-coins-card" class="pos-lk-pay-coins-card" style="display:none">
+        <div class="pos-lk-pay-coins-row">
+          <span class="pos-lk-pay-coins-ic" aria-hidden="true">◈</span>
+          <span class="pos-lk-pay-coins-info">
+            <span class="pos-lk-pay-coins-title" id="pos-pay-coins-label">0 Coins</span>
+            <span class="pos-lk-pay-coins-sub" id="pos-pay-coins-value">≈ ₹0 redeemable value</span>
           </span>
-        </span>
-        <span style="font-size:11px;color:var(--text3);background:var(--accL);color:var(--acc2);padding:2px 8px;border-radius:20px;font-weight:600">Soon</span>
-      </label>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:6px;padding-left:34px">Coins are earned via Cashback offers and redeemable on future orders at the store.</div>
+      </div>
+      <div id="pos-lk-pay-coins-empty" style="display:none;padding:8px 0;font-size:12px;color:var(--text3)">No coins balance for this customer.</div>
 
       <select id="pay-method" class="pos-visually-hidden" aria-hidden="true" tabindex="-1" style="display:none">
         <option value="UPI" selected>UPI</option>

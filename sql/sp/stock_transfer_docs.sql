@@ -101,6 +101,10 @@ BEGIN
 
     DECLARE @sku_id INT, @qty INT, @unit_ids_json NVARCHAR(MAX), @wh_qty INT, @line_id INT;
     DECLARE @requires_unit BIT, @unit_id INT, @unit_count INT;
+    DECLARE @wh_name VARCHAR(200) = LEFT(CAST(dbo.fn_Foundry_WarehouseDisplayName() AS VARCHAR(200)), 200);
+    DECLARE @sku_code VARCHAR(100);
+    DECLARE @unit_avail INT;
+    DECLARE @err_msg NVARCHAR(500);
 
     DECLARE line_cur CURSOR LOCAL FAST_FORWARD FOR
       SELECT sku_id, qty, unit_ids_json FROM #lines;
@@ -121,12 +125,99 @@ BEGIN
           RAISERROR('Unit barcodes are required for this product type. Scan each piece to transfer.', 16, 1);
       END
 
+      /* Merge WAREHOUSE balance rows on wrong store_id into primary hub (units often correct while ledger row is stale). */
+      UPDATE h
+      SET
+        h.qty = h.qty + o.qty,
+        h.last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      FROM dbo.stock_balances h
+      INNER JOIN dbo.stock_balances o
+        ON o.sku_id = h.sku_id
+       AND o.location_type = N'WAREHOUSE'
+       AND o.location_id <> @wh_id
+       AND o.qty > 0
+      WHERE h.sku_id = @sku_id
+        AND h.location_type = N'WAREHOUSE'
+        AND h.location_id = @wh_id;
+
+      DELETE o
+      FROM dbo.stock_balances o
+      WHERE o.sku_id = @sku_id
+        AND o.location_type = N'WAREHOUSE'
+        AND o.location_id <> @wh_id
+        AND o.qty > 0
+        AND EXISTS (
+          SELECT 1
+          FROM dbo.stock_balances h
+          WHERE h.sku_id = @sku_id
+            AND h.location_type = N'WAREHOUSE'
+            AND h.location_id = @wh_id
+        );
+
+      UPDATE dbo.stock_balances
+      SET
+        location_id   = @wh_id,
+        location_name = @wh_name,
+        last_updated  = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      WHERE sku_id = @sku_id
+        AND location_type = N'WAREHOUSE'
+        AND location_id <> @wh_id
+        AND qty > 0;
+
+      IF @requires_unit = 1
+      BEGIN
+        SELECT @unit_avail = COUNT(*)
+        FROM dbo.sku_units u
+        WHERE u.sku_id = @sku_id
+          AND u.status = N'AVAILABLE'
+          AND u.location_type = N'WAREHOUSE'
+          AND u.location_id = @wh_id;
+
+        IF @unit_avail < @qty
+        BEGIN
+          SELECT @sku_code = sku_code FROM dbo.skus WHERE sku_id = @sku_id;
+          SET @err_msg = N'Insufficient available units at primary warehouse for SKU '
+            + ISNULL(@sku_code, CAST(@sku_id AS NVARCHAR(20)))
+            + N' (need ' + CAST(@qty AS NVARCHAR(12))
+            + N', found ' + CAST(@unit_avail AS NVARCHAR(12)) + N').';
+          RAISERROR(@err_msg, 16, 1);
+        END
+
+        IF NOT EXISTS (
+          SELECT 1
+          FROM dbo.stock_balances
+          WHERE sku_id = @sku_id AND location_type = N'WAREHOUSE' AND location_id = @wh_id
+        )
+        BEGIN
+          INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, location_name, qty, last_updated)
+          VALUES (@sku_id, N'WAREHOUSE', @wh_id, @wh_name, @unit_avail, DATEADD(MINUTE, 330, SYSUTCDATETIME()));
+        END
+        ELSE
+        BEGIN
+          UPDATE dbo.stock_balances
+          SET
+            qty = CASE WHEN qty < @unit_avail THEN @unit_avail ELSE qty END,
+            last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+          WHERE sku_id = @sku_id
+            AND location_type = N'WAREHOUSE'
+            AND location_id = @wh_id
+            AND qty < @unit_avail;
+        END
+      END
+
       SELECT @wh_qty = ISNULL(qty, 0)
       FROM dbo.stock_balances
       WHERE sku_id = @sku_id AND location_type = N'WAREHOUSE' AND location_id = @wh_id;
 
       IF ISNULL(@wh_qty, 0) < @qty
-        RAISERROR('Insufficient warehouse stock for one or more SKUs.', 16, 1);
+      BEGIN
+        SELECT @sku_code = sku_code FROM dbo.skus WHERE sku_id = @sku_id;
+        SET @err_msg = N'Insufficient warehouse stock for SKU '
+          + ISNULL(@sku_code, CAST(@sku_id AS NVARCHAR(20)))
+          + N' (need ' + CAST(@qty AS NVARCHAR(12))
+          + N', balance ' + CAST(ISNULL(@wh_qty, 0) AS NVARCHAR(12)) + N').';
+        RAISERROR(@err_msg, 16, 1);
+      END
 
       UPDATE dbo.stock_balances
       SET qty = qty - @qty, last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
@@ -209,10 +300,14 @@ BEGIN
 
   END TRY
   BEGIN CATCH
-    IF @@TRANCOUNT > 0
-      ROLLBACK TRANSACTION;
     IF OBJECT_ID('tempdb..#lines') IS NOT NULL DROP TABLE #lines;
-    DECLARE @msg1 NVARCHAR(500) = ERROR_MESSAGE(); RAISERROR(@msg1, 16, 1);
+    /* Caller (sp_TransferRequest_DispatchShipment) uses INSERT…EXEC — ROLLBACK here is illegal. */
+    IF @caller_manages_transaction = 1
+      THROW;
+    IF @started_here = 1 AND @@TRANCOUNT > 0
+      ROLLBACK TRANSACTION;
+    DECLARE @msg1 NVARCHAR(500) = ERROR_MESSAGE();
+    RAISERROR(@msg1, 16, 1);
   END CATCH;
 END;
 GO
@@ -249,8 +344,8 @@ GO
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- sp_StockTransferDoc_Stock
--- Store verifies received quantities.  ACCEPTED → STOCKED.
--- Increments STORE balance and writes stock_movements audit rows.
+-- Store verifies received quantities.  Partial: stays ACCEPTED until all units stocked.
+-- Increments STORE balance by delta (new qty_received minus prior) and writes stock_movements.
 --
 -- @lines_json : [{"line_id":1,"qty_received":2}, ...]
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -288,43 +383,47 @@ BEGIN
       WITH (line_id INT '$.line_id', qty_received INT '$.qty_received') j
     WHERE CAST(j.qty_received AS INT) >= 0;
 
-    -- Update each line and credit STORE balance
-    DECLARE @line_id INT, @qty_recv INT, @sku_id INT;
+    -- Update each line and credit STORE balance (delta vs prior qty_received on line)
+    DECLARE @line_id INT, @qty_recv INT, @sku_id INT, @qty_prev INT, @qty_delta INT;
 
     DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
-      SELECT r.line_id, r.qty_received, l.sku_id
+      SELECT r.line_id, r.qty_received, l.sku_id, ISNULL(l.qty_received, 0)
       FROM #recv r
       JOIN dbo.stock_transfer_doc_lines l ON l.line_id = r.line_id AND l.doc_id = @doc_id;
 
     OPEN cur;
-    FETCH NEXT FROM cur INTO @line_id, @qty_recv, @sku_id;
+    FETCH NEXT FROM cur INTO @line_id, @qty_recv, @sku_id, @qty_prev;
 
     WHILE @@FETCH_STATUS = 0
     BEGIN
-      -- Write qty_received on the line
+      IF @qty_recv < @qty_prev
+        RAISERROR('Received quantity cannot be less than already stocked on a line.', 16, 1);
+
+      SET @qty_delta = @qty_recv - @qty_prev;
+
       UPDATE dbo.stock_transfer_doc_lines
       SET qty_received = @qty_recv
       WHERE line_id = @line_id;
 
-      IF @qty_recv > 0
+      IF @qty_delta > 0
       BEGIN
         IF EXISTS (
           SELECT 1 FROM dbo.stock_balances
           WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @to_store_id
         )
           UPDATE dbo.stock_balances
-          SET qty = qty + @qty_recv, last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+          SET qty = qty + @qty_delta, last_updated = DATEADD(MINUTE, 330, SYSUTCDATETIME())
           WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @to_store_id;
         ELSE
           INSERT INTO dbo.stock_balances (sku_id, location_type, location_id, location_name, qty, last_updated)
-          VALUES (@sku_id, N'STORE', @to_store_id, @store_name, @qty_recv, DATEADD(MINUTE, 330, SYSUTCDATETIME()));
+          VALUES (@sku_id, N'STORE', @to_store_id, @store_name, @qty_delta, DATEADD(MINUTE, 330, SYSUTCDATETIME()));
 
         INSERT INTO dbo.stock_movements
           (sku_id, from_location_type, from_location_id, to_location_type, to_location_id,
            qty, movement_type, reference_id, notes, created_by)
         VALUES
           (@sku_id, N'WAREHOUSE', @wh_id, N'STORE', @to_store_id,
-           @qty_recv, N'HQ_TO_STORE', @doc_id, NULL, @stocked_by);
+           @qty_delta, N'HQ_TO_STORE', @doc_id, NULL, @stocked_by);
 
         ;WITH ranked AS (
           SELECT
@@ -346,18 +445,39 @@ BEGIN
         WHERE r.rn <= @qty_recv;
       END;
 
-      FETCH NEXT FROM cur INTO @line_id, @qty_recv, @sku_id;
+      FETCH NEXT FROM cur INTO @line_id, @qty_recv, @sku_id, @qty_prev;
     END;
 
     CLOSE cur; DEALLOCATE cur;
     DROP TABLE #recv;
 
-    -- Stamp the document as STOCKED
-    UPDATE dbo.stock_transfer_docs
-    SET status     = 'STOCKED',
-        stocked_by = @stocked_by,
-        stocked_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-    WHERE doc_id = @doc_id;
+    DECLARE @fully_stocked BIT = 1;
+
+    IF EXISTS (
+      SELECT 1
+      FROM dbo.stock_transfer_doc_lines l
+      WHERE l.doc_id = @doc_id
+        AND ISNULL(l.qty_received, 0) < l.qty_sent
+    )
+      SET @fully_stocked = 0;
+
+    IF EXISTS (
+      SELECT 1
+      FROM dbo.stock_transfer_doc_units du
+      INNER JOIN dbo.sku_units u ON u.unit_id = du.unit_id
+      WHERE du.doc_id = @doc_id
+        AND u.status = N'IN_TRANSIT'
+    )
+      SET @fully_stocked = 0;
+
+    IF @fully_stocked = 1
+    BEGIN
+      UPDATE dbo.stock_transfer_docs
+      SET status     = 'STOCKED',
+          stocked_by = @stocked_by,
+          stocked_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      WHERE doc_id = @doc_id;
+    END
 
     DECLARE @source_request_id INT;
     SELECT @source_request_id = source_request_id

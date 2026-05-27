@@ -65,9 +65,20 @@ Toggles text list of scanned unit barcodes (not QR images). Collapsed by default
 - Same `bucketHandleScan()` as a successful camera tap
 - Wedge/USB scanners supported
 
+## Mobile back (blocked on phone / PWA)
+
+On **mobile browsers and installed PWA** (`cosmos-ui-polish.js`), the **system/hardware Back** gesture is **blocked app-wide**. It does not change routes, close the bucket, or stop the camera.
+
+| Back type | Mobile / PWA | Desktop |
+|-----------|--------------|---------|
+| Hardware / browser Back | No effect (history trap) | Normal route back |
+| In-app buttons (✕, footer Back, detail close, nav) | Works | Works |
+
+Use **modal close**, **Scan more units**, and **Save** — not the Android back key — while scanning.
+
 ## Script version
 
-`cosmos-bucket-scan.js?v=20260521-tap-scan`
+`cosmos-bucket-scan.js?v=20260528-partial-receive` · `cosmos-ui-polish.js?v=20260528-mobile-back-block`
 
 ## Manual test
 
@@ -77,3 +88,4 @@ Toggles text list of scanned unit barcodes (not QR images). Collapsed by default
 4. Manual entry still works.
 5. Show QR lists scanned codes.
 6. **Foundry request dispatch:** With Request details open, tap **Open bucket** — bucket appears on top (do not close detail). Scan → Submit → **Confirm shipment** without reopening the request.
+7. **Mobile:** Open bucket → start camera → press hardware Back several times — still on scan screen; use ✕ or Save to leave.

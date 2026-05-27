@@ -247,7 +247,24 @@ router.put('/:id/stock', requireAnyModule(['storepilot', 'foundry']), requirePer
       stocked_by: { type: sql.Int,               value: req.user.user_id }
     });
 
-    return res.json({ success: true, data: result.recordset?.[0] || { doc_id: docId } });
+    const row = result.recordset?.[0] || { doc_id: docId };
+    let unitsRemaining = 0;
+    if (String(row.status || '').toUpperCase() === 'ACCEPTED') {
+      const detail = await executeStoredProcedure('sp_StockTransferDoc_GetById', {
+        doc_id: { type: sql.Int, value: docId }
+      });
+      const unitRows = detail.recordsets?.[2] || [];
+      unitsRemaining = unitRows.filter((u) => String(u.unit_status || '').toUpperCase() === 'IN_TRANSIT').length;
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        ...row,
+        partial_stock: String(row.status || '').toUpperCase() === 'ACCEPTED',
+        units_remaining: unitsRemaining
+      }
+    });
   } catch (err) {
     if (err.code === 'EREQUEST') {
       return res.status(422).json({ success: false, message: err.message });

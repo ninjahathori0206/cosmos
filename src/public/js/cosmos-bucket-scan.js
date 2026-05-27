@@ -303,7 +303,32 @@
   function bucketCanSubmit() {
     const sc = bucketScore();
     if (_bucket.mode === 'TRANSFER') return _bucket.scanned.length >= 1;
-    return sc.total > 0 && sc.verified === sc.total;
+    return sc.total > 0 && sc.verified >= 1;
+  }
+
+  function bucketUpdateReviewFooterLabels() {
+    const sc = bucketScore();
+    const backBtn = document.getElementById('bucket-back-to-scan-btn');
+    const submitBtn = document.getElementById('bucket-review-submit-btn');
+    if (_bucket.mode === 'RECEIVE') {
+      if (backBtn) {
+        backBtn.textContent = sc.verified > 0 && sc.verified < sc.total
+          ? 'Scan more units'
+          : '← Back';
+      }
+      if (submitBtn) {
+        const label = document.getElementById('bucket-review-submit-label');
+        if (label) {
+          label.textContent = sc.total > 0 && sc.verified >= sc.total
+            ? 'Save all & close'
+            : ('Save ' + sc.verified + ' scanned');
+        } else {
+          submitBtn.textContent = sc.total > 0 && sc.verified >= sc.total
+            ? '✓ Save all & close'
+            : ('✓ Save ' + sc.verified + ' scanned');
+        }
+      }
+    }
   }
 
   function bucketRenderScore() {
@@ -321,6 +346,7 @@
     }
     const submitBtn = document.getElementById('bucket-review-submit-btn');
     if (submitBtn) submitBtn.disabled = !bucketCanSubmit();
+    bucketUpdateReviewFooterLabels();
     bucketUpdateShowQrBtn();
   }
 
@@ -801,7 +827,7 @@
     if (!bucketCanSubmit()) {
       if (typeof window.cosmosToastWarn === 'function') {
         window.cosmosToastWarn(_bucket.mode === 'RECEIVE'
-          ? 'Scan every unit on the transfer document'
+          ? 'Scan at least one unit on this transfer document'
           : 'Scan at least one unit');
       }
       return;

@@ -394,7 +394,7 @@
   }
 </style>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-shipments-fix">
-<script src="/js/cosmos-ui-polish.js?v=20260528-shipments-fix" defer></script>
+<script src="/js/cosmos-ui-polish.js?v=20260528-mobile-back-block" defer></script>
 <script src="/js/cosmos-invoice-share-canvas.js?v=20260528-inv-rich" defer></script>
 <script src="/js/cosmos-record-list.js?v=20260528-shipments-fix" defer></script>
 <script src="/js/storepilot-pwa.js?v=20260528-shipments-fix" defer></script>
@@ -980,8 +980,8 @@
         <button type="button" class="btn sm primary" onclick="bucketGoReview()">Review &amp; submit</button>
       </div>
       <div id="bucket-foot-review" class="bucket-foot-row" style="display:none">
-        <button type="button" class="btn sm" onclick="bucketBackToScan()">← Back</button>
-        <button type="button" class="btn sm primary" id="bucket-review-submit-btn" onclick="bucketSubmit()" disabled>✓ Submit bucket</button>
+        <button type="button" class="btn sm" id="bucket-back-to-scan-btn" onclick="bucketBackToScan()">← Back</button>
+        <button type="button" class="btn sm primary" id="bucket-review-submit-btn" onclick="bucketSubmit()" disabled><span id="bucket-review-submit-label">✓ Submit bucket</span></button>
       </div>
     </div>
   </div>
@@ -989,7 +989,7 @@
 
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
-<script src="/js/cosmos-bucket-scan.js?v=20260522-camera-resume" defer></script>
-<script src="/js/storepilot-prototype.js?v=20260528-shipments-fix" defer></script>
+<script src="/js/cosmos-bucket-scan.js?v=20260528-partial-receive" defer></script>
+<script src="/js/storepilot-prototype.js?v=20260528-partial-receive" defer></script>
 </body>
 </html>

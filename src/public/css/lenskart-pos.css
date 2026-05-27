@@ -1342,12 +1342,58 @@ body.pos-lk-flow .pos-ob-proceed-btn {
   margin-top: 8px;
 }
 
+.pos-lk-cart-cust-coins {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold, #b45309);
+  background: var(--goldL, #fef3c7);
+  border-radius: 20px;
+  padding: 2px 8px;
+  display: inline-block;
+  margin-bottom: 6px;
+  margin-top: 2px;
+}
+
 .pos-lk-cart-cust-walkin-title {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
   color: var(--lk-text);
   line-height: 1.25;
+}
+
+/* Coins wallet card on payment screen */
+.pos-lk-pay-coins-card {
+  background: var(--goldL, #fef3c7);
+  border: 1px solid var(--gold, #d97706);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+.pos-lk-pay-coins-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.pos-lk-pay-coins-ic {
+  font-size: 22px;
+  color: var(--gold, #b45309);
+  line-height: 1;
+  margin-top: 2px;
+}
+.pos-lk-pay-coins-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pos-lk-pay-coins-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gold, #b45309);
+}
+.pos-lk-pay-coins-sub {
+  font-size: 12px;
+  color: var(--text2);
 }
 
 #pos-lk-cart-customer-body.pos-lk-cart-cust--required {

@@ -783,4 +783,51 @@
     if (typeof guard === 'number' && Date.now() < guard) return
     if (typeof closeFn === 'function') closeFn()
   }
+
+  /** Mobile / PWA shell — hardware Back is blocked app-wide; use in-app controls only. */
+  var _cosmosMobileBackTrapInstalled = false
+
+  window.cosmosIsMobileAppShell = function cosmosIsMobileAppShell() {
+    try {
+      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true
+    } catch (_) { /* ignore */ }
+    if (window.navigator && window.navigator.standalone === true) return true
+    try {
+      if (window.matchMedia &&
+          window.matchMedia('(max-width: 768px)').matches &&
+          window.matchMedia('(pointer: coarse)').matches) {
+        return true
+      }
+    } catch (_) { /* ignore */ }
+    return false
+  }
+
+  window.cosmosIsMobileBackBlocked = function cosmosIsMobileBackBlocked() {
+    return _cosmosMobileBackTrapInstalled && window.cosmosIsMobileAppShell()
+  }
+
+  function cosmosMobileBackTrapHandler() {
+    if (!window.cosmosIsMobileBackBlocked()) return
+    try {
+      history.pushState({ cosmosBackTrap: 1 }, '', location.href)
+    } catch (_) { /* ignore */ }
+  }
+
+  window.cosmosInitMobileBackBlock = function cosmosInitMobileBackBlock() {
+    if (!window.cosmosIsMobileAppShell()) return
+    if (_cosmosMobileBackTrapInstalled) return
+    _cosmosMobileBackTrapInstalled = true
+    try {
+      history.pushState({ cosmosBackTrap: 1 }, '', location.href)
+    } catch (_) { /* ignore */ }
+    window.addEventListener('popstate', cosmosMobileBackTrapHandler)
+  }
+
+  if (document.readyState === 'complete') {
+    window.cosmosInitMobileBackBlock()
+  } else {
+    window.addEventListener('load', function cosmosMobileBackBlockOnLoad() {
+      window.cosmosInitMobileBackBlock()
+    })
+  }
 })()

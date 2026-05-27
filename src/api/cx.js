@@ -248,14 +248,17 @@ router.get(
             m.expires_at,
             m.price_paid,
             m.is_active,
+            m.pos_order_id,
             p.display_name AS plan_display_name,
             p.tier_id,
             t.tier_name,
             t.loyalty_tier AS membership_type,
-            t.benefits AS tier_benefits
+            t.benefits AS tier_benefits,
+            o.order_no AS linked_order_no
           FROM   dbo.customer_memberships m
           JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
           LEFT JOIN dbo.membership_tiers t ON t.membership_id = p.tier_id
+          LEFT JOIN dbo.pos_orders o ON o.order_id = m.pos_order_id
           WHERE  m.customer_id = @cid AND m.is_active = 1
             AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
           ORDER BY m.expires_at DESC
@@ -268,13 +271,16 @@ router.get(
             m.expires_at,
             m.price_paid,
             m.is_active,
+            m.pos_order_id,
             p.display_name AS plan_display_name,
             NULL AS tier_id,
             p.display_name AS tier_name,
             NULL AS membership_type,
-            NULL AS tier_benefits
+            NULL AS tier_benefits,
+            o.order_no AS linked_order_no
           FROM   dbo.customer_memberships m
           JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
+          LEFT JOIN dbo.pos_orders o ON o.order_id = m.pos_order_id
           WHERE  m.customer_id = @cid AND m.is_active = 1
             AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
           ORDER BY m.expires_at DESC
@@ -300,8 +306,9 @@ router.get(
 
 /**
  * POST /api/cx/customers/:id/membership — grant / renew Eyewoot Go membership
- * Body: { plan_key, price_paid?, validity_days?, expires_at? (YYYY-MM-DD or ISO) }
+ * Body: { plan_key, price_paid?, validity_days?, expires_at? (YYYY-MM-DD or ISO), pos_order_id? }
  * Deactivates other active rows for this customer, then inserts a new membership.
+ * pos_order_id links the grant to the POS order where the customer paid for the membership.
  */
 router.post('/customers/:id/membership', authJwt, requireModule('cx'), requireCxPermission('cx.membership.manage'), async (req, res, next) => {
   try {
@@ -309,7 +316,7 @@ router.post('/customers/:id/membership', authJwt, requireModule('cx'), requireCx
     const customerId = parseInt(req.params.id, 10)
     if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
 
-    const { plan_key, price_paid, validity_days, expires_at } = req.body || {}
+    const { plan_key, price_paid, validity_days, expires_at, pos_order_id } = req.body || {}
     const pk = String(plan_key || '').trim()
     if (!pk) return res.status(400).json({ success: false, message: 'plan_key is required.' })
 
@@ -345,24 +352,28 @@ router.post('/customers/:id/membership', authJwt, requireModule('cx'), requireCx
         WHERE  customer_id = @cid AND is_active = 1
       `)
 
+      const posOrderId = pos_order_id ? parseInt(String(pos_order_id), 10) : null
+      const validPosOrderId = posOrderId && Number.isFinite(posOrderId) && posOrderId > 0 ? posOrderId : null
+
       const ins = tx.request()
         .input('cid', customerId)
         .input('pk', pk)
         .input('paid', paid)
         .input('uid', uid)
+        .input('pos_order_id', sql.Int, validPosOrderId)
 
       if (expires_at) {
         const expStr = String(expires_at).trim()
         ins.input('exp', sql.DateTime2, new Date(expStr.includes('T') ? expStr : expStr + 'T23:59:59+05:30'))
         const r = await ins.query(`
           INSERT INTO dbo.customer_memberships
-            (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id)
+            (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id, pos_order_id)
           OUTPUT INSERTED.membership_id
           VALUES (
             @cid, @pk,
             DATEADD(MINUTE, 330, SYSUTCDATETIME()),
             @exp,
-            @paid, 1, @uid
+            @paid, 1, @uid, @pos_order_id
           )
         `)
         await tx.commit()
@@ -371,13 +382,13 @@ router.post('/customers/:id/membership', authJwt, requireModule('cx'), requireCx
 
       const r2 = await ins.input('days', sql.Int, days).query(`
         INSERT INTO dbo.customer_memberships
-          (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id)
+          (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id, pos_order_id)
         OUTPUT INSERTED.membership_id
         VALUES (
           @cid, @pk,
           DATEADD(MINUTE, 330, SYSUTCDATETIME()),
           DATEADD(DAY, @days, DATEADD(MINUTE, 330, SYSUTCDATETIME())),
-          @paid, 1, @uid
+          @paid, 1, @uid, @pos_order_id
         )
       `)
       await tx.commit()

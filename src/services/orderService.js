@@ -2303,7 +2303,9 @@ async function fetchAllOrders(pool, mode, {
            MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.lab_workflow_status ELSE NULL END) AS lab_workflow_status,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_received_confirmed, 0) AS INT) ELSE NULL END) AS lab_rcv_all,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_backorder_confirmed, 0) AS INT) ELSE NULL END) AS lab_bo_all,
-           MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.sub_order_id ELSE NULL END) AS sub_order_id
+           MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.sub_order_id ELSE NULL END) AS sub_order_id,
+           mem_info.membership_plan_name,
+           mem_info.membership_plan_key
     FROM ${t.orders} o
     LEFT JOIN dbo.pos_customers c ON o.customer_id = c.customer_id
     LEFT JOIN dbo.stores s ON o.store_id = s.store_id
@@ -2313,6 +2315,14 @@ async function fetchAllOrders(pool, mode, {
       FROM ${t.payments}
       GROUP BY order_id
     ) pay_agg ON pay_agg.order_id = o.order_id
+    OUTER APPLY (
+      SELECT TOP 1 mp.display_name AS membership_plan_name, mp.plan_key AS membership_plan_key
+      FROM dbo.customer_memberships cm
+      JOIN dbo.membership_plans mp ON mp.plan_key = cm.plan_key
+      WHERE cm.customer_id = o.customer_id AND cm.is_active = 1
+        AND cm.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      ORDER BY cm.expires_at DESC
+    ) mem_info
     WHERE 1=1
   `
   

@@ -316,6 +316,7 @@ function applyStorepilotRouteFromPath() {
 }
 
 window.addEventListener('popstate', () => {
+  if (window.cosmosIsMobileBackBlocked && window.cosmosIsMobileBackBlocked()) return;
   applyStorepilotRouteFromPath();
 });
 
@@ -2450,28 +2451,146 @@ function spFreshIncVerification() {
   return { units: {}, lines: {} };
 }
 
+function spIncVerifyStorageKey(docId) {
+  return 'sp-inc-verify-' + docId;
+}
+
+function spIncSaveVerification(docId) {
+  const v = _incQrVerificationByDoc[docId];
+  if (!v) return;
+  try {
+    sessionStorage.setItem(spIncVerifyStorageKey(docId), JSON.stringify(v));
+  } catch (_) { /* ignore */ }
+}
+
+function spIncLoadVerification(docId) {
+  try {
+    const raw = sessionStorage.getItem(spIncVerifyStorageKey(docId));
+    if (!raw) return spFreshIncVerification();
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.units === 'object') {
+      return { units: parsed.units, lines: parsed.lines || {} };
+    }
+  } catch (_) { /* ignore */ }
+  return spFreshIncVerification();
+}
+
+function spIncUnitIsStocked(unit) {
+  return String(unit && unit.unit_status || '').toUpperCase() === 'AT_STORE';
+}
+
+function spIncUnitIsInTransit(unit) {
+  const st = String(unit && unit.unit_status || '').toUpperCase();
+  return !st || st === 'IN_TRANSIT';
+}
+
+function spIncIsUnitVerified(docId, unit) {
+  if (spIncUnitIsStocked(unit)) return true;
+  const v = _incQrVerificationByDoc[docId] || spFreshIncVerification();
+  return !!v.units[Number(unit.unit_id)];
+}
+
+function spIncTotalUnitCount(lines) {
+  let n = 0;
+  (lines || []).forEach(function (l) {
+    n += (l.units || []).length;
+  });
+  return n;
+}
+
+function spIncStockedUnitCount(lines) {
+  let n = 0;
+  (lines || []).forEach(function (l) {
+    (l.units || []).forEach(function (u) {
+      if (spIncUnitIsStocked(u)) n += 1;
+    });
+  });
+  return n;
+}
+
+function spIncVerifiedUnitCount(docId, line) {
+  return (line.units || []).filter(function (u) {
+    return spIncIsUnitVerified(docId, u);
+  }).length;
+}
+
+function spIncDocVerifiedUnitCount(docId, lines) {
+  let n = 0;
+  (lines || []).forEach(function (l) {
+    n += spIncVerifiedUnitCount(docId, l);
+  });
+  return n;
+}
+
+function spIncPendingStockUnitCount(docId, lines) {
+  let n = 0;
+  (lines || []).forEach(function (l) {
+    (l.units || []).forEach(function (u) {
+      if (spIncIsUnitVerified(docId, u) && spIncUnitIsInTransit(u)) n += 1;
+    });
+  });
+  return n;
+}
+
+function spIncHasPartialVerified(docId, lines) {
+  const total = spIncTotalUnitCount(lines);
+  const verified = spIncDocVerifiedUnitCount(docId, lines);
+  return total > 0 && verified > 0 && verified < total;
+}
+
+function spIncHydrateVerificationFromDoc(docId, lines) {
+  const v = spIncLoadVerification(docId);
+  (lines || []).forEach(function (l) {
+    (l.units || []).forEach(function (u) {
+      if (spIncUnitIsStocked(u)) v.units[Number(u.unit_id)] = true;
+    });
+  });
+  _incQrVerificationByDoc[docId] = v;
+  spIncSaveVerification(docId);
+}
+
 function spIsLineQrVerified(docId, line) {
   const v = _incQrVerificationByDoc[docId] || spFreshIncVerification();
   if (spLineRequiresUnitScans(line)) {
     const units = line.units || [];
-    return units.length > 0 && units.every((u) => v.units[Number(u.unit_id)]);
+    return units.length > 0 && units.every(function (u) {
+      return spIncIsUnitVerified(docId, u);
+    });
   }
   return !!v.lines[Number(line.line_id)];
 }
 
 function spIsDocQrVerified(docId, lines) {
   if (!lines.length) return true;
-  return lines.every((line) => spIsLineQrVerified(docId, line));
+  return lines.every(function (line) { return spIsLineQrVerified(docId, line); });
 }
 
 function spUpdateIncStockBtn(docId, lines) {
   const stockBtn = document.getElementById('sp-inc-stock-btn');
-  if (stockBtn) stockBtn.disabled = !spIsDocQrVerified(docId, lines);
+  if (!stockBtn) return;
+  const pending = spIncPendingStockUnitCount(docId, lines);
+  const allVerified = spIsDocQrVerified(docId, lines);
+  stockBtn.disabled = pending < 1 && !allVerified;
+  if (allVerified) {
+    stockBtn.textContent = 'Verify & Stock';
+    stockBtn.title = '';
+  } else if (pending > 0) {
+    stockBtn.textContent = 'Stock verified (' + pending + ')';
+    stockBtn.title = 'Stock scanned units now; remaining units stay on this transfer';
+  } else {
+    stockBtn.textContent = 'Stock verified';
+    stockBtn.title = 'Scan units first';
+  }
 }
 
-function spIncVerifiedUnitCount(docId, line) {
-  const v = _incQrVerificationByDoc[docId] || spFreshIncVerification();
-  return (line.units || []).filter((u) => v.units[Number(u.unit_id)]).length;
+function spIncUnitBadgeHtml(docId, unit) {
+  if (spIncUnitIsStocked(unit)) {
+    return '<span class="b sp-unit-v-badge b-green" style="font-size:10px">Stocked</span>';
+  }
+  if (spIncIsUnitVerified(docId, unit)) {
+    return '<span class="b sp-unit-v-badge b-blue" style="font-size:10px">Verified</span>';
+  }
+  return '<span class="b sp-unit-v-badge b-gray" style="font-size:10px">Pending</span>';
 }
 
 function spLineUsesSkuScanOnly(line) {
@@ -2495,14 +2614,16 @@ function spIncRefreshLineUi(docId, line) {
       badgeEl.textContent = verified ? 'QR Verified' : 'Pending QR';
     }
   }
-  (line.units || []).forEach((u) => {
+  (line.units || []).forEach(function (u) {
     const rowEl = document.getElementById('sp-qr-u-' + u.unit_id);
     if (!rowEl) return;
-    const uv = !!((_incQrVerificationByDoc[docId] || spFreshIncVerification()).units[Number(u.unit_id)]);
     const badge = rowEl.querySelector('.sp-unit-v-badge');
     if (badge) {
-      badge.className = 'b sp-unit-v-badge ' + (uv ? 'b-green' : 'b-gray');
-      badge.textContent = uv ? 'Verified' : 'Pending';
+      const html = spIncUnitBadgeHtml(docId, u);
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      const next = tmp.firstElementChild;
+      if (next) badge.replaceWith(next);
     }
   });
   const recvEl = document.getElementById('sp-recv-' + lineId);
@@ -2518,13 +2639,20 @@ function spIncDocHasUnitScanLines(lines) {
 
 function _spApplyBucketReceiveResult(docId, result) {
   const lines = _incDocLinesByDoc[docId] || [];
-  _incQrVerificationByDoc[docId] = spFreshIncVerification();
+  const v = _incQrVerificationByDoc[docId] || spIncLoadVerification(docId);
+  (lines || []).forEach(function (l) {
+    (l.units || []).forEach(function (u) {
+      if (spIncUnitIsStocked(u)) v.units[Number(u.unit_id)] = true;
+    });
+  });
   (result.scanned || []).forEach(function (s) {
     const hit = spFindUnitOnDocLines(lines, s.unit_barcode || String(s.unit_id));
     if (hit && hit.unit && hit.unit.unit_id) {
-      _incQrVerificationByDoc[docId].units[Number(hit.unit.unit_id)] = true;
+      v.units[Number(hit.unit.unit_id)] = true;
     }
   });
+  _incQrVerificationByDoc[docId] = v;
+  spIncSaveVerification(docId);
   lines.forEach(function (l) {
     spIncRefreshLineUi(docId, l);
     const recvInp = document.getElementById('sp-recv-' + l.line_id);
@@ -2535,14 +2663,23 @@ function _spApplyBucketReceiveResult(docId, result) {
   spUpdateIncStockBtn(docId, lines);
   const msgEl = document.getElementById('sp-inc-action-msg');
   const sc = result.score || {};
+  const verified = spIncDocVerifiedUnitCount(docId, lines);
+  const total = spIncTotalUnitCount(lines);
   if (msgEl) {
-    if (sc.total > 0 && sc.verified === sc.total) {
+    if (total > 0 && verified >= total) {
       msgEl.style.color = 'var(--green)';
       msgEl.textContent = 'All units verified. You can Verify & Stock.';
+    } else if (verified > 0) {
+      msgEl.style.color = 'var(--text2)';
+      msgEl.textContent = verified + ' / ' + total + ' units verified. Stock verified units or scan more.';
     } else {
       msgEl.style.color = 'var(--text2)';
       msgEl.textContent = (sc.verified || 0) + ' / ' + (sc.total || 0) + ' units verified.';
     }
+  }
+  const detailDoc = window._spIncLastDoc;
+  if (detailDoc && Number(detailDoc.doc_id) === Number(docId)) {
+    spIncRenderDetailToolbar(detailDoc, lines, lines.map(function (l) { return l.line_id; }));
   }
 }
 
@@ -2555,6 +2692,7 @@ window.openIncomingTransferBucket = function openIncomingTransferBucket(docId) {
   const expected = [];
   lines.forEach(function (l) {
     (l.units || []).forEach(function (u) {
+      if (!spIncUnitIsInTransit(u)) return;
       expected.push({
         unit_barcode: u.unit_barcode,
         unit_id: u.unit_id,
@@ -2637,19 +2775,31 @@ function spIncRenderDetailToolbar(doc, lines, lineIds) {
   const actionsEl = document.getElementById('sp-inc-detail-actions');
   const metaEl = document.getElementById('sp-inc-detail-meta');
   if (!actionsEl) return;
+  const docId = doc.doc_id;
   const isDispatched = doc.status === 'DISPATCHED';
   const isAccepted = doc.status === 'ACCEPTED';
-  const allQrVerified = isAccepted ? spIsDocQrVerified(doc.doc_id, lines) : true;
   const hasUnitLines = spIncDocHasUnitScanLines(lines);
+  const allQrVerified = isAccepted ? spIsDocQrVerified(docId, lines) : true;
+  const verifiedCount = isAccepted ? spIncDocVerifiedUnitCount(docId, lines) : 0;
+  const totalUnits = isAccepted ? spIncTotalUnitCount(lines) : 0;
+  const partialVerified = isAccepted && spIncHasPartialVerified(docId, lines);
+  const pendingStock = isAccepted ? spIncPendingStockUnitCount(docId, lines) : 0;
+  const stockedCount = isAccepted ? spIncStockedUnitCount(lines) : 0;
   if (metaEl) {
-    metaEl.innerHTML = (INC_STATUS_BADGE[doc.status] || doc.status) +
+    let metaHtml = (INC_STATUS_BADGE[doc.status] || doc.status) +
       '<span>' + escHtml(fmtDate(doc.dispatched_at)) + '</span>';
+    if (isAccepted && hasUnitLines && totalUnits > 0) {
+      metaHtml += '<span>' + verifiedCount + ' / ' + totalUnits + ' units verified';
+      if (stockedCount > 0) metaHtml += ' · ' + stockedCount + ' stocked';
+      metaHtml += '</span>';
+    }
+    metaEl.innerHTML = metaHtml;
   }
   let html = '';
   const canMutate = canSpMutateTransfers();
   if (isDispatched) {
     if (canMutate) {
-      html += '<button type="button" class="btn sm primary" id="sp-inc-accept-btn" onclick="incAccept(' + doc.doc_id + ')">Accept</button>';
+      html += '<button type="button" class="btn sm primary" id="sp-inc-accept-btn" onclick="incAccept(' + docId + ')">Accept</button>';
     } else {
       html += '<span style="font-size:12px;color:var(--text2);max-width:280px;line-height:1.4">View only — cannot accept. ' + escHtml(spTransferMutateDeniedMessage()) + '</span>';
     }
@@ -2657,12 +2807,18 @@ function spIncRenderDetailToolbar(doc, lines, lineIds) {
   if (isAccepted) {
     if (canMutate) {
       if (hasUnitLines) {
-        html += '<button type="button" class="btn sm primary" id="sp-inc-bucket-btn" onclick="openIncomingTransferBucket(' + doc.doc_id + ')">Open bucket</button>';
+        const bucketLabel = partialVerified || (verifiedCount > 0 && verifiedCount < totalUnits)
+          ? 'Scan more units'
+          : 'Open bucket';
+        const bucketClass = partialVerified ? 'btn sm' : 'btn sm primary';
+        html += '<button type="button" class="' + bucketClass + '" id="sp-inc-bucket-btn" onclick="openIncomingTransferBucket(' + docId + ')">' + bucketLabel + '</button>';
       }
-      html += '<button type="button" class="btn sm primary" id="sp-inc-stock-btn" onclick="incStock(' + doc.doc_id + ',[' + lineIds.join(',') + '])"' +
-        (allQrVerified ? '' : ' disabled title="Verify all units first"') + '>Verify &amp; Stock</button>';
+      const stockDisabled = hasUnitLines ? (pendingStock < 1 && !allQrVerified) : !allQrVerified;
+      const stockPrimary = hasUnitLines && partialVerified && pendingStock > 0;
+      html += '<button type="button" class="btn sm' + (stockPrimary ? ' primary' : (allQrVerified ? ' primary' : '')) + '" id="sp-inc-stock-btn" onclick="incStock(' + docId + ',[' + lineIds.join(',') + '])"' +
+        (stockDisabled ? ' disabled' : '') + '>Verify &amp; Stock</button>';
       if (hasUnitLines) {
-        html += '<button type="button" class="btn sm" onclick="incResetQrVerification(' + doc.doc_id + ')">Reset</button>';
+        html += '<button type="button" class="btn sm" onclick="incResetQrVerification(' + docId + ')">Reset</button>';
       }
     } else {
       html += '<span style="font-size:12px;color:var(--text2);max-width:280px;line-height:1.4">View only — cannot stock. ' + escHtml(spTransferMutateDeniedMessage()) + '</span>';
@@ -2672,6 +2828,7 @@ function spIncRenderDetailToolbar(doc, lines, lineIds) {
     html += '<span style="font-size:13px;font-weight:600;color:var(--green)">Stocked ' + escHtml(fmtDate(doc.stocked_at)) + '</span>';
   }
   actionsEl.innerHTML = html;
+  if (isAccepted && canMutate) spUpdateIncStockBtn(docId, lines);
 }
 
 window.expandIncTransfer = async function (docId) {
@@ -2710,25 +2867,25 @@ window.expandIncTransfer = async function (docId) {
     const lines      = doc.lines || [];
     const isDispatched = doc.status === 'DISPATCHED';
     const isAccepted   = doc.status === 'ACCEPTED';
+    window._spIncLastDoc = doc;
     _incDocLinesByDoc[docId] = lines;
-    if (!_incQrVerificationByDoc[docId] || typeof _incQrVerificationByDoc[docId].units !== 'object') {
+    if (isAccepted) {
+      spIncHydrateVerificationFromDoc(docId, lines);
+    } else if (!_incQrVerificationByDoc[docId] || typeof _incQrVerificationByDoc[docId].units !== 'object') {
       _incQrVerificationByDoc[docId] = spFreshIncVerification();
     }
     const lineIds = lines.map((l) => l.line_id);
-    const allQrVerified = isAccepted ? spIsDocQrVerified(docId, lines) : true;
     const hasUnitLines = spIncDocHasUnitScanLines(lines);
     spIncRenderDetailToolbar(doc, lines, lineIds);
 
     const lineRows = lines.map((l) => {
       const unitMode = spLineRequiresUnitScans(l);
       const verified = spIsLineQrVerified(docId, l);
-      const v = _incQrVerificationByDoc[docId];
       const unitRowsFinal = unitMode && isAccepted
         ? (l.units || []).map((u) => {
-          const uv = !!v.units[Number(u.unit_id)];
           return '<div id="sp-qr-u-' + u.unit_id + '" style="display:flex;align-items:center;gap:8px;font-size:11px;margin-top:4px;color:var(--text2)">' +
             '<span class="mono">' + escHtml(u.unit_barcode || String(u.unit_id)) + '</span>' +
-            '<span class="b sp-unit-v-badge ' + (uv ? 'b-green' : 'b-gray') + '" style="font-size:10px">' + (uv ? 'Verified' : 'Pending') + '</span>' +
+            spIncUnitBadgeHtml(docId, u) +
             '</div>';
         }).join('')
         : '';
@@ -2785,7 +2942,7 @@ window.expandIncTransfer = async function (docId) {
         <div>${lineRows}</div>
         ${isAccepted ? `
           <p style="margin-top:14px;font-size:12px;color:var(--text3)">${hasUnitLines
-            ? 'Use Open bucket in the toolbar to scan units on this transfer document. Verify &amp; Stock unlocks when every unit is verified.'
+            ? 'Scan units with Open bucket (or Scan more units after a partial save). Stock verified units anytime; remaining units stay on this transfer until fully received.'
             : 'No unit list on this document — contact HQ to re-dispatch with unit scans.'}</p>
         ` : ''}
       </div>`;
@@ -2891,8 +3048,13 @@ async function _incProcessScannedQr(docId, rawValue) {
       return false;
     }
     v.units[uid] = true;
+    spIncSaveVerification(docId);
     spIncRefreshLineUi(docId, line);
     spUpdateIncStockBtn(docId, lines);
+    const detailDoc = window._spIncLastDoc;
+    if (detailDoc && Number(detailDoc.doc_id) === Number(docId)) {
+      spIncRenderDetailToolbar(detailDoc, lines, lines.map(function (l) { return l.line_id; }));
+    }
     const allDone = spIsDocQrVerified(docId, lines);
     if (msgEl) {
       msgEl.style.color = 'var(--green)';
@@ -3065,18 +3227,35 @@ window.stopIncQrCamera = function () {
 };
 
 window.incResetQrVerification = function (docId) {
-  _incQrVerificationByDoc[docId] = spFreshIncVerification();
   const lines = _incDocLinesByDoc[docId] || [];
-  lines.forEach((line) => {
+  const v = spFreshIncVerification();
+  lines.forEach(function (line) {
+    (line.units || []).forEach(function (u) {
+      if (spIncUnitIsStocked(u)) v.units[Number(u.unit_id)] = true;
+    });
+  });
+  _incQrVerificationByDoc[docId] = v;
+  spIncSaveVerification(docId);
+  lines.forEach(function (line) {
     spIncRefreshLineUi(docId, line);
     if (spLineRequiresUnitScans(line)) {
       const recvEl = document.getElementById('sp-recv-' + line.line_id);
-      if (recvEl) { recvEl.value = '0'; recvEl.readOnly = true; }
+      if (recvEl) {
+        recvEl.value = String(spIncVerifiedUnitCount(docId, line));
+        recvEl.readOnly = true;
+      }
     }
   });
   spUpdateIncStockBtn(docId, lines);
+  const detailDoc = window._spIncLastDoc;
+  if (detailDoc && Number(detailDoc.doc_id) === Number(docId)) {
+    spIncRenderDetailToolbar(detailDoc, lines, lines.map(function (l) { return l.line_id; }));
+  }
   const msgEl = document.getElementById('sp-inc-action-msg');
-  if (msgEl) { msgEl.style.color = 'var(--text2)'; msgEl.textContent = 'Verification reset. Scan all units or SKUs again.'; }
+  if (msgEl) {
+    msgEl.style.color = 'var(--text2)';
+    msgEl.textContent = 'Pending scans cleared. Stocked units are unchanged.';
+  }
 };
 
 window.incStock = async function (docId, lineIds) {
@@ -3087,24 +3266,70 @@ window.incStock = async function (docId, lineIds) {
   const msgEl = document.getElementById('sp-inc-action-msg');
   if (msgEl) msgEl.textContent = '';
   const linesMeta = _incDocLinesByDoc[docId] || [];
-  if (!spIsDocQrVerified(docId, linesMeta)) {
-    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Please verify all units (or SKUs for bulk lines) before stocking.'; }
-    if (typeof cosmosToastError === 'function') cosmosToastError('Complete unit/SKU verification first');
+  const hasUnitLines = spIncDocHasUnitScanLines(linesMeta);
+  const allVerified = spIsDocQrVerified(docId, linesMeta);
+  const pendingStock = spIncPendingStockUnitCount(docId, linesMeta);
+  const totalUnits = spIncTotalUnitCount(linesMeta);
+
+  if (hasUnitLines) {
+    if (pendingStock < 1 && !allVerified) {
+      if (msgEl) {
+        msgEl.style.color = 'var(--red)';
+        msgEl.textContent = 'Scan at least one unit before stocking.';
+      }
+      if (typeof cosmosToastError === 'function') cosmosToastError('Scan units first');
+      return;
+    }
+  } else if (!allVerified) {
+    if (msgEl) {
+      msgEl.style.color = 'var(--red)';
+      msgEl.textContent = 'Please verify all SKUs before stocking.';
+    }
+    if (typeof cosmosToastError === 'function') cosmosToastError('Complete SKU verification first');
     return;
   }
 
-  const lines = lineIds.map((lid) => {
-    const input = document.getElementById(`sp-recv-${lid}`);
-    return { line_id: lid, qty_received: input ? Math.max(0, Number(input.value) || 0) : 0 };
+  if (hasUnitLines && !allVerified && pendingStock > 0) {
+    const confirmMsg = 'Stock ' + pendingStock + ' of ' + totalUnits + ' units now? Remaining units stay on this transfer for later scanning.';
+    if (!window.confirm(confirmMsg)) return;
+  }
+
+  const lines = lineIds.map(function (lid) {
+    const input = document.getElementById('sp-recv-' + lid);
+    const lineMeta = linesMeta.find(function (l) { return Number(l.line_id) === Number(lid); });
+    let qty = input ? Math.max(0, Number(input.value) || 0) : 0;
+    if (lineMeta && spLineRequiresUnitScans(lineMeta)) {
+      qty = spIncVerifiedUnitCount(docId, lineMeta);
+    }
+    return { line_id: lid, qty_received: qty };
   });
 
   const btn = document.getElementById('sp-inc-stock-btn');
   if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
 
   try {
-    await apiPut(`/api/stock-transfer-docs/${docId}/stock`, { lines });
-    delete _incQrVerificationByDoc[docId];
-    if (msgEl) { msgEl.style.color = 'var(--green)'; msgEl.textContent = 'Stock credited to your store balance.'; }
+    const res = await apiPut('/api/stock-transfer-docs/' + docId + '/stock', { lines });
+    const stocked = res.data || {};
+    const isPartial = stocked.partial_stock === true || stocked.status === 'ACCEPTED';
+    if (isPartial) {
+      spIncHydrateVerificationFromDoc(docId, linesMeta);
+      if (msgEl) {
+        msgEl.style.color = 'var(--green)';
+        const remain = stocked.units_remaining != null ? stocked.units_remaining : (totalUnits - spIncStockedUnitCount(linesMeta));
+        msgEl.textContent = 'Partially stocked. ' + (remain > 0 ? remain + ' unit(s) still on this transfer — use Scan more units.' : 'Scan more units when the rest arrive.');
+      }
+      if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('Partial stock saved — scan more units when ready');
+      }
+    } else {
+      delete _incQrVerificationByDoc[docId];
+      try { sessionStorage.removeItem(spIncVerifyStorageKey(docId)); } catch (_) { /* ignore */ }
+      if (msgEl) {
+        msgEl.style.color = 'var(--green)';
+        msgEl.textContent = 'Stock credited to your store balance.';
+      }
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Transfer fully stocked');
+    }
     if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
     await expandIncTransfer(docId);
     spRefreshAfterIncomingAction();

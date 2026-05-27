@@ -478,6 +478,149 @@ router.delete('/membership-tiers/:id', ...settingsManage, async (req, res, next)
   } catch (err) { return next(err); }
 });
 
+// ─── MEMBERSHIP PLANS (capability-based engine) ───────────────────────────────
+
+const membershipPlanCreateSchema = Joi.object({
+  plan_key: Joi.string().max(50).pattern(/^[A-Z][A-Z0-9_]*$/).required()
+    .messages({ 'string.pattern.base': 'plan_key must start with an uppercase letter and use only uppercase letters, digits, and underscores.' }),
+  display_name: Joi.string().max(100).required(),
+  price: Joi.number().min(0).required(),
+  validity_days: Joi.number().integer().min(0).required(),
+  max_dependents: Joi.number().integer().min(0).default(5),
+  validity_type: Joi.string().valid('DAYS', 'LIFETIME').default('DAYS'),
+  has_plus_access: Joi.boolean().default(false),
+  extra_cashback_pct: Joi.number().min(0).max(100).allow(null).default(null),
+  flat_discount_pct: Joi.number().min(0).max(100).allow(null).default(null),
+  has_one_time_discount: Joi.boolean().default(false),
+  one_time_discount_pct: Joi.number().min(0).max(100).allow(null).default(null),
+  can_create_sub_cards: Joi.boolean().default(false)
+});
+
+const membershipPlanUpdateSchema = Joi.object({
+  display_name: Joi.string().max(100),
+  price: Joi.number().min(0),
+  validity_days: Joi.number().integer().min(0),
+  max_dependents: Joi.number().integer().min(0),
+  validity_type: Joi.string().valid('DAYS', 'LIFETIME'),
+  has_plus_access: Joi.boolean(),
+  extra_cashback_pct: Joi.number().min(0).max(100).allow(null),
+  flat_discount_pct: Joi.number().min(0).max(100).allow(null),
+  has_one_time_discount: Joi.boolean(),
+  one_time_discount_pct: Joi.number().min(0).max(100).allow(null),
+  can_create_sub_cards: Joi.boolean(),
+  is_active: Joi.boolean()
+}).min(1);
+
+router.get('/membership-plans', ...settingsView, async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`
+      SELECT plan_id, plan_key, display_name, price, validity_days, max_dependents, is_active, created_at,
+             has_plus_access, extra_cashback_pct, flat_discount_pct,
+             has_one_time_discount, one_time_discount_pct, can_create_sub_cards, validity_type
+      FROM   dbo.membership_plans
+      ORDER BY is_active DESC, plan_key ASC
+    `);
+    return res.json({ success: true, data: r.recordset || [] });
+  } catch (err) { return next(err); }
+});
+
+router.post('/membership-plans', ...settingsManage, async (req, res, next) => {
+  try {
+    const { error, value } = membershipPlanCreateSchema.validate(req.body || {});
+    if (error) return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('plan_key',            sql.NVarChar(50),    value.plan_key)
+      .input('display_name',        sql.NVarChar(100),   value.display_name)
+      .input('price',               sql.Decimal(10, 2),  value.price)
+      .input('validity_days',       sql.Int,             value.validity_days)
+      .input('max_dependents',      sql.Int,             value.max_dependents ?? 5)
+      .input('validity_type',       sql.NVarChar(20),    value.validity_type || 'DAYS')
+      .input('has_plus_access',     sql.Bit,             value.has_plus_access ? 1 : 0)
+      .input('extra_cashback_pct',  sql.Decimal(5, 2),   value.extra_cashback_pct ?? null)
+      .input('flat_discount_pct',   sql.Decimal(5, 2),   value.flat_discount_pct ?? null)
+      .input('has_one_time_disc',   sql.Bit,             value.has_one_time_discount ? 1 : 0)
+      .input('one_time_disc_pct',   sql.Decimal(5, 2),   value.one_time_discount_pct ?? null)
+      .input('can_create_sub',      sql.Bit,             value.can_create_sub_cards ? 1 : 0)
+      .query(`
+        INSERT INTO dbo.membership_plans
+          (plan_key, display_name, price, validity_days, max_dependents, validity_type,
+           has_plus_access, extra_cashback_pct, flat_discount_pct,
+           has_one_time_discount, one_time_discount_pct, can_create_sub_cards)
+        OUTPUT INSERTED.plan_id
+        VALUES
+          (@plan_key, @display_name, @price, @validity_days, @max_dependents, @validity_type,
+           @has_plus_access, @extra_cashback_pct, @flat_discount_pct,
+           @has_one_time_disc, @one_time_disc_pct, @can_create_sub)
+      `);
+    const planId = r.recordset[0].plan_id;
+    await writeAuditLog({
+      userId: req.user && req.user.user_id ? Number(req.user.user_id) : null,
+      action: 'MEMBERSHIP_PLAN_CREATED',
+      module: 'command_unit',
+      entityType: 'membership_plan',
+      entityId: planId,
+      newValue: JSON.stringify({ plan_id: planId, body: value }),
+      ipAddress: req.ip || null
+    });
+    return res.status(201).json({ success: true, plan_id: planId });
+  } catch (err) { return next(err); }
+});
+
+router.put('/membership-plans/:id', ...settingsManage, async (req, res, next) => {
+  try {
+    const planId = parseInt(req.params.id, 10);
+    if (!planId) return res.status(400).json({ success: false, message: 'Invalid plan ID.' });
+    const { error, value } = membershipPlanUpdateSchema.validate(req.body || {});
+    if (error) return res.status(400).json({ success: false, message: 'Validation error', errors: error.details.map((d) => d.message) });
+    const pool = await getPool();
+
+    const capPctProvided = (k) => Object.prototype.hasOwnProperty.call(value, k);
+
+    await pool.request()
+      .input('id',               sql.Int,            planId)
+      .input('display_name',     sql.NVarChar(100),  value.display_name ?? null)
+      .input('price',            sql.Decimal(10, 2), value.price ?? null)
+      .input('validity_days',    sql.Int,            value.validity_days ?? null)
+      .input('max_dependents',   sql.Int,            value.max_dependents ?? null)
+      .input('validity_type',    sql.NVarChar(20),   value.validity_type ?? null)
+      .input('has_plus_access',  sql.Bit,            value.has_plus_access != null ? (value.has_plus_access ? 1 : 0) : null)
+      .input('extra_cashback',   sql.Decimal(5, 2),  capPctProvided('extra_cashback_pct') ? (value.extra_cashback_pct ?? null) : undefined)
+      .input('flat_discount',    sql.Decimal(5, 2),  capPctProvided('flat_discount_pct')  ? (value.flat_discount_pct ?? null)  : undefined)
+      .input('has_one_time',     sql.Bit,            value.has_one_time_discount != null ? (value.has_one_time_discount ? 1 : 0) : null)
+      .input('one_time_pct',     sql.Decimal(5, 2),  capPctProvided('one_time_discount_pct') ? (value.one_time_discount_pct ?? null) : undefined)
+      .input('can_sub',          sql.Bit,            value.can_create_sub_cards != null ? (value.can_create_sub_cards ? 1 : 0) : null)
+      .input('is_active',        sql.Bit,            value.is_active != null ? (value.is_active ? 1 : 0) : null)
+      .query(`
+        UPDATE dbo.membership_plans SET
+          display_name          = ISNULL(@display_name,    display_name),
+          price                 = ISNULL(@price,           price),
+          validity_days         = ISNULL(@validity_days,   validity_days),
+          max_dependents        = ISNULL(@max_dependents,  max_dependents),
+          validity_type         = ISNULL(@validity_type,   validity_type),
+          has_plus_access       = ISNULL(@has_plus_access, has_plus_access),
+          extra_cashback_pct    = ISNULL(@extra_cashback,  extra_cashback_pct),
+          flat_discount_pct     = ISNULL(@flat_discount,   flat_discount_pct),
+          has_one_time_discount = ISNULL(@has_one_time,    has_one_time_discount),
+          one_time_discount_pct = ISNULL(@one_time_pct,    one_time_discount_pct),
+          can_create_sub_cards  = ISNULL(@can_sub,         can_create_sub_cards),
+          is_active             = ISNULL(@is_active,       is_active)
+        WHERE plan_id = @id
+      `);
+    await writeAuditLog({
+      userId: req.user && req.user.user_id ? Number(req.user.user_id) : null,
+      action: 'MEMBERSHIP_PLAN_UPDATED',
+      module: 'command_unit',
+      entityType: 'membership_plan',
+      entityId: planId,
+      newValue: JSON.stringify({ plan_id: planId, body: value }),
+      ipAddress: req.ip || null
+    });
+    return res.json({ success: true });
+  } catch (err) { return next(err); }
+});
+
 // ─── STORE TYPE CATALOG (Command Unit — store formats) ───────────────────────
 
 const storeTypeKeySchema = Joi.string()
@@ -688,6 +831,22 @@ const scopeItemSchema = Joi.object({
   is_exclusion: Joi.boolean().default(false)
 }).or('ref_int', 'ref_key');
 
+/** Legacy Configure Offer fields (tier dropdown, Plus-only toggle) — still accepted for older UI payloads. */
+const legacyOfferFieldsSchema = {
+  eligible_tier: Joi.string().max(50).allow(null, ''),
+  is_plus_only: Joi.boolean()
+};
+
+function normalizeCustomerOfferPayload (value) {
+  const out = { ...value };
+  if (out.eligible_tier === '') out.eligible_tier = null;
+  if (out.required_capability === '') out.required_capability = null;
+  if (out.is_plus_only === true && !out.required_capability) {
+    out.required_capability = 'has_plus_access';
+  }
+  return out;
+}
+
 const customerOfferCreateSchema = Joi.object({
   title: Joi.string().max(200).required(),
   description: Joi.string().max(500).allow('', null),
@@ -704,7 +863,8 @@ const customerOfferCreateSchema = Joi.object({
   required_capability: Joi.string().valid(...CAPABILITY_KEYS).allow(null, '').default(null),
   cashback_rate: Joi.number().min(0).max(100).allow(null),
   sort_order: Joi.number().integer().min(0).default(0),
-  scopes: Joi.array().items(scopeItemSchema).default([])
+  scopes: Joi.array().items(scopeItemSchema).default([]),
+  ...legacyOfferFieldsSchema
 });
 
 const customerOfferUpdateSchema = Joi.object({
@@ -724,7 +884,8 @@ const customerOfferUpdateSchema = Joi.object({
   cashback_rate: Joi.number().min(0).max(100).allow(null),
   is_active: Joi.boolean(),
   sort_order: Joi.number().integer().min(0),
-  scopes: Joi.array().items(scopeItemSchema)
+  scopes: Joi.array().items(scopeItemSchema),
+  ...legacyOfferFieldsSchema
 }).min(1);
 
 router.get('/customer-offers', ...promotionsView, async (req, res, next) => {
@@ -734,6 +895,7 @@ router.get('/customer-offers', ...promotionsView, async (req, res, next) => {
       SELECT offer_id, title, description, icon_emoji, discount_type,
              discount_value, trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
              valid_from, valid_to,
+             eligible_tier, is_plus_only,
              required_capability, cashback_rate,
              is_active, sort_order, created_at
       FROM   dbo.customer_offers
@@ -770,7 +932,7 @@ router.get('/customer-offers', ...promotionsView, async (req, res, next) => {
 
 router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
   try {
-    const { error, value } = customerOfferCreateSchema.validate(req.body || {});
+    const { error, value: rawValue } = customerOfferCreateSchema.validate(req.body || {});
     if (error) {
       return res.status(400).json({
         success: false,
@@ -778,6 +940,7 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
         errors: error.details.map((d) => d.message)
       });
     }
+    const value = normalizeCustomerOfferPayload(rawValue);
     const pool = await getPool();
     if ((value.discount_type || 'PCT') !== 'PCT' && value.max_discount_amount != null) {
       return res.status(400).json({ success: false, message: 'max_discount_amount is allowed only for PCT offers.' });
@@ -809,6 +972,8 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
       .input('valid_from', vf)
       .input('valid_to', vt)
       .input('required_capability', value.required_capability ? String(value.required_capability).trim() : null)
+      .input('eligible_tier', value.eligible_tier ? String(value.eligible_tier).trim() : null)
+      .input('is_plus_only', value.is_plus_only === true ? 1 : 0)
       .input('cashback_rate', value.cashback_rate != null ? parseFloat(value.cashback_rate) : null)
       .input('sort_order', parseInt(value.sort_order, 10) || 0)
       .input('uid', req.user && req.user.user_id ? Number(req.user.user_id) : null)
@@ -816,13 +981,13 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
         INSERT INTO dbo.customer_offers
           (title, description, icon_emoji, discount_type, discount_value,
            trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
-           valid_from, valid_to, required_capability, cashback_rate, sort_order,
+           valid_from, valid_to, eligible_tier, is_plus_only, required_capability, cashback_rate, sort_order,
            created_by_user_id)
         OUTPUT INSERTED.offer_id
         VALUES
           (@title, @description, @icon_emoji, @discount_type, @discount_value,
            @trigger_type, @trigger_value, @benefit_target, @max_discount_amount, @scope_mode,
-           @valid_from, @valid_to, @required_capability, @cashback_rate, @sort_order,
+           @valid_from, @valid_to, @eligible_tier, @is_plus_only, @required_capability, @cashback_rate, @sort_order,
            @uid)
       `);
     const offerId = r.recordset[0].offer_id;
@@ -848,7 +1013,7 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
     const offerId = parseInt(req.params.id, 10);
     if (!offerId) return res.status(400).json({ success: false, message: 'Invalid offer ID.' });
 
-    const { error, value } = customerOfferUpdateSchema.validate(req.body || {});
+    const { error, value: rawValue } = customerOfferUpdateSchema.validate(req.body || {});
     if (error) {
       return res.status(400).json({
         success: false,
@@ -856,12 +1021,13 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
         errors: error.details.map((d) => d.message)
       });
     }
+    const value = normalizeCustomerOfferPayload(rawValue);
 
     const pool = await getPool();
     const {
       title, description, icon_emoji, discount_type, discount_value,
       trigger_type, trigger_value, benefit_target, max_discount_amount, scope_mode,
-      valid_from, valid_to, required_capability, cashback_rate, is_active, sort_order,
+      valid_from, valid_to, eligible_tier, is_plus_only, required_capability, cashback_rate, is_active, sort_order,
       scopes
     } = value;
     if ((discount_type && discount_type !== 'PCT') && max_discount_amount != null) {
@@ -903,6 +1069,8 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
       .input('valid_from', valid_from !== undefined ? (valid_from ? String(valid_from).trim() : null) : null)
       .input('valid_to', valid_to !== undefined ? String(valid_to).trim() : null)
       .input('required_capability', required_capability !== undefined ? (required_capability ? String(required_capability).trim() : null) : null)
+      .input('eligible_tier', eligible_tier !== undefined ? (eligible_tier ? String(eligible_tier).trim() : null) : null)
+      .input('is_plus_only', is_plus_only != null ? (is_plus_only ? 1 : 0) : null)
       .input('cashback_rate', cashback_rate !== undefined ? (cashback_rate != null ? parseFloat(cashback_rate) : null) : null)
       .input('is_active', is_active != null ? (is_active ? 1 : 0) : null)
       .input('sort_order', sort_order != null ? parseInt(sort_order, 10) : null)
@@ -920,6 +1088,8 @@ router.put('/customer-offers/:id', ...promotionsManage, async (req, res, next) =
           scope_mode          = ISNULL(@scope_mode,          scope_mode),
           valid_from          = ISNULL(@valid_from,          valid_from),
           valid_to            = ISNULL(@valid_to,            valid_to),
+          eligible_tier       = ISNULL(@eligible_tier,       eligible_tier),
+          is_plus_only        = ISNULL(@is_plus_only,        is_plus_only),
           required_capability = ISNULL(@required_capability, required_capability),
           cashback_rate       = ISNULL(@cashback_rate,       cashback_rate),
           is_active           = ISNULL(@is_active,           is_active),

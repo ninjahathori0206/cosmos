@@ -26,7 +26,7 @@ See also [cosmos-record-list-module.md](cosmos-record-list-module.md) for list r
 | Doc status | Actions |
 |------------|---------|
 | DISPATCHED | Accept · Close |
-| ACCEPTED | Open bucket · Verify & Stock · Reset (if units) · Close |
+| ACCEPTED | Open bucket · Scan more units (partial) · Stock verified (N) · Verify & Stock (all verified) · Reset (pending scans) · Close — see [storepilot-partial-transfer-receive.md](storepilot-partial-transfer-receive.md) |
 | STOCKED | Stocked label · Close |
 
 ## Foundry toolbar

@@ -1185,6 +1185,57 @@ async function recordPosOfferUsage(pool, { value, out, storeId, employeeId, auth
 }
 
 /**
+ * Award Cashback Coins to a customer if the applied offer is a CASHBACK type.
+ * Non-fatal — failures are logged but do not affect checkout.
+ * @param {import('mssql').ConnectionPool} pool
+ * @param {{ customerId: number|null, orderId: number, orderNo: string, totalAmount: number, offerId: number|null }} params
+ */
+async function awardCashbackCoinsIfApplicable(pool, { customerId, orderId, orderNo, totalAmount, offerId }) {
+  if (!customerId || !offerId || !totalAmount) return
+  try {
+    const offerR = await pool.request()
+      .input('offer_id', sql.Int, offerId)
+      .query(`
+        SELECT discount_type, cashback_rate
+        FROM   dbo.customer_offers
+        WHERE  offer_id = @offer_id AND is_active = 1
+      `)
+    const offer = offerR.recordset[0]
+    if (!offer || offer.discount_type !== 'CASHBACK' || !offer.cashback_rate) return
+
+    const cashbackRate = Number(offer.cashback_rate)
+    if (!Number.isFinite(cashbackRate) || cashbackRate <= 0) return
+
+    const coinsToAward = Math.floor(totalAmount * cashbackRate / 100)
+    if (coinsToAward <= 0) return
+
+    // Get current balance
+    const balR = await pool.request()
+      .input('cid', sql.Int, customerId)
+      .query(`
+        SELECT TOP 1 balance_after FROM dbo.pos_points_ledger
+        WHERE  customer_id = @cid
+        ORDER  BY ledger_id DESC
+      `)
+    const prevBalance = balR.recordset[0] ? Number(balR.recordset[0].balance_after) : 0
+    const newBalance = prevBalance + coinsToAward
+
+    await pool.request()
+      .input('customer_id',  sql.Int,          customerId)
+      .input('order_id',     sql.Int,          orderId)
+      .input('points_delta', sql.Int,          coinsToAward)
+      .input('balance_after',sql.Int,          newBalance)
+      .input('reason',       sql.NVarChar(100), `Cashback ${cashbackRate}% · ${orderNo || `#${orderId}`}`)
+      .query(`
+        INSERT INTO dbo.pos_points_ledger (customer_id, order_id, points_delta, balance_after, reason)
+        VALUES (@customer_id, @order_id, @points_delta, @balance_after, @reason)
+      `)
+  } catch (_coinErr) {
+    /* non-fatal — coin award failure must never block checkout */
+  }
+}
+
+/**
  * Active Eyewoot Go offers for POS + scope rows (for client PCT/FLAT preview).
  * @param {import('mssql').ConnectionPool} pool
  * @param {number|null} customerId
@@ -1665,6 +1716,13 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
       await transaction.commit()
 
       await recordPosOfferUsage(pool, { value, out, storeId, employeeId, authorisedDiscountAmount })
+      await awardCashbackCoinsIfApplicable(pool, {
+        customerId: value.customer_id || null,
+        orderId: out.order_id,
+        orderNo: out.order_no,
+        totalAmount: out.total_amount,
+        offerId: value.applied_offer_id || null
+      })
 
       return res.json({
         success: true,
@@ -1755,6 +1813,13 @@ router.post('/checkout-and-pay', ...posCheckoutAndPay, async (req, res, next) =>
       storeId,
       employeeId,
       authorisedDiscountAmount
+    })
+    await awardCashbackCoinsIfApplicable(pool, {
+      customerId: value.order.customer_id || null,
+      orderId: out.order_id,
+      orderNo: out.order_no,
+      totalAmount: out.total_amount,
+      offerId: value.order.applied_offer_id || null
     })
 
     return res.json({
@@ -2075,6 +2140,37 @@ router.post('/staff/set-pin', ...posStaffPinSet, async (req, res, next) => {
     }
 
     return res.json({ success: true, message: 'PIN set successfully.' })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── GET /api/pos/customer-coin-balance/:id ───────────────────────────────────
+// Returns coin balance for a POS customer (used by POS cart/payment screens).
+router.get('/customer-coin-balance/:id', ...posCheckoutAndPay, async (req, res, next) => {
+  try {
+    const cid = parseInt(req.params.id, 10)
+    if (!Number.isFinite(cid) || cid < 1) {
+      return res.status(400).json({ success: false, message: 'Invalid customer id.' })
+    }
+    const pool = await getPool()
+
+    const [balR, rateR] = await Promise.all([
+      pool.request().input('cid', sql.Int, cid).query(`
+        SELECT TOP 1 balance_after FROM dbo.pos_points_ledger
+        WHERE  customer_id = @cid
+        ORDER  BY ledger_id DESC
+      `),
+      pool.request().query(`
+        SELECT value FROM dbo.app_settings WHERE key = N'coin_redemption_rate'
+      `)
+    ])
+
+    const coins = balR.recordset[0] ? Number(balR.recordset[0].balance_after) : 0
+    const rate  = rateR.recordset[0] ? Number(rateR.recordset[0].value) : 10
+    const rupeeValue = rate > 0 ? Math.floor(coins / rate) : 0
+
+    return res.json({ success: true, data: { coins, rupee_value: rupeeValue, coin_redemption_rate: rate } })
   } catch (err) {
     return next(err)
   }

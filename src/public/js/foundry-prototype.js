@@ -6189,6 +6189,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   window.addEventListener('popstate', () => {
+    if (window.cosmosIsMobileBackBlocked && window.cosmosIsMobileBackBlocked()) return;
     applyFoundryRouteFromPath();
   });
 
@@ -12653,6 +12654,7 @@ ${initScript}
       '</td>' +
       '<td>' + fyEscapeHtml(r.customer_name || 'Walk-in') +
       (r.customer_phone ? '<div style="font-size:11px;color:var(--text3)">' + fyEscapeHtml(r.customer_phone) + '</div>' : '') +
+      (r.membership_plan_name ? '<div style="margin-top:3px"><span style="font-size:10px;font-weight:700;background:var(--accL);color:var(--acc2);padding:1px 6px;border-radius:20px;letter-spacing:0.01em">' + fyEscapeHtml(r.membership_plan_name) + '</span></div>' : '') +
       '</td>' +
       '<td>' + fyEscapeHtml(r.store_name || '') + '</td>' +
       '<td>' + fyLabStatusBadgeHtml(statusFinal, qcByStoreTab) + '</td>' +
@@ -12806,7 +12808,9 @@ ${initScript}
       '<div class="fy-lab-card__order mono">' + orderNo + '</div>' +
       badgeHtml +
       '</header>' +
-      '<div class="fy-lab-card__customer">' + fyEscapeHtml(r.customer_name || 'Walk-in') + '</div>' +
+      '<div class="fy-lab-card__customer">' + fyEscapeHtml(r.customer_name || 'Walk-in') +
+      (r.membership_plan_name ? ' <span style="font-size:10px;font-weight:700;background:var(--accL);color:var(--acc2);padding:1px 6px;border-radius:20px;vertical-align:middle">' + fyEscapeHtml(r.membership_plan_name) + '</span>' : '') +
+      '</div>' +
       (r.customer_phone ? '<div class="fy-lab-card__phone">' + fyEscapeHtml(r.customer_phone) + '</div>' : '') +
       '<div class="fy-lab-card__store">' + fyEscapeHtml(r.store_name || '') + '</div>' +
       '<div class="fy-lab-card__meta">' +

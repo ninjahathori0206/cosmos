@@ -10,6 +10,7 @@ const COMMAND_UNIT_PAGE_PATHS = {
   settings: '/command-unit/settings',
   'pos-settings': '/command-unit/pos-settings',
   membership: '/command-unit/membership',
+  'membership-plans': '/command-unit/membership-plans',
   promotion: '/command-unit/promotion',
   leavetypes: '/command-unit/leavetypes',
   'store-types': '/command-unit/store-types',
@@ -150,6 +151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   window.addEventListener('popstate', () => {
+    if (window.cosmosIsMobileBackBlocked && window.cosmosIsMobileBackBlocked()) return
     if (typeof window.showPage !== 'function') return
     const pageId = getCommandUnitPageFromPath(window.location.pathname)
     window.showPage(pageId, getCommandUnitNavEl(pageId), { fromHistory: true })
@@ -1863,6 +1865,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   var CU_STRUCTURED_OFFER_TYPES = ['BOGO_LOWEST_FREE', 'BUY_FRAME_GET_LENS_FREE', 'BUY_LENS_GET_FRAME_FREE'];
 
+  var CU_CAPABILITY_LABELS = {
+    'has_plus_access':      'Plus Access',
+    'extra_cashback_pct':   'Extra Cashback %',
+    'flat_discount_pct':    'Flat Discount %',
+    'has_one_time_discount': 'One-Time Disc.',
+    'can_create_sub_cards': 'Sub-Card Issuer'
+  };
+
+  function cuCapabilityLabel(key) {
+    return CU_CAPABILITY_LABELS[key] || key || '—';
+  }
+
   function cuIsStructuredDiscountType(typ) {
     return CU_STRUCTURED_OFFER_TYPES.indexOf(String(typ || '').trim()) !== -1;
   }
@@ -1886,6 +1900,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (t === 'PCT') return Number.isFinite(v) ? v + '%' : '—';
     if (t === 'FLAT') return '₹' + Number(o.discount_value || 0).toLocaleString('en-IN');
     if (t === 'FREEBIE') return 'Freebie';
+    if (t === 'CASHBACK') {
+      var cr = Number(o.cashback_rate);
+      return Number.isFinite(cr) ? cr + '% Coins ✨' : 'Cashback ✨';
+    }
     if (cuIsStructuredDiscountType(t)) return cuStructuredPill(t, Number.isFinite(v) ? v : NaN);
     return t || '—';
   }
@@ -1897,12 +1915,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     var stHit = document.getElementById('cu-offer-structured-hint');
     var vf = document.getElementById('cu-offer-value-hint');
     var allocSub = document.getElementById('cu-offer-allocation-sub');
+    var valueRow = document.getElementById('cu-offer-value-row');
+    var cashbackRow = document.getElementById('cu-offer-cashback-rate-row');
     var structured = cuIsStructuredDiscountType(typ);
+    var isCashback = typ === 'CASHBACK';
     var bogoAlloc = cuOfferTypeSupportsAllocation(typ);
-    if (wrap) wrap.style.display = structured && !bogoAlloc ? 'none' : '';
+    if (cashbackRow) cashbackRow.style.display = isCashback ? '' : 'none';
+    if (valueRow) valueRow.style.display = isCashback ? 'none' : '';
+    if (wrap) wrap.style.display = (structured && !bogoAlloc) || isCashback ? 'none' : '';
     if (vf) vf.style.display = structured && !bogoAlloc ? 'none' : '';
     if (stHit) {
-      if (bogoAlloc) {
+      if (isCashback) {
+        stHit.style.display = 'block';
+        stHit.textContent = 'Coins are awarded to the customer after checkout. Coin value (coins per ₹1) is set in App Settings.';
+      } else if (bogoAlloc) {
         stHit.style.display = 'block';
         stHit.textContent =
           'Pairs a prescription eyeglass lab line (lens package; not sunglasses type) with a frame-only INSTANT line. Qualifying sunglasses-with-lens lines pair with each other only. Optional Value = max discount cap in ₹.';
@@ -1916,8 +1942,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (allocSub) {
       allocSub.textContent =
-        bogoAlloc || !structured
+        bogoAlloc || (!structured && !isCashback)
           ? '(restrict brands, SKUs, products, or categories — empty = all eligible)'
+          : isCashback
+          ? '(cashback offers apply to the full cart — allocation not applicable)'
           : '(percentage / flat only — other structured promos skip this)';
     }
     const trigType = (document.getElementById('cu-offer-trigger-type') || {}).value || 'ANY_ITEM';
@@ -1928,7 +1956,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       maxCapWrap.disabled = typ !== 'PCT';
       if (typ !== 'PCT') maxCapWrap.value = '';
     }
-    if (structured && !bogoAlloc) {
+    if ((structured && !bogoAlloc) || isCashback) {
       cuOfferCurrentScopes = [];
       void renderAllocationSections([]);
     } else if (bogoAlloc) {
@@ -1965,10 +1993,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const target = (document.getElementById('cu-offer-benefit-target') || {}).value || 'ELIGIBLE_LINES';
     const val = parseFloat(rawVal);
     const numOk = Number.isFinite(val);
+    const cashbackRateRaw = (document.getElementById('cu-offer-cashback-rate') || {}).value;
+    const cashbackRateVal = parseFloat(cashbackRateRaw);
     let pill = '—';
     if (typ === 'PCT') pill = numOk ? `${val}%` : '%';
     else if (typ === 'FLAT') pill = numOk ? `₹${val.toLocaleString('en-IN')}` : '₹';
     else if (typ === 'FREEBIE') pill = 'Freebie';
+    else if (typ === 'CASHBACK') pill = Number.isFinite(cashbackRateVal) ? `${cashbackRateVal}% Coins ✨` : 'Coins ✨';
     else if (cuIsStructuredDiscountType(typ)) pill = cuStructuredPill(typ, numOk ? val : NaN);
     else pill = '—';
     const pt = document.getElementById('cu-offer-preview-title');
@@ -1991,7 +2022,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function bindCuOfferPreviewListeners() {
     if (cuOfferPreviewListenersBound) return;
     cuOfferPreviewListenersBound = true;
-    ['cu-offer-title', 'cu-offer-desc', 'cu-offer-emoji', 'cu-offer-type', 'cu-offer-value', 'cu-offer-trigger-type', 'cu-offer-trigger-value', 'cu-offer-benefit-target', 'cu-offer-max-discount', 'cu-offer-scope-mode'].forEach((id) => {
+    ['cu-offer-title', 'cu-offer-desc', 'cu-offer-emoji', 'cu-offer-type', 'cu-offer-value', 'cu-offer-cashback-rate', 'cu-offer-trigger-type', 'cu-offer-trigger-value', 'cu-offer-benefit-target', 'cu-offer-max-discount', 'cu-offer-scope-mode'].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('input', syncCuOfferPreview);
@@ -2027,8 +2058,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       tbody.innerHTML = cachedCuOffers.map((o) => {
         const discLabel = cuOfferDiscountLabel(o);
-        const tierLabel = o.eligible_tier ? `${escHtml(String(o.eligible_tier))}+` : 'All';
-        const plusLabel = o.is_plus_only ? '<span class="badge badge-purple" style="font-size:10px">Plus</span>' : '';
+        const capLabel = o.required_capability
+          ? `<span class="badge badge-purple" style="font-size:10px">${escHtml(cuCapabilityLabel(o.required_capability))}</span>`
+          : '<span class="badge badge-gray" style="font-size:10px">All</span>';
         const status = o.is_active
           ? '<span class="badge badge-green">Active</span>'
           : '<span class="badge badge-gray">Inactive</span>';
@@ -2036,7 +2068,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `<tr class="tr-link" data-offer-id="${o.offer_id}">
           <td><span style="font-size:18px;margin-right:6px">${escHtml(o.icon_emoji || '🎁')}</span>${escHtml(o.title || '')}</td>
           <td>${escHtml(discLabel)}</td>
-          <td>${tierLabel} ${plusLabel}</td>
+          <td>${capLabel}</td>
           <td>${escHtml(until)}</td>
           <td>${status}</td>
           <td style="text-align:right">
@@ -2223,11 +2255,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('cu-offer-benefit-target').value = 'ELIGIBLE_LINES';
     document.getElementById('cu-offer-max-discount').value = '';
     document.getElementById('cu-offer-scope-mode').value = 'ALL_PRODUCTS';
-    document.getElementById('cu-offer-tier').value = '';
+    document.getElementById('cu-offer-required-capability').value = '';
+    document.getElementById('cu-offer-cashback-rate').value = '';
     const fromVal = cuOfferDefaultFromDate();
     document.getElementById('cu-offer-from').value = fromVal;
     document.getElementById('cu-offer-to').value = cuOfferDefaultUntilDateFrom(fromVal);
-    document.getElementById('cu-offer-plus-only').checked = false;
     document.getElementById('cu-offer-sort').value = '10';
     showError('cu-offer-modal-error', '');
     syncCuOfferPreview();
@@ -2255,10 +2287,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('cu-offer-benefit-target').value = o.benefit_target || 'ELIGIBLE_LINES';
     document.getElementById('cu-offer-max-discount').value = o.max_discount_amount != null ? String(o.max_discount_amount) : '';
     document.getElementById('cu-offer-scope-mode').value = o.scope_mode || 'ALL_PRODUCTS';
-    document.getElementById('cu-offer-tier').value = o.eligible_tier || '';
+    document.getElementById('cu-offer-required-capability').value = o.required_capability || '';
+    document.getElementById('cu-offer-cashback-rate').value = o.cashback_rate != null ? String(o.cashback_rate) : '';
     document.getElementById('cu-offer-from').value = o.valid_from ? String(o.valid_from).split('T')[0] : cuOfferDefaultFromDate();
     document.getElementById('cu-offer-to').value = o.valid_to ? String(o.valid_to).split('T')[0] : cuOfferDefaultUntilDateFrom(document.getElementById('cu-offer-from').value);
-    document.getElementById('cu-offer-plus-only').checked = !!o.is_plus_only;
     document.getElementById('cu-offer-sort').value = String(o.sort_order != null ? o.sort_order : 10);
     const st = document.getElementById('cu-offer-active');
     if (st) st.value = o.is_active ? '1' : '0';
@@ -2308,6 +2340,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (s.is_exclusion === true) scope.is_exclusion = true;
             return scope;
           });
+    const reqCapEl = document.getElementById('cu-offer-required-capability');
+    let requiredCapability = reqCapEl ? (reqCapEl.value || '').trim() : '';
+    const plusCheck = document.getElementById('cu-offer-plus-check');
+    if (plusCheck && plusCheck.checked && !requiredCapability) {
+      requiredCapability = 'has_plus_access';
+    }
+    const tierEl = document.getElementById('cu-offer-tier');
+    const eligibleTier = tierEl && tierEl.value ? String(tierEl.value).trim() : null;
+
     const body = {
       title,
       description: document.getElementById('cu-offer-desc').value.trim(),
@@ -2321,23 +2362,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? (parseFloat(document.getElementById('cu-offer-max-discount').value) || null)
         : null,
       scope_mode: document.getElementById('cu-offer-scope-mode').value || 'ALL_PRODUCTS',
-      eligible_tier: document.getElementById('cu-offer-tier').value || null,
+      required_capability: requiredCapability || null,
+      cashback_rate: dscType === 'CASHBACK'
+        ? (parseFloat(document.getElementById('cu-offer-cashback-rate').value) || 0)
+        : null,
       valid_from: document.getElementById('cu-offer-from').value,
       valid_to: validTo,
-      is_plus_only: document.getElementById('cu-offer-plus-only').checked,
       sort_order: parseInt(document.getElementById('cu-offer-sort').value, 10) || 0,
       scopes: scopesPayload
     };
+    if (plusCheck) body.is_plus_only = plusCheck.checked;
+    if (eligibleTier) body.eligible_tier = eligibleTier;
     const legacyBody = {
       title: body.title,
       description: body.description,
       icon_emoji: body.icon_emoji,
       discount_type: body.discount_type,
       discount_value: body.discount_value,
-      eligible_tier: body.eligible_tier,
+      required_capability: body.required_capability,
+      cashback_rate: body.cashback_rate,
       valid_from: body.valid_from,
       valid_to: body.valid_to,
-      is_plus_only: body.is_plus_only,
       sort_order: body.sort_order,
       scopes: scopesPayload.map((s) => ({
         kind: s.kind,
@@ -2531,6 +2576,301 @@ document.addEventListener('DOMContentLoaded', async () => {
       showError('edit-tier-error', err.message || 'Failed to deactivate tier');
     }
   }
+
+  // ─── MEMBERSHIP PLANS (capability-based engine) ──────────────────────────────
+
+  let cachedMembershipPlans = [];
+
+  function cuPlanCapChips(plan) {
+    const chips = [];
+    if (plan.has_plus_access) chips.push('<span class="badge badge-purple" style="font-size:10px">Plus</span>');
+    if (plan.extra_cashback_pct) chips.push(`<span class="badge badge-gold" style="font-size:10px">+${plan.extra_cashback_pct}% CB</span>`);
+    if (plan.flat_discount_pct) chips.push(`<span class="badge badge-blue" style="font-size:10px">${plan.flat_discount_pct}% Flat</span>`);
+    if (plan.has_one_time_discount) chips.push(`<span class="badge badge-green" style="font-size:10px">1× ${plan.one_time_discount_pct ? plan.one_time_discount_pct + '%' : 'Disc'}</span>`);
+    if (plan.can_create_sub_cards) chips.push('<span class="badge badge-gray" style="font-size:10px">Sub-Cards</span>');
+    return chips.length ? chips.join(' ') : '<span class="td-muted">—</span>';
+  }
+
+  async function loadMembershipPlans() {
+    const tbody = document.getElementById('cu-membership-plans-tbody');
+    if (!tbody) return;
+    if (typeof cosmosSkeletonTable === 'function') cosmosSkeletonTable('cu-membership-plans-tbody', 7, 5);
+    try {
+      const plans = await apiGet('/api/settings/membership-plans');
+      cachedMembershipPlans = Array.isArray(plans) ? plans : [];
+      if (!cachedMembershipPlans.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="td-muted" style="padding:24px;text-align:center">
+          <div style="font-weight:600;color:var(--text1);margin-bottom:6px">No plans yet</div>
+          <div style="font-size:13px">Use <strong>+ New Plan</strong> to define your first membership plan.</div>
+        </td></tr>`;
+        return;
+      }
+      tbody.innerHTML = cachedMembershipPlans.map((p) => {
+        const validity = p.validity_type === 'LIFETIME'
+          ? '<span class="badge badge-gold" style="font-size:10px">Lifetime</span>'
+          : (p.validity_days ? `${p.validity_days}d` : '—');
+        const status = p.is_active
+          ? '<span class="badge badge-green">Active</span>'
+          : '<span class="badge badge-gray">Inactive</span>';
+        return `<tr class="tr-link" data-plan-id="${p.plan_id}">
+          <td style="font-weight:600">${escHtml(p.display_name || '')}</td>
+          <td><code style="font-size:11.5px;background:var(--purpleL);color:var(--purpleD);padding:2px 6px;border-radius:4px">${escHtml(p.plan_key || '')}</code></td>
+          <td>₹${Number(p.price || 0).toLocaleString('en-IN')}</td>
+          <td>${validity}</td>
+          <td>${cuPlanCapChips(p)}</td>
+          <td>${status}</td>
+          <td style="text-align:right">
+            <button type="button" class="topbar-btn" style="font-size:12px;padding:4px 10px" data-cu-plan-edit="${p.plan_id}">Edit</button>
+          </td>
+        </tr>`;
+      }).join('');
+      tbody.querySelectorAll('[data-cu-plan-edit]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.editCuMembershipPlan(Number(btn.getAttribute('data-cu-plan-edit')));
+        });
+      });
+      tbody.querySelectorAll('tr[data-plan-id]').forEach((tr) => {
+        tr.addEventListener('click', () => {
+          const id = Number(tr.getAttribute('data-plan-id'));
+          if (id) window.editCuMembershipPlan(id);
+        });
+      });
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" style="color:#b91c1c;padding:16px">${escHtml(err.message)}</td></tr>`;
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    }
+  }
+
+  // Toggle helpers for plan capability rows
+  window.cuPlanToggleCap = function (capKey) {
+    const toggleId = {
+      plus: 'cu-plan-cap-plus-toggle',
+      cashback: 'cu-plan-cap-cashback-toggle',
+      flat: 'cu-plan-cap-flat-toggle',
+      onetime: 'cu-plan-cap-onetime-toggle',
+      sub: 'cu-plan-cap-sub-toggle'
+    }[capKey];
+    const inputId = {
+      cashback: 'cu-plan-extra-cashback',
+      flat: 'cu-plan-flat-discount',
+      onetime: 'cu-plan-one-time-pct'
+    }[capKey];
+    const tog = document.getElementById(toggleId);
+    if (!tog) return;
+    const isOn = tog.classList.contains('on');
+    if (isOn) {
+      tog.classList.remove('on');
+      if (inputId) {
+        const inp = document.getElementById(inputId);
+        if (inp) { inp.style.display = 'none'; inp.value = ''; }
+      }
+    } else {
+      tog.classList.add('on');
+      if (inputId) {
+        const inp = document.getElementById(inputId);
+        if (inp) inp.style.display = '';
+      }
+    }
+  };
+
+  function cuPlanSetToggle(capKey, on, pctVal) {
+    const toggleId = {
+      plus: 'cu-plan-cap-plus-toggle',
+      cashback: 'cu-plan-cap-cashback-toggle',
+      flat: 'cu-plan-cap-flat-toggle',
+      onetime: 'cu-plan-cap-onetime-toggle',
+      sub: 'cu-plan-cap-sub-toggle'
+    }[capKey];
+    const inputId = {
+      cashback: 'cu-plan-extra-cashback',
+      flat: 'cu-plan-flat-discount',
+      onetime: 'cu-plan-one-time-pct'
+    }[capKey];
+    const tog = document.getElementById(toggleId);
+    if (!tog) return;
+    if (on) {
+      tog.classList.add('on');
+      if (inputId) {
+        const inp = document.getElementById(inputId);
+        if (inp) {
+          inp.style.display = '';
+          inp.value = pctVal != null ? String(pctVal) : '';
+        }
+      }
+    } else {
+      tog.classList.remove('on');
+      if (inputId) {
+        const inp = document.getElementById(inputId);
+        if (inp) { inp.style.display = 'none'; inp.value = ''; }
+      }
+    }
+  }
+
+  function cuPlanResetToggles() {
+    ['plus', 'cashback', 'flat', 'onetime', 'sub'].forEach((k) => cuPlanSetToggle(k, false, null));
+  }
+
+  window.openCuMembershipPlanModal = function () {
+    const hid = document.getElementById('cu-plan-edit-id');
+    const titleEl = document.getElementById('cu-plan-modal-title');
+    const statusWrap = document.getElementById('cu-plan-status-wrap');
+    const keyInp = document.getElementById('cu-plan-key');
+    const keyHint = document.getElementById('cu-plan-key-hint');
+    if (hid) hid.value = '';
+    if (titleEl) titleEl.textContent = 'New Membership Plan';
+    if (statusWrap) statusWrap.style.display = 'none';
+    if (keyInp) { keyInp.value = ''; keyInp.readOnly = false; }
+    if (keyHint) keyHint.textContent = 'Uppercase letters, digits, underscores. Immutable after creation.';
+    document.getElementById('cu-plan-name').value = '';
+    document.getElementById('cu-plan-price').value = '';
+    document.getElementById('cu-plan-validity-type').value = 'DAYS';
+    document.getElementById('cu-plan-validity-days').value = '365';
+    document.getElementById('cu-plan-max-dep').value = '5';
+    const daysWrap = document.getElementById('cu-plan-validity-days-wrap');
+    if (daysWrap) daysWrap.style.display = '';
+    cuPlanResetToggles();
+    showError('cu-plan-modal-error', '');
+    window.openModal && window.openModal('modal-cu-membership-plan');
+  };
+
+  window.editCuMembershipPlan = function (planId) {
+    const p = cachedMembershipPlans.find((x) => x.plan_id === planId);
+    if (!p) return;
+    const hid = document.getElementById('cu-plan-edit-id');
+    const titleEl = document.getElementById('cu-plan-modal-title');
+    const statusWrap = document.getElementById('cu-plan-status-wrap');
+    const keyInp = document.getElementById('cu-plan-key');
+    const keyHint = document.getElementById('cu-plan-key-hint');
+    if (hid) hid.value = String(p.plan_id);
+    if (titleEl) titleEl.textContent = 'Edit Membership Plan';
+    if (statusWrap) statusWrap.style.display = '';
+    if (keyInp) { keyInp.value = p.plan_key || ''; keyInp.readOnly = true; }
+    if (keyHint) keyHint.textContent = 'Plan key is immutable — cannot be changed.';
+    document.getElementById('cu-plan-name').value = p.display_name || '';
+    document.getElementById('cu-plan-price').value = p.price != null ? String(p.price) : '';
+    document.getElementById('cu-plan-validity-type').value = p.validity_type || 'DAYS';
+    document.getElementById('cu-plan-validity-days').value = p.validity_days != null ? String(p.validity_days) : '';
+    document.getElementById('cu-plan-max-dep').value = p.max_dependents != null ? String(p.max_dependents) : '5';
+    const st = document.getElementById('cu-plan-active');
+    if (st) st.value = p.is_active ? '1' : '0';
+    const daysWrap = document.getElementById('cu-plan-validity-days-wrap');
+    if (daysWrap) daysWrap.style.display = (p.validity_type === 'LIFETIME') ? 'none' : '';
+    cuPlanResetToggles();
+    cuPlanSetToggle('plus', !!p.has_plus_access, null);
+    cuPlanSetToggle('cashback', p.extra_cashback_pct != null && p.extra_cashback_pct > 0, p.extra_cashback_pct);
+    cuPlanSetToggle('flat', p.flat_discount_pct != null && p.flat_discount_pct > 0, p.flat_discount_pct);
+    cuPlanSetToggle('onetime', !!p.has_one_time_discount, p.one_time_discount_pct);
+    cuPlanSetToggle('sub', !!p.can_create_sub_cards, null);
+    showError('cu-plan-modal-error', '');
+    window.openModal && window.openModal('modal-cu-membership-plan');
+  };
+
+  window.handleCuMembershipPlanSave = async function () {
+    const errEl = document.getElementById('cu-plan-modal-error');
+    const btn = document.getElementById('cu-plan-save-btn');
+    const nameInp = document.getElementById('cu-plan-name');
+    const keyInp = document.getElementById('cu-plan-key');
+    const priceInp = document.getElementById('cu-plan-price');
+    showError('cu-plan-modal-error', '');
+
+    const editId = document.getElementById('cu-plan-edit-id').value;
+    const displayName = nameInp ? nameInp.value.trim() : '';
+    const planKey = keyInp ? keyInp.value.trim().toUpperCase() : '';
+    const price = parseFloat(priceInp ? priceInp.value : '0');
+    const validityType = document.getElementById('cu-plan-validity-type').value || 'DAYS';
+    const validityDays = parseInt(document.getElementById('cu-plan-validity-days').value, 10) || 0;
+    const maxDep = parseInt(document.getElementById('cu-plan-max-dep').value, 10) || 5;
+
+    if (!displayName) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(nameInp, 'Required');
+      showError('cu-plan-modal-error', 'Display name is required.');
+      return;
+    }
+    if (!editId && !planKey) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(keyInp, 'Required');
+      showError('cu-plan-modal-error', 'Plan key is required.');
+      return;
+    }
+    if (!editId && !/^[A-Z][A-Z0-9_]*$/.test(planKey)) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(keyInp, 'Uppercase letters, digits, underscores only');
+      showError('cu-plan-modal-error', 'Invalid plan key format.');
+      return;
+    }
+    if (isNaN(price) || price < 0) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(priceInp, 'Enter a valid price');
+      showError('cu-plan-modal-error', 'Price is required.');
+      return;
+    }
+
+    const hasPlusAccess = document.getElementById('cu-plan-cap-plus-toggle').classList.contains('on');
+    const cashbackOn = document.getElementById('cu-plan-cap-cashback-toggle').classList.contains('on');
+    const flatOn = document.getElementById('cu-plan-cap-flat-toggle').classList.contains('on');
+    const oneTimeOn = document.getElementById('cu-plan-cap-onetime-toggle').classList.contains('on');
+    const canSubCards = document.getElementById('cu-plan-cap-sub-toggle').classList.contains('on');
+
+    const extraCashbackPct = cashbackOn ? (parseFloat(document.getElementById('cu-plan-extra-cashback').value) || null) : null;
+    const flatDiscountPct = flatOn ? (parseFloat(document.getElementById('cu-plan-flat-discount').value) || null) : null;
+    const oneTimePct = oneTimeOn ? (parseFloat(document.getElementById('cu-plan-one-time-pct').value) || null) : null;
+
+    const body = {
+      display_name: displayName,
+      price,
+      validity_days: validityType === 'LIFETIME' ? 0 : validityDays,
+      max_dependents: maxDep,
+      validity_type: validityType,
+      has_plus_access: hasPlusAccess,
+      extra_cashback_pct: extraCashbackPct,
+      flat_discount_pct: flatDiscountPct,
+      has_one_time_discount: oneTimeOn,
+      one_time_discount_pct: oneTimePct,
+      can_create_sub_cards: canSubCards
+    };
+
+    if (editId) {
+      body.is_active = document.getElementById('cu-plan-active').value === '1';
+    } else {
+      body.plan_key = planKey;
+    }
+
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      if (editId) {
+        await apiPut(`/api/settings/membership-plans/${editId}`, body);
+      } else {
+        await apiPost('/api/settings/membership-plans', body);
+      }
+      window.closeModal && window.closeModal('modal-cu-membership-plan');
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Membership plan saved.');
+      await loadMembershipPlans();
+    } catch (err) {
+      showError('cu-plan-modal-error', err.message || 'Save failed');
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
+    } finally {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+    }
+  };
+
+  // Wire validity-type change to show/hide days input
+  (function () {
+    const vtSel = document.getElementById('cu-plan-validity-type');
+    if (vtSel) {
+      vtSel.addEventListener('change', function () {
+        const daysWrap = document.getElementById('cu-plan-validity-days-wrap');
+        if (daysWrap) daysWrap.style.display = this.value === 'LIFETIME' ? 'none' : '';
+      });
+    }
+    // Auto-uppercase plan key
+    const keyInp = document.getElementById('cu-plan-key');
+    if (keyInp) {
+      keyInp.addEventListener('input', function () {
+        const pos = this.selectionStart;
+        this.value = this.value.toUpperCase().replace(/[^A-Z0-9_]/g, '');
+        this.setSelectionRange(pos, pos);
+        if (typeof cosmosFieldClear === 'function') cosmosFieldClear(this);
+      });
+    }
+  })();
 
   // ─── STORE TYPE CATALOG (Command Unit admin) ───────────────────────────────
 
@@ -4326,6 +4666,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (id === 'homebrands') loadHomeBrands();
       if (id === 'pos-settings') loadCuPosSettings();
       if (id === 'promotion') loadCuPromotionOffers();
+      if (id === 'membership-plans') void loadMembershipPlans();
       if (id === 'cu-suppliers')       loadCuSuppliers();
       if (id === 'cu-maker-master')    loadCuMakers();
       if (id === 'cu-branding-agents') loadCuBrandingAgents();
@@ -4363,4 +4704,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     void loadInventoryHubSettings();
   }
   if (_cuBootPage === 'store-types') void loadStoreTypeCatalogAdmin();
+  if (_cuBootPage === 'membership-plans') void loadMembershipPlans();
 });

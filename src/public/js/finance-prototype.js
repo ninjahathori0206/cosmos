@@ -852,6 +852,7 @@ window.submitPurchaseInvoice = async function submitPurchaseInvoice() {
 };
 
 window.addEventListener('popstate', () => {
+  if (window.cosmosIsMobileBackBlocked && window.cosmosIsMobileBackBlocked()) return
   if (typeof window.nav !== 'function') return
   const pageId = getFinancePageFromPath(window.location.pathname)
   window.nav(pageId, getFinanceNavEl(pageId), { fromHistory: true })

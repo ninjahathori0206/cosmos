@@ -263,16 +263,22 @@ function cxMembershipLabelFromRollup (r) {
 }
 
 function cxMembershipCardRowHtml (summary) {
-  var text = summary.tier
-  if (summary.type) text += ' · Type: ' + summary.type
-  if (summary.expiry) text += ' (exp. ' + summary.expiry + ')'
-  var cls = summary.tier === 'No active membership' ? '' : ' cx-cust-card__row--active-member'
+  var isActive = summary.tier && summary.tier !== 'No active membership'
+  if (isActive) {
+    var badgeText = escCx(summary.tier)
+    if (summary.type) badgeText += ' <span class="cx-mem-type-chip">' + escCx(summary.type) + '</span>'
+    var expiryText = summary.expiry
+      ? '<span class="cx-mem-expiry">exp. ' + escCx(summary.expiry) + '</span>'
+      : ''
+    return (
+      '<div class="cx-cust-card__row cx-cust-card__row--active-member">' +
+      '<span>Membership</span>' +
+      '<span><span class="cx-mem-badge">' + badgeText + '</span>' + expiryText + '</span>' +
+      '</div>'
+    )
+  }
   return (
-    '<div class="cx-cust-card__row' +
-    cls +
-    '"><span>Membership tier</span><span>' +
-    escCx(text) +
-    '</span></div>'
+    '<div class="cx-cust-card__row"><span>Membership</span><span style="color:var(--text3);font-size:12px">No active plan</span></div>'
   )
 }
 
@@ -525,6 +531,7 @@ function cxApplyRouteFromPath () {
 }
 
 window.addEventListener('popstate', function () {
+  if (window.cosmosIsMobileBackBlocked && window.cosmosIsMobileBackBlocked()) return
   cxApplyRouteFromPath()
 })
 
@@ -816,6 +823,8 @@ window.openGrantMembershipModal = async function (customerId, customerName, cust
   document.getElementById('gm-price').value = ''
   document.getElementById('gm-days').value = ''
   document.getElementById('gm-expires').value = ''
+  var posOrdInput = document.getElementById('gm-pos-order-id')
+  if (posOrdInput) posOrdInput.value = ''
   var sel = document.getElementById('gm-plan')
   sel.innerHTML = ''
   sel.onchange = null
@@ -835,12 +844,16 @@ window.openGrantMembershipModal = async function (customerId, customerName, cust
       document.getElementById('gm-active-plan-badge').textContent = tierLabel
       document.getElementById('gm-active-expiry-line').textContent = 'Expires ' + expStr
       document.getElementById('gm-info-banner').style.display = 'flex'
+      var orderInfo = active.linked_order_no
+        ? ' · POS order <strong>' + escCx(active.linked_order_no) + '</strong>'
+        : ''
       document.getElementById('gm-info-banner-text').innerHTML =
         'Active membership: <strong>' +
         escCx(tierLabel) +
         '</strong> — paid ' +
         paidStr +
-        '. Saving assigns a tier from Command Unit → Membership.'
+        orderInfo +
+        '. Saving renews the membership with the new plan.'
       document.getElementById('gm-current-status').innerHTML = ''
     } else {
       document.getElementById('gm-current-status').innerHTML =
@@ -916,6 +929,11 @@ window.saveGrantMembership = async function () {
       var nd = parseInt(d, 10)
       if (!Number.isNaN(nd) && nd > 0) body.validity_days = nd
     }
+  }
+  var posOrdEl = document.getElementById('gm-pos-order-id')
+  if (posOrdEl && posOrdEl.value.trim()) {
+    var oid = parseInt(posOrdEl.value.trim(), 10)
+    if (!Number.isNaN(oid) && oid > 0) body.pos_order_id = oid
   }
   if (typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn)
   try {

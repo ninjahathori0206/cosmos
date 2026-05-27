@@ -603,7 +603,10 @@
     loadStores()
   }
 
-  window.addEventListener('popstate', () => resolve())
+  window.addEventListener('popstate', () => {
+    if (window.cosmosIsMobileBackBlocked && window.cosmosIsMobileBackBlocked()) return
+    resolve()
+  })
 
   // ── Format role key for display ──────────────────────────────────────────
   function formatRole(roleKey) {
@@ -881,6 +884,7 @@
       const session = getPosSession()
       if (session && session.token) {
         void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
+        void refreshPosCoinBalance(session)
       }
       renderCartCustomerRef()
       syncCustomerPickerBannerAndActions()
@@ -1049,9 +1053,13 @@
       const phoneRow = snap.phone
         ? '<div class="pos-lk-cart-cust-row">' + escapeHtml(snap.phone) + '</div>'
         : ''
+      const coinRow = snap.coins != null
+        ? '<div class="pos-lk-cart-cust-coins" title="Cashback Coins balance">◈ ' + Number(snap.coins).toLocaleString('en-IN') + ' Coins' + (snap.rupee_value > 0 ? ' · ≈ ₹' + snap.rupee_value : '') + '</div>'
+        : ''
       body.innerHTML =
         '<div class="pos-lk-cart-cust-name">' + escapeHtml(snap.full_name) + '</div>' +
         phoneRow +
+        coinRow +
         '<div class="pos-lk-cart-cust-meta">Customer ID · ' + escapeHtml(String(snap.customer_id)) + '</div>' +
         '<button type="button" class="pos-lk-text-link" id="pos-cart-change-customer" style="margin-top:10px;padding:0">Change customer</button>'
       const ch = document.getElementById('pos-cart-change-customer')
@@ -1072,6 +1080,48 @@
         openPosCustomerPickerModal()
       })
     }
+  }
+
+  /**
+   * Fetches coin balance for the selected customer and updates the cart card + payment wallet panel.
+   * Non-blocking — errors are silently swallowed.
+   */
+  async function refreshPosCoinBalance(session) {
+    const cid = posSelectedCustomerId
+    const coinsCard  = document.getElementById('pos-lk-pay-coins-card')
+    const coinsEmpty = document.getElementById('pos-lk-pay-coins-empty')
+    if (!cid) {
+      if (coinsCard)  coinsCard.style.display  = 'none'
+      if (coinsEmpty) coinsEmpty.style.display = 'none'
+      return
+    }
+    try {
+      const tok = session && session.token ? session.token : null
+      if (!tok) return
+      const data = await apiGet('/api/pos/customer-coin-balance/' + cid, tok)
+      const coins      = data && data.data ? Number(data.data.coins || 0)       : 0
+      const rupeeValue = data && data.data ? Number(data.data.rupee_value || 0)  : 0
+      // Persist on snapshot for cart card re-render
+      if (posSelectedCustomerSnapshot) {
+        posSelectedCustomerSnapshot.coins      = coins
+        posSelectedCustomerSnapshot.rupee_value = rupeeValue
+      }
+      renderCartCustomerRef()
+      // Update payment wallet panel
+      if (coinsCard && coinsEmpty) {
+        if (coins > 0) {
+          const lbl = document.getElementById('pos-pay-coins-label')
+          const val = document.getElementById('pos-pay-coins-value')
+          if (lbl) lbl.textContent = Number(coins).toLocaleString('en-IN') + ' Coins'
+          if (val) val.textContent = '≈ ₹' + rupeeValue + ' redeemable value'
+          coinsCard.style.display  = ''
+          coinsEmpty.style.display = 'none'
+        } else {
+          coinsCard.style.display  = 'none'
+          coinsEmpty.style.display = ''
+        }
+      }
+    } catch (_e) { /* non-fatal */ }
   }
 
   function selectedOfferMeta() {
@@ -4349,6 +4399,7 @@
       }
       if (el) el.innerHTML = ''
       await loadPosOffersPanel(session, 'pos-lk-pay-offers-list', null, true)
+      void refreshPosCoinBalance(session)
       return
     }
     if (!el || !lastCreatedOrder) {
@@ -4575,6 +4626,7 @@
       amtSpanFinal.textContent = formatRupees(a)
     }
     await loadPosOffersPanel(session, 'pos-lk-pay-offers-list', null, true)
+    void refreshPosCoinBalance(session)
   }
 
   function completePosCheckoutAfterPayment(opts) {

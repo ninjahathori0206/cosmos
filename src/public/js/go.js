@@ -311,9 +311,9 @@ var GO = (function () {
           + '</div>'
           + '<div class="loyalty-float anim" onclick="showScreen(\'loyalty\')">'
           + '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">'
-          + '<div><div class="lc-label">Loyalty Points</div>'
+          + '<div><div class="lc-label">◈ Coins</div>'
           + '<div class="lc-points">' + Number(d.loyalty.balance).toLocaleString('en-IN') + '</div>'
-          + '<div class="lc-sub">≈ ' + fmtMoney(d.loyalty.balance / 10) + ' value · redeemable at billing</div></div>'
+          + '<div class="lc-sub">≈ ' + fmtMoney(d.loyalty.rupee_value != null ? d.loyalty.rupee_value : Math.floor(d.loyalty.balance / (d.loyalty.coin_redemption_rate || 10))) + ' value · redeemable at billing</div></div>'
           + '<div><div class="pill pill-gold">' + d.loyalty.tier + '</div></div>'
           + '</div>'
           + '<div class="prog-track"><div class="prog-fill" style="width:57%"></div></div>'
@@ -701,20 +701,23 @@ var GO = (function () {
           + '</div>';
       }).join('');
 
+      var rate = d.coin_redemption_rate || 10;
+      var rupeeVal = d.rupee_value != null ? d.rupee_value : Math.floor(d.balance / rate);
+
       body.innerHTML =
         '<div class="gold-hero anim">'
-        + '<div style="font-size:11px;color:rgba(255,255,255,.75);text-transform:uppercase;letter-spacing:1px;font-weight:500;position:relative;z-index:1">Available Balance</div>'
+        + '<div style="font-size:11px;color:rgba(255,255,255,.75);text-transform:uppercase;letter-spacing:1px;font-weight:500;position:relative;z-index:1">◈ Cashback Coins Balance</div>'
         + '<div style="font-family:\'DM Mono\',monospace;font-size:42px;font-weight:700;margin-top:6px;line-height:1;position:relative;z-index:1">' + Number(d.balance).toLocaleString('en-IN') + '</div>'
-        + '<div style="font-size:14px;color:rgba(255,255,255,.8);margin-top:4px;position:relative;z-index:1">≈ ' + fmtMoney(d.balance / 10) + ' redeemable value</div>'
+        + '<div style="font-size:14px;color:rgba(255,255,255,.8);margin-top:4px;position:relative;z-index:1">≈ ' + fmtMoney(rupeeVal) + ' redeemable value · ' + rate + ' coins = ₹1</div>'
         + '<div style="margin-top:16px;display:flex;gap:16px;position:relative;z-index:1">'
-        + '<div><div style="font-size:10px;color:rgba(255,255,255,.65)">Tier</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + d.tier + '</div></div>'
-        + (d.next_tier ? '<div style="width:1px;background:rgba(255,255,255,.25)"></div><div><div style="font-size:10px;color:rgba(255,255,255,.65)">To ' + d.next_tier + '</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + Number(d.pts_to_next).toLocaleString('en-IN') + ' pts</div></div>' : '')
+        + '<div><div style="font-size:10px;color:rgba(255,255,255,.65)">Member Tier</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + d.tier + '</div></div>'
+        + (d.next_tier ? '<div style="width:1px;background:rgba(255,255,255,.25)"></div><div><div style="font-size:10px;color:rgba(255,255,255,.65)">To ' + d.next_tier + '</div><div style="font-size:15px;font-weight:600;margin-top:2px">' + Number(d.pts_to_next).toLocaleString('en-IN') + ' coins</div></div>' : '')
         + '</div>'
         + '<div style="margin-top:14px;height:6px;background:rgba(255,255,255,.25);border-radius:3px;overflow:hidden;position:relative;z-index:1">'
         + '<div style="height:100%;width:' + progPct + '%;background:rgba(255,255,255,.85);border-radius:3px"></div></div>'
         + '</div>'
         + '<div class="section-label">Recent Activity</div>'
-        + (ledgerHtml ? '<div class="card anim anim-1">' + ledgerHtml + '</div>' : '<div style="padding:0 16px;font-size:13px;color:var(--text3)">No transactions yet.</div>');
+        + (ledgerHtml ? '<div class="card anim anim-1">' + ledgerHtml + '</div>' : '<div style="padding:0 16px;font-size:13px;color:var(--text3)">No coin transactions yet. Earn coins by applying Cashback offers at the store.</div>');
     } catch (e) {
       body.innerHTML = '<div style="padding:32px 16px;text-align:center;color:var(--red)">' + e.message + '</div>';
     }
@@ -742,8 +745,8 @@ var GO = (function () {
         + '<div style="font-family:\'Syne\',sans-serif;font-size:22px;font-weight:700;color:var(--text);margin-top:14px">' + d.full_name + '</div>'
         + '<div style="font-size:13px;color:var(--text3);margin-top:4px">CX-' + String(d.customer_id).padStart(5, '0') + ' · Member since ' + fmtDate(d.member_since).split(' ').slice(1).join(' ') + '</div>'
         + '<div style="display:flex;gap:8px;margin-top:10px">'
-        + (d.membership ? '<span class="pill pill-plus">✦ Plus Member</span>' : '')
-        + '<span class="pill pill-gold">' + d.loyalty.tier + ' tier</span>'
+        + (d.membership ? '<span class="pill pill-plus">✦ ' + (d.membership.plan_name || 'Plus Member') + '</span>' : '')
+        + (d.loyalty && d.loyalty.balance > 0 ? '<span class="pill pill-gold">◈ ' + Number(d.loyalty.balance).toLocaleString('en-IN') + ' Coins</span>' : '')
         + '</div></div>'
         + '<div class="card anim anim-1">'
         + '<div class="row-item"><div class="row-icon" style="background:var(--bg3)">📱</div><div><div class="row-title">Phone</div><div class="row-sub">' + d.phone + '</div></div></div>'

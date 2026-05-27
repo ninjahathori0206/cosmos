@@ -407,7 +407,7 @@ router.get('/loyalty', async (req, res, next) => {
     const pool = await getPool();
     const cid = req.customerId;
 
-    const [balR, ledgerR, tiersR] = await Promise.all([
+    const [balR, ledgerR, tiersR, rateR] = await Promise.all([
       pool.request().input('cid', cid).query(`
         SELECT TOP 1 balance_after AS balance
         FROM   dbo.pos_points_ledger
@@ -422,12 +422,15 @@ router.get('/loyalty', async (req, res, next) => {
         WHERE  pl.customer_id = @cid
         ORDER BY pl.ledger_id DESC
       `),
-      pool.request().query('SELECT * FROM dbo.loyalty_tiers ORDER BY display_order ASC')
+      pool.request().query('SELECT * FROM dbo.loyalty_tiers ORDER BY display_order ASC'),
+      pool.request().query(`SELECT value FROM dbo.app_settings WHERE key = N'coin_redemption_rate'`)
     ]);
 
     const balance = (balR.recordset[0] && balR.recordset[0].balance) || 0;
     const tiers   = tiersR.recordset;
     const tier    = await getTier(pool, balance);
+    const coinRedemptionRate = rateR.recordset[0] ? Number(rateR.recordset[0].value) : 10;
+    const rupeeValue = coinRedemptionRate > 0 ? Math.floor(balance / coinRedemptionRate) : 0;
 
     const nextTier = tiers.find(t => t.min_points > balance && t.tier_name !== tier.tier_name) || null;
     const ptsToNext = nextTier ? nextTier.min_points - balance : 0;
@@ -441,7 +444,9 @@ router.get('/loyalty', async (req, res, next) => {
         next_tier:   nextTier ? nextTier.tier_name : null,
         pts_to_next: Math.max(0, ptsToNext),
         tiers,
-        ledger: ledgerR.recordset
+        ledger: ledgerR.recordset,
+        coin_redemption_rate: coinRedemptionRate,
+        rupee_value: rupeeValue
       }
     });
   } catch (err) {
@@ -536,12 +541,22 @@ router.post('/membership/add-dependent', async (req, res, next) => {
     const depR = await pool.request().input('phone', phone.trim()).query(`
       SELECT customer_id FROM dbo.pos_customers WHERE phone = @phone AND is_active = 1
     `);
-    const depCustomer = depR.recordset[0];
+    let depCustomer = depR.recordset[0];
     if (!depCustomer) {
-      return res.status(404).json({
-        success: false,
-        message: 'This phone number is not registered at any Eyewoot store. Ask them to visit a store first.'
-      });
+      // Auto-register: create a minimal pos_customers record so the dependent can be added
+      // without requiring them to visit the store first.
+      const insR = await pool.request()
+        .input('phone', phone.trim())
+        .input('full_name', `Dependent (${phone.trim()})`)
+        .query(`
+          INSERT INTO dbo.pos_customers (phone, full_name, is_active, created_at)
+          OUTPUT INSERTED.customer_id
+          VALUES (@phone, @full_name, 1, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+        `);
+      depCustomer = insR.recordset[0];
+      if (!depCustomer) {
+        return res.status(500).json({ success: false, message: 'Could not register the dependent. Please try again.' });
+      }
     }
 
     if (depCustomer.customer_id === cid) {
