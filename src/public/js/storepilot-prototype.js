@@ -1359,7 +1359,27 @@ function spSyncCreateRequestStoreLine() {
 function spSyncCreateRequestMetaTitle() {
   const title = document.getElementById('sp-create-request-meta-title');
   if (!title) return;
-  title.textContent = spIsCreateRequestMobile() ? 'Notes (optional)' : 'Destination & notes';
+  title.textContent = 'Notes (optional)';
+}
+
+function spSyncCreateRequestResultsChrome(rowCount, query) {
+  const block = document.getElementById('sp-cr-results-block');
+  const head = document.getElementById('sp-cr-results-head');
+  const countEl = document.getElementById('sp-cr-results-count');
+  if (!block || !spIsCreateRequestMobile()) return;
+  const q = String(query || '').trim();
+  if (!q) {
+    block.classList.remove('sp-cr-results-block--active');
+    if (head) head.hidden = true;
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  block.classList.add('sp-cr-results-block--active');
+  if (head) head.hidden = false;
+  if (countEl) {
+    const n = Number(rowCount) || 0;
+    countEl.textContent = n + ' found';
+  }
 }
 
 window.spScrollCreateRequestToCart = function () {
@@ -1385,6 +1405,7 @@ window.openSpCreateRequestModal = function () {
   spBindCreateRequestSearchGuard();
   spSyncCreateRequestStoreLine();
   spSyncCreateRequestMetaTitle();
+  spSyncCreateRequestResultsChrome(0, '');
   spSyncCreateRequestCartStrip();
   if (typeof window.cosmosEnsureApiKey === 'function') {
     window.cosmosEnsureApiKey().catch(function () {});
@@ -2073,7 +2094,10 @@ window.onTransferSearch = function (q) {
   const resultsEl = document.getElementById('tc-results');
   const trimmed = String(q || '').trim();
   if (!trimmed) {
-    if (resultsEl) resultsEl.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Search SKU by code, brand, or unit barcode</div></div>`;
+    if (resultsEl) {
+      resultsEl.innerHTML = '<div class="sp-cr-empty-hint"><div class="empty-ic">🔍</div><div class="sp-cr-empty-title">Search SKU catalogue</div><div class="sp-cr-empty-sub">Brand, SKU code, or 7-digit unit code — not where the unit is stocked.</div></div>';
+    }
+    spSyncCreateRequestResultsChrome(0, '');
     return;
   }
   const norm = spNormalizeTransferSearchCode(trimmed);
@@ -2101,15 +2125,18 @@ async function doTransferSearch(q) {
       const unitHint = spIsLikelyUnitCode(q) && spPaddedUnitCode(q)
         ? `unit code <strong>${escHtml(spPaddedUnitCode(q))}</strong>`
         : `"${escHtml(q)}"`;
-      resultsEl.innerHTML = `<div class="empty-state"><div class="ei">📦</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No SKU found</div><div style="font-size:13px;color:var(--text2)">No matching SKU for ${unitHint}. Try SKU code, brand, or a valid 7-digit unit code.</div></div>`;
+      resultsEl.innerHTML = `<div class="sp-cr-empty-hint"><div class="empty-ic">📦</div><div class="sp-cr-empty-title">No SKU found</div><div class="sp-cr-empty-sub">No matching SKU for ${unitHint}. Try SKU code, brand, or a valid 7-digit unit code.</div></div>`;
+      spSyncCreateRequestResultsChrome(0, q);
       return;
     }
     resultsEl.innerHTML = rows.map((r) => renderTransferSearchResultRow(r)).join('');
+    spSyncCreateRequestResultsChrome(rows.length, q);
   } catch (err) {
     if (seq !== _tcSearchSeq) return;
     const msg = err.message || 'Search failed';
     showErr('tc-err', msg);
     if (resultsEl) resultsEl.innerHTML = '';
+    spSyncCreateRequestResultsChrome(0, q);
   } finally {
     if (seq === _tcSearchSeq && spin) spin.style.display = 'none';
     if (typeof window.spSyncCreateRequestCartStrip === 'function') window.spSyncCreateRequestCartStrip();
@@ -2151,7 +2178,7 @@ function renderTransferCart() {
   if (countEl) countEl.textContent = _transferCart.length + ' item' + (_transferCart.length !== 1 ? 's' : '');
 
   if (!_transferCart.length) {
-    cartEl.innerHTML = `<div class="empty-state" style="padding:28px 20px"><div class="ei">🛒</div><div class="et">Add items from search results</div></div>`;
+    cartEl.innerHTML = '<div class="sp-cr-empty-cart"><div class="empty-ic">🛒</div><div class="sp-cr-empty-title">Cart is empty</div><div class="sp-cr-empty-sub">Add items from search results above.</div></div>';
     return;
   }
 
