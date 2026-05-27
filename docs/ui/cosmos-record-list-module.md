@@ -51,7 +51,8 @@ Load order: `cosmos-ui-polish.js` → `cosmos-record-list.js`
 - **SKU search:** `GET /api/transfer-requests/search-skus?q=` — unit code resolves to SKU only (no unit location / HQ availability gate); HQ qty shown as informational.
 - **Deep link:** `/storepilot/transfers-create` → My Requests + modal (requires `storepilot.transfers.create`).
 - **Legacy routes:** `/storepilot/incoming-transfers` and `/storepilot/movement-list` redirect to My Requests.
-- **Mobile:** 96dvh bottom sheet, grabber, sticky HQ search, cart strip (`#sp-create-request-cart-strip`), 48px CTAs, safe-area footer; body scroll locked while open.
+- **Mobile:** 96dvh bottom sheet, grabber, safe-area footer; body scroll locked while open.
+- **Mobile (≤768px):** backdrop tap does not close sheet; only SKU results scroll; **Request cart + Notes** pinned below search; fixed destination as header subtitle (field hidden); cart strip always visible (**Cart & notes ↓**).
 | Foundry Goods Request | `#ftr-cards-wrap` | `#ftr-detail-card` (requests) / `#ml-detail` (HQ docs) |
 | Foundry Goods Request History | `#ftr-history-results` (modal `#overlay-ftr-history`) | `#ftr-detail-card` |
 

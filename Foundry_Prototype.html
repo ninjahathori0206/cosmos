@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" class="cosmos-lock-zoom">
 <head>
 <meta charset="UTF-8">
@@ -18,8 +18,8 @@
 <link rel="preload" href="/css/cosmos-ui.css" as="style">
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/foundry-prototype.css?v=20260528-label-print-friendly">
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-bucket-z">
-<script src="/js/cosmos-ui-polish.js?v=20260528-polish-load-defer" defer></script>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-cr-mobile">
+<script src="/js/cosmos-ui-polish.js?v=20260528-cr-mobile" defer></script>
 <script src="/js/cosmos-record-list.js?v=20260526-detail-qty-remainder" defer></script>
 
 
@@ -1100,7 +1100,7 @@
   </div><!-- /.cosmos-app-scroll -->
 
   <!-- Create HQ transfer (same sheet pattern as StorePilot create request) -->
-  <div class="overlay overlay--sheet" id="overlay-ftr-create-transfer" role="dialog" aria-modal="true" aria-labelledby="ftr-create-transfer-title" style="display:none" onclick="if(event.target===this) closeFtrCreateTransferModal()">
+  <div class="overlay overlay--sheet" id="overlay-ftr-create-transfer" role="dialog" aria-modal="true" aria-labelledby="ftr-create-transfer-title" style="display:none" onclick="ftrCreateTransferBackdropClick(event)">
     <div class="modal modal--create-request" onclick="event.stopPropagation()">
       <div class="modal-header sp-create-request-head">
         <div class="sp-create-request-grabber" aria-hidden="true"></div>

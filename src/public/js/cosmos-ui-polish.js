@@ -772,4 +772,15 @@
       a.remove()
     }, 2000)
   }
+
+  window.cosmosSheetBackdropClick = function (e, closeFn, opts) {
+    if (!e || e.target !== e.currentTarget) return
+    opts = opts || {}
+    try {
+      if (window.matchMedia('(max-width: 768px)').matches) return
+    } catch (_) {}
+    var guard = opts.dismissGuardUntil
+    if (typeof guard === 'number' && Date.now() < guard) return
+    if (typeof closeFn === 'function') closeFn()
+  }
 })()

@@ -10290,6 +10290,14 @@ ${initScript}
     }
   };
 
+  let _ftrCtDismissGuardUntil = 0;
+
+  window.ftrCreateTransferBackdropClick = function (e) {
+    window.cosmosSheetBackdropClick(e, window.closeFtrCreateTransferModal, {
+      dismissGuardUntil: _ftrCtDismissGuardUntil
+    });
+  };
+
   window.openFtrCreateTransferModal = async function () {
     const overlay = document.getElementById('overlay-ftr-create-transfer');
     if (!overlay) return;
@@ -10310,7 +10318,15 @@ ${initScript}
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
     await ftrCtLoadStores();
-    setTimeout(function () { if (search) search.focus(); }, 120);
+    if (search && !search._ftrBackdropGuard) {
+      search._ftrBackdropGuard = true;
+      search.addEventListener('blur', function () {
+        _ftrCtDismissGuardUntil = Date.now() + 400;
+      });
+    }
+    if (!window.matchMedia('(max-width: 768px)').matches) {
+      setTimeout(function () { if (search) search.focus(); }, 120);
+    }
   };
 
   window.closeFtrCreateTransferModal = function () {
