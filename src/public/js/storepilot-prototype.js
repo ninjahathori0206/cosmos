@@ -1764,40 +1764,74 @@ function spNormalizeShipmentsResponse(raw) {
   return [];
 }
 
-async function spLoadRequestShipments(requestId, wrapId) {
+var SP_TR_SHIPMENT_STATUSES = ['DISPATCHED', 'PARTIALLY_DISPATCHED', 'PARTIALLY_RECEIVED', 'RECEIVED'];
+
+function spRequestStatusShowsShipments(status) {
+  return SP_TR_SHIPMENT_STATUSES.indexOf(String(status || '')) >= 0;
+}
+
+async function spFetchRequestShipmentsList(requestId) {
+  return spNormalizeShipmentsResponse(
+    await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50')
+  );
+}
+
+async function spResolveRequestShipmentsVisibility(req, requestId) {
+  if (req && spRequestStatusShowsShipments(req.status)) {
+    return { show: true, list: null };
+  }
+  try {
+    const list = await spFetchRequestShipmentsList(requestId);
+    return { show: list.length > 0, list: list };
+  } catch (_) {
+    return { show: false, list: null };
+  }
+}
+
+function spRenderShipmentsListHtml(list) {
+  const onClick = 'expandIncTransfer';
+  if (window.cosmosDetailShipments) {
+    return window.cosmosDetailShipments.html(list.map(function (d) {
+      return {
+        doc_id: d.doc_id,
+        status: d.status,
+        line_count: d.line_count,
+        dateLabel: typeof fmtDate === 'function' ? fmtDate(d.dispatched_at || d.created_at) : ''
+      };
+    }), { onDocClick: onClick });
+  }
+  return '<ul style="margin:0;padding-left:18px">' + list.map(function (d) {
+    const dateLabel = typeof fmtDate === 'function' ? fmtDate(d.dispatched_at || d.created_at) : '';
+    return '<li class="tr-link" style="cursor:pointer;margin-bottom:8px;min-height:44px;padding:4px 0" role="button" tabindex="0" onclick="' + onClick + '(' + d.doc_id + ')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){' + onClick + '(' + d.doc_id + ')}">' +
+      'Doc <span class="mono">#' + escHtml(String(d.doc_id)) + '</span> · ' +
+      escHtml(dateLabel) + ' · ' + escHtml(d.status || '') +
+      ' · ' + (d.line_count || 0) + ' line(s)</li>';
+  }).join('') + '</ul>';
+}
+
+async function spLoadRequestShipments(requestId, wrapId, prefetchedList) {
   const wrap = document.getElementById(wrapId);
   if (!wrap) return [];
   try {
-    const list = spNormalizeShipmentsResponse(
-      await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50')
-    );
+    const list = prefetchedList != null
+      ? spNormalizeShipmentsResponse(prefetchedList)
+      : await spFetchRequestShipmentsList(requestId);
     if (!list.length) {
       wrap.innerHTML = '<span style="color:var(--text3)">No transfer documents yet.</span>';
       return [];
     }
-    const onClick = 'expandIncTransfer';
-    wrap.innerHTML = window.cosmosDetailShipments
-      ? window.cosmosDetailShipments.html(list.map(function (d) {
-        return {
-          doc_id: d.doc_id,
-          status: d.status,
-          line_count: d.line_count,
-          dateLabel: typeof fmtDate === 'function' ? fmtDate(d.dispatched_at || d.created_at) : ''
-        };
-      }), { onDocClick: onClick })
-      : '';
+    wrap.innerHTML = spRenderShipmentsListHtml(list);
     return list;
   } catch (err) {
     wrap.innerHTML = '<span style="color:var(--red)">' + escHtml(err.message) + '</span>';
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message);
     return [];
   }
 }
 
 window.spOpenFirstActionableShipment = async function (requestId) {
   try {
-    const list = spNormalizeShipmentsResponse(
-      await apiGet('/api/transfer-requests/' + requestId + '/shipments?top_n=50')
-    );
+    const list = await spFetchRequestShipmentsList(requestId);
     const actionable = list.find(function (d) {
       return d.status === 'DISPATCHED' || d.status === 'ACCEPTED';
     });
@@ -1966,8 +2000,8 @@ window.expandSpTrRequest = async function (requestId) {
       )
       : '<div class="tw"><table><thead><tr><th>SKU</th><th>Description</th></tr></thead><tbody>' + linesHtml + '</tbody></table></div>';
 
-    const showShipments = req.status === 'DISPATCHED' || req.status === 'PARTIALLY_DISPATCHED' ||
-      req.status === 'PARTIALLY_RECEIVED' || req.status === 'RECEIVED';
+    const shipVis = await spResolveRequestShipmentsVisibility(req, requestId);
+    const showShipments = shipVis.show;
 
     body.innerHTML = `
       <div style="padding:16px 20px">
@@ -1979,7 +2013,7 @@ window.expandSpTrRequest = async function (requestId) {
         ${showShipments ? '<div style="margin-top:16px"><div style="font-weight:600;font-size:13px;margin-bottom:8px">Shipments</div><div id="sp-tr-shipments-wrap">Loading…</div></div>' : ''}
       </div>`;
 
-    if (showShipments) spLoadRequestShipments(requestId, 'sp-tr-shipments-wrap');
+    if (showShipments) spLoadRequestShipments(requestId, 'sp-tr-shipments-wrap', shipVis.list);
   } catch (err) {
     if (body) body.innerHTML = `<div style="padding:16px;color:var(--red)">Error: ${escHtml(err.message)}</div>`;
   }

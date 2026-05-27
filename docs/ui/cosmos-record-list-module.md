@@ -43,6 +43,19 @@ Load order: `cosmos-ui-polish.js` → `cosmos-record-list.js`
 | SP My Transfer Requests | `#tr-history-wrap` | `#sp-tr-detail` |
 | SP shipment stocking (overlay) | — | `#sp-inc-detail` (opened from request shipments) |
 
+### Request detail — Shipments block
+
+- **API:** `GET /api/transfer-requests/:id/shipments` → list of stock transfer docs; row click → `expandIncTransfer(doc_id)`.
+- **UI:** `spLoadRequestShipments` in `storepilot-prototype.js` uses `cosmosDetailShipments.html` from **`cosmos-record-list.js`** (required script on StorePilot shell).
+- **Visibility:** Shipments section shows when request status is dispatched/received family **or** the shipments API returns at least one doc (handles status drift).
+- **Fallback:** If `cosmosDetailShipments` is missing (stale PWA shell), a built-in `<ul>` list still renders doc rows.
+
+### StorePilot PWA (installed app)
+
+- **Service worker:** `/storepilot-sw.js` — `/api/*` is network-only; `/js/*` and `/css/*` are **network-first** (cache updated on success).
+- **After deploy:** Users on an old home-screen install may need to clear site data for the origin or remove and re-add **Add to Home Screen**. Standalone mode may auto-refresh when a new service worker activates.
+- **Scripts:** `cosmos-record-list.js` must load before `storepilot-prototype.js` (see `StorePilot_Prototype.html`).
+
 ### Create Request entry (My Requests)
 
 - **Nav:** sidebar **My Requests** only (no separate Request Goods page).

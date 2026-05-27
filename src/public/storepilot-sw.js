@@ -1,8 +1,8 @@
 /* Store Pilot PWA — Service Worker
    Scope: registered at / — only caches Store Pilot shell + shared static assets + login.
-   Strategy: network-only for /api/*; network-first for /storepilot navigations; cache-first for allowed static GET. */
+   Strategy: network-only for /api/*; network-first for /js/* and /css/*; cache-first fallback for other static. */
 
-var CACHE_NAME = 'storepilot-v4-brand-mrp-stock-b2';
+var CACHE_NAME = 'storepilot-v5-shipments-fix';
 
 var SHELL_URLS = [
   '/',
@@ -14,6 +14,7 @@ var SHELL_URLS = [
   '/js/cosmos-modules-catalog.js',
   '/js/cosmos-module-switch.js',
   '/js/cosmos-bucket-scan.js',
+  '/js/cosmos-record-list.js',
   '/js/storepilot-prototype.js',
   '/js/storepilot-pwa.js',
   '/js/login.js',
@@ -39,12 +40,37 @@ function isAllowedStaticPath(pathname) {
   return pathname === '/storepilot-manifest.json';
 }
 
+function isNetworkFirstStatic(pathname) {
+  return pathname.indexOf('/js/') === 0 || pathname.indexOf('/css/') === 0;
+}
+
 function shouldHandleFetch(url, request) {
   if (request.method !== 'GET') return false;
   if (url.pathname.startsWith('/api/')) return true;
   if (url.pathname.indexOf('/storepilot') === 0) return true;
   if (isAllowedStaticPath(url.pathname)) return true;
   return false;
+}
+
+function cachePutOnOk(request, response) {
+  if (response && response.status === 200 && request.method === 'GET') {
+    var clone = response.clone();
+    caches.open(CACHE_NAME).then(function (cache) {
+      cache.put(request, clone);
+    });
+  }
+}
+
+function networkFirstStatic(request, url) {
+  return fetch(request).then(function (res) {
+    cachePutOnOk(request, res);
+    return res;
+  }).catch(function () {
+    return caches.match(request).then(function (cached) {
+      if (cached) return cached;
+      return caches.match(url.pathname, { ignoreSearch: true });
+    });
+  });
 }
 
 self.addEventListener('install', function (e) {
@@ -95,15 +121,15 @@ self.addEventListener('fetch', function (e) {
     return;
   }
 
+  if (isNetworkFirstStatic(url.pathname)) {
+    e.respondWith(networkFirstStatic(e.request, url));
+    return;
+  }
+
   e.respondWith(
     caches.match(e.request).then(function (cached) {
       var networkFetch = fetch(e.request).then(function (res) {
-        if (res && res.status === 200 && e.request.method === 'GET' && isAllowedStaticPath(url.pathname)) {
-          var clone = res.clone();
-          caches.open(CACHE_NAME).then(function (cache) {
-            cache.put(e.request, clone);
-          });
-        }
+        cachePutOnOk(e.request, res);
         return res;
       }).catch(function () {
         return caches.match(url.pathname, { ignoreSearch: true });
