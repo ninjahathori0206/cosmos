@@ -1396,6 +1396,45 @@ body.pos-lk-flow .pos-ob-proceed-btn {
   color: var(--text2);
 }
 
+.pos-ob-summary-row--membership .pos-ob-summary-lbl {
+  color: var(--acc2);
+  font-weight: 600;
+}
+
+.pos-cart-membership-plan-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid var(--lk-border, var(--border));
+  border-radius: 12px;
+  background: var(--card, #fff);
+  margin: 0 16px 10px;
+  cursor: pointer;
+}
+.pos-cart-membership-plan-item:hover,
+.pos-cart-membership-plan-item:focus-visible {
+  border-color: var(--acc, #2563eb);
+  background: var(--accL, #eff6ff);
+}
+.pos-cart-membership-plan-item.is-selected {
+  border-color: var(--acc, #2563eb);
+  box-shadow: 0 0 0 2px var(--accL, #eff6ff);
+}
+.pos-cart-membership-plan-item__price {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text1);
+  white-space: nowrap;
+}
+.pos-cart-membership-plan-item__meta {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 4px;
+}
+
 #pos-lk-cart-customer-body.pos-lk-cart-cust--required {
   outline: 2px solid var(--gold);
   border-radius: 8px;
@@ -2179,8 +2218,13 @@ body.pos-lk-flow .pos-ob-cart-group {
   box-shadow: none;
   padding: 0;
   margin: 0;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  body.pos-lk-flow .pos-ob-cart-group {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 body.pos-lk-flow .pos-lk-primary-wide.pos-ob-proceed-btn {
@@ -4141,8 +4185,15 @@ body.pos-target-tablet-landscape.pos-lk-flow .pos-lk-page {
 .pos-lens-newcust-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(15, 30, 53, 0.55);
-  backdrop-filter: blur(4px);
+  background: rgba(15, 30, 53, 0.62);
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .pos-lens-newcust-backdrop {
+    background: rgba(15, 30, 53, 0.55);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
 }
 
 .pos-lens-newcust-sheet {
@@ -4588,8 +4639,10 @@ body.pos-lk-flow #screen-pos-order-builder.active #btn-ob-add-more.pos-ob-add-mo
 }
 
 /* [hidden] loses to author display:flex without this in Chromium/WebKit */
-body.pos-lk-flow #screen-pos-order-builder.active #btn-ob-add-more.pos-ob-add-more-btn[hidden] {
+body.pos-lk-flow #screen-pos-order-builder.active #btn-ob-add-more.pos-ob-add-more-btn[hidden],
+body.pos-lk-flow #screen-pos-order-builder #btn-cart-add-membership[hidden] {
   display: none !important;
+  pointer-events: none !important;
 }
 
 .pos-lk-cart-aside--checkout .pos-lk-primary-wide {

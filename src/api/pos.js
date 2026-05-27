@@ -19,6 +19,10 @@ const {
   resolveQueueFetchOptions
 } = require('../config/posOrderQueueCatalog')
 const { resolveSkuFacts, computeOfferDiscountAmount } = require('../services/customerOfferDiscountService')
+const {
+  grantCustomerMembership,
+  resolveMembershipSaleAmount
+} = require('../services/membershipGrantService')
 
 const router = express.Router()
 
@@ -35,6 +39,7 @@ const posPreviewDiscount = [authJwt, requireModule('pos'), requirePermission('po
 const posPaymentCollect = [authJwt, requireModule('pos'), requirePermission('pos.payment.collect')]
 /** Atomic first payment + order insert (Store OS checkout). */
 const posCheckoutAndPay = [authJwt, requireModule('pos'), requirePermission('pos.orders.create', 'pos.payment.collect')]
+const posMembershipSell = [authJwt, requireModule('pos'), requirePermission('pos.membership.sell')]
 const posLabWorkflow = [authJwt, requireModule('pos'), requirePermission('pos.lab.workflow')]
 const posStaffPinSet = [authJwt, requireModule('pos'), requirePermission('pos.staff.pin.set')]
 
@@ -385,6 +390,11 @@ const posOrderLineItemSchema = Joi.object({
   unit_id: Joi.number().integer().positive().optional()
 })
 
+const membershipSaleSchema = Joi.object({
+  plan_key: Joi.string().max(50).required(),
+  price_paid: Joi.number().min(0).optional()
+})
+
 const createOrderSchema = Joi.object({
   customer_id:      Joi.number().integer().positive().required(),
   order_source:     Joi.string().max(20).default('POS'),
@@ -393,7 +403,17 @@ const createOrderSchema = Joi.object({
   applied_offer_id: Joi.number().integer().positive().allow(null),
   /** When false (default), stock is deducted in createOrderInTransaction. When true, deduction runs on full payment via commitInventoryForPaidOrder. */
   inventory_deferred: Joi.boolean().default(false),
-  lines: Joi.array().items(posOrderLineItemSchema).min(1).required()
+  lines: Joi.array().items(posOrderLineItemSchema).default([]),
+  membership_sale: membershipSaleSchema.optional()
+}).custom((value, helpers) => {
+  const lineCount = (value.lines && value.lines.length) || 0
+  const hasMembership = value.membership_sale && String(value.membership_sale.plan_key || '').trim()
+  if (lineCount < 1 && !hasMembership) {
+    return helpers.error('any.custom', {
+      message: 'Cart must include at least one product line or a membership plan.'
+    })
+  }
+  return value
 })
 
 const checkoutDraftSchema = Joi.object({
@@ -404,9 +424,19 @@ const checkoutDraftSchema = Joi.object({
 })
 
 const previewOrderDiscountSchema = Joi.object({
-  lines: Joi.array().items(posOrderLineItemSchema).min(1).required(),
+  lines: Joi.array().items(posOrderLineItemSchema).default([]),
+  membership_sale: membershipSaleSchema.optional(),
   /** When omitted or null — no Eyewoot Go offer discount (staff must pick one offer explicitly). */
   applied_offer_id: Joi.number().integer().positive().allow(null)
+}).custom((value, helpers) => {
+  const lineCount = (value.lines && value.lines.length) || 0
+  const hasMembership = value.membership_sale && String(value.membership_sale.plan_key || '').trim()
+  if (lineCount < 1 && !hasMembership) {
+    return helpers.error('any.custom', {
+      message: 'Cart must include at least one product line or a membership plan.'
+    })
+  }
+  return value
 })
 
 const paymentSchema = Joi.object({
@@ -1113,8 +1143,11 @@ router.get('/settings', ...posCatalogue, async (req, res, next) => {
  */
 async function resolveAuthorisedDiscountForPosOrder(pool, value) {
   let authorisedDiscountAmount = value.discount_amount || 0
+  const prospectivePlanKey = prospectivePlanKeyFromOrder(value)
   if (!value.applied_offer_id) {
-    const offers = await fetchEligibleCartOffersForPos(pool, value.customer_id || null)
+    const offers = await fetchEligibleCartOffersForPos(pool, value.customer_id || null, {
+      prospectivePlanKey
+    })
     let qualifying = 0
     for (const offer of offers) {
       const offerRow = await pool.request()
@@ -1154,7 +1187,18 @@ async function resolveAuthorisedDiscountForPosOrder(pool, value) {
     err.statusCode = 400
     throw err
   }
-  authorisedDiscountAmount = await computeOfferDiscountAmount(pool, offer, value.lines, { cartPreview: false })
+  const offers = await fetchEligibleCartOffersForPos(pool, value.customer_id || null, {
+    prospectivePlanKey
+  })
+  const allowed = offers.some((o) => Number(o.offer_id) === Number(value.applied_offer_id))
+  if (!allowed) {
+    const err = new Error('Applied offer is not available for this customer or cart.')
+    err.statusCode = 400
+    throw err
+  }
+  authorisedDiscountAmount = await computeOfferDiscountAmount(pool, offer, value.lines || [], {
+    cartPreview: false
+  })
   return authorisedDiscountAmount
 }
 
@@ -1236,11 +1280,100 @@ async function awardCashbackCoinsIfApplicable(pool, { customerId, orderId, order
 }
 
 /**
+ * Attach resolved membership sale pricing for order create.
+ * @param {import('mssql').ConnectionPool} pool
+ * @param {object} value
+ */
+async function enrichOrderWithMembershipSale(pool, value) {
+  const out = { ...value, lines: value.lines || [] }
+  if (!value.membership_sale || !String(value.membership_sale.plan_key || '').trim()) {
+    return out
+  }
+  const resolved = await resolveMembershipSaleAmount(pool, value.membership_sale)
+  out.membership_sale = {
+    plan_key: resolved.plan_key,
+    price_paid: resolved.price_paid
+  }
+  out._membership_amount = resolved.price_paid
+  out._membership_display_name = resolved.display_name
+  return out
+}
+
+function prospectivePlanKeyFromOrder(value) {
+  if (!value || !value.membership_sale) return null
+  const pk = String(value.membership_sale.plan_key || '').trim()
+  return pk || null
+}
+
+/**
+ * Grant membership after successful POS payment (same checkout).
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function grantMembershipFromPosSale(pool, { orderValue, out, employeeId }) {
+  const pk = prospectivePlanKeyFromOrder(orderValue)
+  if (!pk) return null
+  try {
+    return await grantCustomerMembership(pool, {
+      customerId: orderValue.customer_id,
+      planKey: pk,
+      pricePaid: orderValue.membership_sale.price_paid,
+      posOrderId: out.order_id,
+      createdByUserId: employeeId != null ? Number(employeeId) : null,
+      useTransaction: false
+    })
+  } catch (e) {
+    const err = new Error(
+      'Payment was recorded but membership could not be activated. Contact support with order '
+        + (out.order_no || out.order_id) + '.'
+    )
+    err.statusCode = 500
+    throw err
+  }
+}
+
+/**
+ * Activate membership from pos_orders.sold_membership_* when payment completes (split checkout).
+ * @param {import('mssql').ConnectionPool} pool
+ */
+async function grantMembershipFromOrderRowIfNeeded(pool, { orderId, customerId, employeeId, mode }) {
+  const ordersTable = mode === 'shared' ? 'dbo.oe_orders' : 'dbo.pos_orders'
+  const r = await pool.request().input('oid', sql.Int, orderId).query(`
+    SELECT sold_membership_plan_key, sold_membership_amount, customer_id
+    FROM ${ordersTable}
+    WHERE order_id = @oid
+  `)
+  const row = r.recordset[0]
+  if (!row || !row.sold_membership_plan_key) return null
+  const cid = customerId || row.customer_id
+  if (!cid) return null
+
+  const existR = await pool.request()
+    .input('oid', sql.Int, orderId)
+    .input('cid', sql.Int, cid)
+    .query(`
+      SELECT TOP 1 membership_id
+      FROM   dbo.customer_memberships
+      WHERE  customer_id = @cid AND pos_order_id = @oid AND is_active = 1
+    `)
+  if (existR.recordset.length) return existR.recordset[0]
+
+  return grantCustomerMembership(pool, {
+    customerId: cid,
+    planKey: row.sold_membership_plan_key,
+    pricePaid: row.sold_membership_amount,
+    posOrderId: orderId,
+    createdByUserId: employeeId != null ? Number(employeeId) : null,
+    useTransaction: false
+  })
+}
+
+/**
  * Active Eyewoot Go offers for POS + scope rows (for client PCT/FLAT preview).
  * @param {import('mssql').ConnectionPool} pool
  * @param {number|null} customerId
+ * @param {{ prospectivePlanKey?: string|null }} [opts]
  */
-async function fetchEligibleCartOffersForPos(pool, customerId) {
+async function fetchEligibleCartOffersForPos(pool, customerId, opts = {}) {
   const nowIST = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T')
 
   const r = await pool.request().input('now', nowIST).query(`
@@ -1272,7 +1405,24 @@ async function fetchEligibleCartOffersForPos(pool, customerId) {
         AND  cm.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
       ORDER BY cm.expires_at DESC
     `)
-    const memRow = memR.recordset[0] || null
+    let memRow = memR.recordset[0] || null
+
+    if (!memRow && opts.prospectivePlanKey) {
+      const pk = String(opts.prospectivePlanKey).trim()
+      if (pk) {
+        const planR = await pool.request().input('pk', sql.NVarChar(50), pk).query(`
+          SELECT plan_key,
+                 has_plus_access,
+                 extra_cashback_pct,
+                 flat_discount_pct,
+                 has_one_time_discount,
+                 can_create_sub_cards
+          FROM   dbo.membership_plans
+          WHERE  plan_key = @pk AND is_active = 1
+        `)
+        memRow = planR.recordset[0] || null
+      }
+    }
 
     rows = rows.filter((o) => {
       if (!o.required_capability) return true
@@ -1328,8 +1478,31 @@ router.get('/cart-offers', ...posPromotions, async (req, res, next) => {
     const customerId = rawId != null && String(rawId).trim() !== ''
       ? parseInt(String(rawId), 10)
       : null
-    const data = await fetchEligibleCartOffersForPos(pool, customerId)
+    const prospectiveRaw = req.query.prospective_plan_key
+    const prospectivePlanKey =
+      prospectiveRaw != null && String(prospectiveRaw).trim() !== ''
+        ? String(prospectiveRaw).trim()
+        : null
+    const data = await fetchEligibleCartOffersForPos(pool, customerId, { prospectivePlanKey })
     return res.json({ success: true, data })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── GET /api/pos/membership-plans — active plans for cart sale ─────────────────
+router.get('/membership-plans', ...posMembershipSell, async (req, res, next) => {
+  try {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT plan_key, display_name, price, validity_days, validity_type, max_dependents,
+             has_plus_access, extra_cashback_pct, flat_discount_pct,
+             has_one_time_discount, one_time_discount_pct, can_create_sub_cards
+      FROM   dbo.membership_plans
+      WHERE  is_active = 1
+      ORDER BY display_name ASC
+    `)
+    return res.json({ success: true, data: r.recordset || [] })
   } catch (err) {
     return next(err)
   }
@@ -1356,6 +1529,9 @@ router.post('/preview-order-discount', ...posPreviewDiscount, async (req, res, n
       ? parseInt(String(rawId), 10)
       : null
 
+    const prospectivePlanKey = prospectivePlanKeyFromOrder(value)
+    const offers = await fetchEligibleCartOffersForPos(pool, customerId, { prospectivePlanKey })
+
     const selRaw = value.applied_offer_id
     const selectedId = selRaw != null && selRaw !== '' ? Number(selRaw) : null
     if (!Number.isFinite(selectedId) || selectedId < 1) {
@@ -1370,7 +1546,7 @@ router.post('/preview-order-discount', ...posPreviewDiscount, async (req, res, n
           `)
         const offerRow = offerRowRes.recordset && offerRowRes.recordset[0]
         if (!offerRow) continue
-        const amt = await computeOfferDiscountAmount(pool, offerRow, value.lines, { cartPreview: true })
+        const amt = await computeOfferDiscountAmount(pool, offerRow, value.lines || [], { cartPreview: true })
         const discountAmt = typeof amt === 'number' && Number.isFinite(amt) ? Math.max(0, amt) : 0
         if (discountAmt > 0) {
           candidates.push({
@@ -1393,7 +1569,6 @@ router.post('/preview-order-discount', ...posPreviewDiscount, async (req, res, n
       })
     }
 
-    const offers = await fetchEligibleCartOffersForPos(pool, customerId)
     const match = offers.find((o) => Number(o.offer_id) === Number(selectedId))
     if (!match) {
       return res.status(400).json({
@@ -1417,7 +1592,7 @@ router.post('/preview-order-discount', ...posPreviewDiscount, async (req, res, n
       })
     }
 
-    const amt = await computeOfferDiscountAmount(pool, offerRow, value.lines, { cartPreview: true })
+    const amt = await computeOfferDiscountAmount(pool, offerRow, value.lines || [], { cartPreview: true })
     const numAmt = typeof amt === 'number' && Number.isFinite(amt) ? Math.max(0, amt) : 0
 
     return res.json({
@@ -1682,6 +1857,7 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
     }
 
     const pool = await getPool()
+    const orderBody = await enrichOrderWithMembershipSale(pool, value)
     const cfgResult = await executeStoredProcedure('sp_POS_GetStartupConfig', {})
     const cfg = mapStartupConfig(cfgResult)
 
@@ -1689,17 +1865,18 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
     const advPct = Number(await readSetting(pool, 'lab_advance_pct') || 40)
     const compositionScheme = truthyPosSetting(await readSetting(pool, 'pos_composition_scheme'))
     const pricesGstInclusive = truthyPosSetting(await readSetting(pool, 'pos_prices_gst_inclusive'))
-    const firstPt = value.lines[0].product_type
+    const firstPt =
+      orderBody.lines && orderBody.lines.length ? orderBody.lines[0].product_type : null
     const procurementMode = await resolveProcurementMode(pool, storeId, firstPt)
     const mode = await orderService.getOrdersEngineMode(pool)
-    const authorisedDiscountAmount = await resolveAuthorisedDiscountForPosOrder(pool, value)
+    const authorisedDiscountAmount = await resolveAuthorisedDiscountForPosOrder(pool, orderBody)
 
     const transaction = new sql.Transaction(pool)
     await transaction.begin()
     try {
       const out = await orderService.createOrderInTransaction(transaction, {
         mode,
-        value,
+        value: orderBody,
         storeId,
         employeeId,
         gstRate,
@@ -1715,13 +1892,13 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
 
       await transaction.commit()
 
-      await recordPosOfferUsage(pool, { value, out, storeId, employeeId, authorisedDiscountAmount })
+      await recordPosOfferUsage(pool, { value: orderBody, out, storeId, employeeId, authorisedDiscountAmount })
       await awardCashbackCoinsIfApplicable(pool, {
-        customerId: value.customer_id || null,
+        customerId: orderBody.customer_id || null,
         orderId: out.order_id,
         orderNo: out.order_no,
         totalAmount: out.total_amount,
-        offerId: value.applied_offer_id || null
+        offerId: orderBody.applied_offer_id || null
       })
 
       return res.json({
@@ -1736,7 +1913,8 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
           total_amount: out.total_amount,
           sub_orders: out.sub_orders,
           orders_engine_mode: mode,
-          created_by_user_id: employeeId != null ? Number(employeeId) : null
+          created_by_user_id: employeeId != null ? Number(employeeId) : null,
+          membership_granted: false
         }
       })
     } catch (inner) {
@@ -1750,10 +1928,10 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
     if (err.message && err.message.includes('Insufficient stock')) {
       return res.status(400).json({ success: false, message: err.message })
     }
-    if (err.message && (err.message.includes('inventory_committed') || err.message.includes('Invalid column name'))) {
+    if (err.message && (err.message.includes('inventory_committed') || err.message.includes('Invalid column name') || err.message.includes('sold_membership'))) {
       return res.status(503).json({
         success: false,
-        message: 'Database migration required: run sql/migrations/pos_checkout_inventory_drafts.sql (inventory_committed on orders).'
+        message: 'Database migration required: run sql/migrations/76_pos_orders_membership_sale.sql (and pos_checkout_inventory_drafts.sql if needed).'
       })
     }
     return next(err)
@@ -1777,21 +1955,23 @@ router.post('/checkout-and-pay', ...posCheckoutAndPay, async (req, res, next) =>
     }
 
     const pool = await getPool()
+    const orderBody = await enrichOrderWithMembershipSale(pool, value.order)
     const cfgResult = await executeStoredProcedure('sp_POS_GetStartupConfig', {})
     const cfg = mapStartupConfig(cfgResult)
     const gstRate = Number(await readSetting(pool, 'pos_gst_rate') || 0.05)
     const advPct = Number(await readSetting(pool, 'lab_advance_pct') || 40)
     const compositionScheme = truthyPosSetting(await readSetting(pool, 'pos_composition_scheme'))
     const pricesGstInclusive = truthyPosSetting(await readSetting(pool, 'pos_prices_gst_inclusive'))
-    const firstPt = value.order.lines[0].product_type
+    const firstPt =
+      orderBody.lines && orderBody.lines.length ? orderBody.lines[0].product_type : null
     const procurementMode = await resolveProcurementMode(pool, storeId, firstPt)
     const mode = await orderService.getOrdersEngineMode(pool)
-    const authorisedDiscountAmount = await resolveAuthorisedDiscountForPosOrder(pool, value.order)
+    const authorisedDiscountAmount = await resolveAuthorisedDiscountForPosOrder(pool, orderBody)
 
     const out = await orderService.checkoutAndPay(pool, mode, storeId, employeeId, {
       createParams: {
         mode,
-        value: value.order,
+        value: orderBody,
         storeId,
         employeeId,
         gstRate,
@@ -1801,25 +1981,31 @@ router.post('/checkout-and-pay', ...posCheckoutAndPay, async (req, res, next) =>
         procurementMode,
         cfg,
         discountAmount: authorisedDiscountAmount,
-        appliedOfferId: value.order.applied_offer_id || null,
+        appliedOfferId: orderBody.applied_offer_id || null,
         inventoryDeferred: false
       },
       paymentBody: value.payment
     })
 
+    const membershipGrant = await grantMembershipFromPosSale(pool, {
+      orderValue: orderBody,
+      out,
+      employeeId
+    })
+
     await recordPosOfferUsage(pool, {
-      value: value.order,
+      value: orderBody,
       out,
       storeId,
       employeeId,
       authorisedDiscountAmount
     })
     await awardCashbackCoinsIfApplicable(pool, {
-      customerId: value.order.customer_id || null,
+      customerId: orderBody.customer_id || null,
       orderId: out.order_id,
       orderNo: out.order_no,
       totalAmount: out.total_amount,
-      offerId: value.order.applied_offer_id || null
+      offerId: orderBody.applied_offer_id || null
     })
 
     return res.json({
@@ -1837,20 +2023,21 @@ router.post('/checkout-and-pay', ...posCheckoutAndPay, async (req, res, next) =>
         payment_summary: out.payment_summary,
         invoice_no: out.invoice_no || null,
         orders_engine_mode: mode,
-        created_by_user_id: employeeId != null ? Number(employeeId) : null
+        created_by_user_id: employeeId != null ? Number(employeeId) : null,
+        membership_id: membershipGrant ? membershipGrant.membership_id : null
       }
     })
   } catch (err) {
-    if (err.statusCode === 400 || err.statusCode === 403) {
+    if (err.statusCode === 400 || err.statusCode === 403 || err.statusCode === 500) {
       return res.status(err.statusCode).json({ success: false, message: err.message })
     }
     if (err.message && err.message.includes('Insufficient stock')) {
       return res.status(400).json({ success: false, message: err.message })
     }
-    if (err.message && (err.message.includes('inventory_committed') || err.message.includes('Invalid column name'))) {
+    if (err.message && (err.message.includes('inventory_committed') || err.message.includes('Invalid column name') || err.message.includes('sold_membership'))) {
       return res.status(503).json({
         success: false,
-        message: 'Database migration required: run sql/migrations/pos_checkout_inventory_drafts.sql (inventory_committed on orders).'
+        message: 'Database migration required: run sql/migrations/76_pos_orders_membership_sale.sql (and pos_checkout_inventory_drafts.sql if needed).'
       })
     }
     return next(err)
@@ -2000,12 +2187,29 @@ router.post('/payment', posPaymentCollect, async (req, res, next) => {
       actorUserId: posActorUserId(req),
       allowMutationBypass: isSuperAdmin(req)
     })
+
+    let membershipGrant = null
+    try {
+      const bundle = await orderService.fetchOrderBundle(pool, value.order_id, storeId, mode)
+      if (bundle && bundle.order) {
+        membershipGrant = await grantMembershipFromOrderRowIfNeeded(pool, {
+          orderId: value.order_id,
+          customerId: bundle.order.customer_id,
+          employeeId,
+          mode
+        })
+      }
+    } catch (_memErr) {
+      /* non-fatal for split payment path */
+    }
+
     return res.json({
       success: true,
       message: result.message,
       data: {
         payment_summary: result.payment_summary,
-        invoice_no: result.invoice_no || null
+        invoice_no: result.invoice_no || null,
+        membership_id: membershipGrant ? membershipGrant.membership_id : null
       }
     })
   } catch (err) {
@@ -2162,12 +2366,12 @@ router.get('/customer-coin-balance/:id', ...posCheckoutAndPay, async (req, res, 
         ORDER  BY ledger_id DESC
       `),
       pool.request().query(`
-        SELECT value FROM dbo.app_settings WHERE key = N'coin_redemption_rate'
+        SELECT setting_value FROM dbo.app_settings WHERE setting_key = N'coin_redemption_rate'
       `)
     ])
 
     const coins = balR.recordset[0] ? Number(balR.recordset[0].balance_after) : 0
-    const rate  = rateR.recordset[0] ? Number(rateR.recordset[0].value) : 10
+    const rate  = rateR.recordset[0] ? Number(rateR.recordset[0].setting_value) : 10
     const rupeeValue = rate > 0 ? Math.floor(coins / rate) : 0
 
     return res.json({ success: true, data: { coins, rupee_value: rupeeValue, coin_redemption_rate: rate } })

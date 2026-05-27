@@ -132,7 +132,8 @@ const RAW_PERMISSION_GROUPS = [
     ['pos.payment.collect', 'POS — Record payment'],
     ['pos.lab.workflow', 'POS — Lab sub-order status updates'],
     ['pos.lab.bypass_order_sibling', 'POS — Bypass lab pair dispatch guard when authorised (audited)'],
-    ['pos.staff.pin.set', 'POS — Set staff PIN']
+    ['pos.staff.pin.set', 'POS — Set staff PIN'],
+    ['pos.membership.sell', 'POS — Sell membership plan from cart']
   ]],
   ['CX (Customer Experience)', [
     ['cx.dashboard.view', 'CX — Dashboard & KPI summary'],

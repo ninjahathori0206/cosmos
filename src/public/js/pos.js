@@ -59,7 +59,12 @@
   }
 
   function saveCart() {
-    try { localStorage.setItem(POS_CART_KEY, JSON.stringify(obCart)) } catch (_e) { /* storage unavailable */ }
+    try {
+      localStorage.setItem(
+        POS_CART_KEY,
+        JSON.stringify({ lines: obCart, membership: posCartMembershipSale })
+      )
+    } catch (_e) { /* storage unavailable */ }
   }
 
   function loadSavedCart() {
@@ -67,7 +72,17 @@
       const raw = localStorage.getItem(POS_CART_KEY)
       if (!raw) return
       const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length > 0) obCart = parsed
+      if (Array.isArray(parsed)) {
+        if (parsed.length > 0) obCart = parsed
+        posCartMembershipSale = null
+        return
+      }
+      if (parsed && typeof parsed === 'object') {
+        obCart = Array.isArray(parsed.lines) ? parsed.lines : []
+        posCartMembershipSale = parsed.membership && parsed.membership.plan_key
+          ? parsed.membership
+          : null
+      }
     } catch (_e) { /* corrupt data — ignore */ }
   }
 
@@ -109,6 +124,22 @@
     } catch (_e) {
       return null
     }
+  }
+
+  function posJwtPermissions() {
+    const session = getPosSession()
+    if (!session || !session.token) return []
+    const p = decodeJwtPayloadUnverified(session.token)
+    return Array.isArray(p && p.permissions) ? p.permissions : []
+  }
+
+  function posCanSellMembership() {
+    const session = getPosSession()
+    if (session && session.token) {
+      const p = decodeJwtPayloadUnverified(session.token)
+      if (p && String(p.role || '').toLowerCase() === 'super_admin') return true
+    }
+    return posJwtPermissions().indexOf('pos.membership.sell') !== -1
   }
 
   function getPosTabletToken() {
@@ -669,10 +700,168 @@
     }
   }
 
+  function getMembershipCartAmount() {
+    if (!posCartMembershipSale || !posCartMembershipSale.plan_key) return 0
+    return Math.max(0, Number(posCartMembershipSale.price_paid) || 0)
+  }
+
+  function prospectivePlanKeyFromCart() {
+    return posCartMembershipSale && posCartMembershipSale.plan_key
+      ? String(posCartMembershipSale.plan_key).trim()
+      : null
+  }
+
+  function buildMembershipSalePayload() {
+    if (!posCartMembershipSale || !posCartMembershipSale.plan_key) return null
+    return {
+      plan_key: posCartMembershipSale.plan_key,
+      price_paid: getMembershipCartAmount()
+    }
+  }
+
+  function cartHasCheckoutContent() {
+    return obCart.length > 0 || !!prospectivePlanKeyFromCart()
+  }
+
+  function syncCartMembershipUi() {
+    const btn = document.getElementById('btn-cart-add-membership')
+    const sub = document.getElementById('pos-cart-membership-tap-sub')
+    const memRow = document.getElementById('pos-ob-membership-row')
+    const memLbl = document.getElementById('pos-ob-membership-lbl')
+    const memVal = document.getElementById('pos-ob-membership-val')
+    const canSell = !!(posSelectedCustomerId && posCanSellMembership())
+    if (btn) btn.hidden = !canSell
+    if (sub) {
+      sub.textContent = posCartMembershipSale
+        ? (posCartMembershipSale.display_name || posCartMembershipSale.plan_key) + ' · tap to change'
+        : 'Sell Eyewoot membership on this bill'
+    }
+    if (memRow && memLbl && memVal) {
+      if (posCartMembershipSale) {
+        memRow.hidden = false
+        memLbl.textContent = posCartMembershipSale.display_name || posCartMembershipSale.plan_key
+        memVal.textContent = formatRupees(getMembershipCartAmount())
+      } else {
+        memRow.hidden = true
+      }
+    }
+    const removeBtn = document.getElementById('btn-cart-membership-remove')
+    if (removeBtn && !removeBtn._posMemBound) {
+      removeBtn._posMemBound = true
+      removeBtn.addEventListener('click', function () {
+        posCartMembershipSale = null
+        saveCart()
+        closePosMembershipPickerModal()
+        syncCartMembershipUi()
+        const session = getPosSession()
+        if (session && session.token) {
+          void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
+        }
+        obRecalcTotals()
+      })
+    }
+    const memBack = document.getElementById('btn-cart-membership-back')
+    const memBackdrop = document.getElementById('pos-cart-membership-backdrop')
+    if (memBack && !memBack._posMemBound) {
+      memBack._posMemBound = true
+      memBack.addEventListener('click', closePosMembershipPickerModal)
+    }
+    if (memBackdrop && !memBackdrop._posMemBound) {
+      memBackdrop._posMemBound = true
+      memBackdrop.addEventListener('click', closePosMembershipPickerModal)
+    }
+  }
+
+  function closePosMembershipPickerModal() {
+    const ov = document.getElementById('overlay-pos-cart-membership')
+    if (ov) ov.classList.remove('open')
+  }
+
+  async function openPosMembershipPickerModal() {
+    if (!posSelectedCustomerId) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a customer before adding membership.')
+      openPosCustomerPickerModal()
+      return
+    }
+    const ov = document.getElementById('overlay-pos-cart-membership')
+    const list = document.getElementById('pos-cart-membership-list')
+    if (!ov || !list) return
+    ov.classList.add('open')
+    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pos-cart-membership-list', 4)
+    const session = getPosSession()
+    if (!session || !session.token) return
+    try {
+      const plans = await apiGet('/api/pos/membership-plans', session.token)
+      const rows = Array.isArray(plans) ? plans : []
+      if (!rows.length) {
+        list.innerHTML =
+          '<div class="pos-lk-offers-empty"><div class="pos-lk-offers-empty-title">No plans available</div>' +
+          '<div class="pos-lk-offers-empty-sub">Configure plans in Command Unit → Membership Plans.</div></div>'
+        return
+      }
+      let html = ''
+      for (let i = 0; i < rows.length; i++) {
+        const p = rows[i]
+        const pk = String(p.plan_key || '')
+        const sel =
+          posCartMembershipSale && posCartMembershipSale.plan_key === pk ? ' is-selected' : ''
+        const validity =
+          p.validity_type === 'LIFETIME'
+            ? 'Lifetime'
+            : (Number(p.validity_days) || 0) + ' days'
+        html +=
+          '<button type="button" class="pos-cart-membership-plan-item' + sel + '" data-plan-key="' +
+          escapeHtml(pk) +
+          '" data-plan-name="' +
+          escapeHtml(String(p.display_name || pk)) +
+          '" data-plan-price="' +
+          String(Number(p.price) || 0) +
+          '">' +
+          '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:14px;font-weight:700;color:var(--text1)">' +
+          escapeHtml(String(p.display_name || pk)) +
+          '</div>' +
+          '<div class="pos-cart-membership-plan-item__meta">Valid ' +
+          escapeHtml(validity) +
+          (p.has_plus_access ? ' · Plus access' : '') +
+          '</div></div>' +
+          '<div class="pos-cart-membership-plan-item__price">' +
+          formatRupees(Number(p.price) || 0) +
+          '</div></button>'
+      }
+      list.innerHTML = html
+      list.querySelectorAll('.pos-cart-membership-plan-item').forEach(function (el) {
+        el.addEventListener('click', function () {
+          const pk = el.getAttribute('data-plan-key')
+          const nm = el.getAttribute('data-plan-name')
+          const pr = Number(el.getAttribute('data-plan-price')) || 0
+          posCartMembershipSale = { plan_key: pk, display_name: nm, price_paid: pr }
+          saveCart()
+          closePosMembershipPickerModal()
+          syncCartMembershipUi()
+          const sess = getPosSession()
+          if (sess && sess.token) {
+            void loadPosOffersPanel(sess, 'pos-cart-coupon-list', null, false)
+          }
+          obRecalcTotals()
+          if (typeof cosmosToastSuccess === 'function') {
+            cosmosToastSuccess('Membership added to cart — activates on payment.')
+          }
+        })
+      })
+    } catch (err) {
+      list.innerHTML =
+        '<div class="pos-lk-offers-load-fail" role="alert">' + escapeHtml(err.message || 'Could not load plans.') + '</div>'
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+    }
+  }
+
   function buildPendingCheckoutTotals() {
-    const subtotal = obCart.reduce(function (sum, line) {
+    const productSubtotal = obCart.reduce(function (sum, line) {
       return sum + computeLineDisplayUnit(line) * line.qty
     }, 0)
+    const membershipAmt = getMembershipCartAmount()
+    const subtotal = productSubtotal + membershipAmt
     const sig = buildObCartFingerprint()
     let offerDisc = { amount: 0, offerId: null }
     const hasSel =
@@ -689,8 +878,8 @@
         offerDisc = computeClientPreviewForSelectedOffer(subtotal)
       }
     }
-    const discount = Math.min(offerDisc.amount, subtotal)
-    const tax = computePosCartTotals(subtotal, discount)
+    const discount = Math.min(offerDisc.amount, productSubtotal > 0 ? productSubtotal : subtotal)
+    const tax = computePosCartTotals(productSubtotal, discount)
     let orderKind = 'INSTANT'
     let hasLab = false
     let hasInst = false
@@ -700,13 +889,18 @@
     }
     if (hasLab && hasInst) orderKind = 'MIXED'
     else if (hasLab) orderKind = 'LAB'
+    else if (!obCart.length && membershipAmt > 0) orderKind = 'MEMBERSHIP'
     return {
       subtotal_amount: subtotal,
       discount_amount: discount,
       gst_amount: tax.gst,
-      total_amount: tax.total,
+      total_amount: roundMoney(tax.total + membershipAmt),
       order_kind: orderKind
     }
+  }
+
+  function roundMoney(n) {
+    return Math.round((Number(n) || 0) * 100) / 100
   }
 
   // ── Format time ──────────────────────────────────────────────────────────
@@ -822,6 +1016,8 @@
 
   // ── Order Builder state ──────────────────────────────────────────────────
   let obCart = []
+  /** @type {{ plan_key: string, display_name: string, price_paid: number }|null} */
+  let posCartMembershipSale = null
 
   // Pencil 02-power-type — five power options shown in the Lens wizard step 0.
   // Each maps to the closest catalogue category by `match` (substring match
@@ -888,6 +1084,7 @@
       }
       renderCartCustomerRef()
       syncCustomerPickerBannerAndActions()
+      syncCartMembershipUi()
       return
     }
     posSelectedCustomerId = null
@@ -895,6 +1092,8 @@
     lensWizard.customerName = null
     posCartOffers = []
     posSelectedOfferId = null
+    posCartMembershipSale = null
+    saveCart()
     const session = getPosSession()
     if (session && session.token) {
       void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
@@ -903,6 +1102,7 @@
     }
     renderCartCustomerRef()
     syncCustomerPickerBannerAndActions()
+    syncCartMembershipUi()
   }
 
   function clearPosCustomerSelection() {
@@ -911,6 +1111,8 @@
     lensWizard.customerName = null
     posCartOffers = []
     posSelectedOfferId = null
+    posCartMembershipSale = null
+    saveCart()
     const session = getPosSession()
     if (session && session.token) {
       void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
@@ -919,6 +1121,7 @@
     }
     renderCartCustomerRef()
     syncCustomerPickerBannerAndActions()
+    syncCartMembershipUi()
   }
 
   function fmtOfferDateIso(v) {
@@ -1095,8 +1298,8 @@
       const tok = session && session.token ? session.token : null
       if (!tok) return
       const data = await apiGet('/api/pos/customer-coin-balance/' + cid, tok)
-      const coins      = data && data.data ? Number(data.data.coins || 0)       : 0
-      const rupeeValue = data && data.data ? Number(data.data.rupee_value || 0)  : 0
+      const coins      = data ? Number(data.coins || 0) : 0
+      const rupeeValue = data ? Number(data.rupee_value || 0) : 0
       // Persist on snapshot for cart card re-render
       if (posSelectedCustomerSnapshot) {
         posSelectedCustomerSnapshot.coins      = coins
@@ -1159,7 +1362,15 @@
     if (!listEl) return
     if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows(listId, 4)
     try {
-      const q = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
+      const qParts = []
+      if (posSelectedCustomerId) {
+        qParts.push('customer_id=' + encodeURIComponent(String(posSelectedCustomerId)))
+      }
+      const prospectPk = prospectivePlanKeyFromCart()
+      if (prospectPk) {
+        qParts.push('prospective_plan_key=' + encodeURIComponent(prospectPk))
+      }
+      const q = qParts.length ? ('?' + qParts.join('&')) : ''
       const offers = await apiGet('/api/pos/cart-offers' + q, session.token)
       posCartOffers = Array.isArray(offers) ? offers : []
       invalidatePosOfferIfNotListed(posCartOffers)
@@ -1368,6 +1579,7 @@
   const btnCartCustomerChange = document.getElementById('btn-cart-customer-change')
   const btnCartCustomerSearch = document.getElementById('btn-cart-customer-search')
   const btnCartApplyCoupon = document.getElementById('btn-cart-apply-coupon')
+  const btnCartAddMembership = document.getElementById('btn-cart-add-membership')
   const overlayCartCoupons = document.getElementById('overlay-pos-cart-coupons')
   const btnCartCouponBack = document.getElementById('btn-cart-coupon-back')
   const backdropCartCoupon = document.getElementById('pos-cart-coupon-backdrop')
@@ -4323,6 +4535,16 @@
           const du = computeLineDisplayUnit(line) * Math.max(1, Number(line.qty) || 1)
           lh += '<div><span>' + escapeHtml(nm) + '</span><span>' + formatRupees(du) + '</span></div>'
         }
+        if (posCartMembershipSale && posCartMembershipSale.plan_key) {
+          const memNm =
+            posCartMembershipSale.display_name || posCartMembershipSale.plan_key || 'Membership'
+          lh +=
+            '<div><span>' +
+            escapeHtml(memNm) +
+            '</span><span>' +
+            formatRupees(getMembershipCartAmount()) +
+            '</span></div>'
+        }
         linesEl.innerHTML = lh || '<div><span>Cart items</span><span>' + formatRupees(total) + '</span></div>'
       }
       const sub = document.getElementById('pay-sub')
@@ -4662,9 +4884,11 @@
     forceBalanceSettlement = false
     obCart = []
     posSelectedOfferId = null
+    posCartMembershipSale = null
     clearCartStorage()
     saveCart()
     obRenderCart()
+    syncCartMembershipUi()
     const session = getPosSession()
     if (session && session.token) refreshCartSidebar(session)
     navigate(POS_ROUTES.CONFIRM)
@@ -4743,7 +4967,14 @@
         receiptCustomerPhone =
           (posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.phone) || ''
         pendingCheckout = null
-        if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Order created and payment recorded')
+        if (typeof cosmosToastSuccess === 'function') {
+          const mid = created && created.membership_id != null ? Number(created.membership_id) : 0
+          if (mid > 0) {
+            cosmosToastSuccess('Payment recorded — membership is now active on this customer.')
+          } else {
+            cosmosToastSuccess('Order created and payment recorded')
+          }
+        }
       } else {
         payBody.order_id = lastCreatedOrder.order_id
         payRes = await apiPost('/api/pos/payment', payBody, session.token)
@@ -5200,13 +5431,14 @@
     return JSON.stringify({
       c: posSelectedCustomerId || 0,
       o: Number.isFinite(oid) && oid > 0 ? oid : 0,
+      m: prospectivePlanKeyFromCart() || '',
       lines: buildPosOrderLinesFromObCart()
     })
   }
 
   function scheduleServerDiscountPreview(session) {
     if (!session || !session.token) return
-    if (!obCart.length) return
+    if (!cartHasCheckoutContent()) return
     if (posServerDiscountPreviewTimer) clearTimeout(posServerDiscountPreviewTimer)
     posServerDiscountPreviewTimer = setTimeout(function () {
       posServerDiscountPreviewTimer = null
@@ -5216,14 +5448,15 @@
 
   async function runServerDiscountPreview(session) {
     var gen = ++posDiscountPreviewSeq
-    if (!obCart.length) {
+    if (!cartHasCheckoutContent()) {
       posServerDiscountPreview = null
       obRecalcTotals()
       return
     }
     var sig = buildObCartFingerprint()
     var lines = buildPosOrderLinesFromObCart()
-    if (!lines.length) {
+    var memSale = buildMembershipSalePayload()
+    if (!lines.length && !memSale) {
       posServerDiscountPreview = null
       obRecalcTotals()
       return
@@ -5241,6 +5474,7 @@
     try {
       var qp = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
       var payload = { lines: lines, applied_offer_id: selId }
+      if (memSale) payload.membership_sale = memSale
       var res = await apiPost('/api/pos/preview-order-discount' + qp, payload, session.token)
       if (gen !== posDiscountPreviewSeq) return
       var d = res && res.data ? res.data : {}
@@ -5294,9 +5528,12 @@
   }
 
   function obRecalcTotals() {
-    const subtotal = obCart.reduce(function (sum, line) {
+    const productSubtotal = obCart.reduce(function (sum, line) {
       return sum + computeLineDisplayUnit(line) * line.qty
     }, 0)
+    const membershipAmt = getMembershipCartAmount()
+    const subtotal = productSubtotal + membershipAmt
+    syncCartMembershipUi()
     const sig = buildObCartFingerprint()
     let offerDisc = { amount: 0, offerId: null }
     const hasSel =
@@ -5315,10 +5552,10 @@
     } else {
       offerDisc = { amount: 0, offerId: null }
     }
-    const discount = Math.min(offerDisc.amount, subtotal)
-    const tax = computePosCartTotals(subtotal, discount)
+    const discount = Math.min(offerDisc.amount, productSubtotal > 0 ? productSubtotal : subtotal)
+    const tax = computePosCartTotals(productSubtotal, discount)
     const gst = tax.gst
-    const total = tax.total
+    const total = roundMoney(tax.total + membershipAmt)
     if (obSubtotal) obSubtotal.textContent = formatRupees(subtotal)
     if (obDiscountLine) obDiscountLine.textContent = discount > 0 ? ('−' + formatRupees(discount)) : '−₹0'
     if (obGst) obGst.textContent = formatRupees(gst)
@@ -5326,7 +5563,7 @@
     if (obTotal) obTotal.textContent = formatRupees(total)
     if (btnObProceed) {
       const unbound = cartHasUnboundUnitLines()
-      btnObProceed.disabled = obCart.length === 0
+      btnObProceed.disabled = !cartHasCheckoutContent()
       btnObProceed.textContent = unbound
         ? 'Scan unit barcode on cart'
         : (formatRupees(total) + ' · Proceed to payment')
@@ -5342,7 +5579,7 @@
       }
     }
     const sessionRecalc = getPosSession()
-    if (sessionRecalc && sessionRecalc.token && obCart.length) {
+    if (sessionRecalc && sessionRecalc.token && cartHasCheckoutContent()) {
       scheduleServerDiscountPreview(sessionRecalc)
     }
     syncCartBillBenefitBox()
@@ -5735,6 +5972,7 @@
     obStoreEl.textContent = session.store_name
     obCart = []
     posSelectedOfferId = null
+    posCartMembershipSale = null
     clearCartStorage()
     if (selection) addToCart(selection)
     updateKindChip()
@@ -5753,6 +5991,7 @@
     syncRxSectionVisibility()
     obRenderCart()
     refreshCartSidebar(session)
+    syncCartMembershipUi()
     showScreen('screen-pos-order-builder')
     void tryOfferCheckoutDraftBanner(session)
   }
@@ -5790,6 +6029,26 @@
         setCartCouponOverlayOpen(true)
         const session = getPosSession()
         if (session && session.token) void loadCartOffers(session)
+      })
+    }
+    if (btnCartAddMembership) {
+      btnCartAddMembership.addEventListener('click', function () {
+        if (!posSelectedCustomerId) {
+          if (typeof cosmosToastWarn === 'function') {
+            cosmosToastWarn('Select a customer before adding membership.')
+          }
+          openPosCustomerPickerModal()
+          return
+        }
+        if (!posCanSellMembership()) {
+          if (typeof cosmosToastError === 'function') {
+            cosmosToastError(
+              'You do not have permission to sell membership. Enable pos.membership.sell for your role in Command Unit, then sign in again.'
+            )
+          }
+          return
+        }
+        void openPosMembershipPickerModal()
       })
     }
     if (btnCartCouponBack) {
@@ -6001,8 +6260,10 @@
   }
 
   async function handleProceedToPayment() {
-    if (obCart.length === 0) {
-      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Your cart is empty.')
+    if (!cartHasCheckoutContent()) {
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn('Add products or a membership plan to continue.')
+      }
       return
     }
     if (!posSelectedCustomerId) {
@@ -6012,6 +6273,12 @@
       const custBody = document.getElementById('pos-lk-cart-customer-body')
       if (custBody) custBody.classList.add('pos-lk-cart-cust--required')
       openPosCustomerPickerModal()
+      return
+    }
+    if (posCartMembershipSale && posCartMembershipSale.plan_key && !posCanSellMembership()) {
+      if (typeof cosmosToastError === 'function') {
+        cosmosToastError('You do not have permission to sell membership on POS.')
+      }
       return
     }
     const unbound = obCart.filter(function (l) {
@@ -6056,6 +6323,8 @@
     try {
       var qp = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
       var prevPayload = { lines: lines }
+      var memSalePayload = buildMembershipSalePayload()
+      if (memSalePayload) prevPayload.membership_sale = memSalePayload
       var pickId = posSelectedOfferId != null ? Number(posSelectedOfferId) : null
       if (pickId != null && Number.isFinite(pickId) && pickId > 0) prevPayload.applied_offer_id = pickId
       var prevBody = await apiPost('/api/pos/preview-order-discount' + qp, prevPayload, session.token)
@@ -6073,24 +6342,32 @@
       discInfo = { amount: 0, offerId: null }
     }
     const pt = buildPendingCheckoutTotals()
+    const productSubForPay = obCart.reduce(function (sum, line) {
+      return sum + computeLineDisplayUnit(line) * line.qty
+    }, 0)
+    const membershipAmtForPay = getMembershipCartAmount()
     if (discInfo.amount > 0.009) {
-      const sub = Number(pt.subtotal_amount) || 0
-      const disc = Math.min(Number(discInfo.amount) || 0, sub)
-      const tax = computePosCartTotals(sub, disc)
+      const disc = Math.min(
+        Number(discInfo.amount) || 0,
+        productSubForPay > 0 ? productSubForPay : productSubForPay + membershipAmtForPay
+      )
+      const tax = computePosCartTotals(productSubForPay, disc)
       pt.discount_amount = disc
       pt.gst_amount = tax.gst
-      pt.total_amount = tax.total
+      pt.total_amount = roundMoney(tax.total + membershipAmtForPay)
     }
+    const orderPayload = {
+      customer_id: posSelectedCustomerId,
+      order_source: 'POS',
+      rx_snapshot: rxSnap,
+      discount_amount: pt.discount_amount || 0,
+      applied_offer_id: discInfo.offerId || null,
+      inventory_deferred: false,
+      lines: lines
+    }
+    if (memSalePayload) orderPayload.membership_sale = memSalePayload
     pendingCheckout = {
-      orderPayload: {
-        customer_id: posSelectedCustomerId,
-        order_source: 'POS',
-        rx_snapshot: rxSnap,
-        discount_amount: discInfo.amount || 0,
-        applied_offer_id: discInfo.offerId || null,
-        inventory_deferred: false,
-        lines: lines
-      },
+      orderPayload: orderPayload,
       previewTotals: pt
     }
     lastCreatedOrder = null
@@ -7605,6 +7882,7 @@
     bindOrderBuilderEvents()
     bindCheckout5NavOnce()
     loadSavedCart()
+    syncCartMembershipUi()
     bindPosLensNewCustomerModal()
     document.addEventListener('visibilitychange', function onPosVisibilityRefresh() {
       if (document.visibilityState !== 'visible') return

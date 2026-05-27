@@ -1538,11 +1538,6 @@ body.cosmos-app-shell .cosmos-app-scroll:has(.page.active .sp-page-body) > .page
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
-@supports selector(::-webkit-scrollbar) {
-  .cosmos-module-strip::-webkit-scrollbar {
-    display: none;
-  }
-}
 .cosmos-module-chip {
   flex-shrink: 0;
   width: 30px;
@@ -1811,13 +1806,6 @@ body.cosmos-app-shell .sidebar {
     padding-bottom: 4px;
     margin-bottom: 8px;
   }
-  @supports selector(::-webkit-scrollbar) {
-    #page-transfer-requests .ftr-store-chips::-webkit-scrollbar,
-    #page-transfer-requests .ftr-status-tabs::-webkit-scrollbar,
-    #page-lab-orders .ftr-store-chips::-webkit-scrollbar {
-      display: none;
-    }
-  }
   #page-transfer-requests .ftr-store-chips .btn.sm,
   #page-transfer-requests .ftr-status-tabs .btn.sm,
   #page-lab-orders .ftr-store-chips .btn.sm {
@@ -1892,9 +1880,6 @@ body.cosmos-app-shell .sidebar {
   overflow-x: auto;
   padding: 10px 0 16px;
   scrollbar-width: none;
-}
-@supports selector(::-webkit-scrollbar) {
-  .cosmos-timeline-track::-webkit-scrollbar { display: none; }
 }
 
 .cosmos-tl-step {
@@ -2068,38 +2053,13 @@ body.cosmos-app-shell .sidebar {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Global minimal scrollbars (Firefox thin + WebKit slim track)
-   — Still visible for discoverability; no layout chrome. Overrides that hide
-     scrollbars (e.g. .cosmos-timeline-track, Eyewoot Go) stay more specific.
-   WebKit pseudo-elements are inside @supports so Firefox does not warn.
+   Global minimal scrollbars (standard scrollbar-width / scrollbar-color;
+   supported in Firefox and Chromium — avoids ::-webkit-scrollbar in Firefox).
+   Overrides that hide scrollbars (e.g. .cosmos-timeline-track) use scrollbar-width: none.
    ═══════════════════════════════════════════════════════════════════════════ */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--border, #cbd5e1) transparent;
-}
-
-@supports selector(::-webkit-scrollbar) {
-  *::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
-  }
-
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  *::-webkit-scrollbar-thumb {
-    background-color: var(--border, #cbd5e1);
-    border-radius: 999px;
-  }
-
-  *::-webkit-scrollbar-thumb:hover {
-    background-color: var(--text3, #94a3b8);
-  }
-
-  *::-webkit-scrollbar-thumb:active {
-    background-color: var(--text2, #64748b);
-  }
 }
 
 /* Overlay stacking: detail backdrop 240, panel 250, bucket 400 (above shell .overlay 300; toasts ~10000) */
@@ -2722,13 +2682,6 @@ body.cosmos-app-shell .cosmos-page-head {
     scrollbar-width: none;
     padding-bottom: 4px;
   }
-  @supports selector(::-webkit-scrollbar) {
-    .cosmos-page-filters::-webkit-scrollbar,
-    .sp-page-filters::-webkit-scrollbar,
-    .ftr-status-tabs::-webkit-scrollbar {
-      display: none;
-    }
-  }
   .cosmos-extended-detail__actions-row {
     flex-direction: column;
     align-items: stretch;
@@ -2764,8 +2717,15 @@ body.cosmos-app-shell .cosmos-page-head {
   align-items: center;
   justify-content: center;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  background: rgba(15, 23, 42, 0.52);
-  backdrop-filter: blur(4px);
+  background: rgba(15, 23, 42, 0.58);
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .cosmos-pwa-update-overlay {
+    background: rgba(15, 23, 42, 0.52);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
 }
 
 .cosmos-pwa-update-overlay.open {

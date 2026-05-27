@@ -1142,8 +1142,14 @@ async function createOrderInTransaction(transaction, {
   }
 
   const t = tableNames(mode)
-  const linesNormalized = normalizeIncomingPosLinesWithPairs(value.lines)
+  const linesNormalized = normalizeIncomingPosLinesWithPairs(value.lines || [])
   const valueNorm = { ...value, lines: linesNormalized }
+
+  if (!linesNormalized.length && !(value.membership_sale && value.membership_sale.plan_key)) {
+    const err = new Error('Cart must include at least one product line or a membership plan.')
+    err.statusCode = 400
+    throw err
+  }
 
   const vr = validateOrderLinesAgainstConfig(cfg, valueNorm)
   if (!vr.ok) {
@@ -1152,7 +1158,7 @@ async function createOrderInTransaction(transaction, {
     throw err
   }
 
-  let subtotal = 0
+  let productSubtotal = 0
   for (const line of linesNormalized) {
     let lineUnit = Number(line.unit_price) || 0
     if (line.fulfillment === 'LAB' && line.lens_bundle) {
@@ -1161,11 +1167,19 @@ async function createOrderInTransaction(transaction, {
       const addonSum = (b.addon_prices || []).reduce((s, p) => s + (Number(p) || 0), 0)
       lineUnit = lineUnit + lensPrice + addonSum
     }
-    subtotal += lineUnit * line.qty
+    productSubtotal += lineUnit * line.qty
   }
-  subtotal = roundMoney(subtotal)
+  productSubtotal = roundMoney(productSubtotal)
+
+  const membershipAmount = value._membership_amount != null
+    ? roundMoney(value._membership_amount)
+    : 0
+  const soldMembershipPlanKey = value.membership_sale && value.membership_sale.plan_key
+    ? String(value.membership_sale.plan_key).trim()
+    : null
+
   const taxOut = computePosOrderTaxTotals({
-    subtotal,
+    subtotal: productSubtotal,
     discountAmount,
     gstRate,
     compositionScheme,
@@ -1173,7 +1187,8 @@ async function createOrderInTransaction(transaction, {
   })
   const discAmt = taxOut.discAmt
   const gstAmount = taxOut.gstAmount
-  const totalAmount = taxOut.totalAmount
+  const subtotal = roundMoney(productSubtotal + membershipAmount)
+  const totalAmount = roundMoney(taxOut.totalAmount + membershipAmount)
   const gstRateStored = taxOut.snapshotRate
 
   const nextSeq = await allocateNextPosOrderSeq(transaction)
@@ -1184,6 +1199,7 @@ async function createOrderInTransaction(transaction, {
   let orderKind = 'INSTANT'
   if (instantLines.length && labLines.length) orderKind = 'MIXED'
   else if (labLines.length) orderKind = 'LAB'
+  else if (!linesNormalized.length && soldMembershipPlanKey) orderKind = 'MEMBERSHIP'
 
   const rIns = new sql.Request(transaction)
   rIns.input('store_id', sql.Int, storeId)
@@ -1202,18 +1218,20 @@ async function createOrderInTransaction(transaction, {
   rIns.input('gst_amount', sql.Decimal(12, 2), gstAmount)
   rIns.input('total_amount', sql.Decimal(12, 2), totalAmount)
   rIns.input('inventory_committed', sql.Bit, inventoryDeferred ? 0 : 1)
+  rIns.input('sold_membership_plan_key', sql.NVarChar(50), soldMembershipPlanKey)
+  rIns.input('sold_membership_amount', sql.Decimal(12, 2), membershipAmount > 0 ? membershipAmount : null)
 
   const insOrder = await rIns.query(`
     INSERT INTO ${t.orders} (
       store_id, customer_id, created_by_user_id, order_no, order_source, order_kind,
       rx_snapshot, gst_rate_snapshot, lab_advance_pct_snapshot, procurement_mode_snapshot,
       status, subtotal_amount, discount_amount, applied_offer_id, gst_amount, total_amount,
-      inventory_committed
+      inventory_committed, sold_membership_plan_key, sold_membership_amount
     ) VALUES (
       @store_id, @customer_id, @created_by_user_id, @order_no, @order_source, @order_kind,
       @rx_snapshot, @gst_rate_snapshot, @lab_advance_pct_snapshot, @procurement_mode_snapshot,
       N'OPEN', @subtotal_amount, @discount_amount, @applied_offer_id, @gst_amount, @total_amount,
-      @inventory_committed
+      @inventory_committed, @sold_membership_plan_key, @sold_membership_amount
     );
     SELECT CAST(SCOPE_IDENTITY() AS INT) AS order_id;
   `)

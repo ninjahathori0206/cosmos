@@ -536,6 +536,10 @@
             <span class="pos-ob-summary-lbl">Subtotal</span>
             <span id="pos-ob-subtotal" class="pos-ob-summary-val">₹0</span>
           </div>
+          <div class="pos-ob-summary-row pos-ob-summary-row--membership" id="pos-ob-membership-row" hidden>
+            <span class="pos-ob-summary-lbl" id="pos-ob-membership-lbl">Membership</span>
+            <span id="pos-ob-membership-val" class="pos-ob-summary-val">₹0</span>
+          </div>
           <div class="pos-ob-summary-row pos-discount">
             <span class="pos-ob-summary-lbl">Discount</span>
             <span id="pos-ob-discount-line" class="pos-ob-summary-val">−₹0</span>
@@ -556,6 +560,14 @@
         <span class="pos-lk-bill-tap-row-text">
           <span class="pos-lk-bill-tap-title">Apply Coupon</span>
           <span class="pos-lk-bill-tap-sub">Check available offers</span>
+        </span>
+        <span class="pos-lk-bill-tap-go" aria-hidden="true">›</span>
+      </button>
+
+      <button type="button" class="pos-lk-bill-tap-row" id="btn-cart-add-membership" aria-label="Add membership plan" hidden>
+        <span class="pos-lk-bill-tap-row-text">
+          <span class="pos-lk-bill-tap-title">Add membership plan</span>
+          <span class="pos-lk-bill-tap-sub" id="pos-cart-membership-tap-sub">Sell Eyewoot membership on this bill</span>
         </span>
         <span class="pos-lk-bill-tap-go" aria-hidden="true">›</span>
       </button>
@@ -1111,6 +1123,23 @@
       <span class="pos-cart-coupon-divider-line" aria-hidden="true"></span>
     </div>
     <div id="pos-cart-coupon-list" class="pos-lk-offers-list pos-lk-pay-offers-list" role="radiogroup" aria-label="Available coupons"></div>
+  </div>
+</div>
+
+<!-- Cart — Membership plan picker -->
+<div id="overlay-pos-cart-membership" class="pos-lens-newcust-overlay pos-cart-coupon-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-cart-membership-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-cart-membership-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-cart-coupon-sheet">
+    <div class="pos-cart-coupon-top">
+      <button type="button" class="pos-lk-back-link pos-cart-coupon-back" id="btn-cart-membership-back" aria-label="Back">‹</button>
+      <h2 id="pos-cart-membership-title" class="pos-cart-coupon-title">Membership plans</h2>
+      <span class="pos-cart-coupon-top-spacer" aria-hidden="true"></span>
+    </div>
+    <p style="font-size:12px;color:var(--text2);margin:0 16px 12px">Plan activates when payment is collected on this bill.</p>
+    <div id="pos-cart-membership-list" class="pos-lk-offers-list" role="listbox" aria-label="Membership plans"></div>
+    <div style="padding:12px 16px 20px;border-top:1px solid var(--border)">
+      <button type="button" class="btn" id="btn-cart-membership-remove" style="width:100%">Remove membership from cart</button>
+    </div>
   </div>
 </div>
 

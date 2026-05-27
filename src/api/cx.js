@@ -4,6 +4,7 @@ const { getPool } = require('../config/db')
 const { authJwt } = require('../middleware/authJwt')
 const { requireModule, requireCxPermission } = require('../middleware/authorize')
 const orderService = require('../services/orderService')
+const { grantCustomerMembership } = require('../services/membershipGrantService')
 
 const router = express.Router()
 
@@ -317,8 +318,6 @@ router.post('/customers/:id/membership', authJwt, requireModule('cx'), requireCx
     if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
 
     const { plan_key, price_paid, validity_days, expires_at, pos_order_id } = req.body || {}
-    const pk = String(plan_key || '').trim()
-    if (!pk) return res.status(400).json({ success: false, message: 'plan_key is required.' })
 
     const custR = await pool.request().input('cid', customerId).query(`
       SELECT customer_id FROM dbo.pos_customers WHERE customer_id = @cid AND is_active = 1
@@ -327,77 +326,21 @@ router.post('/customers/:id/membership', authJwt, requireModule('cx'), requireCx
       return res.status(404).json({ success: false, message: 'Customer not found or inactive.' })
     }
 
-    const planR = await pool.request().input('pk', pk).query(`
-      SELECT plan_key, display_name, price, validity_days, is_active
-      FROM   dbo.membership_plans WHERE plan_key = @pk AND is_active = 1
-    `)
-    const plan = planR.recordset[0]
-    if (!plan) return res.status(400).json({ success: false, message: 'Unknown or inactive membership plan.' })
-
-    const uid = req.user.user_id || null
-    const paid = price_paid != null && price_paid !== '' ? parseFloat(price_paid) : Number(plan.price)
-    if (Number.isNaN(paid) || paid < 0) {
-      return res.status(400).json({ success: false, message: 'Invalid price_paid.' })
-    }
-
-    let days = validity_days != null && validity_days !== '' ? parseInt(String(validity_days), 10) : Number(plan.validity_days)
-    if (Number.isNaN(days) || days < 1) days = Number(plan.validity_days) || 365
-
-    const tx = pool.transaction()
-    await tx.begin()
-    try {
-      await tx.request().input('cid', customerId).query(`
-        UPDATE dbo.customer_memberships
-        SET    is_active = 0
-        WHERE  customer_id = @cid AND is_active = 1
-      `)
-
-      const posOrderId = pos_order_id ? parseInt(String(pos_order_id), 10) : null
-      const validPosOrderId = posOrderId && Number.isFinite(posOrderId) && posOrderId > 0 ? posOrderId : null
-
-      const ins = tx.request()
-        .input('cid', customerId)
-        .input('pk', pk)
-        .input('paid', paid)
-        .input('uid', uid)
-        .input('pos_order_id', sql.Int, validPosOrderId)
-
-      if (expires_at) {
-        const expStr = String(expires_at).trim()
-        ins.input('exp', sql.DateTime2, new Date(expStr.includes('T') ? expStr : expStr + 'T23:59:59+05:30'))
-        const r = await ins.query(`
-          INSERT INTO dbo.customer_memberships
-            (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id, pos_order_id)
-          OUTPUT INSERTED.membership_id
-          VALUES (
-            @cid, @pk,
-            DATEADD(MINUTE, 330, SYSUTCDATETIME()),
-            @exp,
-            @paid, 1, @uid, @pos_order_id
-          )
-        `)
-        await tx.commit()
-        return res.status(201).json({ success: true, membership_id: r.recordset[0].membership_id })
-      }
-
-      const r2 = await ins.input('days', sql.Int, days).query(`
-        INSERT INTO dbo.customer_memberships
-          (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id, pos_order_id)
-        OUTPUT INSERTED.membership_id
-        VALUES (
-          @cid, @pk,
-          DATEADD(MINUTE, 330, SYSUTCDATETIME()),
-          DATEADD(DAY, @days, DATEADD(MINUTE, 330, SYSUTCDATETIME())),
-          @paid, 1, @uid, @pos_order_id
-        )
-      `)
-      await tx.commit()
-      return res.status(201).json({ success: true, membership_id: r2.recordset[0].membership_id })
-    } catch (inner) {
-      await tx.rollback()
-      throw inner
-    }
+    const out = await grantCustomerMembership(pool, {
+      customerId,
+      planKey: plan_key,
+      pricePaid: price_paid,
+      validityDays: validity_days,
+      expiresAt: expires_at,
+      posOrderId: pos_order_id,
+      createdByUserId: req.user.user_id || null,
+      useTransaction: true
+    })
+    return res.status(201).json({ success: true, membership_id: out.membership_id })
   } catch (err) {
+    if (err.statusCode === 400 || err.statusCode === 404) {
+      return res.status(err.statusCode).json({ success: false, message: err.message })
+    }
     return next(err)
   }
 })

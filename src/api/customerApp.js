@@ -423,13 +423,15 @@ router.get('/loyalty', async (req, res, next) => {
         ORDER BY pl.ledger_id DESC
       `),
       pool.request().query('SELECT * FROM dbo.loyalty_tiers ORDER BY display_order ASC'),
-      pool.request().query(`SELECT value FROM dbo.app_settings WHERE key = N'coin_redemption_rate'`)
+      pool.request().query(`
+        SELECT setting_value FROM dbo.app_settings WHERE setting_key = N'coin_redemption_rate'
+      `)
     ]);
 
     const balance = (balR.recordset[0] && balR.recordset[0].balance) || 0;
     const tiers   = tiersR.recordset;
     const tier    = await getTier(pool, balance);
-    const coinRedemptionRate = rateR.recordset[0] ? Number(rateR.recordset[0].value) : 10;
+    const coinRedemptionRate = rateR.recordset[0] ? Number(rateR.recordset[0].setting_value) : 10;
     const rupeeValue = coinRedemptionRate > 0 ? Math.floor(balance / coinRedemptionRate) : 0;
 
     const nextTier = tiers.find(t => t.min_points > balance && t.tier_name !== tier.tier_name) || null;
