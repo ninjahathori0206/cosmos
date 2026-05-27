@@ -891,6 +891,7 @@ var GO = (function () {
      INIT
   ══════════════════════════════════════════════════════════════ */
   function init() {
+    if (typeof window.cosmosApplyZoomLock === 'function') window.cosmosApplyZoomLock();
     if (typeof window.cosmosPwaUpdateInit === 'function') {
       void window.cosmosPwaUpdateInit({
         prefix: 'go',

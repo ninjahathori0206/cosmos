@@ -149,6 +149,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     applyStandaloneClass();
+    if (typeof window.cosmosApplyZoomLock === 'function') window.cosmosApplyZoomLock();
     registerServiceWorker();
     bindNetworkToasts();
     updateOfflineMsg();

@@ -823,11 +823,38 @@
     window.addEventListener('popstate', cosmosMobileBackTrapHandler)
   }
 
-  if (document.readyState === 'complete') {
+  var ZOOM_LOCK_VIEWPORT = 'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'
+  var _cosmosZoomLockGesturesBound = false
+
+  /** Pinch-zoom lock for mobile / installed PWA shells (see cosmos-mobile-chrome.md). */
+  window.cosmosApplyZoomLock = function cosmosApplyZoomLock() {
+    document.documentElement.classList.add('cosmos-lock-zoom')
+    var meta = document.querySelector('meta[name="viewport"]')
+    if (meta) meta.setAttribute('content', ZOOM_LOCK_VIEWPORT)
+    if (!_cosmosZoomLockGesturesBound) {
+      _cosmosZoomLockGesturesBound = true
+      ;['gesturestart', 'gesturechange', 'gestureend'].forEach(function (evt) {
+        document.addEventListener(evt, function (e) { e.preventDefault() }, { passive: false })
+      })
+    }
+  }
+
+  function cosmosInitZoomLockIfNeeded() {
+    if (document.documentElement.classList.contains('cosmos-lock-zoom') || window.cosmosIsMobileAppShell()) {
+      window.cosmosApplyZoomLock()
+    }
+  }
+
+  function cosmosInitMobileShell() {
     window.cosmosInitMobileBackBlock()
+    cosmosInitZoomLockIfNeeded()
+  }
+
+  if (document.readyState === 'complete') {
+    cosmosInitMobileShell()
   } else {
-    window.addEventListener('load', function cosmosMobileBackBlockOnLoad() {
-      window.cosmosInitMobileBackBlock()
+    window.addEventListener('load', function cosmosMobileShellOnLoad() {
+      cosmosInitMobileShell()
     })
   }
 })()

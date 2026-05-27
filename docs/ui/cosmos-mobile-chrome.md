@@ -28,12 +28,13 @@ Mobile browsers (especially iOS Safari) show a floating bottom toolbar that over
 
 Shell HTML should include `viewport-fit=cover` so `env(safe-area-inset-*)` works.
 
-### Zoom lock (Store OS, Store Pilot, login)
+### Zoom lock (Store OS, Store Pilot, login, Eyewoot Go)
 
-Mobile/tablet shells that must not pinch-zoom or jump on input focus:
+Mobile/tablet shells and installed PWAs that must not pinch-zoom or jump on input focus:
 
 - **Viewport:** `width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover`
-- **Markup:** `<html class="cosmos-lock-zoom">` on [`POS_Prototype.html`](../../POS_Prototype.html), [`StorePilot_Prototype.html`](../../StorePilot_Prototype.html), [`login.html`](../../src/public/login.html)
+- **Markup:** `<html class="cosmos-lock-zoom">` on [`POS_Prototype.html`](../../POS_Prototype.html), [`StorePilot_Prototype.html`](../../StorePilot_Prototype.html), [`login.html`](../../src/public/login.html), [`go.html`](../../src/public/go.html)
+- **JS:** `cosmosApplyZoomLock()` in [`cosmos-ui-polish.js`](../../src/public/js/cosmos-ui-polish.js) — auto-runs on load when the html class is set or the page is an installed PWA / mobile app shell; also called from `storepilot-pwa.js`, `storeos-pwa.js`, and `go.js`
 - **CSS** ([`cosmos-ui-polish.css`](../../src/public/css/cosmos-ui-polish.css)): on coarse pointer / ≤1024px, `touch-action: pan-x pan-y` on `html`/`body`; form controls at `font-size: 16px` (stops iOS Safari auto-zoom on focus)
 
 **Limitations:** OS accessibility zoom may still apply. Desktop Ctrl+/− is unaffected (out of scope).
