@@ -103,7 +103,8 @@ BEGIN
     ISNULL(pic.colour_code, '')                                     AS colour_code,
     ISNULL(sk.image_url, '')                                        AS image_url,
     ISNULL(sk.sale_price, 0)                                        AS sale_price,
-    sb.qty                                                          AS store_qty
+    sb.qty                                                          AS store_qty,
+    NULLIF(LTRIM(RTRIM(sk.reading_power)), '')                      AS reading_power
   FROM  dbo.stock_balances sb
   JOIN  dbo.skus              sk  ON sk.sku_id          = sb.sku_id
                                   AND sk.status IN ('LIVE', 'ACTIVE')
@@ -199,7 +200,8 @@ BEGIN
     ISNULL(pic.colour_code, '')                                     AS colour_code,
     ISNULL(sk.image_url, '')                                        AS image_url,
     ISNULL(sk.sale_price, 0)                                        AS sale_price,
-    ISNULL(sb_store.qty, 0)                                         AS store_qty
+    ISNULL(sb_store.qty, 0)                                         AS store_qty,
+    NULLIF(LTRIM(RTRIM(sk.reading_power)), '')                      AS reading_power
   FROM  dbo.skus sk
   JOIN  dbo.product_master    pm  ON pm.product_id      = sk.product_master_id
   LEFT JOIN dbo.home_brands   hb  ON hb.brand_id        = pm.home_brand_id

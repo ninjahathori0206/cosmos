@@ -41,12 +41,10 @@ self.addEventListener('activate', function (e) {
 
 self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return;
 
-  /* API calls — network only (never cache) */
-  if (url.pathname.startsWith('/api/')) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
+  /* API — do not intercept; browser handles network errors for fetch() in app JS */
+  if (url.pathname.startsWith('/api/')) return;
 
   /* Static shell — cache-first, fall back to network */
   e.respondWith(

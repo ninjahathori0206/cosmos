@@ -197,6 +197,15 @@ router.get(
   }
 );
 
+router.get(
+  '/reading-powers',
+  requireAnyModule(['foundry', 'pos']),
+  (req, res) => {
+    const { getReadingPowerCatalog } = require('../config/readingPowersCatalog');
+    res.json({ success: true, data: getReadingPowerCatalog() });
+  }
+);
+
 module.exports = router;
 module.exports.transferRequestListViewsMiddleware = transferRequestListViewsMiddleware;
 module.exports.handleTransferRequestListViewsGet = handleTransferRequestListViewsGet;

@@ -273,11 +273,13 @@ function computeEligibleSubtotal(lines, scopesGrouped, skuFactMap, { cartPreview
  * Applies discount_value as a cap when > 0 (max discount allowed for this rule).
  * Uses scopesGrouped + skuFactMap when passed (BOGO and LAB combo promos respect allocation).
  *
- * BOGO_LOWEST_FREE:
- *   - Pairs each non-sunglasses qualifying LAB (full frame+lens+addons line total) with an INSTANT frame line;
- *     discount += that frame total (secondary).
- *   - Remaining qualifying LAB lines (incl. sunglasses lab) are pooled, sorted by total desc; every two lines
- *     “pair” and the lower total of the pair is discounted (cheaper lab free — e.g. ₹2399 + ₹1399 ⇒ −₹1399).
+ * BOGO_LOWEST_FREE (three phases, same offer type):
+ *   1. LAB↔INSTANT: Each non-sunglasses qualifying LAB pairs with an INSTANT frame line (eyeglasses or
+ *      sunglasses pickup); discount += INSTANT frame total.
+ *   2. LAB pool: Leftover qualifying LAB lines (incl. sunglasses-with-lens) pair with each other; discount +=
+ *      lower line total per pair.
+ *   3. INSTANT pool: Leftover INSTANT frame lines (after phase 1) pair with each other; discount += lower
+ *      frame total per pair (frame-only BOGO when cart has no lab lines).
  *
  * @returns {number|null} null if offer type uses legacy POS discount (PCT/FLAT/FREEBIE)
  */
@@ -324,6 +326,11 @@ function computeStructuredOfferDiscount(offerRow, lines, opts = {}) {
       labPool.sort((a, b) => b - a)
       for (let i = 0; i + 1 < labPool.length; i += 2) {
         gross += Math.min(labPool[i], labPool[i + 1])
+      }
+      const remainingInstant = secondaryTotals.slice(pairCount)
+      remainingInstant.sort((a, b) => b - a)
+      for (let i = 0; i + 1 < remainingInstant.length; i += 2) {
+        gross += Math.min(remainingInstant[i], remainingInstant[i + 1])
       }
       break
     }

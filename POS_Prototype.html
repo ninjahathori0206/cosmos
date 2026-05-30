@@ -12,13 +12,13 @@
 <title>Store OS — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-bucket-z">
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
-<link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260523-unit-search">
-<script src="/js/cosmos-ui-polish.js?v=20260528-mobile-back-block" defer></script>
+<link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260528-cart-spacing">
+<script src="/js/cosmos-ui-polish.js?v=20260529-coming-soon" defer></script>
 <script src="/js/cosmos-pwa-update.js?v=20260528-pwa-update" defer></script>
 <script src="/js/storeos-pwa.js?v=20260528-pwa-update" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260523-cart-bucket" defer></script>
-<script src="/js/pos.js?v=storeos-20260525-invoiced-queue" defer></script>
+<script src="/js/pos.js?v=storeos-20260529-preview-gate" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -443,6 +443,11 @@
             <div id="pos-pdp-colour-swatches" class="pos-sku-swatches pos-pdp-colour-swatches" role="group" aria-label="Frame colour"></div>
             <div id="pos-pdp-colour-name" class="pos-pdp-colour-name" aria-live="polite"></div>
           </div>
+          <div id="pos-pdp-power-block" class="pos-pdp-power-block" hidden>
+            <div class="pos-field-label pos-pdp-power-lbl">POWER</div>
+            <div id="pos-pdp-power-pills" class="pos-pdp-power-pills" role="group" aria-label="Reading power"></div>
+            <div id="pos-pdp-power-name" class="pos-pdp-power-name" aria-live="polite"></div>
+          </div>
           <div class="pos-lk-pdp-chips">
             <span id="pos-pdp-chip-instore" class="pos-lk-pdp-chip-instore">In Store</span>
           </div>
@@ -466,7 +471,7 @@
      SCREEN 4 — Order Builder (Cart — matches Pencil 05-cart layout)
      ═══════════════════════════════════════════════════════════════════ -->
 <div id="screen-pos-order-builder" class="pos-screen">
-  <div class="pos-lk-page">
+  <div class="pos-lk-page pos-lk-cart-page">
     <div class="pos-visually-hidden">
       <span id="pos-ob-staff"></span>
       <span id="pos-ob-store"></span>
@@ -514,14 +519,17 @@
     </section>
     </div>
 
-    <aside class="pos-lk-cart-aside pos-lk-cart-aside--mid" aria-label="Customer profile">
-      <!-- 1. Customer (matches Pencil mid column — first) -->
-      <div class="pos-lk-side-card pos-lk-cart-customer-card pos-lk-bill-customer-strip" id="pos-lk-cart-customer-card">
-        <h3 class="pos-lk-bill-customer-h">Customer</h3>
-        <div id="pos-lk-cart-customer-body" class="pos-lk-cart-customer-body"></div>
-        <div id="pos-lk-cart-customer-actions" class="pos-lk-cart-customer-actions" hidden>
-          <button type="button" id="btn-cart-customer-change" class="pos-lk-cart-customer-btn" tabindex="0">Change customer</button>
-          <button type="button" id="btn-cart-customer-search" class="pos-lk-cart-customer-btn pos-lk-cart-customer-btn--search" tabindex="0">Search customer</button>
+    <aside class="pos-lk-cart-aside pos-lk-cart-aside--mid" aria-label="Cx profile">
+      <!-- 1. Cx (matches Pencil mid column — first) -->
+      <div class="pos-lk-side-card pos-lk-cart-customer-card pos-lk-bill-customer-strip pos-lk-cart-customer-card--empty" id="pos-lk-cart-customer-card">
+        <h3 class="pos-lk-bill-customer-h">Cx</h3>
+        <div id="pos-lk-cart-customer-body" class="pos-lk-cart-customer-body">
+          <div class="pos-lk-cart-cust-empty-title">Cx required at checkout</div>
+          <div class="pos-lk-cart-cust-empty-sub">Select or register a Cx before payment.</div>
+        </div>
+        <div id="pos-lk-cart-customer-actions" class="pos-lk-cart-customer-actions">
+          <button type="button" id="btn-cart-customer-action" class="pos-lk-cart-customer-btn pos-lk-cart-customer-btn--primary" tabindex="0" aria-label="Select Cx">Select Cx</button>
+          <button type="button" id="btn-cart-cx-clear" class="pos-lk-cart-customer-btn pos-lk-cart-cx-clear-btn" tabindex="0" aria-label="Clear Cx" hidden>Clear Cx</button>
         </div>
       </div>
 
@@ -581,7 +589,7 @@
       </div>
 
       <!-- Eyewoot Secure -->
-      <button type="button" class="pos-lk-bill-tap-row" id="btn-cart-apply-insurance" aria-label="Insurance and secure benefits">
+      <button type="button" class="pos-lk-bill-tap-row" id="btn-cart-apply-insurance" aria-label="Insurance and secure benefits" data-cosmos-coming-soon="Eyewoot Secure">
         <span class="pos-lk-bill-tap-row-text">
           <span class="pos-lk-bill-tap-title">Apply Insurance</span>
           <span class="pos-lk-bill-tap-sub">Tap to view your benefits</span>
@@ -617,21 +625,21 @@
     <section class="pos-cust-section">
       <label class="pos-field-label" for="cust-search-input">Search phone or name</label>
       <div class="pos-search-input-wrap">
-        <input id="cust-search-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Phone / name" aria-label="Search customers">
+        <input id="cust-search-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Phone / name" aria-label="Search Cx">
         <button type="button" id="btn-cust-search" class="pos-search-btn" tabindex="0">Search</button>
       </div>
       <div id="cust-results" class="pos-cust-results" role="list" aria-live="polite"></div>
     </section>
     <section class="pos-cust-section">
-      <div class="pos-ob-section-label">NEW CUSTOMER</div>
+      <div class="pos-ob-section-label">QUICK CX REGISTRATION</div>
       <div class="pos-cust-form">
         <label class="pos-field-label" for="cust-new-name">Full name</label>
-        <input id="cust-new-name" class="pos-search-input" type="text" autocomplete="name" aria-label="Customer full name">
-        <label class="pos-field-label" for="cust-new-phone">Phone</label>
-        <input id="cust-new-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" aria-label="Customer phone">
+        <input id="cust-new-name" class="pos-search-input" type="text" autocomplete="name" aria-label="Cx full name">
+        <label class="pos-field-label" for="cust-new-phone">Mobile</label>
+        <input id="cust-new-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" aria-label="Cx mobile">
         <label class="pos-field-label" for="cust-new-email">Email (optional)</label>
-        <input id="cust-new-email" class="pos-search-input" type="email" autocomplete="email" aria-label="Customer email">
-        <button type="button" id="btn-cust-create" class="pos-next-btn" tabindex="0">Create customer</button>
+        <input id="cust-new-email" class="pos-search-input" type="email" autocomplete="email" aria-label="Cx email">
+        <button type="button" id="btn-cust-create" class="pos-next-btn" tabindex="0">Create Cx</button>
       </div>
     </section>
     <div id="cust-selected-banner" class="pos-cust-banner" aria-live="polite"></div>
@@ -654,7 +662,7 @@
         <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="1" aria-label="Step 1: Lens type">Type</button></li>
         <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="2" aria-label="Step 2: Lenses">Lenses</button></li>
         <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="3" aria-label="Step 3: Add-ons">Add-ons</button></li>
-        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="4" aria-label="Step 4: Customer and Rx">Customer</button></li>
+        <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="4" aria-label="Step 4: Cx and Rx">Cx</button></li>
         <li><button type="button" class="pos-checkout-5__tab" data-checkout-stage="5" aria-label="Step 5: Cart">Cart</button></li>
       </ol>
     </nav>
@@ -768,7 +776,7 @@
         </div>
         <div style="font-size:11px;color:var(--text2);margin-top:6px;padding-left:34px">Coins are earned via Cashback offers and redeemable on future orders at the store.</div>
       </div>
-      <div id="pos-lk-pay-coins-empty" style="display:none;padding:8px 0;font-size:12px;color:var(--text3)">No coins balance for this customer.</div>
+      <div id="pos-lk-pay-coins-empty" style="display:none;padding:8px 0;font-size:12px;color:var(--text3)">No coins balance for this Cx.</div>
 
       <select id="pay-method" class="pos-visually-hidden" aria-hidden="true" tabindex="-1" style="display:none">
         <option value="UPI" selected>UPI</option>
@@ -867,7 +875,7 @@
       </button>
       <div id="confirm-invoice-fields" class="pos-confirm-invoice-fields" aria-hidden="true">
         <label class="pos-field-label" for="confirm-bill-name">Bill name</label>
-        <input type="text" id="confirm-bill-name" class="pos-input" autocomplete="name" placeholder="Customer name on invoice">
+        <input type="text" id="confirm-bill-name" class="pos-input" autocomplete="name" placeholder="Cx name on invoice">
         <label class="pos-field-label" for="confirm-gstin">GSTIN (optional)</label>
         <input type="text" id="confirm-gstin" class="pos-input" autocomplete="off" placeholder="27AAABBBCCCC1Z5">
         <label class="pos-field-label" for="confirm-billing-address">Billing address (optional)</label>
@@ -891,7 +899,7 @@
         <span aria-hidden="true">🧾</span>
         <span>View Invoice</span>
       </button>
-      <button type="button" id="btn-confirm-email-invoice" class="pos-confirm-action-email" tabindex="0" disabled title="Customer email required">
+      <button type="button" id="btn-confirm-email-invoice" class="pos-confirm-action-email" tabindex="0" disabled title="Cx email required" data-cosmos-coming-soon="Email invoice">
         <span aria-hidden="true">📧</span>
         <span>Email</span>
       </button>
@@ -932,7 +940,7 @@
       <div class="pos-search-row" style="flex: 1;">
         <label for="pos-orders-search" class="pos-search-label">Global Search</label>
         <div class="pos-search-input-wrap">
-          <input id="pos-orders-search" class="pos-search-input" type="search" autocomplete="off" placeholder="Order No, Customer Name or Phone" aria-label="Search orders">
+          <input id="pos-orders-search" class="pos-search-input" type="search" autocomplete="off" placeholder="Order No, Cx Name or Phone" aria-label="Search orders">
           <button id="btn-pos-orders-search" class="pos-search-btn" tabindex="0">Search</button>
         </div>
       </div>
@@ -1034,7 +1042,7 @@
   <div class="pos-lens-newcust-backdrop" id="pos-lens-newcust-backdrop" tabindex="-1"></div>
   <div class="pos-lens-newcust-sheet">
     <div class="pos-lens-newcust-head">
-      <h2 id="pos-lens-new-cust-title" class="pos-lens-newcust-title">Customer not found</h2>
+      <h2 id="pos-lens-new-cust-title" class="pos-lens-newcust-title">Cx not found</h2>
       <button type="button" class="pos-lens-newcust-dismiss" id="pos-lens-new-cust-dismiss" aria-label="Close">&times;</button>
     </div>
     <p id="pos-lens-new-cust-subtitle" class="pos-lens-newcust-sub"></p>
@@ -1044,7 +1052,7 @@
     <input id="pos-lens-new-cust-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" style="width:100%;box-sizing:border-box;margin-bottom:16px" aria-required="true">
     <div class="pos-lens-newcust-actions">
       <button type="button" id="btn-pos-lens-new-cust-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
-      <button type="button" id="btn-pos-lens-new-cust-submit" class="pos-next-btn pos-lens-newcust-btn-submit">Create and link customer</button>
+      <button type="button" id="btn-pos-lens-new-cust-submit" class="pos-next-btn pos-lens-newcust-btn-submit">Create and link Cx</button>
     </div>
   </div>
 </div>
@@ -1066,36 +1074,46 @@
   </div>
 </div>
 
-<!-- Cart / nav — select or add customer (same centered overlay pattern as lens modals) -->
+<!-- Cart / nav — select or add customer (single panel: search + register, no steps/tabs) -->
 <div id="overlay-pos-customer-picker" class="pos-lens-newcust-overlay pos-lens-customer-picker-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-cust-picker-title">
   <div class="pos-lens-newcust-backdrop" id="pos-cust-picker-backdrop" tabindex="-1"></div>
   <div class="pos-lens-newcust-sheet pos-lens-newcust-sheet--wide pos-lens-customer-picker-sheet">
-    <div class="pos-lens-newcust-head">
-      <h2 id="pos-cust-picker-title" class="pos-lens-newcust-title">Select or add customer</h2>
-      <button type="button" class="pos-lens-newcust-dismiss" id="pos-cust-picker-dismiss" aria-label="Close">&times;</button>
+    <div class="pos-lens-newcust-head pos-cust-picker-head">
+      <div class="pos-cust-picker-head-copy">
+        <h2 id="pos-cust-picker-title" class="pos-lens-newcust-title">Select Cx</h2>
+        <p class="pos-lens-newcust-sub">Search by phone or name, or use Quick Cx registration for this bill.</p>
+      </div>
+      <button type="button" class="pos-lens-newcust-dismiss pos-cust-picker-dismiss" id="pos-cust-picker-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <div class="pos-cust-picker-banner-row">
+      <div id="cust-picker-banner" class="pos-cust-banner pos-cust-banner--picker pos-cust-picker-banner" aria-live="polite"></div>
+      <button type="button" id="cust-picker-btn-clear" class="pos-cust-picker-clear-btn" hidden tabindex="0" aria-label="Clear Cx selection">Clear Cx</button>
     </div>
     <div class="pos-cust-picker-scroll" id="pos-cust-picker-scroll">
-      <section class="pos-cust-section pos-cust-section--picker">
-        <label class="pos-field-label" for="cust-picker-search-input">Search phone or name</label>
-        <div class="pos-search-input-wrap">
-          <input id="cust-picker-search-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Phone / name" aria-label="Search customers">
-          <button type="button" id="cust-picker-btn-search" class="pos-search-btn" tabindex="0">Search</button>
+      <section class="pos-cust-section pos-cust-section--picker" aria-label="Find Cx">
+        <label class="pos-field-label" for="cust-picker-search-input">Find Cx</label>
+        <div class="pos-cust-picker-search-row">
+          <div class="pos-cust-picker-search-field">
+            <span class="pos-cust-picker-search-ico" aria-hidden="true">⌕</span>
+            <input id="cust-picker-search-input" class="pos-search-input pos-cust-picker-search-input" type="search" autocomplete="off" placeholder="Phone or name" aria-label="Search Cx">
+          </div>
+          <button type="button" id="cust-picker-btn-search" class="pos-cust-picker-search-btn" tabindex="0">Search</button>
         </div>
         <div id="cust-picker-results" class="pos-cust-results pos-cust-results--picker" role="list" aria-live="polite"></div>
       </section>
-      <section class="pos-cust-section pos-cust-section--picker">
-        <div class="pos-ob-section-label">NEW CUSTOMER</div>
+      <div class="pos-cust-picker-divider" role="separator" aria-hidden="true"></div>
+      <section id="cust-picker-quick-reg" class="pos-cust-section pos-cust-section--picker" aria-label="Quick Cx registration">
+        <h3 class="pos-cust-picker-section-title">Quick Cx registration</h3>
         <div class="pos-cust-form">
           <label class="pos-field-label" for="cust-picker-new-name">Full name</label>
-          <input id="cust-picker-new-name" class="pos-search-input" type="text" autocomplete="name" aria-label="Customer full name">
-          <label class="pos-field-label" for="cust-picker-new-phone">Phone</label>
-          <input id="cust-picker-new-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" aria-label="Customer phone">
+          <input id="cust-picker-new-name" class="pos-search-input" type="text" autocomplete="name" aria-label="Cx full name" placeholder="Cx name">
+          <label class="pos-field-label" for="cust-picker-new-phone">Mobile</label>
+          <input id="cust-picker-new-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" aria-label="Cx mobile" placeholder="10-digit mobile">
           <label class="pos-field-label" for="cust-picker-new-email">Email (optional)</label>
-          <input id="cust-picker-new-email" class="pos-search-input" type="email" autocomplete="email" aria-label="Customer email">
-          <button type="button" id="cust-picker-btn-create" class="pos-next-btn" tabindex="0">Create customer</button>
+          <input id="cust-picker-new-email" class="pos-search-input" type="email" autocomplete="email" aria-label="Cx email" placeholder="name@example.com">
+          <button type="button" id="cust-picker-btn-create" class="pos-cust-picker-create-btn" tabindex="0">Create Cx</button>
         </div>
       </section>
-      <div id="cust-picker-banner" class="pos-cust-banner pos-cust-banner--picker" aria-live="polite"></div>
     </div>
     <div class="pos-lens-newcust-actions pos-cust-picker-actions">
       <button type="button" id="cust-picker-btn-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>

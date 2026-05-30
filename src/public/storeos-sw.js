@@ -41,7 +41,8 @@ function isAllowedStaticPath(pathname) {
 
 function shouldHandleFetch(url, request) {
   if (request.method !== 'GET') return false;
-  if (url.pathname.startsWith('/api/')) return true;
+  /* API — never intercept; browser handles network errors for fetch() in app JS */
+  if (url.pathname.startsWith('/api/')) return false;
   if (url.pathname.indexOf('/storeos') === 0) return true;
   return isAllowedStaticPath(url.pathname);
 }
@@ -77,11 +78,6 @@ self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
   if (!shouldHandleFetch(url, e.request)) return;
-
-  if (url.pathname.startsWith('/api/')) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
 
   if (url.pathname.indexOf('/storeos') === 0 && isStoreOsNavigation(e.request)) {
     e.respondWith(

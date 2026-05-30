@@ -399,6 +399,39 @@
   window.cosmosToastWarn = function(msg) { return window.cosmosToast(msg, 'warn', COSMOS_TOAST_DURATION_MS) }
   window.cosmosToastInfo = function(msg) { return window.cosmosToast(msg, 'info', COSMOS_TOAST_DURATION_MS) }
 
+  /** Unbuilt UI — use when a control is visible but the feature is not shipped yet. */
+  window.cosmosToastComingSoon = function (featureLabel) {
+    var label = String(featureLabel || '').trim()
+    var msg = label ? 'Coming soon — ' + label + '.' : 'Coming soon.'
+    return window.cosmosToastInfo(msg)
+  }
+
+  function cosmosBindComingSoonElements (root) {
+    var scope = root && root.querySelectorAll ? root : document
+    scope.querySelectorAll('[data-cosmos-coming-soon]').forEach(function (el) {
+      if (el.getAttribute('data-cosmos-coming-soon-bound') === '1') return
+      el.setAttribute('data-cosmos-coming-soon-bound', '1')
+      var label = el.getAttribute('data-cosmos-coming-soon') || ''
+      el.addEventListener('click', function (e) {
+        e.preventDefault()
+        e.stopPropagation()
+        window.cosmosToastComingSoon(label)
+      })
+    })
+  }
+
+  window.cosmosBindComingSoonElements = cosmosBindComingSoonElements
+
+  function cosmosInitComingSoonBindings () {
+    cosmosBindComingSoonElements(document)
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', cosmosInitComingSoonBindings)
+  } else {
+    cosmosInitComingSoonBindings()
+  }
+
   window.cosmosFieldError = function(inputEl, message) {
     if (!inputEl) return
     inputEl.classList.add('field-error')

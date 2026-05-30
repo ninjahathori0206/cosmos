@@ -560,6 +560,7 @@ const ZONE_CONTENT_TOKENS = Object.freeze([
   { key: 'sku_code', label: 'SKU code', description: 'Product SKU on the unit' },
   { key: 'brand', label: 'Brand', description: 'Brand code (uppercase)' },
   { key: 'model', label: 'Model', description: 'Model / style name' },
+  { key: 'power', label: 'Power', description: 'Reading diopter for Readers (+1.00 … +4.00); blank for other types' },
   { key: 'mrp', label: 'MRP', description: 'Sale price (integer)' }
 ]);
 
@@ -568,7 +569,9 @@ const ZONE_CONTENT_PRESETS = Object.freeze([
   { key: 'unit_only', label: 'Unit ID only', content: '{unit_id}' },
   { key: 'sku_only', label: 'SKU only', content: '{sku_code}' },
   { key: 'brand_mrp', label: 'Brand-MRP', content: '{brand}-{mrp}' },
-  { key: 'brand_model_mrp', label: 'Brand + model + MRP (3 lines)', content: '{brand}\n{model}\nMRP {mrp}' }
+  { key: 'brand_model_mrp', label: 'Brand + model + MRP (3 lines)', content: '{brand}\n{model}\nMRP {mrp}' },
+  { key: 'readers_power', label: 'Readers — power', content: '{power}' },
+  { key: 'readers_brand_power_mrp', label: 'Readers 3-line', content: '{brand}\n{power}\nMRP {mrp}' }
 ]);
 
 function slugifyFormatKey(name) {

@@ -18,8 +18,8 @@ Every new POS order must be linked to a real `pos_customers` row. Walk-in is no 
 
 | State | Copy | Actions |
 |-------|------|---------|
-| No customer | Headline: *Customer required at checkout*; subtext: *Select or register a customer before payment.* | Primary: **Select customer** |
-| Customer linked | Name, phone, customer ID | **Change customer** (no “remove walk-in”) |
+| No customer | Headline: *Customer required at checkout*; subtext: *Select or register a customer before payment.* | Primary footer: **Select customer** (opens picker with search) |
+| Customer linked | Name, phone, customer ID | Footer: **Change customer** (same picker — no separate Search button) |
 
 ### Customer picker modal
 
@@ -27,6 +27,8 @@ Every new POS order must be linked to a real `pos_customers` row. Walk-in is no 
 - **Continue** enabled only when a customer is selected.
 - No “Skip & continue” / walk-in bypass.
 - Register block label: **New customer** (not “Walk-in”).
+
+Full redesign spec: [pos-customer-picker-modal.md](pos-customer-picker-modal.md) — **single panel** (no tabs/steps): search + results + register form on one scrollable sheet.
 
 ### Lens wizard — customer card
 

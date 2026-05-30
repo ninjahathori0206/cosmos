@@ -642,7 +642,7 @@ var GO = (function () {
         if (t === 'PCT') return Number.isFinite(v) ? 'Up to ' + v + '% off' : 'Exclusive rate'
         if (t === 'FLAT') return Number.isFinite(v) ? 'Up to ₹' + v.toLocaleString('en-IN') + ' off' : 'Flat discount'
         if (t === 'FREEBIE') return 'Member freebie'
-        if (t === 'BOGO_LOWEST_FREE') return 'BOGO (lab + frame / lab pairs)'
+        if (t === 'BOGO_LOWEST_FREE') return 'BOGO (lab+frame, then frame-only)'
         if (t === 'BUY_FRAME_GET_LENS_FREE') return 'Lens package credit'
         if (t === 'BUY_LENS_GET_FRAME_FREE') return 'Frame credit'
         return 'Promo'

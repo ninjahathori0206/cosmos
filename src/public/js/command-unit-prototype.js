@@ -1931,7 +1931,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (bogoAlloc) {
         stHit.style.display = 'block';
         stHit.textContent =
-          'Pairs a prescription eyeglass lab line (lens package; not sunglasses type) with a frame-only INSTANT line. Qualifying sunglasses-with-lens lines pair with each other only. Optional Value = max discount cap in ₹.';
+          'Phase 1: prescription eyeglass lab (lens package; not sunglasses type) pairs with a frame-only pickup line (eyeglasses or sunglasses). Phase 2: leftover lab lines pair together. Phase 3: leftover frame-only pickup lines pair together (cheaper frame free). Optional Value = max discount cap in ₹.';
       } else if (structured) {
         stHit.style.display = 'block';
         stHit.textContent =

@@ -70,8 +70,11 @@ async function enrichPurchaseSkusWithBrand(rows) {
 const colourSchema = Joi.object({
   colour_name: Joi.string().max(100).required(),
   colour_code: Joi.string().max(20).required(),
-  quantity:    Joi.number().integer().min(1).required()
+  quantity:    Joi.number().integer().min(1).required(),
+  reading_power: Joi.string().max(10).allow('', null)
 });
+
+const { isValidReadingPower } = require('../config/readingPowersCatalog');
 
 const itemSchema = Joi.object({
   product_master_id: Joi.number().integer().required(),
@@ -79,6 +82,28 @@ const itemSchema = Joi.object({
   category:          Joi.string().max(50).required(),
   quantity:          Joi.number().integer().positive().required(),
   colours:           Joi.array().items(colourSchema).default([])
+}).custom((value, helpers) => {
+  if (String(value.category || '').toUpperCase() !== 'READERS') return value;
+  const colours = value.colours || [];
+  if (!colours.length) {
+    return helpers.error('any.custom', {
+      message: 'Readers items require at least one power variant with reading power.'
+    });
+  }
+  for (const c of colours) {
+    const rp = c.reading_power != null ? String(c.reading_power).trim() : '';
+    if (!rp) {
+      return helpers.error('any.custom', {
+        message: 'Each Readers power variant must include a reading power.'
+      });
+    }
+    if (!isValidReadingPower(rp)) {
+      return helpers.error('any.custom', {
+        message: `Invalid reading power "${rp}" for Readers item.`
+      });
+    }
+  }
+  return value;
 });
 
 const createSchema = Joi.object({
@@ -142,8 +167,96 @@ const brandingBypassSchema = Joi.object({
 const skuGenerateSchema = Joi.object({
   item_id:        Joi.number().integer().required(),
   item_colour_id: Joi.number().integer().required(),
-  sale_price:     Joi.number().precision(2).positive().allow(null)
+  sale_price:     Joi.number().precision(2).positive().allow(null),
+  reading_power:  Joi.string().max(10).allow('', null)
 });
+
+async function applyReadingPowerToPurchaseColours(headerId, requestItems) {
+  const hasAny = (requestItems || []).some((it) =>
+    (it.colours || []).some((c) => c.reading_power && String(c.reading_power).trim())
+  );
+  if (!hasAny) return;
+
+  const pool = await getPool();
+  const dbItemsRes = await pool.request()
+    .input('hid', sql.Int, Number(headerId))
+    .query(`
+      SELECT item_id, product_master_id
+      FROM dbo.purchase_items
+      WHERE header_id = @hid
+      ORDER BY item_id
+    `);
+  const dbItems = dbItemsRes.recordset || [];
+
+  const dbColoursRes = await pool.request()
+    .input('hid', sql.Int, Number(headerId))
+    .query(`
+      SELECT pic.colour_id, pic.item_id, pic.colour_name, pic.quantity, pic.reading_power
+      FROM dbo.purchase_item_colours pic
+      JOIN dbo.purchase_items pi ON pi.item_id = pic.item_id
+      WHERE pi.header_id = @hid
+      ORDER BY pic.item_id, pic.colour_id
+    `);
+  const allDbColours = dbColoursRes.recordset || [];
+  const usedColourIds = new Set();
+
+  for (let itemIdx = 0; itemIdx < (requestItems || []).length; itemIdx++) {
+    const item = requestItems[itemIdx];
+    const dbItem = dbItems[itemIdx];
+    if (!dbItem) continue;
+
+    const dbColours = allDbColours.filter((r) =>
+      r.item_id === dbItem.item_id && !usedColourIds.has(r.colour_id)
+    );
+    const payloadColours = item.colours || [];
+
+    for (let i = 0; i < payloadColours.length; i++) {
+      const pc = payloadColours[i];
+      const rp = pc.reading_power != null ? String(pc.reading_power).trim() : '';
+      if (!rp || !isValidReadingPower(rp)) continue;
+
+      const wantName = String(pc.colour_name || 'Standard').trim().toLowerCase();
+      const wantQty = Number(pc.quantity) || 0;
+
+      let dbRow = dbColours[i];
+      if (!dbRow || usedColourIds.has(dbRow.colour_id)) {
+        dbRow = dbColours.find((r) =>
+          !usedColourIds.has(r.colour_id) &&
+          String(r.colour_name || '').trim().toLowerCase() === wantName &&
+          Number(r.quantity) === wantQty
+        );
+      }
+      if (!dbRow) {
+        dbRow = dbColours.find((r) => !usedColourIds.has(r.colour_id));
+      }
+      if (!dbRow) continue;
+
+      usedColourIds.add(dbRow.colour_id);
+      await pool.request()
+        .input('cid', sql.Int, dbRow.colour_id)
+        .input('rp', sql.VarChar(10), rp)
+        .query(`
+          UPDATE dbo.purchase_item_colours
+          SET reading_power = @rp
+          WHERE colour_id = @cid
+            AND (reading_power IS NULL OR LTRIM(RTRIM(reading_power)) = '')
+        `);
+    }
+  }
+}
+
+async function loadPurchaseHeaderItems(headerId) {
+  const result = await executeStoredProcedure('sp_PurchaseHeader_GetById', {
+    header_id: { type: sql.Int, value: Number(headerId) }
+  });
+  const header = result.recordsets[0] && result.recordsets[0][0];
+  const items = result.recordsets[1] || [];
+  const colours = result.recordsets[2] || [];
+  items.forEach((item) => {
+    item.colours = colours.filter((c) => c.item_id === item.item_id);
+  });
+  return { header, items };
+}
 
 async function getRestockContext(headerId, itemId, colourId) {
   const pool = await getPool();
@@ -312,6 +425,11 @@ router.post(
       });
 
       const header  = result.recordsets[0] && result.recordsets[0][0];
+      if (header && header.header_id) {
+        await applyReadingPowerToPurchaseColours(header.header_id, value.items);
+        const reloaded = await loadPurchaseHeaderItems(header.header_id);
+        return res.status(201).json({ success: true, data: reloaded });
+      }
       const items   = result.recordsets[1] || [];
       const colours = result.recordsets[2] || [];
       items.forEach((item) => { item.colours = colours.filter((c) => c.item_id === item.item_id); });
@@ -385,11 +503,10 @@ router.put(
       });
 
       const header  = result.recordsets[0] && result.recordsets[0][0];
-      const items   = result.recordsets[1] || [];
-      const colours = result.recordsets[2] || [];
-      items.forEach((item) => { item.colours = colours.filter((c) => c.item_id === item.item_id); });
       if (!header) return res.status(404).json({ success: false, message: 'Purchase not found' });
-      return res.json({ success: true, data: { header, items } });
+      await applyReadingPowerToPurchaseColours(headerId, value.items);
+      const reloaded = await loadPurchaseHeaderItems(headerId);
+      return res.json({ success: true, data: reloaded });
     } catch (err) {
       if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });
       return next(err);
@@ -606,6 +723,53 @@ router.post(
       if (!isRestock && (!Number.isFinite(salePrice) || salePrice <= 0)) {
         return res.status(400).json({ success: false, message: 'Enter a valid Sale Price.' });
       }
+
+      const pool = await getPool();
+      const ctxRes = await pool.request()
+        .input('hid', sql.Int, headerId)
+        .input('iid', sql.Int, value.item_id)
+        .input('cid', sql.Int, value.item_colour_id)
+        .query(`
+          SELECT TOP 1
+            pi.category,
+            NULLIF(LTRIM(RTRIM(pic.reading_power)), '') AS reading_power
+          FROM dbo.purchase_item_colours pic
+          JOIN dbo.purchase_items pi ON pi.item_id = pic.item_id
+          WHERE pi.header_id = @hid
+            AND pi.item_id = @iid
+            AND pic.colour_id = @cid
+        `);
+      const ctxRow = ctxRes.recordset && ctxRes.recordset[0];
+      if (!ctxRow) {
+        return res.status(404).json({ success: false, message: 'Purchase colour row not found.' });
+      }
+
+      const isReaders = String(ctxRow.category || '').toUpperCase() === 'READERS';
+      let effectivePower = ctxRow.reading_power || null;
+      const bodyPower = value.reading_power != null ? String(value.reading_power).trim() : '';
+      if (bodyPower) {
+        if (!isValidReadingPower(bodyPower)) {
+          return res.status(400).json({ success: false, message: `Invalid reading power "${bodyPower}".` });
+        }
+        effectivePower = bodyPower;
+        if (!ctxRow.reading_power) {
+          await pool.request()
+            .input('cid', sql.Int, value.item_colour_id)
+            .input('rp', sql.VarChar(10), effectivePower)
+            .query(`
+              UPDATE dbo.purchase_item_colours
+              SET reading_power = @rp
+              WHERE colour_id = @cid
+            `);
+        }
+      }
+      if (isReaders && !effectivePower) {
+        return res.status(400).json({
+          success: false,
+          message: 'Reading power is required for Readers before generating SKU.'
+        });
+      }
+
       const result = await executeStoredProcedure('sp_SKUv2_Generate', {
         header_id:      { type: sql.Int,          value: headerId },
         item_id:        { type: sql.Int,           value: value.item_id },

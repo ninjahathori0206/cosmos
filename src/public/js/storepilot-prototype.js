@@ -804,8 +804,6 @@ window.submitSpHandover = async function (hasBalance) {
     window.closeSpHandoverModal()
     const invMsg = invNo ? ' Invoice: ' + invNo + '.' : ''
     if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Order handed over successfully.' + invMsg)
-    // Placeholder: receipt channels not connected yet — just show info
-    if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Receipt channels (WhatsApp / Email / SMS / Print) will be connected in the next phase.')
     window.loadSpLabOrders()
   } catch (err) {
     if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)

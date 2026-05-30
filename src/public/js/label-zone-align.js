@@ -94,6 +94,7 @@
     label: 'SKU-MAR-001',
     brand: 'MAR',
     model: 'Aviator Classic',
+    power: '+1.50',
     mrp: '4000',
     bottomLine: 'MAR-4000'
   };
@@ -104,11 +105,13 @@
     var parts = String(it.bottomLine || '').split('-');
     var brand = it.brand != null ? String(it.brand) : (parts[0] || '');
     var mrp = it.mrp != null ? String(it.mrp) : (parts[1] || '');
+    var power = it.power != null ? String(it.power).trim() : '';
     return s
       .replace(/\{unit_id\}/g, String(it.code || it.unitText || ''))
       .replace(/\{sku_code\}/g, String(it.sku_code || it.label || ''))
       .replace(/\{brand\}/g, brand)
       .replace(/\{model\}/g, String(it.model || ''))
+      .replace(/\{power\}/g, power)
       .replace(/\{mrp\}/g, mrp);
   }
 
@@ -118,6 +121,7 @@
     { key: 'sku_code', label: 'SKU code', description: 'Product SKU' },
     { key: 'brand', label: 'Brand', description: 'Brand code' },
     { key: 'model', label: 'Model', description: 'Model name' },
+    { key: 'power', label: 'Power', description: 'Reading diopter (Readers)' },
     { key: 'mrp', label: 'MRP', description: 'Sale price' }
   ];
 
@@ -125,7 +129,9 @@
     { key: 'unit_only', label: 'Unit ID only', content: '{unit_id}' },
     { key: 'sku_only', label: 'SKU only', content: '{sku_code}' },
     { key: 'brand_mrp', label: 'Brand-MRP', content: '{brand}-{mrp}' },
-    { key: 'brand_model_mrp', label: '3-line strip', content: '{brand}\n{model}\nMRP {mrp}' }
+    { key: 'brand_model_mrp', label: '3-line strip', content: '{brand}\n{model}\nMRP {mrp}' },
+    { key: 'readers_power', label: 'Readers — power', content: '{power}' },
+    { key: 'readers_brand_power_mrp', label: 'Readers 3-line', content: '{brand}\n{power}\nMRP {mrp}' }
   ];
 
   window.cosmosLabelZoneAlign = {

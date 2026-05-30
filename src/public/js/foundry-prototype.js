@@ -412,6 +412,66 @@ document.addEventListener('DOMContentLoaded', async () => {
   let _allSuppliers      = [];
   let _allMakers         = [];
   let _lookups           = {};
+  let _readingPowers     = [
+    '+1.00', '+1.25', '+1.50', '+1.75',
+    '+2.00', '+2.25', '+2.50', '+2.75',
+    '+3.00', '+3.25', '+3.50', '+3.75',
+    '+4.00'
+  ];
+
+  function buildReadingPowerSelectOptions() {
+    let html = '<option value="">Power *</option>';
+    (_readingPowers || []).forEach(function (p) {
+      const key = typeof p === 'string' ? p : (p.key || p.label);
+      const label = typeof p === 'string' ? p : (p.label || p.key);
+      html += `<option value="${String(key).replace(/"/g, '&quot;')}">${label}</option>`;
+    });
+    return html;
+  }
+
+  function ensureReaderPowerRow(idx) {
+    const isReader = String(val(`item-product-type-${idx}`) || '').toUpperCase() === 'READERS';
+    if (!isReader) return;
+    const container = document.getElementById(`colours-container-${idx}`);
+    if (!container || container.querySelector(`[id^="clr-qty-${idx}-"]`)) return;
+    if (typeof window.addColourToItem === 'function') window.addColourToItem(idx);
+  }
+
+  window.syncReaderPowerFieldVisibility = function (idx) {
+    const isReader = String(val(`item-product-type-${idx}`) || '').toUpperCase() === 'READERS';
+    const card = document.getElementById(`item-card-${idx}`);
+    const sectionLbl = card && card.querySelector('.purchase-colour-section .section-lbl > span');
+    const addBtn = card && card.querySelector('.purchase-colour-section .btn.xs');
+    if (sectionLbl) {
+      sectionLbl.textContent = isReader ? 'Power Variants' : 'Colour Variants';
+    }
+    if (addBtn) {
+      addBtn.textContent = isReader ? '+ Add power variant' : '+ Add colour';
+    }
+    document.querySelectorAll(`#colours-container-${idx} [id^="clr-name-${idx}-"]`).forEach(function (el) {
+      el.style.display = isReader ? 'none' : '';
+    });
+    document.querySelectorAll(`#colours-container-${idx} [id^="clr-code-${idx}-"]`).forEach(function (el) {
+      el.style.display = isReader ? 'none' : '';
+    });
+    document.querySelectorAll(`#colours-container-${idx} .clr-power-select`).forEach(function (el) {
+      el.style.display = isReader ? '' : 'none';
+      if (!isReader) el.value = '';
+    });
+    if (isReader) ensureReaderPowerRow(idx);
+  };
+
+  function buildDigiPowerFieldHtml(item, col, isReaderItem, isDone) {
+    if (!isReaderItem) return '';
+    const saved = (col.reading_power != null ? String(col.reading_power) : '').trim();
+    if (saved || isDone) {
+      return `<div class="fgrp"><label>Reading Power</label><input value="${_mcEsc(saved || '—')}" readonly style="background:var(--bg)">
+        <input type="hidden" id="digi-power-${item.item_id}-${col.colour_id}" value="${_mcEsc(saved)}"></div>`;
+    }
+    const opts = buildReadingPowerSelectOptions();
+    return `<div class="fgrp"><label>Reading Power <span class="req">*</span></label>
+      <select id="digi-power-${item.item_id}-${col.colour_id}" class="mono inp">${opts}</select></div>`;
+  }
   let _homeBrands        = [];
   let _allBrandingAgents = [];
   let _itemCount         = 0;
@@ -533,6 +593,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     syncPurchaseItemProductTypeSelects();
     populateCollectionDefaultsMakerDatalist();
     syncCollectionDefaultsProductTypeSelect();
+    try {
+      const rp = await apiGet('/api/meta/reading-powers');
+      const rows = Array.isArray(rp) ? rp : (rp && rp.data ? rp.data : []);
+      if (rows.length) _readingPowers = rows;
+    } catch (_rpErr) { /* fallback list */ }
   }
 
   /** Rebuild Product Type dropdown options on existing item rows after lookups refresh. */
@@ -1588,6 +1653,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const hint = document.getElementById('items-count-hint');
     if (hint) hint.textContent = _itemCount === 1 ? '1 item' : `${_itemCount} items`;
+
+    const ptSel = document.getElementById(`item-product-type-${idx}`);
+    if (ptSel) {
+      ptSel.addEventListener('change', function () {
+        syncReaderPowerFieldVisibility(idx);
+      });
+    }
+    syncReaderPowerFieldVisibility(idx);
+    ensureReaderPowerRow(idx);
   };
 
   window.removePurchaseItem = function(idx) {
@@ -1668,14 +1742,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       const srcName = document.getElementById(`clr-name-${srcIdx}-${srcCidx}`)?.value || '';
       const srcCode = document.getElementById(`clr-code-${srcIdx}-${srcCidx}`)?.value || '';
       const srcQty  = document.getElementById(`clr-qty-${srcIdx}-${srcCidx}`)?.value || '';
+      const srcPower = document.getElementById(`clr-power-${srcIdx}-${srcCidx}`)?.value || '';
       window.addColourToItem(newIdx);
       const newCidx = _colourCounters[newIdx];
       const dstName = document.getElementById(`clr-name-${newIdx}-${newCidx}`);
       const dstCode = document.getElementById(`clr-code-${newIdx}-${newCidx}`);
       const dstQty  = document.getElementById(`clr-qty-${newIdx}-${newCidx}`);
+      const dstPower = document.getElementById(`clr-power-${newIdx}-${newCidx}`);
       if (dstName) dstName.value = srcName;
       if (dstCode) dstCode.value = srcCode;
       if (dstQty)  dstQty.value  = srcQty;
+      if (dstPower && srcPower) dstPower.value = srcPower;
     });
 
     // Recalculate totals for the new card
@@ -1772,15 +1849,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     row.innerHTML = `
       <input placeholder="Colour name" id="clr-name-${idx}-${cidx}" style="flex:2" oninput="validateColourQty(${idx})">
       <input placeholder="Code" id="clr-code-${idx}-${cidx}" style="flex:1" class="mono">
+      <select id="clr-power-${idx}-${cidx}" class="clr-power-select mono" style="flex:1;max-width:96px;display:none" onchange="validateColourQty(${idx})">${buildReadingPowerSelectOptions()}</select>
       <input type="number" placeholder="Qty" id="clr-qty-${idx}-${cidx}" style="width:80px" oninput="validateColourQty(${idx})">
       <button type="button" class="btn xs" style="color:var(--red)" onclick="document.getElementById('colour-row-${idx}-${cidx}').remove();validateColourQty(${idx})">✕</button>`;
     container.appendChild(row);
+    syncReaderPowerFieldVisibility(idx);
   };
 
   window.validateColourQty = function(idx) {
     const totalQty = Number(val(`item-qty-${idx}`)) || 0;
     const qtyInputs  = document.querySelectorAll(`[id^="clr-qty-${idx}-"]`);
     const nameInputs = document.querySelectorAll(`[id^="clr-name-${idx}-"]`);
+    const powerInputs = document.querySelectorAll(`[id^="clr-power-${idx}-"]`);
+    const isReader = String(val(`item-product-type-${idx}`) || '').toUpperCase() === 'READERS';
     const warn = document.getElementById(`colour-qty-warn-${idx}`);
     if (!warn) return true;
 
@@ -1789,6 +1870,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     qtyInputs.forEach((r) => { sum += Number(r.value) || 0; });
     nameInputs.forEach((n) => { if (n.value.trim()) hasAnyColourData = true; });
     qtyInputs.forEach((r)  => { if (Number(r.value) > 0) hasAnyColourData = true; });
+    if (isReader) {
+      powerInputs.forEach((p) => { if (String(p.value || '').trim()) hasAnyColourData = true; });
+    }
 
     if (!hasAnyColourData) {
       warn.style.display = 'none';
@@ -1919,21 +2003,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         const colCont = document.getElementById(`colours-container-${idx}`);
         if (colCont) colCont.innerHTML = '';
         const cols = it.colours || [];
-        const isStdOnly = cols.length === 1
+        const isReaderDraft = String(it.category || '').toUpperCase() === 'READERS';
+        const isBareStdOnly = cols.length === 1
           && String(cols[0].colour_name || '').toLowerCase() === 'standard'
-          && String(cols[0].colour_code || '').toUpperCase() === 'STD';
-        if (cols.length && !isStdOnly) {
+          && String(cols[0].colour_code || '').toUpperCase() === 'STD'
+          && !cols[0].reading_power;
+        const shouldLoadColours = cols.length && (isReaderDraft || !isBareStdOnly);
+        if (shouldLoadColours) {
           cols.forEach((c) => {
             addColourToItem(idx);
             const cidx = _colourCounters[idx];
             const nEl = document.getElementById(`clr-name-${idx}-${cidx}`);
             const codeEl = document.getElementById(`clr-code-${idx}-${cidx}`);
             const qEl = document.getElementById(`clr-qty-${idx}-${cidx}`);
+            const pEl = document.getElementById(`clr-power-${idx}-${cidx}`);
             if (nEl) nEl.value = c.colour_name || '';
             if (codeEl) codeEl.value = c.colour_code || '';
             if (qEl) qEl.value = c.quantity != null ? String(c.quantity) : '';
+            if (pEl && c.reading_power) pEl.value = c.reading_power;
           });
         }
+        syncReaderPowerFieldVisibility(idx);
+        if (isReaderDraft && !shouldLoadColours) ensureReaderPowerRow(idx);
 
         const banner = document.getElementById(`item-selected-banner-${idx}`);
         if (banner) banner.style.display = 'none';
@@ -2010,14 +2101,43 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const colours = [];
       const colourRows = card.querySelectorAll(`[id^="clr-qty-${i}-"]`);
-      colourRows.forEach((cqEl) => {
+      const isReaderItem = String(category || '').toUpperCase() === 'READERS';
+      for (let ci = 0; ci < colourRows.length; ci++) {
+        const cqEl = colourRows[ci];
         const cidx = cqEl.id.split('-').pop();
         const cName = val(`clr-name-${i}-${cidx}`);
         const cCode = val(`clr-code-${i}-${cidx}`);
-        const cQty  = parseInt(cqEl.value) || 0;
-        if (cName && cQty > 0) colours.push({ colour_name: cName, colour_code: cCode || cName.replace(/\s+/g,'').toUpperCase().slice(0,8), quantity: cQty });
-      });
+        const cQty  = parseInt(cqEl.value, 10) || 0;
+        const cPower = val(`clr-power-${i}-${cidx}`);
+        if (cQty <= 0) continue;
+
+        if (isReaderItem) {
+          if (!cPower) {
+            showErr('new-purchase-error', `Item #${i}: Select reading power for each power variant row.`);
+            return;
+          }
+          colours.push({
+            colour_name: cName || 'Standard',
+            colour_code: cCode || (cName ? cName.replace(/\s+/g, '').toUpperCase().slice(0, 8) : 'STD'),
+            quantity: cQty,
+            reading_power: cPower
+          });
+          continue;
+        }
+
+        if (!cName) continue;
+        const row = {
+          colour_name: cName,
+          colour_code: cCode || cName.replace(/\s+/g, '').toUpperCase().slice(0, 8),
+          quantity: cQty
+        };
+        if (cPower) row.reading_power = cPower;
+        colours.push(row);
+      }
       if (colours.length === 0) {
+        if (isReaderItem) {
+          return showErr('new-purchase-error', `Item #${i}: Add at least one power variant and select reading power.`);
+        }
         colours.push({ colour_name: 'Standard', colour_code: 'STD', quantity: qty });
       }
       let productMasterId = val(`item-selected-pm-${i}`) || null;
@@ -2461,7 +2581,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function _pvBarcodeToolbarHtml() {
     return `<button type="button" class="btn btn-sm primary pv-print-selected-btn" onclick="pvPrintSelectedBarcodes()" disabled style="font-size:12px;padding:6px 12px;white-space:nowrap;min-height:40px" title="Print labels only for checked rows">Print labels (selected)</button>
-      <button type="button" class="btn btn-sm" onclick="window.openBarcodeModal(window._pvCurrentSkus)" style="font-size:12px;padding:6px 12px;white-space:nowrap;min-height:40px" title="Print a label for every SKU on this purchase">Print all labels</button>`;
+      <button type="button" class="btn btn-sm" onclick="window.openBarcodeModal(window._pvCurrentSkus,{source:'purchase-view',capToPurchaseQty:true})" style="font-size:12px;padding:6px 12px;white-space:nowrap;min-height:40px" title="Print a label for every SKU on this purchase">Print all labels</button>`;
   }
 
   function _pvSkuSelectCellHtml(sk) {
@@ -3477,13 +3597,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         colours.forEach((col, colIdx) => {
           const existingSku = skus.find((sk) => sk.item_colour_id === col.colour_id);
+          const isDone = !!existingSku;
+          const isReaderItem = String(item.category || '').toUpperCase() === 'READERS';
+          const powerFieldHtml = buildDigiPowerFieldHtml(item, col, isReaderItem, isDone);
           // Locked restock UI only when a colour is tied to an existing LIVE SKU — must match API
           // purchases.js:isRestock = Boolean(getRestockContext()?.linked_sku_id). Items with home_brand
           // alone can still need a NEW colour variant → editable MRP until a link exists.
           const isRestockLinked = Boolean(col.linked_sku_id);
           const isRestockDone = Boolean(existingSku && (existingSku.is_restock || existingSku.stock_action === 'RESTOCK_EXISTING'));
           const isRestock = isRestockLinked || isRestockDone;
-          const isDone = !!existingSku;
           const tabId  = `digi-panel-${item.item_id}-${col.colour_id}`;
           const imgId  = `clr-img-${item.item_id}-${col.colour_id}`;
 
@@ -3505,7 +3627,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             : `<div class="digi-media-thumb"><span class="xs td2">No media yet</span></div>`;
 
           tabsHtml += `<div class="tab${colIdx === 0 ? ' active' : ''}" data-digi-status="${isDone ? 'done' : 'pending'}" onclick="switchDigiTab(this, '${tabId}')">
-            ${col.colour_name} ${isDone ? `<span class="b ${isRestockDone ? 'b-blue' : 'b-green'} xs">${isRestockDone ? 'Restock' : 'Done'}</span>` : '<span class="b b-gold xs">Pending</span>'}
+            ${col.colour_name}${col.reading_power ? ' · ' + col.reading_power : ''} ${isDone ? `<span class="b ${isRestockDone ? 'b-blue' : 'b-green'} xs">${isRestockDone ? 'Restock' : 'Done'}</span>` : '<span class="b b-gold xs">Pending</span>'}
           </div>`;
 
           panelsHtml += `<div id="${tabId}" ${colIdx !== 0 ? 'style="display:none"' : ''}>
@@ -3527,6 +3649,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                       <div class="alert alert-blue" style="margin-bottom:0"><span>✅</span>
                         <div>SKU Generated: <strong class="mono">${existingSku.sku_code}</strong><br>
                         Barcode: <span class="mono">${existingSku.barcode}</span><br>
+                        ${(existingSku.reading_power || col.reading_power) ? `Reading Power: <strong class="mono">${_mcEsc(existingSku.reading_power || col.reading_power)}</strong><br>` : ''}
                         Sale Price: ${inrD(existingSku.sale_price)}</div>
                     </div>` : isRestock ? `
                       <div class="digi-restock-note" style="margin-bottom:10px">
@@ -3535,21 +3658,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                       </div>
                       <div class="fg2">
                         <div class="fgrp"><label>Colour</label><input value="${col.colour_name}" readonly style="background:var(--bg)"></div>
+                        ${powerFieldHtml}
                         <div class="fgrp"><label>Quantity</label><input value="${col.quantity}" readonly style="background:var(--bg)"></div>
                         <div class="fgrp"><label>Linked SKU</label><input value="${col.linked_sku_code || '—'}" readonly style="background:var(--bg)"></div>
                         <div class="fgrp"><label>Current Sale Price</label><input value="${inrD(Number(col.linked_sale_price || 0))}" readonly style="background:var(--bg)"></div>
                       </div>
                       <button class="btn primary w100 mt2" onclick="handleGenerateSKU(${headerId},${item.item_id},${col.colour_id}, true)">
-                        Generate Purchase Entry for ${col.colour_name}
+                        Generate Purchase Entry for ${col.colour_name}${col.reading_power ? ' · ' + col.reading_power : ''}
                       </button>` : `
                       <div class="fg2">
                         <div class="fgrp"><label>Colour</label><input value="${col.colour_name}" readonly style="background:var(--bg)"></div>
+                        ${powerFieldHtml}
                         <div class="fgrp"><label>Quantity</label><input value="${col.quantity}" readonly style="background:var(--bg)"></div>
                         <div class="fgrp"><label>Sale Price (MRP) ₹ <span class="req">*</span></label>
                           <input type="number" id="sale-price-${item.item_id}-${col.colour_id}" placeholder="e.g. 1490" min="1"></div>
                       </div>
                       <button class="btn primary w100 mt2" onclick="handleGenerateSKU(${headerId},${item.item_id},${col.colour_id})">
-                        Generate SKU for ${col.colour_name}
+                        Generate SKU for ${col.colour_name}${col.reading_power ? ' · ' + col.reading_power : ''}
                       </button>`}
                   </div>
                 </div>
@@ -3678,15 +3803,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   window.handleGenerateSKU = async function(headerId, itemId, colourId) {
     const priceEl = document.getElementById(`sale-price-${itemId}-${colourId}`);
+    const powerEl = document.getElementById(`digi-power-${itemId}-${colourId}`);
     const isRestockTrigger = !priceEl;
     const price = isRestockTrigger ? null : parseFloat(priceEl.value);
     if (!isRestockTrigger && (!price || price <= 0)) return alert('Enter a valid Sale Price.');
+    const readingPower = powerEl ? String(powerEl.value || '').trim() : '';
+    if (powerEl && !readingPower) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select reading power before generating SKU.');
+      else alert('Select reading power before generating SKU.');
+      return;
+    }
     const btn = document.querySelector(`button[onclick*="handleGenerateSKU(${headerId},${itemId},${colourId}"]`);
     if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
     try {
-      const response = await apiPost(`/api/purchases/${headerId}/generate-sku`, {
-        item_id: itemId, item_colour_id: colourId, sale_price: price
-      });
+      const payload = {
+        item_id: itemId,
+        item_colour_id: colourId,
+        sale_price: price
+      };
+      if (readingPower) payload.reading_power = readingPower;
+      const response = await apiPost(`/api/purchases/${headerId}/generate-sku`, payload);
       if (isRestockTrigger) {
         const eventId = response && response.purchase_event_id
           ? response.purchase_event_id
@@ -3891,7 +4027,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await apiPut(`/api/purchases/${headerId}/warehouse-ready`, {});
       const skus = await apiGet(`/api/purchases/${headerId}/skus`);
-      window.openBarcodeModal(skus, { defaultType: 'QR' });
+      window.openBarcodeModal(skus, { defaultType: 'QR', source: 'warehouse-ready', capToPurchaseQty: true });
       loadPurchases();
       nav('purchases', document.querySelector('.nav-item[onclick*="nav(\'purchases\'"]'));
     } catch (err) { alert(err.message); }
@@ -6665,16 +6801,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     return _bcNormalizeSmallLabelFormat(out);
   }
 
+  function _bcLabelPowerSegment(sk) {
+    if (!sk) return '';
+    const rp = sk.reading_power != null ? String(sk.reading_power).trim() : '';
+    return rp;
+  }
+
   function _bcApplyZoneTokens(tpl, item) {
     const s = String(tpl || '');
     const parts = String(item.bottomLine || '').split('-');
     const brand = item.brand != null ? String(item.brand) : (parts[0] || '');
     const mrp = item.mrp != null ? String(item.mrp) : (parts[1] || '');
+    const power = item.power != null ? String(item.power).trim() : '';
     return s
       .replace(/\{unit_id\}/g, String(item.code || item.unitText || ''))
       .replace(/\{sku_code\}/g, String(item.sku_code || item.label || ''))
       .replace(/\{brand\}/g, brand)
       .replace(/\{model\}/g, String(item.model || ''))
+      .replace(/\{power\}/g, power)
       .replace(/\{mrp\}/g, mrp);
   }
 
@@ -7089,7 +7233,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     return { ready: ready, skipped: skipped };
   }
 
-  async function _bcExpandSkusWithUnits(skus) {
+  function _bcPurchaseLabelQty(sk) {
+    const q = Number(sk && sk.quantity);
+    return Number.isFinite(q) && q > 0 ? q : 0;
+  }
+
+  /** When printing from a purchase, use newest unit rows up to this purchase's colour qty. */
+  function _bcPickUnitsForPurchasePrint(units, purchaseQty) {
+    if (!units || !units.length) return [];
+    if (!purchaseQty || purchaseQty <= 0) return units;
+    if (units.length <= purchaseQty) return units;
+    const sorted = units.slice().sort(function (a, b) {
+      return (Number(a.unit_no) || Number(a.unit_id) || 0) - (Number(b.unit_no) || Number(b.unit_id) || 0);
+    });
+    return sorted.slice(-purchaseQty);
+  }
+
+  async function _bcExpandSkusWithUnits(skus, opts) {
+    opts = opts || {};
+    const capToPurchaseQty = !!(opts.capToPurchaseQty || opts.source === 'purchase-view' || opts.source === 'warehouse-ready');
     const out = [];
     for (let i = 0; i < skus.length; i++) {
       const sk = skus[i];
@@ -7103,8 +7265,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
       if (units && units.length) {
-        for (let u = 0; u < units.length; u++) {
-          const row = units[u];
+        const purchaseQty = capToPurchaseQty ? _bcPurchaseLabelQty(sk) : 0;
+        const picked = purchaseQty > 0 ? _bcPickUnitsForPurchasePrint(units, purchaseQty) : units;
+        for (let u = 0; u < picked.length; u++) {
+          const row = picked[u];
           out.push(Object.assign({}, sk, {
             unit_barcode: row.unit_barcode,
             unit_no: row.unit_no,
@@ -7142,7 +7306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       else alert(err.message || 'Failed to load print libraries.');
       return;
     }
-    const expanded = await _bcExpandSkusWithUnits(skus);
+    const expanded = await _bcExpandSkusWithUnits(skus, opts);
     const qrFilter = _bcFilterSkusForQrLabels(expanded);
     _bcSkus = qrFilter.ready;
     if (qrFilter.skipped > 0 && typeof cosmosToastWarn === 'function') {
@@ -7202,6 +7366,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       return {
         code: code,
         label: sk.sku_code || '',
+        sku_code: sk.sku_code || '',
+        brand: _bcCompactBrandSegment(sk),
+        model: _bcTruncateStripLine(_bcStripModelLine(sk), 20),
+        power: _bcLabelPowerSegment(sk),
+        mrp: _bcCompactPriceSegment(sk),
         copies: _bcRowCopies(sk)
       };
     }).filter(Boolean);
@@ -7235,6 +7404,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         unitText: code,
         brand: _bcTruncateStripLine(_bcStripBrandLine(sk) || '—', 22),
         model: _bcTruncateStripLine(_bcStripModelLine(sk), 26),
+        power: _bcLabelPowerSegment(sk),
         mrp: _bcTruncateStripLine(_bcStripMrpLine(sk), 18),
         copies: 1
       };
@@ -7252,6 +7422,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         brand: _bcCompactBrandSegment(sk),
         mrp: _bcCompactPriceSegment(sk),
         model: _bcTruncateStripLine(_bcStripModelLine(sk), 20),
+        power: _bcLabelPowerSegment(sk),
         bottomLine: _bcTruncateStripLine(_bcCompactBottomLine(sk), 14),
         copies: 1
       };

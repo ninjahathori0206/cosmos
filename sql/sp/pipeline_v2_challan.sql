@@ -87,12 +87,13 @@ AS BEGIN
 
       IF @colours_json IS NOT NULL
       BEGIN
-        INSERT INTO dbo.purchase_item_colours (item_id, colour_name, colour_code, quantity)
-        SELECT @item_id, colour_name, colour_code, qty
+        INSERT INTO dbo.purchase_item_colours (item_id, colour_name, colour_code, quantity, reading_power)
+        SELECT @item_id, colour_name, colour_code, qty, NULLIF(LTRIM(RTRIM(reading_power)), '')
         FROM OPENJSON(@colours_json) WITH (
           colour_name VARCHAR(100) '$.colour_name',
           colour_code VARCHAR(20)  '$.colour_code',
-          qty         INT          '$.quantity'
+          qty         INT          '$.quantity',
+          reading_power VARCHAR(10) '$.reading_power'
         );
       END;
 
@@ -307,10 +308,13 @@ AS BEGIN
         AND (SELECT COUNT(*) FROM @items it2 WHERE it2.idx < @idx AND it2.product_master_id = @pmid) = 0;
       IF @colours_json IS NOT NULL
       BEGIN
-        INSERT INTO dbo.purchase_item_colours (item_id, colour_name, colour_code, quantity)
-        SELECT @item_id, colour_name, colour_code, qty
+        INSERT INTO dbo.purchase_item_colours (item_id, colour_name, colour_code, quantity, reading_power)
+        SELECT @item_id, colour_name, colour_code, qty, NULLIF(LTRIM(RTRIM(reading_power)), '')
         FROM OPENJSON(@colours_json) WITH (
-          colour_name VARCHAR(100) '$.colour_name', colour_code VARCHAR(20) '$.colour_code', qty INT '$.quantity'
+          colour_name VARCHAR(100) '$.colour_name',
+          colour_code VARCHAR(20)  '$.colour_code',
+          qty         INT          '$.quantity',
+          reading_power VARCHAR(10) '$.reading_power'
         );
       END;
       IF @mmid IS NOT NULL

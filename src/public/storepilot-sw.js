@@ -47,7 +47,7 @@ function isNetworkFirstStatic(pathname) {
 
 function shouldHandleFetch(url, request) {
   if (request.method !== 'GET') return false;
-  if (url.pathname.startsWith('/api/')) return true;
+  if (url.pathname.startsWith('/api/')) return false;
   if (url.pathname.indexOf('/storepilot') === 0) return true;
   if (isAllowedStaticPath(url.pathname)) return true;
   return false;
@@ -105,11 +105,6 @@ self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
   if (!shouldHandleFetch(url, e.request)) return;
-
-  if (url.pathname.startsWith('/api/')) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
 
   if (url.pathname.indexOf('/storepilot') === 0 && isStorePilotNavigation(e.request)) {
     e.respondWith(

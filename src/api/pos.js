@@ -134,7 +134,10 @@ function groupCatalogueRows(rows) {
       colour_code: row.colour_code,
       image_url:  row.image_url || null,
       sale_price: Number(row.sale_price) || 0,
-      store_qty:  Number(row.store_qty)  || 0
+      store_qty:  Number(row.store_qty)  || 0,
+      power:      row.reading_power != null && String(row.reading_power).trim() !== ''
+        ? String(row.reading_power).trim()
+        : null
     })
   }
   return Array.from(map.values())

@@ -113,12 +113,13 @@ AS BEGIN
 
       IF @colours_json IS NOT NULL
       BEGIN
-        INSERT INTO dbo.purchase_item_colours (item_id, colour_name, colour_code, quantity)
-        SELECT @item_id, colour_name, colour_code, qty
+        INSERT INTO dbo.purchase_item_colours (item_id, colour_name, colour_code, quantity, reading_power)
+        SELECT @item_id, colour_name, colour_code, qty, NULLIF(LTRIM(RTRIM(reading_power)), '')
         FROM OPENJSON(@colours_json) WITH (
           colour_name VARCHAR(100) '$.colour_name',
           colour_code VARCHAR(20)  '$.colour_code',
-          qty         INT          '$.quantity'
+          qty         INT          '$.quantity',
+          reading_power VARCHAR(10) '$.reading_power'
         );
       END;
 
@@ -431,12 +432,13 @@ AS BEGIN
 
       IF @colours_json IS NOT NULL
       BEGIN
-        INSERT INTO dbo.purchase_item_colours (item_id, colour_name, colour_code, quantity)
-        SELECT @item_id, colour_name, colour_code, qty
+        INSERT INTO dbo.purchase_item_colours (item_id, colour_name, colour_code, quantity, reading_power)
+        SELECT @item_id, colour_name, colour_code, qty, NULLIF(LTRIM(RTRIM(reading_power)), '')
         FROM OPENJSON(@colours_json) WITH (
           colour_name VARCHAR(100) '$.colour_name',
           colour_code VARCHAR(20)  '$.colour_code',
-          qty         INT          '$.quantity'
+          qty         INT          '$.quantity',
+          reading_power VARCHAR(10) '$.reading_power'
         );
       END;
 
@@ -872,6 +874,7 @@ AS BEGIN
     DECLARE @style_model VARCHAR(200);
     DECLARE @colour_image_url VARCHAR(500);
     DECLARE @colour_video_url VARCHAR(500);
+    DECLARE @reading_power VARCHAR(10);
 
     SELECT
       @product_master_id = pi.product_master_id,
@@ -883,6 +886,7 @@ AS BEGIN
       @quantity = pic.quantity,
       @ew_collection = pm.ew_collection,
       @colour_code = pic.colour_code,
+      @reading_power = NULLIF(LTRIM(RTRIM(pic.reading_power)), ''),
       @brand_for_prefix = LTRIM(RTRIM(COALESCE(
         NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_code, ''))), ''),
         NULLIF(LTRIM(RTRIM(ISNULL(hb.brand_name, ''))), ''),
@@ -919,6 +923,7 @@ AS BEGIN
     LEFT JOIN dbo.purchase_item_colours epc ON epc.colour_id = sk.item_colour_id
     WHERE sk.status = 'LIVE'
       AND UPPER(LTRIM(RTRIM(ISNULL(epc.colour_code, '')))) = UPPER(LTRIM(RTRIM(ISNULL(@colour_code, ''))))
+      AND ISNULL(NULLIF(LTRIM(RTRIM(sk.reading_power)), ''), '') = ISNULL(@reading_power, '')
       AND (
         sk.product_master_id = @product_master_id
         OR (
@@ -1110,7 +1115,12 @@ AS BEGIN
       SET @modelPfx = 'UNK';
     DECLARE @colPfx   VARCHAR(6)  = UPPER(LEFT(REPLACE(ISNULL(@colour_code, '00'), ' ', ''), 3));
 
-    DECLARE @skuCode VARCHAR(100) = @brandPfx + '-' + @collPfx + '-' + @modelPfx + '-' + @colPfx;
+    DECLARE @powerPfx VARCHAR(8) = NULL;
+    IF @reading_power IS NOT NULL
+      SET @powerPfx = 'P' + REPLACE(REPLACE(@reading_power, '+', ''), '.', '');
+
+    DECLARE @skuCode VARCHAR(100) = @brandPfx + '-' + @collPfx + '-' + @modelPfx + '-' + @colPfx
+      + CASE WHEN @powerPfx IS NOT NULL THEN '-' + @powerPfx ELSE '' END;
 
     -- Purchase-scoped PID (NOT NULL on dbo.skus); must be unique (UQ_skus_pid).
     DECLARE @pidBase VARCHAR(120) = @skuCode + '-P' + CAST(@header_id AS VARCHAR(20));
@@ -1127,10 +1137,10 @@ AS BEGIN
 
     INSERT INTO dbo.skus
       (product_master_id, sku_code, barcode, pid, quantity, cost_price, sale_price,
-       status, created_at, updated_at, header_id, item_id, item_colour_id, image_url, video_url)
+       status, created_at, updated_at, header_id, item_id, item_colour_id, image_url, video_url, reading_power)
     VALUES
       (@product_master_id, @skuCode, @barcode, @pid, @quantity, @cost_price, @sale_price,
-       'LIVE', DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()), @header_id, @item_id, @item_colour_id, @colour_image_url, @colour_video_url);
+       'LIVE', DATEADD(MINUTE, 330, SYSUTCDATETIME()), DATEADD(MINUTE, 330, SYSUTCDATETIME()), @header_id, @item_id, @item_colour_id, @colour_image_url, @colour_video_url, @reading_power);
 
     DECLARE @new_sku_id INT = CAST(SCOPE_IDENTITY() AS INT);
     IF OBJECT_ID(N'dbo.sp_SKUv2_AllocateUnits', N'P') IS NOT NULL

@@ -779,7 +779,7 @@
 
   async function openPosMembershipPickerModal() {
     if (!posSelectedCustomerId) {
-      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a customer before adding membership.')
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a Cx before adding membership.')
       openPosCustomerPickerModal()
       return
     }
@@ -938,6 +938,8 @@
   let posServerDiscountPreview = null
   let posServerDiscountPreviewTimer = null
   let posDiscountPreviewSeq = 0
+  let posDiscountPreviewInFlight = false
+  let posDiscountPreviewInFlightSig = null
   /** Selected POS / CX customer row for cart reference (name, phone, id). */
   let posSelectedCustomerSnapshot = null
   let posSettings = {
@@ -1047,6 +1049,35 @@
     return d
   }
 
+  /** True when search query looks like a mobile number lookup (3+ digits). */
+  function isLikelyMobileSearchQuery(raw) {
+    var d = normalizeIndiaMobileDigits(raw)
+    if (d.length >= 3) return true
+    var trimmed = String(raw || '').trim()
+    return /^\d[\d\s\-+()]*$/.test(trimmed) && trimmed.replace(/\D/g, '').length >= 3
+  }
+
+  function openQuickCxRegistration(prefillPhone) {
+    var scrollEl = document.getElementById('pos-cust-picker-scroll')
+    var section = document.getElementById('cust-picker-quick-reg')
+    var phoneEl = document.getElementById('cust-picker-new-phone')
+    var nameEl = document.getElementById('cust-picker-new-name')
+    if (phoneEl && prefillPhone) {
+      phoneEl.value = String(prefillPhone)
+      if (typeof cosmosFieldClear === 'function') cosmosFieldClear(phoneEl)
+    }
+    if (section) section.classList.add('pos-cust-quick-reg--highlight')
+    if (scrollEl && section) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+    window.requestAnimationFrame(function () {
+      if (nameEl) nameEl.focus()
+    })
+    window.setTimeout(function () {
+      if (section) section.classList.remove('pos-cust-quick-reg--highlight')
+    }, 2200)
+  }
+
   /** Validates POS customer-create phone; returns 10-digit mobile or error message. */
   function parsePosCustomerMobileForSave(raw) {
     var d = normalizeIndiaMobileDigits(raw)
@@ -1073,7 +1104,7 @@
       posSelectedCustomerId = id
       posSelectedCustomerSnapshot = {
         customer_id: id,
-        full_name: String(fullName || '').trim() || ('Customer #' + id),
+        full_name: String(fullName || '').trim() || ('Cx #' + id),
         phone: phone != null ? String(phone).trim() : ''
       }
       lensWizard.customerName = posSelectedCustomerSnapshot.full_name
@@ -1116,6 +1147,7 @@
     const session = getPosSession()
     if (session && session.token) {
       void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
+      void refreshPosCoinBalance(session)
     } else {
       obRecalcTotals()
     }
@@ -1190,7 +1222,7 @@
       return '₹' + f.toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' off'
     }
     if (t === 'FREEBIE') return 'Freebie'
-    if (t === 'BOGO_LOWEST_FREE') return 'BOGO · lab eg + frame-only / lab pairs'
+    if (t === 'BOGO_LOWEST_FREE') return 'BOGO · lab+frame pairs, then frame-only'
     if (t === 'BUY_FRAME_GET_LENS_FREE') return 'Lens value off (with frame)'
     if (t === 'BUY_LENS_GET_FRAME_FREE') return 'Frame value off (with lens)'
     return 'Promo'
@@ -1237,7 +1269,7 @@
         }
         posDiscountPreviewSeq++
         posServerDiscountPreview = null
-        obRecalcTotals()
+        obRecalcTotals({ skipPreviewSchedule: true })
         void runServerDiscountPreview(session).finally(function () {
           refreshPosOfferPickVisuals()
           syncCartAppliedOfferCard()
@@ -1249,36 +1281,46 @@
 
   function renderCartCustomerRef() {
     const body = document.getElementById('pos-lk-cart-customer-body')
-    const actions = document.getElementById('pos-lk-cart-customer-actions')
+    const card = document.getElementById('pos-lk-cart-customer-card')
+    const actionBtn = document.getElementById('btn-cart-customer-action')
+    const clearBtn = document.getElementById('btn-cart-cx-clear')
     if (!body) return
-    const hasCustomer = !!(posSelectedCustomerSnapshot && posSelectedCustomerId)
-    if (actions) actions.hidden = !hasCustomer
-    body.classList.remove('pos-lk-cart-cust--required')
     const snap = posSelectedCustomerSnapshot
-    if (snap && posSelectedCustomerId) {
+    const linked = !!(snap && posSelectedCustomerId)
+    if (card) {
+      card.classList.toggle('pos-lk-cart-customer-card--linked', linked)
+      card.classList.toggle('pos-lk-cart-customer-card--empty', !linked)
+      if (linked) card.classList.remove('pos-lk-cart-cust--required')
+    }
+    if (linked) {
       const phoneRow = snap.phone
         ? '<div class="pos-lk-cart-cust-row">' + escapeHtml(snap.phone) + '</div>'
         : ''
-      const coinRow = snap.coins != null
+      const coinRow = snap.coins != null && Number(snap.coins) > 0
         ? '<div class="pos-lk-cart-cust-coins" title="Cashback Coins balance">◈ ' + Number(snap.coins).toLocaleString('en-IN') + ' Coins' + (snap.rupee_value > 0 ? ' · ≈ ₹' + snap.rupee_value : '') + '</div>'
         : ''
       body.innerHTML =
         '<div class="pos-lk-cart-cust-name">' + escapeHtml(snap.full_name) + '</div>' +
         phoneRow +
         coinRow +
-        '<div class="pos-lk-cart-cust-meta">Customer ID · ' + escapeHtml(String(snap.customer_id)) + '</div>'
+        '<div class="pos-lk-cart-cust-meta">Cx ID · ' + escapeHtml(String(snap.customer_id)) + '</div>'
+      if (actionBtn) {
+        actionBtn.textContent = 'Change Cx'
+        actionBtn.classList.remove('pos-lk-cart-customer-btn--primary')
+        actionBtn.setAttribute('aria-label', 'Change Cx')
+      }
+      if (clearBtn) clearBtn.hidden = false
       return
     }
     body.innerHTML =
-      '<div style="font-size:14px;font-weight:600;color:var(--text1);margin-bottom:6px">Customer required at checkout</div>' +
-      '<div style="font-size:12px;color:var(--text2);margin-bottom:12px">Select or register a customer before payment.</div>' +
-      '<button type="button" class="btn sm primary" id="pos-cart-select-customer">Select customer</button>'
-    const sel = document.getElementById('pos-cart-select-customer')
-    if (sel) {
-      sel.addEventListener('click', function () {
-        openPosCustomerPickerModal()
-      })
+      '<div class="pos-lk-cart-cust-empty-title">Cx required at checkout</div>' +
+      '<div class="pos-lk-cart-cust-empty-sub">Select or register a Cx before payment.</div>'
+    if (actionBtn) {
+      actionBtn.textContent = 'Select Cx'
+      actionBtn.classList.add('pos-lk-cart-customer-btn--primary')
+      actionBtn.setAttribute('aria-label', 'Select Cx')
     }
+    if (clearBtn) clearBtn.hidden = true
   }
 
   /**
@@ -1344,6 +1386,7 @@
       cardOfferApplied.style.display = 'none'
       offerAppliedTitle.textContent = 'Offer applied'
       offerAppliedSub.textContent = 'You are saving ₹0'
+      offerAppliedSub.classList.remove('pos-lk-offer-applied-sub--saving')
       return
     }
     btnCartApplyCoupon.hidden = true
@@ -1355,6 +1398,7 @@
     offerAppliedSub.textContent = (!discountText || discountText === '−₹0')
       ? 'Offer selected for this bill'
       : ('You are saving ' + discountText.replace(/^−/, ''))
+    offerAppliedSub.classList.toggle('pos-lk-offer-applied-sub--saving', !!(discountText && discountText !== '−₹0'))
   }
 
   async function loadPosOffersPanel(session, listId, hintId, forPayment) {
@@ -1377,7 +1421,7 @@
       loadCartSkuScopeFacts(session)
       obRecalcTotals()
       if (!Array.isArray(offers) || !offers.length) {
-        listEl.innerHTML = '<div class="pos-lk-offers-empty"><div class="pos-lk-offers-empty-title">No active offers</div><div class="pos-lk-offers-empty-sub">Try again after selecting a customer.</div></div>'
+        listEl.innerHTML = '<div class="pos-lk-offers-empty"><div class="pos-lk-offers-empty-title">No active offers</div><div class="pos-lk-offers-empty-sub">Try again after selecting a Cx.</div></div>'
         wirePosOfferPickClicks(listEl, session)
         refreshPosOfferPickVisuals()
         syncCartBillBenefitBox()
@@ -1576,8 +1620,7 @@
   const obDiscountLine    = document.getElementById('pos-ob-discount-line')
   const obCartHeadingLine = document.getElementById('pos-lk-cart-heading-line')
   const btnObProceed      = document.getElementById('btn-ob-proceed')
-  const btnCartCustomerChange = document.getElementById('btn-cart-customer-change')
-  const btnCartCustomerSearch = document.getElementById('btn-cart-customer-search')
+  const btnCartCustomerAction = document.getElementById('btn-cart-customer-action')
   const btnCartApplyCoupon = document.getElementById('btn-cart-apply-coupon')
   const btnCartAddMembership = document.getElementById('btn-cart-add-membership')
   const overlayCartCoupons = document.getElementById('overlay-pos-cart-coupons')
@@ -2418,25 +2461,132 @@
   }
 
   /** Trailing number is total colour count — only for compact catalogue rows; omit on PDP where every colour is already a swatch. */
+  function isReaderProduct(product) {
+    return String(product && product.product_type || '').trim().toUpperCase() === 'READERS'
+  }
+
+  function readerColourKey(colour) {
+    const n = String(colour && colour.colour_name || '').trim().toLowerCase()
+    const c = String(colour && colour.colour_code || '').trim().toLowerCase()
+    return n || c
+  }
+
+  function compareReadingPower(a, b) {
+    const na = parseFloat(String(a || '').replace('+', '')) || 0
+    const nb = parseFloat(String(b || '').replace('+', '')) || 0
+    return na - nb
+  }
+
+  function getUniqueReaderColours(colours) {
+    const map = new Map()
+    ;(colours || []).forEach(function (c) {
+      const key = readerColourKey(c)
+      if (!key) return
+      const prev = map.get(key)
+      if (!prev) map.set(key, c)
+      else if (Number(c.store_qty || 0) > 0 && Number(prev.store_qty || 0) <= 0) map.set(key, c)
+    })
+    return Array.from(map.values())
+  }
+
+  function getPowersForColour(colours, colour) {
+    const key = readerColourKey(colour)
+    return (colours || [])
+      .filter(function (c) { return readerColourKey(c) === key })
+      .filter(function (c) { return c.power })
+      .sort(function (a, b) { return compareReadingPower(a.power, b.power) })
+  }
+
+  function findReaderSku(colours, colour, power) {
+    const key = readerColourKey(colour)
+    const powerStr = power != null ? String(power).trim() : ''
+    if (!powerStr) {
+      return (colours || []).find(function (c) {
+        return readerColourKey(c) === key && Number(c.store_qty || 0) > 0
+      }) || (colours || []).find(function (c) { return readerColourKey(c) === key })
+    }
+    return (colours || []).find(function (c) {
+      return readerColourKey(c) === key && String(c.power || '') === powerStr
+    })
+  }
+
+  function resolveReaderColourSku(product, colour, preferredPower) {
+    const powers = getPowersForColour(product.colours, colour)
+    if (!powers.length) return colour
+    const power = preferredPower != null ? String(preferredPower).trim() : ''
+    if (power) {
+      const exact = findReaderSku(product.colours, colour, power)
+      if (exact) return exact
+    }
+    const inStock = powers.find(function (c) { return Number(c.store_qty || 0) > 0 })
+    return inStock || powers[0]
+  }
+
+  function readerColourHasStock(product, colour) {
+    const key = readerColourKey(colour)
+    return (product.colours || []).some(function (c) {
+      return readerColourKey(c) === key && Number(c.store_qty || 0) > 0
+    })
+  }
+
+  function readerCatalogueBadge(product) {
+    const uniqueColours = getUniqueReaderColours(product.colours)
+    const powerSet = {}
+    ;(product.colours || []).forEach(function (c) {
+      if (c.power) powerSet[c.power] = true
+    })
+    const pc = Object.keys(powerSet).length
+    if (uniqueColours.length > 1 && pc > 1) return uniqueColours.length + ' colours · ' + pc + ' powers'
+    if (pc > 1) return pc + ' powers'
+    if (uniqueColours.length > 1) return uniqueColours.length + ' colours'
+    return ''
+  }
+
   function buildSwatches(product, activeSkuId, options) {
+    const allColours = product.colours || []
+    const colours = isReaderProduct(product) ? getUniqueReaderColours(allColours) : allColours
+    const activeEntry = allColours.find(function (c) { return c.sku_id === activeSkuId }) || colours[0]
+    const activeKey = activeEntry ? readerColourKey(activeEntry) : ''
     const showTrailingCount = options && options.showTrailingCount === true
-    return product.colours.map(function (c) {
-      const isActive = c.sku_id === activeSkuId
+    return colours.map(function (c) {
+      const repSku = isReaderProduct(product)
+        ? resolveReaderColourSku(product, c, activeEntry && activeEntry.power)
+        : c
+      const isActive = isReaderProduct(product)
+        ? readerColourKey(c) === activeKey
+        : c.sku_id === activeSkuId
       const hex = colourToHex(c.colour_name, c.colour_code)
       const nm = escapeHtml(String(c.colour_name || 'Colour').trim()) || 'Colour'
-      const oos = Number(c.store_qty || 0) <= 0
+      const oos = isReaderProduct(product)
+        ? !readerColourHasStock(product, c)
+        : Number(c.store_qty || 0) <= 0
       const oosNote = oos ? ' — out of stock at this store' : ''
       return `<div class="pos-sku-swatch${isActive ? ' active' : ''}${oos ? ' pos-sku-swatch--oos' : ''}"
         style="background:${hex}"
         data-product-id="${product.product_id}"
-        data-sku-id="${c.sku_id}"
+        data-sku-id="${repSku.sku_id}"
         title="${nm}"
         tabindex="0"
         role="button"
         aria-label="${nm}${isActive ? ' selected' : ''}${oosNote}"></div>`
-    }).join('') + (showTrailingCount && product.colours.length > 1
-      ? `<span class="pos-sku-swatch-count" aria-hidden="true">${product.colours.length}</span>`
+    }).join('') + (showTrailingCount && colours.length > 1
+      ? `<span class="pos-sku-swatch-count" aria-hidden="true">${colours.length}</span>`
       : '')
+  }
+
+  function buildPowerPills(product, activeColour) {
+    const powers = getPowersForColour(product.colours, activeColour)
+    return powers.map(function (c) {
+      const isActive = c.sku_id === activeColour.sku_id
+      const label = escapeHtml(String(c.power || '').trim())
+      const oos = Number(c.store_qty || 0) <= 0
+      const oosNote = oos ? ' — out of stock at this store' : ''
+      return `<div class="pos-pdp-power-pill${isActive ? ' active' : ''}${oos ? ' pos-pdp-power-pill--oos' : ''}"
+        data-sku-id="${c.sku_id}"
+        tabindex="0"
+        role="button"
+        aria-label="${label}${isActive ? ' selected' : ''}${oosNote}">${label}</div>`
+    }).join('')
   }
 
   function renderPdpColourSwatches(session, product, colour) {
@@ -2444,11 +2594,14 @@
     const wrap = document.getElementById('pos-pdp-colour-swatches')
     const nameEl = document.getElementById('pos-pdp-colour-name')
     if (!wrap || !block) return
-    if (!product || !product.colours || product.colours.length < 2) {
+    const uniqueColours = isReaderProduct(product) ? getUniqueReaderColours(product.colours) : (product.colours || [])
+    if (!product || !product.colours || uniqueColours.length < 2) {
       wrap.innerHTML = ''
-      if (nameEl) nameEl.textContent = ''
-      block.hidden = true
-      return
+      if (nameEl) nameEl.textContent = uniqueColours.length === 1
+        ? (String(uniqueColours[0].colour_name || '').trim() || 'Selected colour')
+        : ''
+      block.hidden = uniqueColours.length < 2
+      if (uniqueColours.length < 2) return
     }
     block.hidden = false
     wrap.innerHTML = buildSwatches(product, colour.sku_id, { showTrailingCount: false })
@@ -2458,9 +2611,13 @@
         e.preventDefault()
         e.stopPropagation()
         const sid = Number(sw.getAttribute('data-sku-id'))
-        const c = product.colours.find(function (x) { return x.sku_id === sid })
-        if (!c) return
-        if (Number(c.store_qty || 0) <= 0) {
+        const rep = product.colours.find(function (x) { return x.sku_id === sid })
+        if (!rep) return
+        const preferredPower = colour && colour.power ? colour.power : null
+        const c = isReaderProduct(product)
+          ? resolveReaderColourSku(product, rep, preferredPower)
+          : rep
+        if (isReaderProduct(product) ? !readerColourHasStock(product, c) : Number(c.store_qty || 0) <= 0) {
           if (typeof cosmosToastWarn === 'function') {
             cosmosToastWarn('This colour is not available at this store.')
           }
@@ -2477,6 +2634,56 @@
         if (e.key !== 'Enter' && e.key !== ' ') return
         e.preventDefault()
         sw.click()
+      })
+    })
+  }
+
+  function renderPdpPowerPills(session, product, colour) {
+    const block = document.getElementById('pos-pdp-power-block')
+    const wrap = document.getElementById('pos-pdp-power-pills')
+    const nameEl = document.getElementById('pos-pdp-power-name')
+    if (!wrap || !block) return
+    if (!isReaderProduct(product) || !colour) {
+      wrap.innerHTML = ''
+      if (nameEl) nameEl.textContent = ''
+      block.hidden = true
+      return
+    }
+    const powers = getPowersForColour(product.colours, colour)
+    if (!powers.length) {
+      wrap.innerHTML = ''
+      if (nameEl) nameEl.textContent = ''
+      block.hidden = true
+      return
+    }
+    block.hidden = false
+    wrap.innerHTML = buildPowerPills(product, colour)
+    const powerLabel = String(colour.power || '').trim()
+    if (nameEl) nameEl.textContent = powerLabel ? (powerLabel + ' selected') : ''
+    wrap.querySelectorAll('.pos-pdp-power-pill').forEach(function (pill) {
+      pill.addEventListener('click', function (e) {
+        e.preventDefault()
+        e.stopPropagation()
+        const sid = Number(pill.getAttribute('data-sku-id'))
+        const c = product.colours.find(function (x) { return x.sku_id === sid })
+        if (!c) return
+        if (Number(c.store_qty || 0) <= 0) {
+          if (typeof cosmosToastWarn === 'function') {
+            cosmosToastWarn('This power is not available at this store.')
+          }
+          return
+        }
+        selectedProductId = [product.product_id, c.sku_id]
+        pendingOrderSelection = { colour: c, product: product }
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({}, '', productRoute(product.product_id, c.sku_id))
+        }
+        void showProductPageScreen(session || getPosSession())
+      })
+      pill.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        pill.click()
       })
     })
   }
@@ -2506,26 +2713,29 @@
       card.setAttribute('role', 'button')
       const titleLine = formatProductBrandCollectionModel(product)
       const subtitleLine = catalogProductSubtitle(product, titleLine)
-      const colourCountBit = product.colours.length > 1
-        ? (product.colours.length + ' colours')
-        : ''
+      const uniqueReaderColours = isReaderProduct(product) ? getUniqueReaderColours(product.colours) : product.colours
+      const colourCountBit = isReaderProduct(product)
+        ? readerCatalogueBadge(product)
+        : (product.colours.length > 1 ? (product.colours.length + ' colours') : '')
       card.setAttribute('aria-label', [titleLine, subtitleLine, colourCountBit].filter(Boolean).join(' — '))
       card.setAttribute('tabindex', '0')
       card.dataset.productId = String(product.product_id)
 
-      const displayColour = Number(activeColour.store_qty || 0) > 0
-        ? activeColour
-        : (product.colours.find(function (c) { return Number(c.store_qty || 0) > 0 }) || activeColour)
+      const displayColour = isReaderProduct(product)
+        ? resolveReaderColourSku(product, activeColour, activeColour && activeColour.power)
+        : (Number(activeColour.store_qty || 0) > 0
+          ? activeColour
+          : (product.colours.find(function (c) { return Number(c.store_qty || 0) > 0 }) || activeColour))
       card.dataset.skuId = String(displayColour.sku_id)
       const swatchActiveId = (selectedProductId && selectedProductId[0] === product.product_id)
         ? activeColour.sku_id
         : displayColour.sku_id
 
-      const swatchRow = product.colours.length > 1
+      const swatchRow = (isReaderProduct(product) ? uniqueReaderColours.length > 1 : product.colours.length > 1)
         ? `<div class="pos-lk-cat-swatches pos-sku-swatches" role="group" aria-label="Colours in stock">${buildSwatches(product, swatchActiveId, { showTrailingCount: false })}</div>`
         : ''
-      const variantBadge = product.colours.length > 1
-        ? `<span class="pos-lk-cat-variant-badge" aria-hidden="true">${product.colours.length} colours</span>`
+      const variantBadge = colourCountBit
+        ? `<span class="pos-lk-cat-variant-badge" aria-hidden="true">${escapeHtml(colourCountBit)}</span>`
         : ''
 
       const subtitleInner = subtitleLine
@@ -2549,9 +2759,12 @@
       `
 
       function openProductFor(c) {
-        selectedProductId = [product.product_id, c.sku_id]
-        pendingOrderSelection = { colour: c, product: product }
-        navigate(productRoute(product.product_id, c.sku_id))
+        const resolved = isReaderProduct(product)
+          ? resolveReaderColourSku(product, c, c && c.power)
+          : c
+        selectedProductId = [product.product_id, resolved.sku_id]
+        pendingOrderSelection = { colour: resolved, product: product }
+        navigate(productRoute(product.product_id, resolved.sku_id))
       }
 
       card.querySelectorAll('.pos-sku-swatch').forEach(function (sw) {
@@ -2560,9 +2773,12 @@
           e.stopPropagation()
           if (!hasStock) return
           const sid = Number(sw.getAttribute('data-sku-id'))
-          const c = product.colours.find(function (x) { return x.sku_id === sid })
-          if (!c) return
-          if (Number(c.store_qty || 0) <= 0) {
+          const rep = product.colours.find(function (x) { return x.sku_id === sid })
+          if (!rep) return
+          const c = isReaderProduct(product)
+            ? resolveReaderColourSku(product, rep, null)
+            : rep
+          if (isReaderProduct(product) ? !readerColourHasStock(product, c) : Number(c.store_qty || 0) <= 0) {
             if (typeof cosmosToastWarn === 'function') {
               cosmosToastWarn('This colour is not available at this store.')
             }
@@ -2888,6 +3104,7 @@
       product_name: row.product_name || row.sku_code || 'Product',
       brand_name: row.brand_name || '',
       colour_name: row.colour_name || '',
+      reading_power: row.reading_power || row.power || null,
       product_type: row.product_type || '',
       frame_unit_price: Number(row.sale_price) || 0,
       mrp: Number(row.sale_price) || 0,
@@ -3380,12 +3597,15 @@
       inStoreEl.style.display = ''
     }
     renderPdpColourSwatches(sess, product, colour)
+    renderPdpPowerPills(sess, product, colour)
     const showWizard = lensWizardAllowed(product.product_type)
     var pdpHint = document.querySelector('#screen-pos-product .pos-lk-step-hint')
     if (pdpHint) {
       pdpHint.textContent = showWizard
         ? 'Step 1: review product details and tap Select Lenses.'
-        : 'Review details and add this frame to your cart.'
+        : isReaderProduct(product)
+          ? 'Choose colour and power, then add to cart.'
+          : 'Review details and add this frame to your cart.'
     }
     if (btnPdpSelectLens) {
       btnPdpSelectLens.style.display = ''
@@ -3471,20 +3691,33 @@
   function syncCustomerPickerBannerAndActions() {
     var banner = document.getElementById('cust-picker-banner')
     var doneBtn = document.getElementById('cust-picker-btn-done')
+    var clearBtn = document.getElementById('cust-picker-btn-clear')
     if (banner) {
+      banner.classList.remove('pos-cust-picker-banner--required', 'pos-cust-picker-banner--selected')
       if (posSelectedCustomerSnapshot) {
         var ph = posSelectedCustomerSnapshot.phone ? ' · ' + posSelectedCustomerSnapshot.phone : ''
         banner.textContent = 'Selected: ' + posSelectedCustomerSnapshot.full_name + ph
+        banner.classList.add('pos-cust-picker-banner--selected')
       } else if (posSelectedCustomerId) {
-        banner.textContent = 'Selected customer id: ' + posSelectedCustomerId
+        banner.textContent = 'Selected Cx id: ' + posSelectedCustomerId
+        banner.classList.add('pos-cust-picker-banner--selected')
       } else {
-        banner.textContent = 'Customer required before payment.'
+        banner.textContent = 'Cx required before payment.'
+        banner.classList.add('pos-cust-picker-banner--required')
       }
     }
+    if (clearBtn) clearBtn.hidden = !(posSelectedCustomerId && posSelectedCustomerId > 0)
     if (doneBtn) {
       doneBtn.textContent = 'Continue to cart'
       doneBtn.disabled = !posSelectedCustomerId
     }
+  }
+
+  function customerPickerInitials(name) {
+    var parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+    if (!parts.length) return '?'
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase()
   }
 
   function closePosCustomerPickerModal() {
@@ -3539,17 +3772,45 @@
       if (!wrap) return
       wrap.innerHTML = ''
       if (!rows.length) {
-        wrap.innerHTML = '<div class="pos-empty-sub">No customers found.</div>'
+        wrap.innerHTML = ''
+        var empty = document.createElement('div')
+        empty.className = 'pos-cust-picker-empty'
+        var msg = document.createElement('div')
+        msg.className = 'pos-empty-sub'
+        var mobileSearch = isLikelyMobileSearchQuery(q)
+        msg.textContent = mobileSearch ? 'No Cx found for this mobile.' : 'No Cx found.'
+        empty.appendChild(msg)
+        if (mobileSearch) {
+          var digits = normalizeIndiaMobileDigits(q)
+          var quickBtn = document.createElement('button')
+          quickBtn.type = 'button'
+          quickBtn.className = 'pos-cust-picker-quick-reg-btn'
+          quickBtn.textContent = 'Quick Cx registration'
+          quickBtn.setAttribute('aria-label', 'Open Quick Cx registration')
+          quickBtn.addEventListener('click', function () {
+            openQuickCxRegistration(digits.slice(0, 10))
+          })
+          empty.appendChild(quickBtn)
+        }
+        wrap.appendChild(empty)
         return
       }
       rows.forEach(function (r) {
         const btn = document.createElement('button')
         btn.type = 'button'
-        btn.className = 'pos-cust-row tr-link'
-        btn.innerHTML = '<span>' + (r.full_name || '') + '</span><span>' + (r.phone || '') + '</span>'
+        btn.className = 'pos-cust-row pos-cust-picker-row tr-link'
+        btn.setAttribute('role', 'listitem')
+        var cid = r.customer_id != null ? String(r.customer_id) : ''
+        var sub = [r.phone || '', cid ? ('ID ' + cid) : ''].filter(Boolean).join(' · ')
+        btn.innerHTML =
+          '<span class="pos-cust-picker-row-av" aria-hidden="true">' + escapeHtml(customerPickerInitials(r.full_name)) + '</span>' +
+          '<span class="pos-cust-picker-row-body">' +
+            '<span class="pos-cust-picker-row-name">' + escapeHtml(r.full_name || '') + '</span>' +
+            (sub ? '<span class="pos-cust-picker-row-sub">' + escapeHtml(sub) + '</span>' : '') +
+          '</span>'
         btn.addEventListener('click', function () {
           setPosCustomerSelection(r.customer_id, r.full_name, r.phone)
-          if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Customer selected')
+          if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx selected')
           syncCustomerPickerBannerAndActions()
           leaveCustomerScreenToCart()
         })
@@ -3591,7 +3852,7 @@
       }, session.token)
       setPosCustomerSelection(res.data.customer_id, name, phoneParsed.phone)
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
-      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Customer created')
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx created')
       leaveCustomerScreenToCart()
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
@@ -3697,13 +3958,7 @@
       })
     }
     const btnConfirmEmail = document.getElementById('btn-confirm-email-invoice')
-    if (btnConfirmEmail) {
-      btnConfirmEmail.addEventListener('click', function () {
-        if (typeof cosmosToastInfo === 'function') {
-          cosmosToastInfo('Email invoice will be available when SMTP is configured in Command Unit.')
-        }
-      })
-    }
+    /* btn-confirm-email-invoice: data-cosmos-coming-soon on HTML — bound by cosmos-ui-polish.js */
     const btnConfirmInvToggle = document.getElementById('btn-confirm-invoice-toggle')
     if (btnConfirmInvToggle) {
       btnConfirmInvToggle.addEventListener('click', function () {
@@ -3987,7 +4242,7 @@
 
   // ── Lens step 2 — Pencil 04-add-power: customer card + 4 power options ───
   function refreshLensCustomerBanner() {
-    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected customer #' + posSelectedCustomerId : 'No customer selected')
+    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected Cx #' + posSelectedCustomerId : 'No Cx selected')
     const nameEl = document.getElementById('pos-lk-customer-name')
     const av = document.querySelector('#pos-lk-customer-card .pos-lk-customer-avatar')
     if (nameEl) nameEl.textContent = customerName
@@ -3995,7 +4250,7 @@
   }
 
   function renderLensStep2AddPower(body) {
-    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected customer #' + posSelectedCustomerId : 'No customer selected')
+    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected Cx #' + posSelectedCustomerId : 'No Cx selected')
     const initial = customerName ? customerName.trim().charAt(0).toUpperCase() : '?'
     const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
     const hasPkgAddons = !isInstantFrame && lensWizard.pkg && (lensWizard.pkg.addons || []).length
@@ -4020,11 +4275,11 @@
 
       html.push('<div class="pos-lk-cust-dropdown" id="pos-lk-cust-dropdown" style="display:none">' +
         '<div class="pos-search-input-wrap">' +
-          '<input id="pos-lk-cust-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Search by phone or name" aria-label="Search customers">' +
+          '<input id="pos-lk-cust-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Search by phone or name" aria-label="Search Cx">' +
           '<button type="button" id="pos-lk-cust-btn" class="pos-search-btn">Search</button>' +
         '</div>' +
         '<div class="pos-lk-cust-results" id="pos-lk-cust-results"></div>' +
-        '<div style="font-size:12px;color:var(--text2);margin-top:4px">Search by phone or name (at least 2–3 digits or the start of a name). A customer is required before payment.</div>' +
+        '<div style="font-size:12px;color:var(--text2);margin-top:4px">Search by phone or name (at least 2–3 digits or the start of a name). A Cx is required before payment.</div>' +
       '</div>')
     }
 
@@ -4046,7 +4301,7 @@
           '<div class="pos-lk-addon-card">' + addonRows + '</div>' +
         '</div>'
       )
-      html.push('<p class="pos-lk-addon-next-hint">Use <strong>Next</strong> (footer) for customer &amp; prescription.</p>')
+      html.push('<p class="pos-lk-addon-next-hint">Use <strong>Next</strong> (footer) for Cx &amp; prescription.</p>')
     } else if (showProfile && hasPkgAddons) {
       const selNames = (lensWizard.pkg.addons || []).filter(function (a) {
         return lensWizard.addonIds.indexOf(Number(a.id)) >= 0
@@ -4074,7 +4329,7 @@
 
         html.push('<div class="pos-lk-section-lbl">I know my power</div>')
         html.push('<div class="pos-lk-know-power-region" role="group" aria-label="Power source options">')
-        html.push(buildPowerCard('saved',   '🔖', '#2563EB', 'Saved Power',           '3 saved prescriptions for this customer'))
+        html.push(buildPowerCard('saved',   '🔖', '#2563EB', 'Saved Power',           '3 saved prescriptions for this Cx'))
         html.push(buildPowerCard('manual',  '✎',  '#7C3AED', 'Enter Power Manually',  'SPH / CYL / AXIS'))
         if (lensWizard.powerMode === 'manual') {
           html.push(
@@ -4282,8 +4537,8 @@
     }
     if (subEl) {
       subEl.textContent = q
-        ? ('No match for “' + q.slice(0, 48) + (q.length > 48 ? '…' : '') + '”. Add a new customer to link to this order.')
-        : 'Add a new customer to link to this order.'
+        ? ('No match for “' + q.slice(0, 48) + (q.length > 48 ? '…' : '') + '”. Add a new Cx to link to this order.')
+        : 'Add a new Cx to link to this order.'
     }
     if (!overlay) return
     var wasOpen = overlay.classList.contains('open')
@@ -4331,7 +4586,7 @@
       refreshLensCustomerBanner()
       const dd = document.getElementById('pos-lk-cust-dropdown')
       if (dd) dd.style.display = 'none'
-      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Customer created and linked.')
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx created and linked.')
       maybeRefreshCartSidebar()
     } catch (err) {
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
@@ -4352,8 +4607,8 @@
       wrap.innerHTML = ''
       if (!rows.length) {
         wrap.innerHTML =
-          '<div class="pos-empty-sub">No customers found.</div>' +
-          '<button type="button" class="pos-lk-text-link" style="display:block;margin-top:10px" id="pos-lk-open-add-cust-modal">Add new customer</button>'
+          '<div class="pos-empty-sub">No Cx found.</div>' +
+          '<button type="button" class="pos-lk-text-link" style="display:block;margin-top:10px" id="pos-lk-open-add-cust-modal">Quick Cx registration</button>'
         const reopen = document.getElementById('pos-lk-open-add-cust-modal')
         if (reopen) reopen.addEventListener('click', function () { openLensNewCustomerModal(q) })
         openLensNewCustomerModal(q)
@@ -4373,7 +4628,7 @@
           if (av) av.textContent = (nm || 'C').charAt(0).toUpperCase()
           const dd = document.getElementById('pos-lk-cust-dropdown')
           if (dd) dd.style.display = 'none'
-          if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Customer selected')
+          if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx selected')
           maybeRefreshCartSidebar()
         })
         wrap.appendChild(btn)
@@ -4970,7 +5225,7 @@
         if (typeof cosmosToastSuccess === 'function') {
           const mid = created && created.membership_id != null ? Number(created.membership_id) : 0
           if (mid > 0) {
-            cosmosToastSuccess('Payment recorded — membership is now active on this customer.')
+            cosmosToastSuccess('Payment recorded — membership is now active on this Cx.')
           } else {
             cosmosToastSuccess('Order created and payment recorded')
           }
@@ -5166,7 +5421,7 @@
     if (emailInvBtn) {
       emailInvBtn.disabled = !isInstantInvoiced || !hasEmail
       emailInvBtn.style.opacity = (isInstantInvoiced && hasEmail) ? '1' : '0.4'
-      emailInvBtn.title = hasEmail ? 'Email invoice to customer' : 'Customer email required'
+      emailInvBtn.title = hasEmail ? 'Email invoice to Cx' : 'Cx email required'
     }
 
     // WhatsApp button
@@ -5188,7 +5443,7 @@
       } else {
         waBtn.disabled = true
         waBtn.style.opacity = '0.4'
-        waBtn.title = 'No customer phone number on this order'
+        waBtn.title = 'No Cx phone number on this order'
       }
     }
     showScreen('screen-pos-confirm')
@@ -5335,7 +5590,6 @@
         Object.assign(posSkuScopeFacts, data)
       }
       obRecalcTotals()
-      scheduleServerDiscountPreview(session)
     }).catch(function() { /* silently ignore — scope facts are best-effort for client filter */ })
   }
 
@@ -5467,10 +5721,22 @@
       posServerDiscountPreview = null
       if (gen === posDiscountPreviewSeq) {
         refreshPosOfferPickVisuals()
-        obRecalcTotals()
+        obRecalcTotals({ skipPreviewSchedule: true })
       }
       return
     }
+    if (
+      posServerDiscountPreview &&
+      posServerDiscountPreview.cartSig === sig &&
+      gen === posDiscountPreviewSeq
+    ) {
+      refreshPosOfferPickVisuals()
+      obRecalcTotals({ skipPreviewSchedule: true })
+      return
+    }
+    if (posDiscountPreviewInFlight && posDiscountPreviewInFlightSig === sig) return
+    posDiscountPreviewInFlight = true
+    posDiscountPreviewInFlightSig = sig
     try {
       var qp = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
       var payload = { lines: lines, applied_offer_id: selId }
@@ -5492,10 +5758,15 @@
         posDiscountPreviewSeq++
         if (typeof cosmosToastWarn === 'function') cosmosToastWarn(msg)
       }
+    } finally {
+      if (gen === posDiscountPreviewSeq && posDiscountPreviewInFlightSig === sig) {
+        posDiscountPreviewInFlight = false
+        posDiscountPreviewInFlightSig = null
+      }
     }
     if (gen === posDiscountPreviewSeq) {
       refreshPosOfferPickVisuals()
-      obRecalcTotals()
+      obRecalcTotals({ skipPreviewSchedule: true })
     }
   }
 
@@ -5527,7 +5798,8 @@
     return { amount: amt, offerId: sid }
   }
 
-  function obRecalcTotals() {
+  function obRecalcTotals(opts) {
+    opts = opts || {}
     const productSubtotal = obCart.reduce(function (sum, line) {
       return sum + computeLineDisplayUnit(line) * line.qty
     }, 0)
@@ -5579,8 +5851,20 @@
       }
     }
     const sessionRecalc = getPosSession()
-    if (sessionRecalc && sessionRecalc.token && cartHasCheckoutContent()) {
-      scheduleServerDiscountPreview(sessionRecalc)
+    if (
+      !opts.skipPreviewSchedule &&
+      sessionRecalc &&
+      sessionRecalc.token &&
+      cartHasCheckoutContent() &&
+      hasSel
+    ) {
+      const previewFresh =
+        posServerDiscountPreview && posServerDiscountPreview.cartSig === sig
+      const previewPending =
+        posDiscountPreviewInFlight && posDiscountPreviewInFlightSig === sig
+      if (!previewFresh && !previewPending) {
+        scheduleServerDiscountPreview(sessionRecalc)
+      }
     }
     syncCartBillBenefitBox()
     syncCartAppliedOfferCard()
@@ -5639,9 +5923,11 @@
       ? (frameStrike + '<span class="pos-lk-cart-price-now">' + formatRupees(frameUnit) + '</span>')
       : formatRupees(frameUnit)
 
-    // Colour chip inline with product name
-    const colourChip = colourName
-      ? '<span class="pos-lk-cart-colour-chip">' + escapeHtml(colourName) + '</span>'
+    // Colour chip inline with product name (Readers: colour · power)
+    const powerName = String(line.reading_power || '').trim()
+    const colourChipLabel = [colourName, powerName].filter(Boolean).join(' · ')
+    const colourChip = colourChipLabel
+      ? '<span class="pos-lk-cart-colour-chip">' + escapeHtml(colourChipLabel) + '</span>'
       : ''
 
     const typeTagLabel = formatCartProductTypeTag(line)
@@ -5941,6 +6227,7 @@
       product_name: product.product_name,
       brand_name: product.brand_name,
       colour_name: colour.colour_name,
+      reading_power: colour.power || null,
       product_type: product.product_type || '',
       frame_unit_price: colour.sale_price || 0,
       mrp: Number(colour.mrp) > 0 ? Number(colour.mrp) : (Number(colour.sale_price) || 0),
@@ -6035,7 +6322,7 @@
       btnCartAddMembership.addEventListener('click', function () {
         if (!posSelectedCustomerId) {
           if (typeof cosmosToastWarn === 'function') {
-            cosmosToastWarn('Select a customer before adding membership.')
+            cosmosToastWarn('Select a Cx before adding membership.')
           }
           openPosCustomerPickerModal()
           return
@@ -6088,22 +6375,19 @@
       setCartCouponOverlayOpen(false)
     })
     setCartCouponOverlayOpen(false)
-    if (btnCartCustomerChange) {
-      btnCartCustomerChange.addEventListener('click', function () {
+    if (btnCartCustomerAction) {
+      btnCartCustomerAction.addEventListener('click', function () {
         openPosCustomerPickerModal()
       })
     }
-    if (btnCartCustomerSearch) {
-      btnCartCustomerSearch.addEventListener('click', function () {
-        openPosCustomerPickerModal()
+    var btnCartCxClear = document.getElementById('btn-cart-cx-clear')
+    if (btnCartCxClear) {
+      btnCartCxClear.addEventListener('click', function () {
+        clearPosCustomerSelection()
+        if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Cx cleared from this bill.')
       })
     }
-    const btnIns = document.getElementById('btn-cart-apply-insurance')
-    if (btnIns) {
-      btnIns.addEventListener('click', function () {
-        if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Eyewoot Secure benefits are not enabled for this store yet.')
-      })
-    }
+    /* btn-cart-apply-insurance: data-cosmos-coming-soon on HTML — bound by cosmos-ui-polish.js */
   }
 
   async function savePosCheckoutDraft(btn) {
@@ -6268,10 +6552,10 @@
     }
     if (!posSelectedCustomerId) {
       if (typeof cosmosToastWarn === 'function') {
-        cosmosToastWarn('Select or create a customer before payment.')
+        cosmosToastWarn('Select or create a Cx before payment.')
       }
-      const custBody = document.getElementById('pos-lk-cart-customer-body')
-      if (custBody) custBody.classList.add('pos-lk-cart-cust--required')
+      const custCard = document.getElementById('pos-lk-cart-customer-card')
+      if (custCard) custCard.classList.add('pos-lk-cart-cust--required')
       openPosCustomerPickerModal()
       return
     }
@@ -6407,7 +6691,7 @@
     const key = String(queueKey || 'ACTIVE').trim().toUpperCase()
     const cat = window.posOrderQueueCatalog
     if (cat && cat.emptyCopy && cat.emptyCopy[key]) return cat.emptyCopy[key]
-    return { title: 'No orders found', subtext: 'Try another tab or search by order number, customer name, or phone.' }
+    return { title: 'No orders found', subtext: 'Try another tab or search by order number, Cx name, or phone.' }
   }
 
   function posFormatIstDateTime(iso) {
@@ -6456,7 +6740,7 @@
     const pays = Array.isArray(d.payments) ? d.payments : []
     const summary = d.payment_summary || {}
     const rxHtml = posFormatRxBlockHtml(order.rx_snapshot)
-    const custName = cust && cust.full_name ? cust.full_name : 'Walk-in Customer'
+    const custName = cust && cust.full_name ? cust.full_name : 'Walk-in'
     const custPhone = cust && cust.phone ? cust.phone : ''
     const custEmail = cust && cust.email ? cust.email : ''
 
@@ -6553,7 +6837,7 @@
       '<div class="pos-order-detail-total">₹' + Number(order.total_amount || 0).toLocaleString('en-IN') + ' <span class="pos-order-detail-muted">incl. totals</span></div>' +
       '</section>' +
       '<section class="pos-order-detail-card">' +
-      '<div class="pos-order-detail-k">Customer</div>' +
+      '<div class="pos-order-detail-k">Cx</div>' +
       '<div class="pos-order-detail-cust-name">' + escapeHtml(custName) + '</div>' +
       (custPhone ? '<div class="pos-order-detail-cust-row">' + escapeHtml(custPhone) + '</div>' : '') +
       (custEmail ? '<div class="pos-order-detail-cust-row">' + escapeHtml(custEmail) + '</div>' : '') +
@@ -6864,7 +7148,7 @@
     const sub = document.getElementById('pay-delivery-sub')
     if (storeBtn) { storeBtn.classList.toggle('active', mode === 'STORE'); storeBtn.setAttribute('aria-pressed', mode === 'STORE') }
     if (homeBtn) { homeBtn.classList.toggle('active', mode === 'HOME'); homeBtn.setAttribute('aria-pressed', mode === 'HOME') }
-    if (sub) sub.textContent = mode === 'HOME' ? 'Delivery address from customer profile' : 'Customer picks up at store'
+    if (sub) sub.textContent = mode === 'HOME' ? 'Delivery address from Cx profile' : 'Cx picks up at store'
   }
 
   function posHandoverEscAttr(s) {
@@ -6971,7 +7255,7 @@
         waBtn.disabled = true
         waBtn.style.opacity = '0.4'
         waBtn.onclick = null
-        waBtn.title = 'No customer phone on file'
+        waBtn.title = 'No Cx phone on file'
       }
     }
     if (printBtn) {
@@ -7290,7 +7574,7 @@
       '<button type="button" class="pos-handover-invoice-toggle" id="pos-handover-invoice-toggle" onclick="togglePosHandoverInvoicePanel()" aria-expanded="false">' +
       'Invoice / bill details <span class="pos-handover-chevron">▾</span></button>' +
       '<div id="pos-handover-invoice-fields" class="pos-handover-invoice-fields" aria-hidden="true">' +
-      '<p class="pos-handover-muted" style="margin:0 0 10px">Prefilled from customer profile. Edit before handover if the bill should read differently.</p>' +
+      '<p class="pos-handover-muted" style="margin:0 0 10px">Prefilled from Cx profile. Edit before handover if the bill should read differently.</p>' +
       '<label class="pos-handover-label" for="pos-handover-bill-name">Bill name</label>' +
       '<input id="pos-handover-bill-name" class="pos-handover-input" type="text" value="' + posHandoverEscAttr(billName) + '">' +
       '<label class="pos-handover-label" for="pos-handover-gstin">GSTIN</label>' +
@@ -7357,7 +7641,7 @@
     const payments = detail && Array.isArray(detail.payments) ? detail.payments : []
     const storeMeta = detail && detail.store ? detail.store : {}
     const ps = posSettings || {}
-    const billName = String(p.bill_name || '').trim() || String(customer.full_name || '').trim() || 'Walk-in Customer'
+    const billName = String(p.bill_name || '').trim() || String(customer.full_name || '').trim() || 'Walk-in'
     const custGstin = String(p.gstin || '').trim()
     const billingAddr = String(p.billing_address || '').trim()
     const notesVal = String(p.notes || '').trim()
@@ -7511,7 +7795,7 @@
       '<div class="inv-meta"><strong>Order ref.</strong> ' + escapeHtml(inv.order_no) + '</div>' +
       '<div class="inv-meta"><strong>Date</strong> ' + escapeHtml(dt) + '</div></div></header>' +
       '<div class="party">' +
-      '<section class="party-card"><div class="party-label">Customer</div>' +
+      '<section class="party-card"><div class="party-label">Cx</div>' +
       '<div class="party-name">' + escapeHtml(inv.bill_name) + '</div>' +
       (inv.customer_phone ? '<div class="party-sub">' + escapeHtml(inv.customer_phone) + '</div>' : '') +
       custGstRow + billAddrBlock + notesBlock + '</section>' +
@@ -7528,7 +7812,7 @@
       '<div class="' + balanceClass + '"><span>Balance</span><span>' + escapeHtml(formatRupeesDecimals(inv.balance)) + '</span></div>' +
       '</div></div>' +
       '<div class="pay-block"><strong>Payment:</strong> ' + escapeHtml(inv.payment_method) + '</div>' +
-      '<div class="sig"><div><span class="sig-line">Customer sign.</span></div>' +
+      '<div class="sig"><div><span class="sig-line">Cx sign.</span></div>' +
       '<div style="text-align:right"><div>For <strong>' + escapeHtml(inv.store_name) + '</strong></div>' +
       '<span class="sig-line">Authorised signatory</span></div></div>' +
       '<p class="foot">' + policyHtml +
@@ -7701,10 +7985,18 @@
     custBackdrop && custBackdrop.addEventListener('click', closePosCustomerPickerModal)
     custDismiss && custDismiss.addEventListener('click', closePosCustomerPickerModal)
     custCancel && custCancel.addEventListener('click', closePosCustomerPickerModal)
+    var custClearBtn = document.getElementById('cust-picker-btn-clear')
+    if (custClearBtn) {
+      custClearBtn.addEventListener('click', function () {
+        clearPosCustomerSelection()
+        if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Cx selection cleared.')
+        syncCustomerPickerBannerAndActions()
+      })
+    }
     custDone && custDone.addEventListener('click', function () {
       if (!posSelectedCustomerId) {
         if (typeof cosmosToastWarn === 'function') {
-          cosmosToastWarn('Select or create a customer before continuing.')
+          cosmosToastWarn('Select or create a Cx before continuing.')
         }
         syncCustomerPickerBannerAndActions()
         return
@@ -7883,6 +8175,7 @@
     bindCheckout5NavOnce()
     loadSavedCart()
     syncCartMembershipUi()
+    renderCartCustomerRef()
     bindPosLensNewCustomerModal()
     document.addEventListener('visibilitychange', function onPosVisibilityRefresh() {
       if (document.visibilityState !== 'visible') return
