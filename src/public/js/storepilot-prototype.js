@@ -1706,6 +1706,18 @@ const TR_STATUS_LABEL = {
   REJECTED:             'Rejected'
 };
 
+const SP_DIRECT_DOC_STATUS_BADGE = {
+  DISPATCHED: 'b-orange',
+  ACCEPTED:   'b-blue',
+  STOCKED:    'b-green'
+};
+
+const SP_DIRECT_DOC_STATUS_LABEL = {
+  DISPATCHED: 'Dispatched',
+  ACCEPTED:   'At store',
+  STOCKED:    'Stocked at store'
+};
+
 function trLineCap(line) {
   if (line.approved_qty != null && Number(line.approved_qty) > 0) return Number(line.approved_qty);
   return Math.max(0, Number(line.requested_qty) || 0);
@@ -1853,6 +1865,90 @@ function spRefreshAfterIncomingAction() {
   }
 }
 
+function spIsDirectTransferDoc(d) {
+  if (!d) return false;
+  const t = String(d.doc_type || '').toUpperCase();
+  if (t !== 'DIRECT') return false;
+  const src = d.source_request_id;
+  return src == null || src === '' || Number(src) <= 0;
+}
+
+function spDirectDocMatchesRequestFilter(doc, filterKey) {
+  const f = filterKey == null ? '' : String(filterKey);
+  if (!f) return true;
+  const st = String(doc.status || '').toUpperCase();
+  if (f === 'DISPATCHED') return st === 'DISPATCHED';
+  if (f === 'PARTIALLY_RECEIVED') return st === 'ACCEPTED';
+  if (f === 'RECEIVED') return st === 'STOCKED';
+  return false;
+}
+
+function spDirectDocBadgeHtml(doc) {
+  const st = String(doc.status || '');
+  const cls = SP_DIRECT_DOC_STATUS_BADGE[st] || 'b-gray';
+  const label = SP_DIRECT_DOC_STATUS_LABEL[st] || st || '—';
+  return '<span class="b b-purple">HQ direct</span> <span class="b ' + cls + '">' + escHtml(label) + '</span>';
+}
+
+window.loadSpDirectInboundTransfers = async function () {
+  const wrap = document.getElementById('sp-direct-transfers-wrap');
+  const errEl = document.getElementById('sp-direct-err');
+  if (!wrap) return;
+  if (errEl) errEl.textContent = '';
+
+  const requestOnlyFilter = _spTrFilter && ['SUBMITTED', 'APPROVED', 'REJECTED'].indexOf(_spTrFilter) >= 0;
+
+  if (requestOnlyFilter) {
+    wrap.innerHTML = '<div class="empty-state" style="padding:24px 20px"><div class="empty-ic">🚚</div>' +
+      '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No direct transfers in this filter</div>' +
+      '<div style="font-size:13px;color:var(--text2)">Switch to <strong>All</strong> or <strong>Dispatched</strong> to see HQ direct inbound transfers.</div></div>';
+    return;
+  }
+
+  try {
+    const qs = new URLSearchParams({ top_n: 100 });
+    const stFilter = _spTrFilter === 'DISPATCHED' ? 'DISPATCHED'
+      : _spTrFilter === 'RECEIVED' ? 'STOCKED'
+      : _spTrFilter === 'PARTIALLY_RECEIVED' ? 'ACCEPTED'
+      : null;
+    if (stFilter) qs.set('status', stFilter);
+
+    const raw = await apiGet('/api/stock-transfer-docs?' + qs.toString());
+    const all = Array.isArray(raw) ? raw : (raw.data || []);
+    const rows = all.filter(function (d) {
+      return spIsDirectTransferDoc(d) && spDirectDocMatchesRequestFilter(d, _spTrFilter);
+    });
+
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="empty-state" style="padding:28px 20px"><div class="empty-ic">📦</div>' +
+        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No HQ direct transfers</div>' +
+        '<div style="font-size:13px;color:var(--text2)">When HQ dispatches stock to your store without a request, it appears here for accept and stocking.</div></div>';
+      return;
+    }
+
+    wrap.innerHTML = rows.map(function (d) {
+      const lines = (d.line_count || 0) + ' line' + ((d.line_count || 0) !== 1 ? 's' : '');
+      const qty = d.total_qty_sent != null ? ' · ' + d.total_qty_sent + ' pcs' : '';
+      const dateLabel = fmtDate(d.dispatched_at || d.created_at);
+      if (!window.cosmosRecordRow) {
+        return '<div class="cosmos-record-row tr-link" onclick="expandIncTransfer(' + d.doc_id + ')">Direct #' + d.doc_id + '</div>';
+      }
+      return window.cosmosRecordRow.html({
+        primary: 'Direct transfer #' + d.doc_id,
+        secondary: dateLabel + ' · ' + lines + qty,
+        badgeHtml: spDirectDocBadgeHtml(d),
+        onClick: 'expandIncTransfer(' + d.doc_id + ')',
+        ariaLabel: 'Open direct transfer ' + d.doc_id
+      });
+    }).join('');
+  } catch (err) {
+    const msg = err.message || 'Failed to load direct transfers';
+    if (errEl) errEl.textContent = msg;
+    wrap.innerHTML = '';
+    if (typeof cosmosToastError === 'function') cosmosToastError(msg);
+  }
+};
+
 function trComputeRemainderLines(lines) {
   const out = [];
   (lines || []).forEach(function (l) {
@@ -1875,11 +1971,9 @@ window.setSpTrFilter = function (status) {
   loadTransferHistory();
 };
 
-window.loadTransferHistory = async function () {
+async function loadTransferHistoryRequests() {
   const wrap = document.getElementById('tr-history-wrap');
-  showErr('fmov-err', '');
-  spSyncFilterTabs('sp-tr-filters', _spTrFilter);
-  if (wrap && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('tr-history-wrap', 6);
+  if (!wrap) return;
 
   try {
     const qs = new URLSearchParams({ top_n: 100 });
@@ -1913,8 +2007,24 @@ window.loadTransferHistory = async function () {
     }).join('');
   } catch (err) {
     showErr('fmov-err', 'Failed to load transfer requests: ' + err.message);
-    if (wrap) wrap.innerHTML = '';
+    wrap.innerHTML = '';
   }
+}
+
+window.loadTransferHistory = async function () {
+  showErr('fmov-err', '');
+  const directErr = document.getElementById('sp-direct-err');
+  if (directErr) directErr.textContent = '';
+  spSyncFilterTabs('sp-tr-filters', _spTrFilter);
+  const reqWrap = document.getElementById('tr-history-wrap');
+  const directWrap = document.getElementById('sp-direct-transfers-wrap');
+  if (reqWrap && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('tr-history-wrap', 6);
+  if (directWrap && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('sp-direct-transfers-wrap', 4);
+
+  await Promise.all([
+    loadTransferHistoryRequests(),
+    typeof window.loadSpDirectInboundTransfers === 'function' ? window.loadSpDirectInboundTransfers() : Promise.resolve()
+  ]);
 };
 
 let _spOpenTrRequestId = null;

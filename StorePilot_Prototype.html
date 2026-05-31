@@ -573,8 +573,8 @@
     <div class="sp-page-head">
       <div class="ph sp-page-title-row">
         <div>
-          <div class="pt">My Transfer Requests</div>
-          <div class="ps">Stock requests submitted by your store to HQ Foundry for approval and dispatch.</div>
+          <div class="pt">Transfers</div>
+          <div class="ps">Store requests to HQ and HQ direct inbound transfers (no request). Tap a row to open details, accept, and stock.</div>
         </div>
         <div class="sp-page-tools" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <button type="button" class="btn sm primary" id="sp-tr-create-btn" style="display:none" onclick="openSpCreateRequestModal()">+ Create Request</button>
@@ -603,8 +603,19 @@
     </div>
 
     <div class="sp-page-body">
-    <div class="card">
+    <div class="card" style="margin-bottom:16px">
+      <div class="ch" style="padding:14px 16px 8px;border-bottom:1px solid var(--border)">
+        <div class="ct">My transfer requests</div>
+      </div>
       <div id="tr-history-wrap" class="cosmos-record-list"></div>
+    </div>
+    <div class="card">
+      <div class="ch" style="padding:14px 16px 8px;border-bottom:1px solid var(--border)">
+        <div class="ct">HQ direct transfers</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px;font-weight:400">Inbound stock dispatched by HQ without a store request — accept and stock here.</div>
+      </div>
+      <div id="sp-direct-err" class="err-msg" style="margin:8px 16px 0"></div>
+      <div id="sp-direct-transfers-wrap" class="cosmos-record-list"></div>
     </div>
     </div>
   </div>
@@ -991,6 +1002,6 @@
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260528-partial-receive" defer></script>
-<script src="/js/storepilot-prototype.js?v=20260528-partial-receive" defer></script>
+<script src="/js/storepilot-prototype.js?v=20260528-direct-inbound" defer></script>
 </body>
 </html>

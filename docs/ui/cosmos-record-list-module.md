@@ -41,7 +41,14 @@ Load order: `cosmos-ui-polish.js` → `cosmos-record-list.js`
 | Screen | List ID | Detail panel |
 |--------|---------|--------------|
 | SP My Transfer Requests | `#tr-history-wrap` | `#sp-tr-detail` |
+| SP HQ direct inbound | `#sp-direct-transfers-wrap` | `#sp-inc-detail` (opened from direct list) |
 | SP shipment stocking (overlay) | — | `#sp-inc-detail` (opened from request shipments) |
+
+### HQ direct transfers (StorePilot)
+
+- **API:** `GET /api/stock-transfer-docs?top_n=100` (store-scoped); client keeps `doc_type === 'DIRECT'` and no `source_request_id`.
+- **UI:** `loadSpDirectInboundTransfers` on **My Requests** page (`#page-transfers-history`); row click → `expandIncTransfer(doc_id)`.
+- **Not the same as request shipments:** shipment docs tied to a request appear under **Request detail → Shipments**, not in the direct list.
 
 ### Request detail — Shipments block
 
