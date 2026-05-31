@@ -858,6 +858,12 @@ router.put(
       const result = await executeStoredProcedure('sp_PurchaseHeader_WarehouseReady', {
         header_id: { type: sql.Int, value: Number(req.params.id) }
       });
+      try {
+        const { alignWarehouseStockToPrimary } = require('../services/alignWarehouseStockToPrimary');
+        await alignWarehouseStockToPrimary();
+      } catch (alignErr) {
+        console.error('[warehouse-ready] alignWarehouseStockToPrimary', alignErr.message || alignErr);
+      }
       return res.json({ success: true, data: result.recordset && result.recordset[0] });
     } catch (err) {
       if (err.code === 'EREQUEST') return res.status(422).json({ success: false, message: err.message });

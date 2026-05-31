@@ -39,9 +39,10 @@ Migrations: `47` (catalog + FK), `48` (roles + warehouse SQL), `49` (`is_active`
 
 ## Primary warehouse and stock
 
-- Set the hub in **Command Unit → Settings → Inventory hub** (`PUT /api/settings/inventory-hub`). That writes `app_settings.foundry_primary_warehouse_location_id`.
-- **`stock_balances`** rows with `location_type = WAREHOUSE` must use that store’s `store_id` as `location_id` for transfers and the SKU catalogue to agree.
-- After changing the primary hub, run **`npm run maintenance:report-warehouse-misalignment`**, then if needed **`COSMOS_ALIGN_WAREHOUSE_CONFIRM=I_UNDERSTAND npm run maintenance:align-warehouse-stock-to-primary`** to merge stranded warehouse qty into the configured hub.
+- **Warehouse stock location** = the configured **primary inventory hub** store (e.g. Falshruti Nagar). `location_type = WAREHOUSE` in `stock_balances` is not a separate abstract site; it must use that hub’s `store_id` as `location_id`.
+- Set the hub in **Command Unit → Settings → Inventory hub** (`PUT /api/settings/inventory-hub`). That writes `app_settings.foundry_primary_warehouse_location_id`. Display name comes from `dbo.fn_Foundry_WarehouseDisplayName()` (Foundry Stock View accounting row and StorePilot hub copy).
+- **`stock_balances`** rows with `location_type = WAREHOUSE` must use that store’s `store_id` as `location_id` for transfers, `warehouse_qty` in `sp_SKU_StockDistribution`, and the SKU catalogue to agree.
+- After changing the primary hub, stranded `WAREHOUSE` rows are merged automatically when you save **Inventory hub** in Command Unit. You can also run **`npm run maintenance:report-warehouse-misalignment`**, then **`COSMOS_ALIGN_WAREHOUSE_CONFIRM=I_UNDERSTAND npm run maintenance:align-warehouse-stock-to-primary`** manually. New purchase **Warehouse ready** runs the same alignment after stock is seeded.
 
 ## Rules
 

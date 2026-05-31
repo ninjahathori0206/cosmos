@@ -130,8 +130,9 @@ function primaryWarehouseTitleAttr() {
 async function refreshWarehouseContext() {
   try {
     const wh = await apiGet('/api/foundry-lookups/warehouse-context');
-    if (wh && wh.data && typeof wh.data.warehouse_display_name === 'string') {
-      const t = wh.data.warehouse_display_name.trim();
+    const ctx = wh && (wh.data || wh);
+    if (ctx && typeof ctx.warehouse_display_name === 'string') {
+      const t = ctx.warehouse_display_name.trim();
       if (t) _warehouseDisplayName = t;
     }
   } catch (_) {}
@@ -322,9 +323,13 @@ window.addEventListener('popstate', () => {
 
 function loadStorePilotPage(id) {
   if (id === 'dashboard')          loadDashboard();
-  if (id === 'stock-browse')       window.loadBrowseCatalogue();
+  if (id === 'stock-browse') {
+    refreshWarehouseContext();
+    window.loadBrowseCatalogue();
+  }
   if (id === 'store-catalogue')    window.loadStoreCatalogue();
   if (id === 'transfers-history') {
+    refreshWarehouseContext();
     spSyncCreateRequestBtn();
     window.loadTransferHistory();
     if (_spOpenCreateRequestOnLoad && canSpCreateTransferRequest()) {

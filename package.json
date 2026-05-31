@@ -45,6 +45,7 @@
     "maintenance:cancel-transfer-doc": "node scripts/_cancel-transfer-doc.js",
     "maintenance:backfill-sku-units": "node scripts/run-maintenance-backfill-sku-units.js",
     "maintenance:report-warehouse-misalignment": "node scripts/run-maintenance-report-warehouse-misalignment.js",
+    "maintenance:audit-warehouse-accounting": "node scripts/run-audit-warehouse-accounting-mismatch.js",
     "maintenance:align-warehouse-stock-to-primary": "node scripts/run-maintenance-align-warehouse-stock-to-primary.js",
     "deploy:sp-sku-units": "node scripts/deploy-sp-sku-units.js && node scripts/deploy-sp-skuv2-generate-only.js",
     "migrate:49-product-card-display-brand": "node scripts/run-migration-49-product-card-display-brand.js",

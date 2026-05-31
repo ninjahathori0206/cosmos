@@ -304,6 +304,13 @@ router.put('/inventory-hub', ...settingsManage, async (req, res, next) => {
     });
 
     try {
+      const { alignWarehouseStockToPrimary } = require('../services/alignWarehouseStockToPrimary');
+      await alignWarehouseStockToPrimary(pool);
+    } catch (alignErr) {
+      console.error('[inventory-hub] alignWarehouseStockToPrimary', alignErr.message || alignErr);
+    }
+
+    try {
       await writeAuditLog({
         userId: req.user && req.user.user_id ? Number(req.user.user_id) : null,
         action: 'INVENTORY_HUB_PRIMARY_WAREHOUSE_SET',

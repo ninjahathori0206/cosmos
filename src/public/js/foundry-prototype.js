@@ -488,6 +488,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       .replace(/"/g, '&quot;');
   }
 
+  function primaryWarehouseTitleAttr() {
+    return String(primaryWarehouseLabel())
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+  }
+
   let _warehouseRefreshPromise = null;
 
   async function refreshWarehouseContext() {
@@ -5213,6 +5220,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // SKU STOCK DISTRIBUTION VIEW
   // ─────────────────────────────────────────────────────────────────────────
   let _svSearchTimer = null;
+  let _svWarehouseHubMismatchWarned = false;
+
+  function svSumWarehouseQtyFromLocs(locs) {
+    return (locs || [])
+      .filter((l) => l.location_type === 'WAREHOUSE' && l.qty != null)
+      .reduce((s, l) => s + Number(l.qty || 0), 0);
+  }
 
   function svIsAvailable(row, qtyKeys) {
     if (!row || typeof row !== 'object') return false;
@@ -5322,6 +5336,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const errorEl = document.getElementById('sv-error-state');
     if (errorEl) errorEl.style.display = 'none';
     try {
+      await refreshWarehouseContext();
       const data = await apiGet(`/api/stock-transfers/distribution/${skuId}`);
       svRenderDistribution(data);
     } catch (err) {
@@ -5370,7 +5385,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const pct = (q) => Math.round((q / maxQty) * 100);
         const locIcon = (t) => t === 'WAREHOUSE' ? '🏭' : t === 'STORE' || t === 'AT_STORE' ? '🏪' : t === 'IN_TRANSIT' ? '🚚' : '📦';
         const locBadge = (t) => {
-          if (t === 'WAREHOUSE') return `<span class="b b-green xs">Warehouse</span>`;
+          if (t === 'WAREHOUSE') return `<span class="b b-green xs" title="${primaryWarehouseTitleAttr()}">Hub</span>`;
           if (t === 'STORE' || t === 'AT_STORE') return `<span class="b b-gray xs">At Store</span>`;
           if (t === 'IN_TRANSIT') return `<span class="b b-orange xs">In Transit</span>`;
           return `<span class="b b-teal xs">${t}</span>`;
@@ -5404,12 +5419,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Prefer explicit fields from RS1 header (warehouse_qty / store_qty added in SP update)
       const hasWarehouseQty = sku.warehouse_qty != null;
       const hasStoreQty = sku.store_qty != null;
-      const hasAnyBreakdownQty = hasWarehouseQty || hasStoreQty;
-      const wqty = hasWarehouseQty
+      const locWarehouseSum = svSumWarehouseQtyFromLocs(locs);
+      let wqty = hasWarehouseQty
         ? Number(sku.warehouse_qty)
-        : locs
-          .filter((l) => l.location_type === 'WAREHOUSE' && l.qty != null)
-          .reduce((s, l) => s + Number(l.qty || 0), 0);
+        : locWarehouseSum;
+      if (hasWarehouseQty && Number(sku.warehouse_qty) === 0 && locWarehouseSum > 0) {
+        wqty = locWarehouseSum;
+        if (!_svWarehouseHubMismatchWarned && typeof window.cosmosToastWarn === 'function') {
+          _svWarehouseHubMismatchWarned = true;
+          window.cosmosToastWarn(
+            'Hub stock is not on the configured primary location. Set Command Unit Inventory hub, then run warehouse alignment (maintenance:report-warehouse-misalignment).'
+          );
+        }
+      }
+      const hasAnyBreakdownQty = hasWarehouseQty || hasStoreQty || locWarehouseSum > 0;
       const sqty = hasStoreQty
         ? Number(sku.store_qty)
         : locs
@@ -5442,7 +5465,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     svShow('sv-distribution-panel');
   }
 
-  window.loadStockView = function() {
+  window.loadStockView = async function() {
+    await refreshWarehouseContext();
     svShow('sv-empty-state');
     const qEl = document.getElementById('sv-search-q');
     if (qEl) qEl.focus();
