@@ -1878,21 +1878,84 @@ function spIsDirectTransferDoc(d) {
   return src == null || src === '' || Number(src) <= 0;
 }
 
-function spDirectDocMatchesRequestFilter(doc, filterKey) {
+function spInboundDocMatchesRequestFilter(doc, filterKey) {
   const f = filterKey == null ? '' : String(filterKey);
   if (!f) return true;
   const st = String(doc.status || '').toUpperCase();
-  if (f === 'DISPATCHED') return st === 'DISPATCHED';
+  if (f === 'DISPATCHED') return st === 'DISPATCHED' || st === 'ACCEPTED';
   if (f === 'PARTIALLY_RECEIVED') return st === 'ACCEPTED';
   if (f === 'RECEIVED') return st === 'STOCKED';
   return false;
 }
 
-function spDirectDocBadgeHtml(doc) {
+function spInboundDocBadgeHtml(doc) {
   const st = String(doc.status || '');
   const cls = SP_DIRECT_DOC_STATUS_BADGE[st] || 'b-gray';
   const label = SP_DIRECT_DOC_STATUS_LABEL[st] || st || '—';
-  return '<span class="b b-purple">HQ direct</span> <span class="b ' + cls + '">' + escHtml(label) + '</span>';
+  if (spIsDirectTransferDoc(doc)) {
+    return '<span class="b b-purple">HQ direct</span> <span class="b ' + cls + '">' + escHtml(label) + '</span>';
+  }
+  const reqId = Number(doc.source_request_id);
+  if (Number.isFinite(reqId) && reqId > 0) {
+    return '<span class="b b-blue">Request #' + escHtml(String(reqId)) + '</span> <span class="b ' + cls + '">' + escHtml(label) + '</span>';
+  }
+  return '<span class="b ' + cls + '">' + escHtml(label) + '</span>';
+}
+
+function spMergeById(rows, idKey) {
+  const key = idKey || 'id';
+  const seen = Object.create(null);
+  const out = [];
+  (rows || []).forEach(function (r) {
+    if (!r) return;
+    const id = r[key];
+    if (id == null || seen[id]) return;
+    seen[id] = true;
+    out.push(r);
+  });
+  return out;
+}
+
+function spSortInboundDocs(rows) {
+  return (rows || []).slice().sort(function (a, b) {
+    const ta = new Date(a.dispatched_at || a.created_at || 0).getTime();
+    const tb = new Date(b.dispatched_at || b.created_at || 0).getTime();
+    if (tb !== ta) return tb - ta;
+    return (Number(b.doc_id) || 0) - (Number(a.doc_id) || 0);
+  });
+}
+
+function spSortTransferRequests(rows) {
+  return (rows || []).slice().sort(function (a, b) {
+    const ta = new Date(a.dispatched_at || a.updated_at || a.created_at || 0).getTime();
+    const tb = new Date(b.dispatched_at || b.updated_at || b.created_at || 0).getTime();
+    if (tb !== ta) return tb - ta;
+    return (Number(b.request_id) || 0) - (Number(a.request_id) || 0);
+  });
+}
+
+async function spFetchInboundTransferDocs() {
+  const topN = 100;
+  if (_spTrFilter === 'DISPATCHED') {
+    const [dispatchedRaw, acceptedRaw] = await Promise.all([
+      apiGet('/api/stock-transfer-docs?top_n=' + topN + '&status=DISPATCHED'),
+      apiGet('/api/stock-transfer-docs?top_n=' + topN + '&status=ACCEPTED')
+    ]);
+    const dispatched = Array.isArray(dispatchedRaw) ? dispatchedRaw : (dispatchedRaw.data || []);
+    const accepted = Array.isArray(acceptedRaw) ? acceptedRaw : (acceptedRaw.data || []);
+    return spSortInboundDocs(spMergeById(dispatched.concat(accepted), 'doc_id'));
+  }
+  const qs = new URLSearchParams({ top_n: topN });
+  const stFilter = _spTrFilter === 'RECEIVED' ? 'STOCKED'
+    : _spTrFilter === 'PARTIALLY_RECEIVED' ? 'ACCEPTED'
+    : null;
+  if (stFilter) qs.set('status', stFilter);
+  const raw = await apiGet('/api/stock-transfer-docs?' + qs.toString());
+  const all = Array.isArray(raw) ? raw : (raw.data || []);
+  const rows = _spTrFilter
+    ? all.filter(function (d) { return spInboundDocMatchesRequestFilter(d, _spTrFilter); })
+    : all;
+  return spSortInboundDocs(rows);
 }
 
 window.loadSpDirectInboundTransfers = async function () {
@@ -1905,29 +1968,18 @@ window.loadSpDirectInboundTransfers = async function () {
 
   if (requestOnlyFilter) {
     wrap.innerHTML = '<div class="empty-state" style="padding:24px 20px"><div class="empty-ic">🚚</div>' +
-      '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No direct transfers in this filter</div>' +
-      '<div style="font-size:13px;color:var(--text2)">Switch to <strong>All</strong> or <strong>Dispatched</strong> to see HQ direct inbound transfers.</div></div>';
+      '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No inbound shipments in this filter</div>' +
+      '<div style="font-size:13px;color:var(--text2)">Switch to <strong>All</strong> or <strong>Dispatched</strong> to see inbound shipment documents.</div></div>';
     return;
   }
 
   try {
-    const qs = new URLSearchParams({ top_n: 100 });
-    const stFilter = _spTrFilter === 'DISPATCHED' ? 'DISPATCHED'
-      : _spTrFilter === 'RECEIVED' ? 'STOCKED'
-      : _spTrFilter === 'PARTIALLY_RECEIVED' ? 'ACCEPTED'
-      : null;
-    if (stFilter) qs.set('status', stFilter);
-
-    const raw = await apiGet('/api/stock-transfer-docs?' + qs.toString());
-    const all = Array.isArray(raw) ? raw : (raw.data || []);
-    const rows = all.filter(function (d) {
-      return spIsDirectTransferDoc(d) && spDirectDocMatchesRequestFilter(d, _spTrFilter);
-    });
+    const rows = await spFetchInboundTransferDocs();
 
     if (!rows.length) {
       wrap.innerHTML = '<div class="empty-state" style="padding:28px 20px"><div class="empty-ic">📦</div>' +
-        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No HQ direct transfers</div>' +
-        '<div style="font-size:13px;color:var(--text2)">When HQ dispatches stock to your store without a request, it appears here for accept and stocking.</div></div>';
+        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No inbound shipments</div>' +
+        '<div style="font-size:13px;color:var(--text2)">When HQ dispatches stock to your store, shipment documents appear here. Tap to <strong>Accept</strong>, then <strong>Stock</strong>.</div></div>';
       return;
     }
 
@@ -1936,18 +1988,18 @@ window.loadSpDirectInboundTransfers = async function () {
       const qty = d.total_qty_sent != null ? ' · ' + d.total_qty_sent + ' pcs' : '';
       const dateLabel = fmtDate(d.dispatched_at || d.created_at);
       if (!window.cosmosRecordRow) {
-        return '<div class="cosmos-record-row tr-link" onclick="expandIncTransfer(' + d.doc_id + ')">Direct #' + d.doc_id + '</div>';
+        return '<div class="cosmos-record-row tr-link" onclick="expandIncTransfer(' + d.doc_id + ')">Shipment #' + d.doc_id + '</div>';
       }
       return window.cosmosRecordRow.html({
-        primary: 'Direct transfer #' + d.doc_id,
+        primary: 'Shipment #' + d.doc_id,
         secondary: dateLabel + ' · ' + lines + qty,
-        badgeHtml: spDirectDocBadgeHtml(d),
+        badgeHtml: spInboundDocBadgeHtml(d),
         onClick: 'expandIncTransfer(' + d.doc_id + ')',
-        ariaLabel: 'Open direct transfer ' + d.doc_id
+        ariaLabel: 'Open inbound shipment ' + d.doc_id
       });
     }).join('');
   } catch (err) {
-    const msg = err.message || 'Failed to load direct transfers';
+    const msg = err.message || 'Failed to load inbound shipments';
     if (errEl) errEl.textContent = msg;
     wrap.innerHTML = '';
     if (typeof cosmosToastError === 'function') cosmosToastError(msg);
@@ -1981,10 +2033,21 @@ async function loadTransferHistoryRequests() {
   if (!wrap) return;
 
   try {
-    const qs = new URLSearchParams({ top_n: 100 });
-    if (_spTrFilter) qs.set('status', _spTrFilter);
-    const data = await apiGet('/api/transfer-requests?' + qs.toString());
-    const rows = Array.isArray(data) ? data : (data.data || []);
+    let rows;
+    if (_spTrFilter === 'DISPATCHED') {
+      const [dispatchedRaw, partialRaw] = await Promise.all([
+        apiGet('/api/transfer-requests?top_n=100&status=DISPATCHED'),
+        apiGet('/api/transfer-requests?top_n=100&status=PARTIALLY_DISPATCHED')
+      ]);
+      const dispatched = Array.isArray(dispatchedRaw) ? dispatchedRaw : (dispatchedRaw.data || []);
+      const partial = Array.isArray(partialRaw) ? partialRaw : (partialRaw.data || []);
+      rows = spSortTransferRequests(spMergeById(dispatched.concat(partial), 'request_id'));
+    } else {
+      const qs = new URLSearchParams({ top_n: 100 });
+      if (_spTrFilter) qs.set('status', _spTrFilter);
+      const data = await apiGet('/api/transfer-requests?' + qs.toString());
+      rows = Array.isArray(data) ? data : (data.data || []);
+    }
 
     if (!rows.length) {
       const createBtn = canSpCreateTransferRequest()

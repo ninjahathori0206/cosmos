@@ -58,6 +58,14 @@ async function alignWarehouseStockToPrimary(existingPool) {
       AND location_id <> @primary
       AND qty > 0;
 
+    UPDATE dbo.sku_units
+    SET
+      location_type = N'WAREHOUSE',
+      location_id = @primary
+    WHERE status = N'AVAILABLE'
+      AND location_type = N'WAREHOUSE'
+      AND (location_id IS NULL OR location_id <> @primary);
+
     COMMIT TRANSACTION;
 
     SELECT
@@ -69,7 +77,14 @@ async function alignWarehouseStockToPrimary(existingPool) {
         WHERE sb.location_type = N'WAREHOUSE'
           AND sb.location_id <> @primary
           AND sb.qty > 0
-      ) AS remaining_misaligned_rows;
+      ) AS remaining_misaligned_balance_rows,
+      (
+        SELECT COUNT(*)
+        FROM dbo.sku_units u
+        WHERE u.status = N'AVAILABLE'
+          AND u.location_type = N'WAREHOUSE'
+          AND u.location_id <> @primary
+      ) AS remaining_misaligned_unit_rows;
   `);
   return (result.recordset && result.recordset[0]) || null;
 }

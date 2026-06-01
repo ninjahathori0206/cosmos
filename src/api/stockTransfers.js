@@ -221,6 +221,9 @@ router.get('/lookup', ...transferCreateStockAccess, async (req, res, next) => {
     }
     return res.json({ success: true, data: row });
   } catch (err) {
+    if (err.code === 'EREQUEST') {
+      return res.status(422).json({ success: false, message: err.message });
+    }
     return next(err);
   }
 });

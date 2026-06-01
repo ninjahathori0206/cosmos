@@ -41,14 +41,15 @@ Load order: `cosmos-ui-polish.js` → `cosmos-record-list.js`
 | Screen | List ID | Detail panel |
 |--------|---------|--------------|
 | SP My Transfer Requests | `#tr-history-wrap` | `#sp-tr-detail` |
-| SP HQ direct inbound | `#sp-direct-transfers-wrap` | `#sp-inc-detail` (opened from direct list) |
-| SP shipment stocking (overlay) | — | `#sp-inc-detail` (opened from request shipments) |
+| SP Inbound shipments | `#sp-direct-transfers-wrap` | `#sp-inc-detail` (Accept / Stock) |
+| SP shipment stocking (overlay) | — | `#sp-inc-detail` (also from request detail → Shipments) |
 
-### HQ direct transfers (StorePilot)
+### Inbound shipments (StorePilot)
 
-- **API:** `GET /api/stock-transfer-docs?top_n=100` (store-scoped); client keeps `doc_type === 'DIRECT'` and no `source_request_id`.
-- **UI:** `loadSpDirectInboundTransfers` on **My Requests** page (`#page-transfers-history`); row click → `expandIncTransfer(doc_id)`.
-- **Not the same as request shipments:** shipment docs tied to a request appear under **Request detail → Shipments**, not in the direct list.
+- **API:** `GET /api/stock-transfer-docs?top_n=100` (store-scoped). **Dispatched** tab merges `status=DISPATCHED` and `status=ACCEPTED` so accepted-but-not-stocked docs stay visible.
+- **UI:** `loadSpDirectInboundTransfers` on **My Requests** (`#page-transfers-history`); lists **all** inbound docs (HQ direct and request-linked). Badges: **HQ direct** (purple) or **Request #N** (blue) + doc status.
+- **Row click:** `expandIncTransfer(doc_id)` — same Accept / Stock flow as request detail → Shipments.
+- **Filters:** Hidden on Pending / Approved / Rejected (request-only tabs). **Dispatched** requests list also merges `PARTIALLY_DISPATCHED` + `DISPATCHED` request headers.
 
 ### Request detail — Shipments block
 

@@ -101,12 +101,63 @@ AS BEGIN
   IF @wh IS NULL
     RAISERROR('Primary warehouse is not configured.', 16, 1);
 
+  DECLARE @wh_display VARCHAR(200) = LEFT(CAST(dbo.fn_Foundry_WarehouseDisplayName() AS VARCHAR(200)), 200);
   DECLARE @trim VARCHAR(200) = LTRIM(RTRIM(ISNULL(@code, '')));
   DECLARE @unit_code CHAR(7) = RIGHT(REPLICATE('0', 7) + @trim, 7);
 
   IF LEN(@trim) <= 7 AND @unit_code LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
      AND EXISTS (SELECT 1 FROM dbo.sku_units u WHERE u.unit_barcode = @unit_code)
   BEGIN
+    DECLARE @open_doc_id INT;
+    DECLARE @open_doc_status VARCHAR(20);
+    DECLARE @open_to_name NVARCHAR(200);
+
+    SELECT TOP 1
+      @open_doc_id = d.doc_id,
+      @open_doc_status = d.status,
+      @open_to_name = ISNULL(NULLIF(LTRIM(RTRIM(st.store_name)), N''), N'store #' + CAST(d.to_store_id AS VARCHAR(20)))
+    FROM dbo.sku_units u
+    INNER JOIN dbo.stock_transfer_doc_units du ON du.unit_id = u.unit_id
+    INNER JOIN dbo.stock_transfer_docs d ON d.doc_id = du.doc_id
+    LEFT JOIN dbo.stores st ON st.store_id = d.to_store_id
+    WHERE u.unit_barcode = @unit_code
+      AND d.status IN (N'DISPATCHED', N'ACCEPTED')
+    ORDER BY d.doc_id DESC;
+
+    IF @open_doc_id IS NOT NULL
+    BEGIN
+      RAISERROR(
+        'Unit %s is already on transfer Doc #%d (%s) to %s. Receive or rollback that shipment before scanning again.',
+        16, 1, @unit_code, @open_doc_id, @open_doc_status, @open_to_name);
+      RETURN;
+    END;
+
+    IF EXISTS (
+      SELECT 1
+      FROM dbo.sku_units u
+      WHERE u.unit_barcode = @unit_code
+        AND u.status = N'SOLD'
+    )
+    BEGIN
+      RAISERROR('Unit %s has already been sold and cannot be transferred.', 16, 1, @unit_code);
+      RETURN;
+    END;
+
+    IF EXISTS (
+      SELECT 1
+      FROM dbo.sku_units u
+      WHERE u.unit_barcode = @unit_code
+        AND u.status = N'AVAILABLE'
+        AND u.location_type = N'WAREHOUSE'
+        AND u.location_id <> @wh
+    )
+    BEGIN
+      RAISERROR(
+        'Unit %s is at a non-primary warehouse location. Save Inventory hub in Command Unit or run warehouse alignment.',
+        16, 1, @unit_code);
+      RETURN;
+    END;
+
     IF NOT EXISTS (
       SELECT 1
       FROM dbo.sku_units u
@@ -116,20 +167,21 @@ AS BEGIN
         AND u.location_id = @wh
     )
     BEGIN
-      RAISERROR('Unit is not available at the primary warehouse (already transferred, sold, or at another location).', 16, 1);
-      RETURN;
-    END;
-
-    IF EXISTS (
-      SELECT 1
+      DECLARE @unit_status VARCHAR(20) = N'unknown';
+      DECLARE @unit_loc_type VARCHAR(20) = N'unknown';
+      SELECT TOP 1
+        @unit_status = ISNULL(u.status, N'unknown'),
+        @unit_loc_type = ISNULL(u.location_type, N'unknown')
       FROM dbo.sku_units u
-      INNER JOIN dbo.stock_transfer_doc_units du ON du.unit_id = u.unit_id
-      INNER JOIN dbo.stock_transfer_docs d ON d.doc_id = du.doc_id
-      WHERE u.unit_barcode = @unit_code
-        AND d.status IN (N'DISPATCHED', N'ACCEPTED')
-    )
-    BEGIN
-      RAISERROR('Unit is already on an open transfer document.', 16, 1);
+      WHERE u.unit_barcode = @unit_code;
+
+      RAISERROR(
+        'Unit %s is not available at %s (status: %s, location: %s).',
+        16, 1,
+        @unit_code,
+        @wh_display,
+        @unit_status,
+        @unit_loc_type);
       RETURN;
     END;
 

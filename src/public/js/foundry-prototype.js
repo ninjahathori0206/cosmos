@@ -9825,7 +9825,9 @@ ${initScript}
         const sku = await window.transferLookupSku(code);
         if (sku) stAddToCart(sku);
       } catch (err) {
-        stToast('Not found: ' + key, '#e53e3e');
+        const msg = (err && err.message) ? err.message : ('Not found: ' + key);
+        if (typeof cosmosToastError === 'function') cosmosToastError(msg);
+        else stToast(msg, '#e53e3e');
       }
     }
 
