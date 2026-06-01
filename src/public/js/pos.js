@@ -79,9 +79,18 @@
       }
       if (parsed && typeof parsed === 'object') {
         obCart = Array.isArray(parsed.lines) ? parsed.lines : []
-        posCartMembershipSale = parsed.membership && parsed.membership.plan_key
-          ? parsed.membership
-          : null
+        if (parsed.membership && parsed.membership.plan_key) {
+          const m = parsed.membership
+          const pr = Number(m.price_paid != null ? m.price_paid : m.price) || 0
+          posCartMembershipSale = {
+            plan_key: m.plan_key,
+            display_name: m.display_name,
+            price_paid: pr,
+            price: pr
+          }
+        } else {
+          posCartMembershipSale = null
+        }
       }
     } catch (_e) { /* corrupt data — ignore */ }
   }
@@ -702,7 +711,55 @@
 
   function getMembershipCartAmount() {
     if (!posCartMembershipSale || !posCartMembershipSale.plan_key) return 0
-    return Math.max(0, Number(posCartMembershipSale.price_paid) || 0)
+    const paid =
+      posCartMembershipSale.price_paid != null
+        ? posCartMembershipSale.price_paid
+        : posCartMembershipSale.price
+    return Math.max(0, Number(paid) || 0)
+  }
+
+  /** Product lines only — membership is a separate bill row (no GST on membership). */
+  function computeObProductSubtotal() {
+    return obCart.reduce(function (sum, line) {
+      return sum + computeLineDisplayUnit(line) * line.qty
+    }, 0)
+  }
+
+  /**
+   * Cart bill breakdown (display + checkout preview).
+   * Total = tax on (products − discount) + membership fee.
+   */
+  function computeCartBillBreakdown(offerDiscOverride) {
+    const productSubtotal = computeObProductSubtotal()
+    const membershipAmt = getMembershipCartAmount()
+    const combinedSubtotal = productSubtotal + membershipAmt
+    let offerDisc = offerDiscOverride || { amount: 0, offerId: null }
+    const discount = Math.min(
+      offerDisc.amount,
+      productSubtotal > 0.009 ? productSubtotal : combinedSubtotal
+    )
+    const tax = computePosCartTotals(productSubtotal, discount)
+    const grandTotal = roundMoney(tax.total + membershipAmt)
+    let orderKind = 'INSTANT'
+    let hasLab = false
+    let hasInst = false
+    for (let i = 0; i < obCart.length; i++) {
+      if (obCart[i].fulfillment === 'LAB') hasLab = true
+      if (obCart[i].fulfillment === 'INSTANT') hasInst = true
+    }
+    if (hasLab && hasInst) orderKind = 'MIXED'
+    else if (hasLab) orderKind = 'LAB'
+    else if (!obCart.length && membershipAmt > 0) orderKind = 'MEMBERSHIP'
+    return {
+      productSubtotal: roundMoney(productSubtotal),
+      membershipAmt: roundMoney(membershipAmt),
+      combinedSubtotal: roundMoney(combinedSubtotal),
+      discount: roundMoney(discount),
+      gst: tax.gst,
+      grandTotal: grandTotal,
+      order_kind: orderKind,
+      offerDisc: offerDisc
+    }
   }
 
   function prospectivePlanKeyFromCart() {
@@ -835,7 +892,12 @@
           const pk = el.getAttribute('data-plan-key')
           const nm = el.getAttribute('data-plan-name')
           const pr = Number(el.getAttribute('data-plan-price')) || 0
-          posCartMembershipSale = { plan_key: pk, display_name: nm, price_paid: pr }
+          posCartMembershipSale = {
+            plan_key: pk,
+            display_name: nm,
+            price_paid: pr,
+            price: pr
+          }
           saveCart()
           closePosMembershipPickerModal()
           syncCartMembershipUi()
@@ -857,11 +919,6 @@
   }
 
   function buildPendingCheckoutTotals() {
-    const productSubtotal = obCart.reduce(function (sum, line) {
-      return sum + computeLineDisplayUnit(line) * line.qty
-    }, 0)
-    const membershipAmt = getMembershipCartAmount()
-    const subtotal = productSubtotal + membershipAmt
     const sig = buildObCartFingerprint()
     let offerDisc = { amount: 0, offerId: null }
     const hasSel =
@@ -875,27 +932,20 @@
           offerId: posServerDiscountPreview.offerId
         }
       } else {
-        offerDisc = computeClientPreviewForSelectedOffer(subtotal)
+        const productSub = computeObProductSubtotal()
+        const mem = getMembershipCartAmount()
+        offerDisc = computeClientPreviewForSelectedOffer(
+          productSub > 0.009 ? productSub : productSub + mem
+        )
       }
     }
-    const discount = Math.min(offerDisc.amount, productSubtotal > 0 ? productSubtotal : subtotal)
-    const tax = computePosCartTotals(productSubtotal, discount)
-    let orderKind = 'INSTANT'
-    let hasLab = false
-    let hasInst = false
-    for (let i = 0; i < obCart.length; i++) {
-      if (obCart[i].fulfillment === 'LAB') hasLab = true
-      if (obCart[i].fulfillment === 'INSTANT') hasInst = true
-    }
-    if (hasLab && hasInst) orderKind = 'MIXED'
-    else if (hasLab) orderKind = 'LAB'
-    else if (!obCart.length && membershipAmt > 0) orderKind = 'MEMBERSHIP'
+    const bill = computeCartBillBreakdown(offerDisc)
     return {
-      subtotal_amount: subtotal,
-      discount_amount: discount,
-      gst_amount: tax.gst,
-      total_amount: roundMoney(tax.total + membershipAmt),
-      order_kind: orderKind
+      subtotal_amount: bill.combinedSubtotal,
+      discount_amount: bill.discount,
+      gst_amount: bill.gst,
+      total_amount: bill.grandTotal,
+      order_kind: bill.order_kind
     }
   }
 
@@ -5800,11 +5850,6 @@
 
   function obRecalcTotals(opts) {
     opts = opts || {}
-    const productSubtotal = obCart.reduce(function (sum, line) {
-      return sum + computeLineDisplayUnit(line) * line.qty
-    }, 0)
-    const membershipAmt = getMembershipCartAmount()
-    const subtotal = productSubtotal + membershipAmt
     syncCartMembershipUi()
     const sig = buildObCartFingerprint()
     let offerDisc = { amount: 0, offerId: null }
@@ -5819,26 +5864,28 @@
           offerId: posServerDiscountPreview.offerId
         }
       } else {
-        offerDisc = computeClientPreviewForSelectedOffer(subtotal)
+        const productSub = computeObProductSubtotal()
+        const mem = getMembershipCartAmount()
+        offerDisc = computeClientPreviewForSelectedOffer(
+          productSub > 0.009 ? productSub : productSub + mem
+        )
       }
-    } else {
-      offerDisc = { amount: 0, offerId: null }
     }
-    const discount = Math.min(offerDisc.amount, productSubtotal > 0 ? productSubtotal : subtotal)
-    const tax = computePosCartTotals(productSubtotal, discount)
-    const gst = tax.gst
-    const total = roundMoney(tax.total + membershipAmt)
-    if (obSubtotal) obSubtotal.textContent = formatRupees(subtotal)
-    if (obDiscountLine) obDiscountLine.textContent = discount > 0 ? ('−' + formatRupees(discount)) : '−₹0'
-    if (obGst) obGst.textContent = formatRupees(gst)
+    const bill = computeCartBillBreakdown(offerDisc)
+    if (obSubtotal) obSubtotal.textContent = formatRupees(bill.productSubtotal)
+    if (obDiscountLine) {
+      obDiscountLine.textContent =
+        bill.discount > 0 ? ('−' + formatRupees(bill.discount)) : '−₹0'
+    }
+    if (obGst) obGst.textContent = formatRupees(bill.gst)
     if (obGstLbl) obGstLbl.textContent = posGstLineLabel()
-    if (obTotal) obTotal.textContent = formatRupees(total)
+    if (obTotal) obTotal.textContent = formatRupees(bill.grandTotal)
     if (btnObProceed) {
       const unbound = cartHasUnboundUnitLines()
       btnObProceed.disabled = !cartHasCheckoutContent()
       btnObProceed.textContent = unbound
         ? 'Scan unit barcode on cart'
-        : (formatRupees(total) + ' · Proceed to payment')
+        : (formatRupees(bill.grandTotal) + ' · Proceed to payment')
     }
     if (obCartHeadingLine || headerCartCountEl) {
       const n = obCart.reduce(function (acc, line) { return acc + Math.max(1, Number(line.qty) || 0) }, 0)
@@ -6625,20 +6672,19 @@
       }
       discInfo = { amount: 0, offerId: null }
     }
-    const pt = buildPendingCheckoutTotals()
-    const productSubForPay = obCart.reduce(function (sum, line) {
-      return sum + computeLineDisplayUnit(line) * line.qty
-    }, 0)
-    const membershipAmtForPay = getMembershipCartAmount()
+    let pt = buildPendingCheckoutTotals()
     if (discInfo.amount > 0.009) {
-      const disc = Math.min(
-        Number(discInfo.amount) || 0,
-        productSubForPay > 0 ? productSubForPay : productSubForPay + membershipAmtForPay
-      )
-      const tax = computePosCartTotals(productSubForPay, disc)
-      pt.discount_amount = disc
-      pt.gst_amount = tax.gst
-      pt.total_amount = roundMoney(tax.total + membershipAmtForPay)
+      const billPay = computeCartBillBreakdown({
+        amount: Math.max(0, Number(discInfo.amount) || 0),
+        offerId: discInfo.offerId
+      })
+      pt = {
+        subtotal_amount: billPay.combinedSubtotal,
+        discount_amount: billPay.discount,
+        gst_amount: billPay.gst,
+        total_amount: billPay.grandTotal,
+        order_kind: billPay.order_kind
+      }
     }
     const orderPayload = {
       customer_id: posSelectedCustomerId,
@@ -7616,21 +7662,11 @@
 
   function posFormatInvoiceDisplayDate(iso) {
     if (!iso) return '—'
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return '—'
-    const date = d.toLocaleDateString('en-GB', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    })
-    const time = d.toLocaleTimeString('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    }).toLowerCase()
-    return date + ' · ' + time
+    if (typeof window.cosmosFmtDateTimeShort === 'function') {
+      const s = window.cosmosFmtDateTimeShort(iso)
+      return s === '—' ? '—' : String(s).toLowerCase()
+    }
+    return '—'
   }
 
   function buildPosInvoiceViewModel(storeName, detail, prefs, invoiceNo) {
