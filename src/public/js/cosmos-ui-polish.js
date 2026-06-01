@@ -62,11 +62,9 @@
 
   var COSMOS_TOAST_DURATION_MS = 3000
   var COSMOS_IST_TZ = 'Asia/Kolkata'
+  var WIRE_DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/
 
-  function cosmosIstPartsFromValue(v, withTime) {
-    if (v == null || v === '') return null
-    var dt = v instanceof Date ? v : new Date(v)
-    if (isNaN(dt.getTime())) return null
+  function cosmosIstPartsFromDateIntl(dt, withTime) {
     var opts = {
       timeZone: COSMOS_IST_TZ,
       day: '2-digit',
@@ -85,6 +83,30 @@
       if (parts[i].type !== 'literal') out[parts[i].type] = parts[i].value
     }
     return out
+  }
+
+  function cosmosIstPartsFromValue(v, withTime) {
+    if (v == null || v === '') return null
+    if (typeof v === 'string') {
+      var s = v.trim()
+      if (/Z$/i.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) {
+        var legacyDt = new Date(s)
+        if (!isNaN(legacyDt.getTime())) return cosmosIstPartsFromDateIntl(legacyDt, withTime)
+      }
+      var m = s.match(WIRE_DATETIME_RE)
+      if (m) {
+        var wall = { day: m[3], month: m[2], year: m[1] }
+        if (withTime) {
+          wall.hour = m[4]
+          wall.minute = m[5]
+          wall.second = m[6]
+        }
+        return wall
+      }
+    }
+    var dt = v instanceof Date ? v : new Date(v)
+    if (isNaN(dt.getTime())) return null
+    return cosmosIstPartsFromDateIntl(dt, withTime)
   }
 
   /** Display date DD/MM/YYYY in IST */
@@ -118,6 +140,21 @@
   /** Receipt / share-image: 27 May 2026 · 2:30 pm */
   window.cosmosFmtDateTimeShort = function cosmosFmtDateTimeShort(v) {
     if (v == null || v === '') return '—'
+    if (typeof v === 'string') {
+      var s = v.trim()
+      if (!/Z$/i.test(s) && !/[+-]\d{2}:\d{2}$/.test(s)) {
+        var m = s.match(WIRE_DATETIME_RE)
+        if (m) {
+          var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+          var mon = months[parseInt(m[2], 10) - 1] || m[2]
+          var hr = parseInt(m[4], 10)
+          var h12 = hr % 12
+          if (h12 === 0) h12 = 12
+          var ampm = hr >= 12 ? 'pm' : 'am'
+          return parseInt(m[3], 10) + ' ' + mon + ' ' + m[1] + ' \u00B7 ' + h12 + ':' + m[5] + ' ' + ampm
+        }
+      }
+    }
     var dt = v instanceof Date ? v : new Date(v)
     if (isNaN(dt.getTime())) return String(v)
     var date = dt.toLocaleDateString('en-GB', {

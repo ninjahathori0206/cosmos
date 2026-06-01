@@ -12,13 +12,14 @@
 <title>Store OS — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-bucket-z">
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
-<link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260603-payment-pending">
-<script src="/js/cosmos-ui-polish.js?v=20260602-ist-ssot" defer></script>
+<link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260603-lab-edit-lenses">
+<script src="/js/cosmos-ui-polish.js?v=20260602-ist-wire" defer></script>
 <script src="/js/cosmos-pwa-update.js?v=20260528-pwa-update" defer></script>
 <script src="/js/storeos-pwa.js?v=20260528-pwa-update" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260523-cart-bucket" defer></script>
-<script src="/js/pos.js?v=storeos-20260603-payment-pending" defer></script>
+<script src="/js/pos-customer-family-name-copy.js" defer></script>
+<script src="/js/pos.js?v=storeos-20260603-lens-step2-no-patient-field" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -699,7 +700,7 @@
             <strong id="pay-customer-name" class="pos-lk-pay-context-val">—</strong>
           </div>
           <div class="pos-lk-pay-context-item pos-lk-pay-context-item--balance">
-            <span class="pos-lk-pay-context-lbl">Balance due</span>
+            <span class="pos-lk-pay-context-lbl" id="pay-balance-due-lbl">Balance due</span>
             <strong id="pay-balance-due" class="pos-lk-pay-context-val pos-lk-pay-context-balance">—</strong>
           </div>
         </div>
@@ -1092,7 +1093,7 @@
   </div>
 </div>
 
-<!-- POS — mobile already registered: add alias confirmation -->
+<!-- POS — mobile already registered: save family name confirmation -->
 <div id="overlay-pos-cust-alias-confirm" class="pos-lens-newcust-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-cust-alias-title">
   <div class="pos-lens-newcust-backdrop" id="pos-cust-alias-backdrop" tabindex="-1"></div>
   <div class="pos-lens-newcust-sheet">
@@ -1103,7 +1104,7 @@
     <p id="pos-cust-alias-body" class="pos-lens-newcust-sub"></p>
     <div class="pos-lens-newcust-actions">
       <button type="button" id="btn-pos-cust-alias-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
-      <button type="button" id="btn-pos-cust-alias-confirm" class="pos-next-btn pos-lens-newcust-btn-submit">Add alias and continue</button>
+      <button type="button" id="btn-pos-cust-alias-confirm" class="pos-next-btn pos-lens-newcust-btn-submit">Save family name and continue</button>
     </div>
   </div>
 </div>

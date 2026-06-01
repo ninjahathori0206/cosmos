@@ -7,6 +7,7 @@ import { Client } from '../openpencil-mcp-safe/node_modules/@modelcontextprotoco
 import { StdioClientTransport } from '../openpencil-mcp-safe/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PENCIL_MCP_FILE_PATH } from './_pencil_paths.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
@@ -34,6 +35,7 @@ const client = new Client({ name: 'pencil-invoke', version: '1.0.0' }, { capabil
 await client.connect(transport)
 
 const args = JSON.parse(argsJson)
+if (!args.filePath) args.filePath = PENCIL_MCP_FILE_PATH
 const result = await client.callTool({ name: toolName, arguments: args })
 console.log(JSON.stringify(result, null, 2))
 await client.close()

@@ -20,7 +20,7 @@
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/foundry-prototype.css?v=20260528-label-print-friendly">
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-cr-mobile">
-<script src="/js/cosmos-ui-polish.js?v=20260602-ist-ssot" defer></script>
+<script src="/js/cosmos-ui-polish.js?v=20260602-ist-wire" defer></script>
 <script src="/js/cosmos-record-list.js?v=20260526-detail-qty-remainder" defer></script>
 
 
@@ -43,6 +43,7 @@
     <div class="nav-group" data-foundry-nav-group="catalogue">Catalogue</div>
     <div class="nav-item" data-foundry-permission="foundry.catalogue.view" data-foundry-page="sku-catalogue" onclick="nav('sku-catalogue',this)"><span class="ic">🗂️</span> SKU Catalogue</div>
     <div class="nav-item" data-foundry-permission="foundry.stock.view" data-foundry-page="stock-view" onclick="nav('stock-view',this)"><span class="ic">📦</span> Stock View</div>
+    <div class="nav-item" data-foundry-permission="foundry.units.trace" data-foundry-page="unit-search" onclick="nav('unit-search',this)"><span class="ic">🔍</span> Unit Search</div>
     <div class="nav-item" data-foundry-permission="foundry.lens.packages.view" data-foundry-page="lens-packages" onclick="nav('lens-packages',this)"><span class="ic">👁️</span> Lens packages</div>
     <div class="nav-item" data-foundry-permission="foundry.lens.addons.view" data-foundry-page="lens-addons" onclick="nav('lens-addons',this)"><span class="ic">➕</span> Lens add-ons</div>
     <div class="nav-item" data-foundry-permission="foundry.lens.matrix.view" data-foundry-page="lens-package-addons" onclick="nav('lens-package-addons',this)"><span class="ic">▦</span> Lens link matrix</div>
@@ -666,6 +667,68 @@
     </div>
 
     <div id="sv-error-state" style="display:none;background:var(--redL);border:1px solid var(--red);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--red)"></div>
+  </div>
+
+  <!-- ═══ UNIT SEARCH ═══ -->
+  <div class="page" id="page-unit-search">
+    <div class="ph"><div class="pt">Unit Search</div></div>
+    <div class="card mb4">
+      <div class="cb">
+        <div class="flex ic g3">
+          <div class="sw" style="flex:1;position:relative">
+            <span class="si">🔍</span>
+            <input id="ut-search-q" type="search" inputmode="numeric" maxlength="7" placeholder="Unit code (7 digits)" autocomplete="off"
+              aria-label="Unit code"
+              oninput="onUnitSearchInput(this)"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();runUnitTraceSearch()}">
+          </div>
+          <button type="button" id="ut-search-btn" class="btn primary" aria-label="Search unit trace" onclick="runUnitTraceSearch()">Search</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ut-empty-state" class="empty">
+      <div class="empty-ic">🔍</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">Trace a unit by code</div>
+      <div style="font-size:13px;color:var(--text2)">Enter the 7-digit code from the product label or scan with a wedge scanner.</div>
+    </div>
+
+    <div id="ut-results-panel" style="display:none">
+      <div class="card mb4">
+        <div class="cb">
+          <div class="flex ic" style="justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:10px">
+            <div class="mono" id="ut-unit-code" style="font-size:26px;font-weight:700;color:var(--text1)"></div>
+            <span id="ut-status-badge" class="b b-blue"></span>
+          </div>
+          <div style="font-size:14px;font-weight:600;color:var(--acc2);margin-bottom:4px">
+            <span class="td2" style="font-weight:500;color:var(--text2)">Current location: </span>
+            <span id="ut-location-label"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb4">
+        <div class="ch"><div class="ct">SKU</div></div>
+        <div class="cb" id="ut-sku-strip" style="font-size:13px;color:var(--text2);line-height:1.5"></div>
+      </div>
+
+      <div class="main-side">
+        <div class="col-stack">
+          <div class="card">
+            <div class="ch"><div class="ct">History</div></div>
+            <div class="cb">
+              <ol id="ut-timeline" style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px"></ol>
+            </div>
+          </div>
+        </div>
+        <div class="col-stack">
+          <div class="card" id="ut-sale-card" style="display:none">
+            <div class="ch"><div class="ct">Selling details</div></div>
+            <div class="cb" id="ut-sale-body" style="display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--text2)"></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ═══ STOCK TRANSFER ═══ -->

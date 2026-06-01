@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
- * Apply default fills to nodes missing fill in pencil-new.pen (visibility fix).
+ * Apply default fills to nodes missing fill in UIX/pencil-new.pen (visibility fix).
  */
 import { Client } from '../openpencil-mcp-safe/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
 import { StdioClientTransport } from '../openpencil-mcp-safe/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PENCIL_MCP_FILE_PATH } from './_pencil_paths.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
-const filePath = 'E:/Curser/cosmos/pencil-new.pen'
+const filePath = PENCIL_MCP_FILE_PATH
 
 const DARK_ROOTS = new Set(['Ytpc7', 'V7RAmM'])
 

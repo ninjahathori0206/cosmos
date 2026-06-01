@@ -45,6 +45,35 @@ function istHour(d) {
   );
 }
 
+const WIRE_DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/;
+
+/**
+ * SQL fragment: naive DATETIME/DATETIME2 → ISO wire string (no timezone suffix).
+ * @param {string} columnExpr e.g. "o.created_at" or "p.created_at"
+ */
+function sqlWireDatetime(columnExpr) {
+  return `CONVERT(VARCHAR(19), ${columnExpr}, 126)`;
+}
+
+/**
+ * Normalize SQL/API datetime to YYYY-MM-DDTHH:mm:ss (IST wall-clock digits, no Z).
+ * Prefer values from sqlWireDatetime() in queries; falls back for legacy Date objects.
+ * @param {Date|string|null|undefined} value
+ * @returns {string|null}
+ */
+function wireDatetimeFromSql(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'string') {
+    const m = value.trim().match(WIRE_DATETIME_RE);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`;
+  }
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return value.toLocaleString('sv-SE', { timeZone: COSMOS_IST_TZ }).replace(' ', 'T').slice(0, 19);
+  }
+  return wireDatetimeFromSql(String(value));
+}
+
 module.exports = {
   COSMOS_IST_TZ,
   SQL_NOW,
@@ -53,4 +82,6 @@ module.exports = {
   todayYmd,
   formatDateYmd,
   istHour,
+  sqlWireDatetime,
+  wireDatetimeFromSql,
 };

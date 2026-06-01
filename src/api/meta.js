@@ -109,6 +109,7 @@ router.get(
   requirePermission(
     'command_unit.settings.view',
     'foundry.stock.view',
+    'foundry.units.trace',
     'storepilot.stock.view'
   ),
   (req, res) => {

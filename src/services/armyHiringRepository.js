@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const sql = require('mssql');
 const { getPool } = require('../config/db');
 const {
@@ -9,7 +11,10 @@ const {
 const { getArmyApplicationStatusByKey } = require('../config/armyApplicationStatusCatalog');
 const { getArmyJobOpeningStatusByKey } = require('../config/armyJobOpeningStatusCatalog');
 const { getArmyJoiningAvailabilityByKey } = require('../config/armyJoiningAvailabilityCatalog');
+const { getArmyDepartmentByKey, isAllowedArmyDepartmentKey } = require('../config/armyDepartmentsCatalog');
+const { getArmyEmploymentTypeByKey, isAllowedArmyEmploymentTypeKey } = require('../config/armyEmploymentTypeCatalog');
 const { formatDateYmd, wallClockIso } = require('../lib/cosmosIst');
+const { assertTemplateExists, seedApplicationInterviewsFromJob } = require('./armyInterviewRepository');
 
 let tablesReadyCache = null;
 
@@ -130,7 +135,7 @@ async function createApplication(payload) {
   const jobR = await pool.request()
     .input('slug', sql.NVarChar(120), payload.job_slug)
     .query(`
-      SELECT job_opening_id, slug, title, store_name
+      SELECT job_opening_id, slug, title, store_name, interview_template_id
       FROM dbo.army_job_openings
       WHERE slug = @slug AND status = N'PUBLISHED'
     `);
@@ -235,9 +240,11 @@ async function createApplication(payload) {
         )
       `);
 
+    const appRow = insApp.recordset[0];
+    await seedApplicationInterviewsFromJob(tx, appRow.application_id, job.job_opening_id);
+
     await tx.commit();
 
-    const appRow = insApp.recordset[0];
     return {
       id: appRow.application_id,
       job_slug: job.slug,
@@ -367,6 +374,278 @@ async function listJobOpeningsAdmin(filters = {}) {
   }));
 }
 
+const JOB_EDITABLE_STATUSES = ['DRAFT', 'PENDING_APPROVAL'];
+
+function slugifyJobTitle(title, storeName) {
+  const raw = [title, storeName].filter(Boolean).join(' ');
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+}
+
+async function slugExists(slug, excludeJobId) {
+  const pool = await getPool();
+  const req = pool.request().input('slug', sql.NVarChar(120), slug);
+  if (excludeJobId) req.input('excludeId', sql.Int, excludeJobId);
+  const r = await req.query(`
+    SELECT TOP 1 job_opening_id FROM dbo.army_job_openings
+    WHERE slug = @slug ${excludeJobId ? 'AND job_opening_id <> @excludeId' : ''}
+  `);
+  return r.recordset.length > 0;
+}
+
+async function ensureUniqueSlug(baseSlug, excludeJobId) {
+  let slug = baseSlug || 'opening';
+  if (!(await slugExists(slug, excludeJobId))) return slug.slice(0, 120);
+  for (let n = 2; n < 1000; n += 1) {
+    const candidate = `${baseSlug}-${n}`.slice(0, 120);
+    if (!(await slugExists(candidate, excludeJobId))) return candidate;
+  }
+  const err = new Error('Could not generate a unique slug for this opening.');
+  err.statusCode = 409;
+  throw err;
+}
+
+async function getStoreForHiring(storeId) {
+  const pool = await getPool();
+  const r = await pool.request()
+    .input('storeId', sql.Int, storeId)
+    .query(`
+      SELECT store_id, store_name, city, status, is_active
+      FROM dbo.stores
+      WHERE store_id = @storeId
+    `);
+  if (!r.recordset.length) {
+    const err = new Error('Store not found.');
+    err.statusCode = 400;
+    throw err;
+  }
+  const row = r.recordset[0];
+  if (!row.is_active || String(row.status || '').toUpperCase() !== 'ACTIVE') {
+    const err = new Error('Store must be active.');
+    err.statusCode = 400;
+    throw err;
+  }
+  return row;
+}
+
+async function listHiringStores() {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`
+      SELECT store_id, store_name, city
+      FROM dbo.stores
+      WHERE is_active = 1 AND status = N'ACTIVE'
+      ORDER BY store_name
+    `);
+    return (r.recordset || []).map((row) => ({
+      store_id: row.store_id,
+      store_name: row.store_name,
+      city: row.city || null
+    }));
+  } catch (_) {
+    return [];
+  }
+}
+
+function normalizeRequirements(requirements) {
+  if (!requirements) return [];
+  if (Array.isArray(requirements)) {
+    return requirements.map((line) => String(line || '').trim()).filter(Boolean);
+  }
+  return String(requirements)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+async function getJobOpeningAdminById(jobId) {
+  if (!(await isHiringTablesReady())) {
+    const err = new Error('Job opening not found.');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const pool = await getPool();
+  const r = await pool.request()
+    .input('id', sql.Int, jobId)
+    .query(`
+      SELECT j.*,
+        (SELECT COUNT(*) FROM dbo.army_applications a WHERE a.job_opening_id = j.job_opening_id) AS application_count,
+        t.name AS interview_template_name
+      FROM dbo.army_job_openings j
+      LEFT JOIN dbo.army_interview_templates t ON t.interview_template_id = j.interview_template_id
+      WHERE j.job_opening_id = @id
+    `);
+  if (!r.recordset.length) {
+    const err = new Error('Job opening not found.');
+    err.statusCode = 404;
+    throw err;
+  }
+  const row = r.recordset[0];
+  return {
+    ...mapJobRow(row, { includeInternal: true }),
+    store_id: row.store_id,
+    application_count: row.application_count,
+    interview_template_id: row.interview_template_id || null,
+    interview_template_name: row.interview_template_name || null
+  };
+}
+
+async function createJobOpening(payload, userId) {
+  if (!(await isHiringTablesReady())) {
+    const err = new Error('Hiring tables not deployed. Run migration 78.');
+    err.statusCode = 503;
+    throw err;
+  }
+
+  if (!isAllowedArmyDepartmentKey(payload.department_key)) {
+    const err = new Error('Invalid department.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!isAllowedArmyEmploymentTypeKey(payload.employment_type)) {
+    const err = new Error('Invalid employment type.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const store = await getStoreForHiring(payload.store_id);
+  const employment = getArmyEmploymentTypeByKey(payload.employment_type);
+  const requirements = normalizeRequirements(payload.requirements);
+  const slug = await ensureUniqueSlug(slugifyJobTitle(payload.title, store.store_name));
+
+  let interviewTemplateId = payload.interview_template_id || null;
+  if (interviewTemplateId) {
+    await assertTemplateExists(interviewTemplateId, { activeOnly: true });
+  } else {
+    interviewTemplateId = null;
+  }
+
+  const pool = await getPool();
+  const r = await pool.request()
+    .input('slug', sql.NVarChar(120), slug)
+    .input('title', sql.NVarChar(200), payload.title.trim())
+    .input('department_key', sql.NVarChar(30), String(payload.department_key).trim().toUpperCase())
+    .input('store_id', sql.Int, store.store_id)
+    .input('store_name', sql.NVarChar(120), store.store_name)
+    .input('employment_type', sql.NVarChar(30), employment.key)
+    .input('employment_type_label', sql.NVarChar(60), employment.label)
+    .input('vacancies', sql.Int, payload.vacancies)
+    .input('location', sql.NVarChar(200), payload.location || null)
+    .input('about_text', sql.NVarChar(sql.MAX), payload.about_text || null)
+    .input('requirements_json', sql.NVarChar(sql.MAX), requirements.length ? JSON.stringify(requirements) : null)
+    .input('apply_by', sql.Date, payload.apply_by || null)
+    .input('interview_template_id', sql.Int, interviewTemplateId)
+    .input('userId', sql.Int, userId || null)
+    .query(`
+      INSERT INTO dbo.army_job_openings (
+        slug, title, department_key, store_id, store_name,
+        employment_type, employment_type_label, vacancies, location,
+        about_text, requirements_json, apply_by, interview_template_id, status, created_by,
+        created_at, updated_at
+      )
+      OUTPUT INSERTED.*
+      VALUES (
+        @slug, @title, @department_key, @store_id, @store_name,
+        @employment_type, @employment_type_label, @vacancies, @location,
+        @about_text, @requirements_json, @apply_by, @interview_template_id, N'DRAFT', @userId,
+        DATEADD(MINUTE, 330, SYSUTCDATETIME()),
+        DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      )
+    `);
+
+  return mapJobRow(r.recordset[0], { includeInternal: true });
+}
+
+async function updateJobOpening(jobId, payload) {
+  if (!(await isHiringTablesReady())) {
+    const err = new Error('Hiring tables not deployed. Run migration 78.');
+    err.statusCode = 503;
+    throw err;
+  }
+
+  const existing = await getJobOpeningAdminById(jobId);
+  if (!JOB_EDITABLE_STATUSES.includes(existing.status)) {
+    const err = new Error('Only draft or pending-approval openings can be edited.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (!isAllowedArmyDepartmentKey(payload.department_key)) {
+    const err = new Error('Invalid department.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!isAllowedArmyEmploymentTypeKey(payload.employment_type)) {
+    const err = new Error('Invalid employment type.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const store = await getStoreForHiring(payload.store_id);
+  const employment = getArmyEmploymentTypeByKey(payload.employment_type);
+  const requirements = normalizeRequirements(payload.requirements);
+  const slug = await ensureUniqueSlug(
+    slugifyJobTitle(payload.title, store.store_name),
+    jobId
+  );
+
+  let interviewTemplateId = payload.interview_template_id || null;
+  if (interviewTemplateId) {
+    await assertTemplateExists(interviewTemplateId, { activeOnly: true });
+  } else {
+    interviewTemplateId = null;
+  }
+
+  const pool = await getPool();
+  const r = await pool.request()
+    .input('id', sql.Int, jobId)
+    .input('slug', sql.NVarChar(120), slug)
+    .input('title', sql.NVarChar(200), payload.title.trim())
+    .input('department_key', sql.NVarChar(30), String(payload.department_key).trim().toUpperCase())
+    .input('store_id', sql.Int, store.store_id)
+    .input('store_name', sql.NVarChar(120), store.store_name)
+    .input('employment_type', sql.NVarChar(30), employment.key)
+    .input('employment_type_label', sql.NVarChar(60), employment.label)
+    .input('vacancies', sql.Int, payload.vacancies)
+    .input('location', sql.NVarChar(200), payload.location || null)
+    .input('about_text', sql.NVarChar(sql.MAX), payload.about_text || null)
+    .input('requirements_json', sql.NVarChar(sql.MAX), requirements.length ? JSON.stringify(requirements) : null)
+    .input('apply_by', sql.Date, payload.apply_by || null)
+    .input('interview_template_id', sql.Int, interviewTemplateId)
+    .query(`
+      UPDATE dbo.army_job_openings SET
+        slug = @slug,
+        title = @title,
+        department_key = @department_key,
+        store_id = @store_id,
+        store_name = @store_name,
+        employment_type = @employment_type,
+        employment_type_label = @employment_type_label,
+        vacancies = @vacancies,
+        location = @location,
+        about_text = @about_text,
+        requirements_json = @requirements_json,
+        apply_by = @apply_by,
+        interview_template_id = @interview_template_id,
+        updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      OUTPUT INSERTED.*
+      WHERE job_opening_id = @id
+        AND status IN (N'DRAFT', N'PENDING_APPROVAL')
+    `);
+
+  if (!r.recordset.length) {
+    const err = new Error('Job opening not found or not editable.');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  return mapJobRow(r.recordset[0], { includeInternal: true });
+}
+
 async function updateJobOpeningStatus(jobId, statusKey, userId) {
   if (!(await isHiringTablesReady())) {
     const err = new Error('Hiring tables not deployed. Run migration 78.');
@@ -460,6 +739,34 @@ async function listApplicationsAdmin(filters = {}) {
       department_key: row.department_key
     }
   }));
+}
+
+const ARMY_RESUME_DIR = path.join(__dirname, '..', 'public', 'uploads', 'army-careers', 'resumes');
+
+function slugifyDownloadName(value) {
+  return String(value || 'candidate')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'candidate';
+}
+
+async function getApplicationResumeFile(applicationId) {
+  const application = await getApplicationAdminById(applicationId);
+  const resumeUrl = application.candidate && application.candidate.resume_url;
+  if (!resumeUrl) return null;
+
+  const filename = path.basename(String(resumeUrl));
+  if (!filename || filename.includes('..')) return null;
+
+  const absolutePath = path.join(ARMY_RESUME_DIR, filename);
+  const resolved = path.resolve(absolutePath);
+  if (!resolved.startsWith(path.resolve(ARMY_RESUME_DIR) + path.sep)) return null;
+  if (!fs.existsSync(resolved)) return null;
+
+  const ext = path.extname(filename) || '.pdf';
+  const downloadName = slugifyDownloadName(application.candidate.full_name) + '-cv' + ext.toLowerCase();
+  return { absolutePath: resolved, downloadName };
 }
 
 async function getApplicationAdminById(applicationId) {
@@ -613,9 +920,14 @@ module.exports = {
   getLatestApplicationByPhone,
   getApplicationPublicView,
   listJobOpeningsAdmin,
+  getJobOpeningAdminById,
+  createJobOpening,
+  updateJobOpening,
+  listHiringStores,
   updateJobOpeningStatus,
   listApplicationsAdmin,
   getApplicationAdminById,
+  getApplicationResumeFile,
   updateApplicationStatus,
   getHiringDashboardStats,
   getArmyJobOpeningStatusByKey

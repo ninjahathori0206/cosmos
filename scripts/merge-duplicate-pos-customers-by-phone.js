@@ -119,25 +119,31 @@ async function pickSurvivor(pool, rows) {
   return { survivor: best, orderCount: bestCnt }
 }
 
-async function ensureAlias(pool, survivorId, aliasName, dryRun) {
-  const name = String(aliasName || '').trim()
+async function ensureFamilyName(pool, survivorId, familyName, dryRun) {
+  const name = String(familyName || '').trim()
   if (!name) return
-  const hasTable = await tableExists(pool, 'pos_customer_aliases')
+  const hasTable =
+    (await tableExists(pool, 'pos_customer_family_names')) ||
+    (await tableExists(pool, 'pos_customer_aliases'))
   if (!hasTable) return
   if (dryRun) return
+  const table = (await tableExists(pool, 'pos_customer_family_names'))
+    ? 'dbo.pos_customer_family_names'
+    : 'dbo.pos_customer_aliases'
+  const col = table.includes('family_names') ? 'family_name' : 'alias_name'
   await pool
     .request()
     .input('cid', sql.Int, survivorId)
-    .input('alias', sql.NVarChar(200), name)
+    .input('fname', sql.NVarChar(200), name)
     .query(`
       IF NOT EXISTS (
-        SELECT 1 FROM dbo.pos_customer_aliases WHERE customer_id = @cid AND alias_name = @alias
+        SELECT 1 FROM ${table} WHERE customer_id = @cid AND ${col} = @fname
       )
       AND NOT EXISTS (
-        SELECT 1 FROM dbo.pos_customers WHERE customer_id = @cid AND LTRIM(RTRIM(full_name)) = @alias
+        SELECT 1 FROM dbo.pos_customers WHERE customer_id = @cid AND LTRIM(RTRIM(full_name)) = @fname
       )
-      INSERT INTO dbo.pos_customer_aliases (customer_id, alias_name)
-      VALUES (@cid, @alias)
+      INSERT INTO ${table} (customer_id, ${col})
+      VALUES (@cid, @fname)
     `)
 }
 
@@ -277,7 +283,7 @@ async function mergeGroup(pool, phone, dryRun, audit) {
       const primary = String(survivor.full_name || '').trim()
       const loserName = String(loser.full_name || '').trim()
       if (loserName && loserName.toLowerCase() !== primary.toLowerCase()) {
-        await ensureAlias(pool, survivor.customer_id, loserName, false)
+        await ensureFamilyName(pool, survivor.customer_id, loserName, false)
       }
 
       await req()

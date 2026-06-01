@@ -493,34 +493,34 @@ BEGIN
     c.home_store_id,
     c.is_active,
     c.created_at,
-    am.matched_alias_name,
+    fm.matched_family_name,
     CASE
-      WHEN am.matched_alias_name IS NOT NULL THEN am.matched_alias_name
+      WHEN fm.matched_family_name IS NOT NULL THEN fm.matched_family_name
       ELSE c.full_name
     END AS display_name
   FROM dbo.pos_customers c
   OUTER APPLY (
-    SELECT TOP 1 a.alias_name AS matched_alias_name
-    FROM dbo.pos_customer_aliases a
-    WHERE a.customer_id = c.customer_id
+    SELECT TOP 1 fn.family_name AS matched_family_name
+    FROM dbo.pos_customer_family_names fn
+    WHERE fn.customer_id = c.customer_id
       AND @search IS NOT NULL
-      AND a.alias_name LIKE @search
-    ORDER BY a.alias_id
-  ) am
+      AND fn.family_name LIKE @search
+    ORDER BY fn.family_name_id
+  ) fm
   WHERE c.is_active = 1
     AND (
       @search IS NULL
       OR c.phone     LIKE @search
       OR c.full_name LIKE @search
       OR c.email     LIKE @search
-      OR am.matched_alias_name IS NOT NULL
+      OR fm.matched_family_name IS NOT NULL
     )
   ORDER BY c.updated_at DESC, c.customer_id DESC;
 END;
 GO
 
 -- ─── sp_POS_CustomerCreate ───────────────────────────────────────────────────
--- Legacy insert only — prefer API posCustomerRegisterService for alias / unique phone.
+-- Legacy insert only — prefer API posCustomerRegisterService for family names / unique phone.
 CREATE OR ALTER PROCEDURE dbo.sp_POS_CustomerCreate
   @full_name     NVARCHAR(200),
   @phone         NVARCHAR(20),

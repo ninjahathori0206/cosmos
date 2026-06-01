@@ -21,7 +21,8 @@ const {
 const { resolveSkuFacts, computeOfferDiscountAmount } = require('../services/customerOfferDiscountService')
 const {
   grantCustomerMembership,
-  resolveMembershipSaleAmount
+  resolveMembershipSaleAmount,
+  membershipHasPosOrderIdColumn
 } = require('../services/membershipGrantService')
 const { wallClockIso } = require('../lib/cosmosIst')
 const { parseIndiaMobileForSave } = require('../lib/indiaMobile')
@@ -396,7 +397,7 @@ const customerCreateSchema = Joi.object({
   phone:         Joi.string().min(1).max(30).required(),
   email:         Joi.string().max(200).allow(null, '').optional(),
   home_store_id: Joi.number().integer().positive().allow(null),
-  confirm_alias: Joi.boolean().default(false)
+  confirm_family_name: Joi.boolean().default(false)
 })
 
 const customerCheckPhoneSchema = Joi.object({
@@ -1153,7 +1154,7 @@ router.get('/settings', ...posCatalogue, async (req, res, next) => {
       map[String(row.setting_key)] = String(row.setting_value ?? '')
     }
     const data = {
-      lab_advance_pct: Number(map.lab_advance_pct || 40),
+      lab_advance_pct: orderService.resolveLabAdvancePct(map.lab_advance_pct, 40),
       gst_rate: Number(map.pos_gst_rate || 0.05),
       composition_scheme: truthyPosSetting(map.pos_composition_scheme),
       prices_gst_inclusive: truthyPosSetting(map.pos_prices_gst_inclusive),
@@ -1383,15 +1384,29 @@ async function grantMembershipFromOrderRowIfNeeded(pool, { orderId, customerId, 
   const cid = customerId || row.customer_id
   if (!cid) return null
 
-  const existR = await pool.request()
-    .input('oid', sql.Int, orderId)
-    .input('cid', sql.Int, cid)
-    .query(`
-      SELECT TOP 1 membership_id
-      FROM   dbo.customer_memberships
-      WHERE  customer_id = @cid AND pos_order_id = @oid AND is_active = 1
-    `)
-  if (existR.recordset.length) return existR.recordset[0]
+  const hasPosOrderLink = await membershipHasPosOrderIdColumn(pool)
+  if (hasPosOrderLink) {
+    const existR = await pool.request()
+      .input('oid', sql.Int, orderId)
+      .input('cid', sql.Int, cid)
+      .query(`
+        SELECT TOP 1 membership_id
+        FROM   dbo.customer_memberships
+        WHERE  customer_id = @cid AND pos_order_id = @oid AND is_active = 1
+      `)
+    if (existR.recordset.length) return existR.recordset[0]
+  } else {
+    const existR = await pool.request()
+      .input('cid', sql.Int, cid)
+      .input('pk', sql.NVarChar(50), String(row.sold_membership_plan_key).trim())
+      .query(`
+        SELECT TOP 1 membership_id
+        FROM   dbo.customer_memberships
+        WHERE  customer_id = @cid AND plan_key = @pk AND is_active = 1
+          AND  expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      `)
+    if (existR.recordset.length) return existR.recordset[0]
+  }
 
   return grantCustomerMembership(pool, {
     customerId: cid,
@@ -1400,6 +1415,24 @@ async function grantMembershipFromOrderRowIfNeeded(pool, { orderId, customerId, 
     posOrderId: orderId,
     createdByUserId: employeeId != null ? Number(employeeId) : null,
     useTransaction: false
+  })
+}
+
+/**
+ * Checkout grant: try request payload first, then persisted order row (idempotent).
+ */
+async function ensureMembershipGrantAfterCheckout(pool, { orderValue, out, employeeId, mode }) {
+  try {
+    const fromSale = await grantMembershipFromPosSale(pool, { orderValue, out, employeeId })
+    if (fromSale) return fromSale
+  } catch (_saleErr) {
+    /* order + payment already committed — fall back to order row */
+  }
+  return grantMembershipFromOrderRowIfNeeded(pool, {
+    orderId: out.order_id,
+    customerId: orderValue.customer_id,
+    employeeId,
+    mode
   })
 }
 
@@ -1723,12 +1756,17 @@ router.get('/customer-search', ...posCustomersView, async (req, res, next) => {
     const rows = result.recordset || []
     const enriched = []
     for (const row of rows) {
-      const aliases = await posCustomerRegister.listAliases(pool, row.customer_id)
+      const familyNames = await posCustomerRegister.listFamilyNames(pool, row.customer_id)
       const primary = String(row.full_name || '').trim()
-      const aliasList = aliases.filter(
+      const familyNameList = familyNames.filter(
         (a) => a.toLowerCase() !== primary.toLowerCase()
       )
-      enriched.push({ ...row, aliases: aliasList })
+      const rowOut = { ...row }
+      if (row.matched_alias_name != null && row.matched_family_name == null) {
+        rowOut.matched_family_name = row.matched_alias_name
+      }
+      delete rowOut.matched_alias_name
+      enriched.push({ ...rowOut, family_names: familyNameList })
     }
     return res.json({ success: true, data: enriched })
   } catch (err) {
@@ -1736,7 +1774,7 @@ router.get('/customer-search', ...posCustomersView, async (req, res, next) => {
   }
 })
 
-// ── POST /api/pos/customer/check-phone — duplicate mobile / alias preview ─────
+// ── POST /api/pos/customer/check-phone — duplicate mobile / family name preview
 router.post('/customer/check-phone', ...posCustomersCreate, async (req, res, next) => {
   try {
     const { error, value } = customerCheckPhoneSchema.validate(req.body || {})
@@ -1785,12 +1823,12 @@ router.post('/customer', ...posCustomersCreate, async (req, res, next) => {
       phone: parsed.phone,
       email: (value.email && String(value.email).trim()) || null,
       homeStoreId: homeStore || null,
-      confirmAlias: !!value.confirm_alias,
+      confirmFamilyName: !!value.confirm_family_name,
       createdByUserId: Number.isFinite(employeeId) ? employeeId : null
     })
     return res.json({ success: true, data: out })
   } catch (err) {
-    if (err.statusCode === 409 && err.code === 'PHONE_ALIAS_REQUIRED') {
+    if (err.statusCode === 409 && err.code === 'PHONE_FAMILY_NAME_REQUIRED') {
       return res.status(409).json({
         success: false,
         message: err.message,
@@ -2014,7 +2052,7 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
     const cfg = mapStartupConfig(cfgResult)
 
     const gstRate = Number(await readSetting(pool, 'pos_gst_rate') || 0.05)
-    const advPct = Number(await readSetting(pool, 'lab_advance_pct') || 40)
+    const advPct = orderService.resolveLabAdvancePct(await readSetting(pool, 'lab_advance_pct'), 40)
     const compositionScheme = truthyPosSetting(await readSetting(pool, 'pos_composition_scheme'))
     const pricesGstInclusive = truthyPosSetting(await readSetting(pool, 'pos_prices_gst_inclusive'))
     const firstPt =
@@ -2106,7 +2144,7 @@ router.post('/checkout-and-pay', ...posCheckoutAndPay, async (req, res, next) =>
     const cfgResult = await executeStoredProcedure('sp_POS_GetStartupConfig', {})
     const cfg = mapStartupConfig(cfgResult)
     const gstRate = Number(await readSetting(pool, 'pos_gst_rate') || 0.05)
-    const advPct = Number(await readSetting(pool, 'lab_advance_pct') || 40)
+    const advPct = orderService.resolveLabAdvancePct(await readSetting(pool, 'lab_advance_pct'), 40)
     const compositionScheme = truthyPosSetting(await readSetting(pool, 'pos_composition_scheme'))
     const pricesGstInclusive = truthyPosSetting(await readSetting(pool, 'pos_prices_gst_inclusive'))
     const firstPt =
@@ -2134,10 +2172,11 @@ router.post('/checkout-and-pay', ...posCheckoutAndPay, async (req, res, next) =>
       paymentBody: value.payment
     })
 
-    const membershipGrant = await grantMembershipFromPosSale(pool, {
+    const membershipGrant = await ensureMembershipGrantAfterCheckout(pool, {
       orderValue: orderBody,
       out,
-      employeeId
+      employeeId,
+      mode
     })
 
     await recordPosOfferUsage(pool, {

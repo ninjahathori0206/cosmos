@@ -1849,23 +1849,10 @@ button.pos-lk-offer-pick:focus-visible {
   touch-action: manipulation;
 }
 
-.pos-lk-cart-item .pos-ob-line-fulfill {
-  margin-top: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .pos-lk-cart-item .pos-ob-mini-btn {
   border-color: var(--lk-border);
   background: var(--lk-page-bg);
   color: var(--lk-text);
-}
-
-.pos-lk-cart-item .pos-ob-mini-btn.active {
-  border-color: var(--lk-blue);
-  background: var(--lk-blue-soft);
-  color: var(--lk-blue);
 }
 
 /* Lens: toolbar + stepper */
@@ -5521,6 +5508,45 @@ body.pos-lk-flow #screen-pos-order-builder #pos-ob-membership-row[hidden] {
   border: 1px solid rgba(13, 159, 123, 0.25);
 }
 
+/* Lab line: patient / family name (when ≠ primary Cx) */
+.pos-lk-cart-patient-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--lk-blue-soft);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.pos-lk-cart-patient-lbl {
+  font-weight: 600;
+  color: var(--lk-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+}
+.pos-lk-cart-patient-name {
+  font-weight: 600;
+  color: var(--lk-blue);
+}
+
+/* Lens wizard Step 2 — patient name field */
+.pos-lk-lens-patient-field {
+  margin: 12px 0 8px;
+}
+.pos-lk-lens-patient-field-lbl {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lk-text-muted);
+  margin-bottom: 6px;
+}
+.pos-lk-lens-patient-field .pos-lk-rx-input {
+  width: 100%;
+}
+
 /* Lens: description line + “Lens package” cost row (LAB complete) */
 .pos-lk-cart-lens-desc {
   font-size: 12px;
@@ -5752,6 +5778,20 @@ body.pos-lk-flow #screen-pos-order-builder #pos-ob-membership-row[hidden] {
   margin-top: 2px;
   width: 100%;
   justify-content: center;
+}
+
+.pos-lk-cart-edit-btn {
+  background: var(--lk-card) !important;
+  color: var(--lk-blue) !important;
+  border: 1px solid var(--lk-border) !important;
+  box-shadow: none !important;
+}
+
+.pos-lk-cart-edit-btn:hover {
+  background: var(--lk-blue-soft) !important;
+  border-color: var(--lk-blue) !important;
+  color: var(--lk-blue) !important;
+  transform: none;
 }
 
 /* Legacy — kept for safety */

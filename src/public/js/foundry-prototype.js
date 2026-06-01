@@ -220,6 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const FOUNDRY_PAGE_VIEW_BY_PAGE = {
     'sku-catalogue': ['foundry.catalogue.view'],
     'stock-view': ['foundry.stock.view'],
+    'unit-search': ['foundry.units.trace'],
     'lens-packages': ['foundry.lens.packages.view'],
     'lens-addons': ['foundry.lens.addons.view'],
     'lens-package-addons': ['foundry.lens.matrix.view'],
@@ -5466,6 +5467,189 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (qEl) qEl.focus();
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // UNIT SEARCH — trace by 7-digit unit code
+  // ─────────────────────────────────────────────────────────────────────────
+  let _utStatusLabels = null;
+
+  function utEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function utNormalizeUnitCode(raw) {
+    const d = String(raw || '').replace(/\D/g, '');
+    if (!d) return '';
+    return d.slice(-7).padStart(7, '0');
+  }
+
+  function utShowPanel(which) {
+    const empty = document.getElementById('ut-empty-state');
+    const results = document.getElementById('ut-results-panel');
+    if (empty) empty.style.display = which === 'empty' ? '' : 'none';
+    if (results) results.style.display = which === 'results' ? 'block' : 'none';
+  }
+
+  async function utEnsureStatusLabels() {
+    if (_utStatusLabels) return _utStatusLabels;
+    try {
+      const data = await apiGet('/api/meta/sku-unit-statuses');
+      const map = {};
+      (data && data.statuses || []).forEach((row) => {
+        if (row && row.key) map[String(row.key).toUpperCase()] = row.label || row.key;
+      });
+      _utStatusLabels = map;
+    } catch (_err) {
+      _utStatusLabels = {};
+    }
+    return _utStatusLabels;
+  }
+
+  function utStatusLabel(statusKey) {
+    const key = String(statusKey || '').trim().toUpperCase();
+    if (_utStatusLabels && _utStatusLabels[key]) return _utStatusLabels[key];
+    return key || '—';
+  }
+
+  function utStatusBadgeClass(statusKey) {
+    const key = String(statusKey || '').trim().toUpperCase();
+    if (key === 'AVAILABLE' || key === 'AT_STORE') return 'b b-green';
+    if (key === 'SOLD' || key === 'CONSUMED') return 'b';
+    if (key === 'IN_TRANSIT' || key === 'RESERVED') return 'b b-gold';
+    if (key === 'AT_LAB') return 'b b-blue';
+    return 'b b-blue';
+  }
+
+  function utRenderTimeline(rows) {
+    const el = document.getElementById('ut-timeline');
+    if (!el) return;
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) {
+      el.innerHTML = '<li style="font-size:13px;color:var(--text3)">No movement events recorded yet.</li>';
+      return;
+    }
+    el.innerHTML = list.map((row) => {
+      const when = fmtDateTime(row.event_at);
+      const title = utEsc(row.title || row.event_type || 'Event');
+      const detail = row.detail ? `<div style="font-size:12px;color:var(--text3);margin-top:2px">${utEsc(row.detail)}</div>` : '';
+      return `<li style="display:flex;gap:10px;align-items:flex-start">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--acc);margin-top:6px;flex-shrink:0" aria-hidden="true"></span>
+        <div>
+          <div style="font-size:12px;color:var(--text3)">${utEsc(when)}</div>
+          <div style="font-size:13px;font-weight:600;color:var(--text1)">${title}</div>
+          ${detail}
+        </div>
+      </li>`;
+    }).join('');
+  }
+
+  function utRenderSale(sale) {
+    const card = document.getElementById('ut-sale-card');
+    const body = document.getElementById('ut-sale-body');
+    if (!card || !body) return;
+    if (!sale || !sale.order_id) {
+      card.style.display = 'none';
+      body.innerHTML = '';
+      return;
+    }
+    card.style.display = '';
+    const rows = [
+      ['Invoice', sale.invoice_no || sale.order_no || '—'],
+      ['Store', sale.store_name ? (sale.store_code ? `${sale.store_name} (${sale.store_code})` : sale.store_name) : '—'],
+      ['Sold at', sale.sold_at ? fmtDateTime(sale.sold_at) : '—'],
+      ['Line amount', sale.line_total != null ? inrD(sale.line_total) : (sale.unit_price != null ? inrD(sale.unit_price) : '—')],
+      ['Order status', sale.order_status || '—']
+    ];
+    body.innerHTML = rows.map(([label, val]) =>
+      `<div class="flex ic" style="justify-content:space-between;gap:12px">
+        <span class="td2">${utEsc(label)}</span>
+        <span class="fw6" style="color:var(--text1);text-align:right">${utEsc(val)}</span>
+      </div>`
+    ).join('');
+  }
+
+  function utRenderResult(payload) {
+    const unit = payload && payload.unit;
+    if (!unit) {
+      utShowPanel('empty');
+      return;
+    }
+    utShowPanel('results');
+    const codeEl = document.getElementById('ut-unit-code');
+    const badgeEl = document.getElementById('ut-status-badge');
+    const locEl = document.getElementById('ut-location-label');
+    const skuEl = document.getElementById('ut-sku-strip');
+    if (codeEl) codeEl.textContent = unit.unit_barcode || '—';
+    if (badgeEl) {
+      badgeEl.textContent = utStatusLabel(unit.status);
+      badgeEl.className = utStatusBadgeClass(unit.status);
+    }
+    if (locEl) locEl.textContent = unit.current_location_label || '—';
+    if (skuEl) {
+      const parts = [
+        unit.brand_name,
+        unit.product_name,
+        unit.sku_code ? `SKU ${unit.sku_code}` : '',
+        unit.pid ? `PID ${unit.pid}` : '',
+        unit.colour_name || ''
+      ].filter(Boolean);
+      skuEl.textContent = parts.length ? parts.join(' · ') : '—';
+    }
+    utRenderTimeline(payload.timeline);
+    utRenderSale(payload.sale);
+  }
+
+  window.onUnitSearchInput = function(inputEl) {
+    if (typeof cosmosFieldClear === 'function' && inputEl) cosmosFieldClear(inputEl);
+  };
+
+  window.loadUnitSearch = async function() {
+    await utEnsureStatusLabels();
+    utShowPanel('empty');
+    const qEl = document.getElementById('ut-search-q');
+    if (qEl) {
+      qEl.focus();
+      qEl.select();
+    }
+  };
+
+  window.runUnitTraceSearch = async function() {
+    const qEl = document.getElementById('ut-search-q');
+    const btn = document.getElementById('ut-search-btn');
+    const timelineEl = document.getElementById('ut-timeline');
+    const raw = (qEl && qEl.value) ? String(qEl.value).trim() : '';
+    const code = utNormalizeUnitCode(raw);
+
+    if (!raw) {
+      if (typeof cosmosFieldError === 'function' && qEl) cosmosFieldError(qEl, 'Enter a unit code');
+      return;
+    }
+    if (!/^\d{7}$/.test(code)) {
+      if (typeof cosmosFieldError === 'function' && qEl) cosmosFieldError(qEl, 'Enter a valid 7-digit unit code');
+      return;
+    }
+
+    await utEnsureStatusLabels();
+    if (typeof cosmosBtnLoading === 'function' && btn) cosmosBtnLoading(btn);
+    if (typeof cosmosSkeletonRows === 'function' && timelineEl) {
+      utShowPanel('results');
+      cosmosSkeletonRows('ut-timeline', 4);
+    }
+    const saleCard = document.getElementById('ut-sale-card');
+    if (saleCard) saleCard.style.display = 'none';
+
+    try {
+      const data = await apiGet('/api/skus/units/trace?q=' + encodeURIComponent(code));
+      if (qEl) qEl.value = code;
+      utRenderResult(data);
+    } catch (err) {
+      utShowPanel('empty');
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Unit not found');
+    } finally {
+      if (typeof cosmosBtnDone === 'function' && btn) cosmosBtnDone(btn);
+    }
+  };
+
   // ── Lens config (POS catalogue) — /api/foundry/lens-config ────────────────────
   let _lcActivePage = 'lens-packages';
   function lcCanEdit() {
@@ -6228,6 +6412,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     digitisation: '/foundry/digitisation',
     'sku-catalogue': '/foundry/sku-catalogue',
     'stock-view': '/foundry/stock-view',
+    'unit-search': '/foundry/unit-search',
     'lens-packages': '/foundry/lens-packages',
     'lens-addons': '/foundry/lens-addons',
     'lens-package-addons': '/foundry/lens-package-addons',
@@ -6305,6 +6490,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (id === 'sku-catalogue')    loadSkuCatalogue();
     if (id === 'master-catalogue') loadMasterCatalogue();
     if (id === 'stock-view')       loadStockView();
+    if (id === 'unit-search')      loadUnitSearch();
     if (id === 'stock-transfer' && typeof window.stInit === 'function') window.stInit();
     if (id === 'transfer-requests') {
       void Promise.all([

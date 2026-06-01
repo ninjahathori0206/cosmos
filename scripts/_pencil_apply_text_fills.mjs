@@ -4,9 +4,10 @@ import { StdioClientTransport } from '../openpencil-mcp-safe/node_modules/@model
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PENCIL_MCP_FILE_PATH } from './_pencil_paths.mjs'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
-const filePath = 'E:/Curser/cosmos/pencil-new.pen'
+const filePath = PENCIL_MCP_FILE_PATH
 const DARK = new Set(['Ytpc7', 'V7RAmM'])
 const TOPS = [
   'n7LXP', '2l4HL', 'j0CrZ', '0Zwnf', 'qOpTD', 'h7oti', '0RJs9v129S3D2WBREfZd5',

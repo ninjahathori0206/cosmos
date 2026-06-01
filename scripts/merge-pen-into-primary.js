@@ -7,7 +7,7 @@
  *   node scripts/merge-pen-into-primary.js
  *
  * Env:
- *   PEN_PRIMARY   (default: pencil-new.pen)
+ *   PEN_PRIMARY   (default: UIX/pencil-new.pen)
  *   PEN_SECONDARY (default: pencil-new_1234.pen)
  *   DRY_RUN=1     only print counts, do not write
  */
@@ -17,7 +17,7 @@ const path = require('path')
 const crypto = require('crypto')
 
 const root = path.join(__dirname, '..')
-const primaryPath = path.resolve(root, process.env.PEN_PRIMARY || 'pencil-new.pen')
+const primaryPath = path.resolve(root, process.env.PEN_PRIMARY || path.join('UIX', 'pencil-new.pen'))
 const secondaryPath = path.resolve(root, process.env.PEN_SECONDARY || 'pencil-new_1234.pen')
 const dryRun = process.env.DRY_RUN === '1'
 

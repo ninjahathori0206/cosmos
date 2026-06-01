@@ -5,22 +5,53 @@ const {
   normalizeIndiaMobileDigits,
   isValidIndiaMobileDigits
 } = require('../lib/indiaMobile')
+const { familyNameConfirmErrorMessage } = require('../config/posCustomerFamilyNameCopyCatalog')
+
+const FAMILY_NAMES_TABLE = 'dbo.pos_customer_family_names'
 
 function namesEqual(a, b) {
   return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase()
 }
 
-async function listAliases(pool, customerId) {
-  const r = await pool.request().input('cid', sql.Int, customerId).query(`
-    SELECT alias_name FROM dbo.pos_customer_aliases
-    WHERE customer_id = @cid
-    ORDER BY alias_name ASC
-  `)
-  return (r.recordset || []).map((row) => String(row.alias_name || '').trim()).filter(Boolean)
+async function listFamilyNames(pool, customerId) {
+  const sources = [
+    { table: FAMILY_NAMES_TABLE, column: 'family_name' },
+    { table: 'dbo.pos_customer_aliases', column: 'alias_name' }
+  ]
+  for (let i = 0; i < sources.length; i += 1) {
+    const src = sources[i]
+    try {
+      const r = await pool.request().input('cid', sql.Int, customerId).query(`
+        SELECT ${src.column} FROM ${src.table}
+        WHERE customer_id = @cid
+        ORDER BY ${src.column} ASC
+      `)
+      return (r.recordset || [])
+        .map((row) => String(row[src.column] || '').trim())
+        .filter(Boolean)
+    } catch (err) {
+      const msg = String(err.message || '')
+      const missing =
+        err.code === 'EREQUEST' &&
+        (/Invalid object name/i.test(msg) || /Invalid column name/i.test(msg))
+      if (!missing || i === sources.length - 1) throw err
+    }
+  }
+  return []
 }
 
+/** @deprecated use listFamilyNames */
+const listAliases = listFamilyNames
+
 /**
- * @returns {{ exists: boolean, customer_id?: number, primary_name?: string, aliases?: string[] }}
+ * @returns {{
+ *   exists: boolean,
+ *   customer_id?: number,
+ *   primary_name?: string,
+ *   family_names?: string[],
+ *   needs_family_name_confirm?: boolean,
+ *   proposed_family_name?: string|null
+ * }}
  */
 async function checkPhone(pool, phoneRaw, { proposedName } = {}) {
   const phone = normalizeIndiaMobileDigits(phoneRaw)
@@ -36,28 +67,28 @@ async function checkPhone(pool, phoneRaw, { proposedName } = {}) {
   `)
   const row = r.recordset[0]
   if (!row) {
-    return { exists: false, phone, needs_alias_confirm: false }
+    return { exists: false, phone, needs_family_name_confirm: false }
   }
-  const aliases = await listAliases(pool, row.customer_id)
+  const familyNames = await listFamilyNames(pool, row.customer_id)
   const primary = String(row.full_name || '').trim()
-  const needsAliasConfirm =
+  const needsFamilyNameConfirm =
     proposedName &&
     !namesEqual(proposedName, primary) &&
-    !aliases.some((a) => namesEqual(a, proposedName))
+    !familyNames.some((a) => namesEqual(a, proposedName))
   return {
     exists: true,
     phone,
     customer_id: row.customer_id,
     primary_name: primary,
-    aliases,
-    needs_alias_confirm: !!needsAliasConfirm,
-    proposed_alias: needsAliasConfirm ? String(proposedName).trim() : null
+    family_names: familyNames,
+    needs_family_name_confirm: !!needsFamilyNameConfirm,
+    proposed_family_name: needsFamilyNameConfirm ? String(proposedName).trim() : null
   }
 }
 
 /**
  * Register or link customer by mobile.
- * @returns {Promise<{ customer_id: number, created: boolean, alias_added: boolean, primary_name: string }>}
+ * @returns {Promise<{ customer_id: number, created: boolean, family_name_added: boolean, primary_name: string }>}
  */
 async function registerCustomer(
   pool,
@@ -66,7 +97,7 @@ async function registerCustomer(
     phone: phoneRaw,
     email,
     homeStoreId,
-    confirmAlias = false,
+    confirmFamilyName = false,
     createdByUserId = null
   }
 ) {
@@ -106,35 +137,33 @@ async function registerCustomer(
     return {
       customer_id: customerId,
       created: true,
-      alias_added: false,
+      family_name_added: false,
       primary_name: name
     }
   }
 
   const customerId = existing.customer_id
   const primaryName = String(existing.full_name || '').trim()
-  const aliases = await listAliases(pool, customerId)
+  const familyNames = await listFamilyNames(pool, customerId)
 
-  if (namesEqual(name, primaryName) || aliases.some((a) => namesEqual(a, name))) {
+  if (namesEqual(name, primaryName) || familyNames.some((a) => namesEqual(a, name))) {
     return {
       customer_id: customerId,
       created: false,
-      alias_added: false,
+      family_name_added: false,
       primary_name: primaryName
     }
   }
 
-  if (!confirmAlias) {
-    const err = new Error(
-      `Mobile already registered as ${primaryName}. Add "${name}" as an alias and continue?`
-    )
+  if (!confirmFamilyName) {
+    const err = new Error(familyNameConfirmErrorMessage(primaryName, name))
     err.statusCode = 409
-    err.code = 'PHONE_ALIAS_REQUIRED'
+    err.code = 'PHONE_FAMILY_NAME_REQUIRED'
     err.payload = {
       customer_id: customerId,
       primary_name: primaryName,
-      proposed_alias: name,
-      aliases
+      proposed_family_name: name,
+      family_names: familyNames
     }
     throw err
   }
@@ -142,21 +171,21 @@ async function registerCustomer(
   await pool
     .request()
     .input('cid', sql.Int, customerId)
-    .input('alias_name', sql.NVarChar(200), name)
+    .input('family_name', sql.NVarChar(200), name)
     .input('uid', sql.Int, createdByUserId || null)
     .query(`
       IF NOT EXISTS (
-        SELECT 1 FROM dbo.pos_customer_aliases
-        WHERE customer_id = @cid AND alias_name = @alias_name
+        SELECT 1 FROM ${FAMILY_NAMES_TABLE}
+        WHERE customer_id = @cid AND family_name = @family_name
       )
-      INSERT INTO dbo.pos_customer_aliases (customer_id, alias_name, created_by_user_id)
-      VALUES (@cid, @alias_name, @uid)
+      INSERT INTO ${FAMILY_NAMES_TABLE} (customer_id, family_name, created_by_user_id)
+      VALUES (@cid, @family_name, @uid)
     `)
 
   return {
     customer_id: customerId,
     created: false,
-    alias_added: true,
+    family_name_added: true,
     primary_name: primaryName
   }
 }
@@ -165,5 +194,6 @@ module.exports = {
   normalizeIndiaMobileDigits,
   checkPhone,
   registerCustomer,
+  listFamilyNames,
   listAliases
 }

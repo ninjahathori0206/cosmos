@@ -1,0 +1,59 @@
+---
+description: Ask clarifying questions before implementing — universal gate before any code, design, or schema work
+alwaysApply: true
+---
+
+# Ask before you implement
+
+Before writing or changing **code**, **SQL**, **Pencil**, **config**, or **docs** for a user request:
+
+## 1. Pause and clarify
+
+Ask **1–3 focused questions** when any of these apply:
+
+- Scope is ambiguous (which screens, roles, order types, edge cases)
+- Multiple valid approaches exist (UX, API shape, data model)
+- The request could affect RBAC, payments, inventory, or lab workflow
+- You would otherwise assume store policy, percentages, or labels
+- The user said “fix” or “change” without saying **where** or **for whom**
+
+Use `AskQuestion` when choices are concrete; otherwise ask in chat.
+
+## 2. Do not implement in the same turn as the first clarification
+
+In the turn where you **first** need answers:
+
+- **Do not** edit app source, prototypes, SQL, or `.pen` files
+- **Do not** run migrations or “quick fixes” while waiting
+- **Do** summarize what you understood and what you need confirmed
+
+**Exception:** user explicitly says **go ahead**, **just do it**, **skip questions**, or **execute without plan** — then proceed and note the waiver.
+
+## 3. After answers → follow existing workflows
+
+- Non-trivial work: [`plan-first-then-implement.mdc`](plan-first-then-implement.mdc) (plan → approval → implement)
+- UI/UX: [`ui-ux-pen-first-workflow.mdc`](ui-ux-pen-first-workflow.mdc) (Pencil → approval → code)
+- This rule runs **before** those — it does not replace them
+
+## 4. What “implementation” includes
+
+- New features, behaviour changes, refactors
+- One-off data fixes (unless user already approved a named plan/script)
+- New Cursor rules (unless the user explicitly asked to add a rule, as now)
+
+## 5. What you can do while asking
+
+- Read-only search and read files
+- Explain current behaviour
+- Draft a short plan or question list
+- Create/update a rule when the user asked for that rule
+
+## Example
+
+**User:** “Delivery mode should only show for lab orders.”
+
+**Agent (this turn):** Confirm MIXED carts, whether to hide the whole card vs collapse defaults, then Pencil pass — **no HTML/JS yet**.
+
+**User:** “MIXED yes; hide the whole block for instant-only.”
+
+**Agent (next turn):** Pencil → approval → `POS_Prototype.html` / `pos.js`.

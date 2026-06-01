@@ -3,12 +3,23 @@ const { readSetting } = require('./procurementService')
 const { assertLabTransitionAllowed } = require('./labWorkflowAuth')
 const { resolveProductTypeRule } = require('../config/posProductTypeRule')
 const { resolvePosOrderDisplayStatus } = require('../config/posOrderDisplayCatalog')
-const { formatDateYmd } = require('../lib/cosmosIst')
+const { formatDateYmd, sqlWireDatetime, wallClockIso, wireDatetimeFromSql } = require('../lib/cosmosIst')
 
 const ORDERS_ENGINE_MODE_KEY = 'orders_engine_mode'
 const MONEY_EPS = 0.02
 const ORDER_SEQ_KEY = 'pos_order_seq'
 const INVOICE_SEQ_KEY = 'pos_invoice_seq'
+
+/** 0 is valid (no advance); only null/empty/NaN uses fallback. */
+function resolveLabAdvancePct(val, fallback = 40) {
+  if (val == null || val === '') return fallback
+  const n = Number(val)
+  return Number.isFinite(n) ? n : fallback
+}
+
+const LAB_HANDOVER_READY_STATUSES = new Set([
+  'READY_FOR_DELIVERY', 'DELIVERED', 'BALANCE_COLLECTED', 'INVOICED'
+])
 
 /** Other LAB sibling must be ≥ lab QC Pass before dispatching any job under the same bill to store. */
 const LAB_PEER_READY_FOR_DISPATCH = new Set([
@@ -447,60 +458,21 @@ function validateOrderLinesAgainstConfig(cfg, value) {
   return { ok: true }
 }
 
-function buildPaymentSummary(orderRow, labSubtotal, instantSubtotal, payments) {
-  const total = roundMoney(orderRow.total_amount)
-  const subtotal = roundMoney(orderRow.subtotal_amount)
-  const gstAmt = roundMoney(orderRow.gst_amount)
-  const pct = Number(orderRow.lab_advance_pct_snapshot) || 40
-  const orderKind = String(orderRow.order_kind || '')
-  const labPart = roundMoney(labSubtotal)
-  const insPart = roundMoney(instantSubtotal)
-
-  let advanceTarget = 0
-  if (orderKind === 'LAB' || orderKind === 'MIXED') {
-    advanceTarget = roundMoney(labPart * (pct / 100))
+/**
+ * Lab value used for advance % — order-level discount (e.g. BOGO) is pro-rated onto lab lines
+ * so advance is not calculated on pre-discount catalogue totals.
+ */
+function labSubtotalForAdvanceTarget(orderRow, labSubtotalPreTax) {
+  const labPart = roundMoney(labSubtotalPreTax)
+  const sub = roundMoney(orderRow.subtotal_amount)
+  const disc = roundMoney(orderRow.discount_amount || 0)
+  const membershipAmt = roundMoney(Number(orderRow.sold_membership_amount) || 0)
+  const productSub = Math.max(0, roundMoney(sub - membershipAmt))
+  if (productSub <= MONEY_EPS || disc <= MONEY_EPS || labPart <= MONEY_EPS) {
+    return labPart
   }
-
-  let paidAdvance = 0
-  let paidBalance = 0
-  let paidFull = 0
-  for (const p of payments || []) {
-    const a = roundMoney(p.amount)
-    if (p.stage === 'ADVANCE') paidAdvance += a
-    else if (p.stage === 'BALANCE') paidBalance += a
-    else if (p.stage === 'FULL') paidFull += a
-  }
-  paidAdvance = roundMoney(paidAdvance)
-  paidBalance = roundMoney(paidBalance)
-  paidFull = roundMoney(paidFull)
-  const paidTotal = roundMoney(paidAdvance + paidBalance + paidFull)
-
-  let instantDue = 0
-  if (orderKind === 'MIXED' && subtotal > 0) {
-    const gstShare = roundMoney(gstAmt * (insPart / subtotal))
-    instantDue = roundMoney(insPart + gstShare)
-  }
-
-  const advanceRemaining = roundMoney(Math.max(0, advanceTarget - paidAdvance))
-  const amountRemaining = roundMoney(Math.max(0, total - paidTotal))
-
-  return {
-    order_kind: orderKind,
-    total_amount: total,
-    subtotal_amount: subtotal,
-    gst_amount: gstAmt,
-    lab_subtotal_pre_tax: labPart,
-    instant_subtotal_pre_tax: insPart,
-    instant_portion_due_incl_gst: instantDue,
-    lab_advance_pct: pct,
-    advance_target: advanceTarget,
-    paid_advance: paidAdvance,
-    paid_balance: paidBalance,
-    paid_full: paidFull,
-    paid_total: paidTotal,
-    advance_remaining: advanceRemaining,
-    amount_remaining: amountRemaining
-  }
+  const netProduct = Math.max(0, roundMoney(productSub - disc))
+  return roundMoney((labPart / productSub) * netProduct)
 }
 
 /**
@@ -525,6 +497,73 @@ function labAdvanceEffectivelyPaid(summary, stagedAmount = 0) {
     }
   }
   return labAttributed + MONEY_EPS >= at
+}
+
+function buildPaymentSummary(orderRow, labSubtotal, instantSubtotal, payments) {
+  const total = roundMoney(orderRow.total_amount)
+  const subtotal = roundMoney(orderRow.subtotal_amount)
+  const gstAmt = roundMoney(orderRow.gst_amount)
+  const pct = resolveLabAdvancePct(orderRow.lab_advance_pct_snapshot, 40)
+  const orderKind = String(orderRow.order_kind || '')
+  const labPart = roundMoney(labSubtotal)
+  const insPart = roundMoney(instantSubtotal)
+  const labBaseForAdvance = labSubtotalForAdvanceTarget(orderRow, labPart)
+
+  let advanceTarget = 0
+  if (orderKind === 'LAB' || orderKind === 'MIXED') {
+    advanceTarget = roundMoney(labBaseForAdvance * (pct / 100))
+  }
+
+  let paidAdvance = 0
+  let paidBalance = 0
+  let paidFull = 0
+  for (const p of payments || []) {
+    const a = roundMoney(p.amount)
+    if (p.stage === 'ADVANCE') paidAdvance += a
+    else if (p.stage === 'BALANCE') paidBalance += a
+    else if (p.stage === 'FULL') paidFull += a
+  }
+  paidAdvance = roundMoney(paidAdvance)
+  paidBalance = roundMoney(paidBalance)
+  paidFull = roundMoney(paidFull)
+  const paidTotal = roundMoney(paidAdvance + paidBalance + paidFull)
+
+  let instantDue = 0
+  if (orderKind === 'MIXED' && subtotal > 0) {
+    const gstShare = roundMoney(gstAmt * (insPart / subtotal))
+    instantDue = roundMoney(insPart + gstShare)
+  }
+
+  const advShortfall = roundMoney(Math.max(0, advanceTarget - paidAdvance))
+  const advanceRemaining = labAdvanceEffectivelyPaid({
+    order_kind: orderKind,
+    advance_target: advanceTarget,
+    paid_advance: paidAdvance,
+    paid_total: paidTotal,
+    instant_portion_due_incl_gst: instantDue
+  })
+    ? 0
+    : advShortfall
+  const amountRemaining = roundMoney(Math.max(0, total - paidTotal))
+
+  return {
+    order_kind: orderKind,
+    total_amount: total,
+    subtotal_amount: subtotal,
+    gst_amount: gstAmt,
+    lab_subtotal_pre_tax: labPart,
+    lab_subtotal_for_advance: labBaseForAdvance,
+    instant_subtotal_pre_tax: insPart,
+    instant_portion_due_incl_gst: instantDue,
+    lab_advance_pct: pct,
+    advance_target: advanceTarget,
+    paid_advance: paidAdvance,
+    paid_balance: paidBalance,
+    paid_full: paidFull,
+    paid_total: paidTotal,
+    advance_remaining: advanceRemaining,
+    amount_remaining: amountRemaining
+  }
 }
 
 /**
@@ -609,9 +648,16 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
   const o = await pool.request()
     .input('oid', sql.Int, orderId)
     .input('sid', sql.Int, storeId)
-    .query(`SELECT * FROM ${t.orders} WHERE order_id = @oid AND store_id = @sid`)
+    .query(`
+      SELECT *,
+        ${sqlWireDatetime('created_at')} AS created_at_wire
+      FROM ${t.orders}
+      WHERE order_id = @oid AND store_id = @sid
+    `)
   if (!o.recordset.length) return null
   const order = o.recordset[0]
+  order.created_at = wireDatetimeFromSql(order.created_at_wire || order.created_at)
+  delete order.created_at_wire
 
   const subs = await pool.request()
     .input('oid', sql.Int, orderId)
@@ -637,7 +683,8 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
   const pays = await pool.request()
     .input('oid', sql.Int, orderId)
     .query(`
-      SELECT payment_id, order_id, stage, method, amount, tendered, change_given, external_ref, created_at
+      SELECT payment_id, order_id, stage, method, amount, tendered, change_given, external_ref,
+        ${sqlWireDatetime('created_at')} AS created_at
       FROM ${t.payments}
       WHERE order_id = @oid
       ORDER BY payment_id
@@ -692,7 +739,7 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
     tendered: p.tendered != null ? Number(p.tendered) : null,
     change_given: p.change_given != null ? Number(p.change_given) : null,
     external_ref: p.external_ref,
-    created_at: p.created_at
+    created_at: wireDatetimeFromSql(p.created_at)
   }))
 
   const payment_summary = buildPaymentSummary(order, labSubtotal, instantSubtotal, payments)
@@ -762,7 +809,7 @@ function mapOrderRowForApi(order, extras = {}) {
     discount_amount: order.discount_amount != null ? Number(order.discount_amount) : 0,
     gst_amount: Number(order.gst_amount),
     total_amount: totalAmt,
-    created_at: order.created_at,
+    created_at: wireDatetimeFromSql(order.created_at),
     rx_snapshot: parseJsonMaybe(order.rx_snapshot),
     inventory_committed: order.inventory_committed === true || order.inventory_committed === 1,
     invoice_no: extras.invoice_no != null ? String(extras.invoice_no).trim() || null : null
@@ -778,9 +825,16 @@ async function fetchOrderBundleTransaction(transaction, orderId, storeId, mode) 
   const o = await new sql.Request(transaction)
     .input('oid', sql.Int, orderId)
     .input('sid', sql.Int, storeId)
-    .query(`SELECT * FROM ${t.orders} WHERE order_id = @oid AND store_id = @sid`)
+    .query(`
+      SELECT *,
+        ${sqlWireDatetime('created_at')} AS created_at_wire
+      FROM ${t.orders}
+      WHERE order_id = @oid AND store_id = @sid
+    `)
   if (!o.recordset.length) return null
   const order = o.recordset[0]
+  order.created_at = wireDatetimeFromSql(order.created_at_wire || order.created_at)
+  delete order.created_at_wire
 
   const subs = await new sql.Request(transaction).input('oid', sql.Int, orderId).query(`
       SELECT sub_order_id, order_id, fulfillment, lab_workflow_status, sort_order,
@@ -800,7 +854,8 @@ async function fetchOrderBundleTransaction(transaction, orderId, storeId, mode) 
     `)
 
   const pays = await new sql.Request(transaction).input('oid', sql.Int, orderId).query(`
-      SELECT payment_id, order_id, stage, method, amount, tendered, change_given, external_ref, created_at
+      SELECT payment_id, order_id, stage, method, amount, tendered, change_given, external_ref,
+        ${sqlWireDatetime('created_at')} AS created_at
       FROM ${t.payments}
       WHERE order_id = @oid
       ORDER BY payment_id
@@ -853,7 +908,7 @@ async function fetchOrderBundleTransaction(transaction, orderId, storeId, mode) 
     tendered: p.tendered != null ? Number(p.tendered) : null,
     change_given: p.change_given != null ? Number(p.change_given) : null,
     external_ref: p.external_ref,
-    created_at: p.created_at
+    created_at: wireDatetimeFromSql(p.created_at)
   }))
 
   const payment_summary = buildPaymentSummary(order, labSubtotal, instantSubtotal, payments)
@@ -893,9 +948,10 @@ async function insertPaymentRow(trxOrPool, mode, orderId, employeeId, body, tend
     .input('change_given', sql.Decimal(12, 2), changeGiven != null ? changeGiven : null)
     .input('external_ref', sql.NVarChar(200), body.external_ref || null)
     .input('created_by', sql.Int, employeeId || null)
+    .input('created_at_ist', sql.VarChar(19), wallClockIso())
     .query(`
-      INSERT INTO ${t.payments} (order_id, stage, method, amount, tendered, change_given, external_ref, created_by)
-      VALUES (@order_id, @stage, @method, @amount, @tendered, @change_given, @external_ref, @created_by)
+      INSERT INTO ${t.payments} (order_id, stage, method, amount, tendered, change_given, external_ref, created_by, created_at)
+      VALUES (@order_id, @stage, @method, @amount, @tendered, @change_given, @external_ref, @created_by, CAST(@created_at_ist AS DATETIME2(0)))
     `)
 }
 
@@ -908,9 +964,17 @@ async function finalizePaymentAfterInsert(pool, mode, storeId, orderId, body, em
   }
   const payStageUpper = String(body.stage || '').trim().toUpperCase()
   if (fullyPaid && refreshed) {
-    invoiceNo = await finalizePaidOrderLedger(pool, mode, refreshed, payStageUpper, employeeId, {
-      invoice_preferences: body.invoice_preferences
-    })
+    try {
+      invoiceNo = await finalizePaidOrderLedger(pool, mode, refreshed, payStageUpper, employeeId, {
+        invoice_preferences: body.invoice_preferences
+      })
+    } catch (finErr) {
+      if (finErr.statusCode === 400) {
+        invoiceNo = null
+      } else {
+        throw finErr
+      }
+    }
   }
   return {
     payment_summary: refreshed ? refreshed.payment_summary : null,
@@ -1272,18 +1336,19 @@ async function createOrderInTransaction(transaction, {
   rIns.input('inventory_committed', sql.Bit, inventoryDeferred ? 0 : 1)
   rIns.input('sold_membership_plan_key', sql.NVarChar(50), soldMembershipPlanKey)
   rIns.input('sold_membership_amount', sql.Decimal(12, 2), membershipAmount > 0 ? membershipAmount : null)
+  rIns.input('created_at_ist', sql.VarChar(19), wallClockIso())
 
   const insOrder = await rIns.query(`
     INSERT INTO ${t.orders} (
       store_id, customer_id, created_by_user_id, order_no, order_source, order_kind,
       rx_snapshot, gst_rate_snapshot, lab_advance_pct_snapshot, procurement_mode_snapshot,
       status, subtotal_amount, discount_amount, applied_offer_id, gst_amount, total_amount,
-      inventory_committed, sold_membership_plan_key, sold_membership_amount
+      inventory_committed, sold_membership_plan_key, sold_membership_amount, created_at
     ) VALUES (
       @store_id, @customer_id, @created_by_user_id, @order_no, @order_source, @order_kind,
       @rx_snapshot, @gst_rate_snapshot, @lab_advance_pct_snapshot, @procurement_mode_snapshot,
       N'OPEN', @subtotal_amount, @discount_amount, @applied_offer_id, @gst_amount, @total_amount,
-      @inventory_committed, @sold_membership_plan_key, @sold_membership_amount
+      @inventory_committed, @sold_membership_plan_key, @sold_membership_amount, CAST(@created_at_ist AS DATETIME2(0))
     );
     SELECT CAST(SCOPE_IDENTITY() AS INT) AS order_id;
   `)
@@ -1861,6 +1926,41 @@ async function finalizePaidOrderLedger(pool, mode, bundle, paymentStage, employe
     return existingInvoice
   }
 
+  const allLabsHandoverReady = labs.every((s) =>
+    LAB_HANDOVER_READY_STATUSES.has(String(s.lab_workflow_status || '').trim().toUpperCase())
+  )
+  if (!allLabsHandoverReady) {
+    if (forceFinalize) {
+      const blocked = labs.find(
+        (s) => !LAB_HANDOVER_READY_STATUSES.has(String(s.lab_workflow_status || '').trim().toUpperCase())
+      )
+      const st = blocked ? String(blocked.lab_workflow_status || '').trim().toUpperCase() : ''
+      const err = new Error(
+        `Handover cannot complete: sub-order #${blocked.sub_order_id} is at '${st}', ` +
+        'expected READY_FOR_DELIVERY. Complete the lab workflow first.'
+      )
+      err.statusCode = 400
+      throw err
+    }
+    for (const lab of labs) {
+      const st = String(lab.lab_workflow_status || '').trim().toUpperCase()
+      if (st === 'ORDER_PLACED') {
+        await pool.request().input('sid', sql.Int, lab.sub_order_id).query(`
+          UPDATE ${t.sub_orders} SET lab_workflow_status = N'ADVANCE_PAID' WHERE sub_order_id = @sid
+        `)
+        await insertStatusLog(pool, t, {
+          orderId: oid,
+          subOrderId: lab.sub_order_id,
+          fromStatus: 'ORDER_PLACED',
+          toStatus: 'ADVANCE_PAID',
+          actorUserId: employeeId || null,
+          note: 'Auto: payment received at checkout.'
+        })
+      }
+    }
+    return null
+  }
+
   await advanceLabSubOrdersThroughInvoiced(pool, mode, labs, bundle.order, employeeId)
   return insertPosInvoiceIfAbsent(pool, bundle.order, options)
 }
@@ -2364,7 +2464,8 @@ async function fetchAllOrders(pool, mode, {
     transitRequiresPayment
   }
   let query = `
-    SELECT o.order_id, o.store_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at,
+    SELECT o.order_id, o.store_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount,
+           ${sqlWireDatetime('o.created_at')} AS created_at,
            o.created_by_user_id,
            c.full_name as customer_name, c.phone as customer_phone,
            s.store_name,
@@ -2544,7 +2645,7 @@ async function fetchAllOrders(pool, mode, {
       total_amount: totalAmt,
       subtotal_amount: Number(row.subtotal_amount),
       gst_amount: Number(row.gst_amount),
-      created_at: row.created_at,
+      created_at: wireDatetimeFromSql(row.created_at),
       customer_name: row.customer_name || 'Walk-in Customer',
       customer_phone: row.customer_phone || '',
       invoice_no: row.invoice_no ? String(row.invoice_no).trim() : null,
@@ -2577,7 +2678,8 @@ async function fetchStoreOrders(pool, storeId, mode, {
     : []
   
   let query = `
-    SELECT o.order_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount, o.created_at,
+    SELECT o.order_id, o.order_no, o.status, o.order_kind, o.total_amount, o.subtotal_amount, o.gst_amount,
+           ${sqlWireDatetime('o.created_at')} AS created_at,
            o.created_by_user_id,
            c.full_name as customer_name, c.phone as customer_phone,
            ISNULL(pay_agg.paid_total, 0) AS paid_total,
@@ -2762,7 +2864,7 @@ async function fetchStoreOrders(pool, storeId, mode, {
       total_amount: totalAmt,
       subtotal_amount: Number(row.subtotal_amount),
       gst_amount: Number(row.gst_amount),
-      created_at: row.created_at,
+      created_at: wireDatetimeFromSql(row.created_at),
       customer_name: row.customer_name || 'Walk-in Customer',
       customer_phone: row.customer_phone || '',
       invoice_no: row.invoice_no ? String(row.invoice_no).trim() : null
@@ -3277,6 +3379,7 @@ async function fetchInvoiceDetailForApiCrossStore(pool, orderId, mode) {
 module.exports = {
   getOrdersEngineMode,
   ORDERS_ENGINE_MODE_KEY,
+  resolveLabAdvancePct,
   validateOrderLinesAgainstConfig,
   buildPaymentSummary,
   validatePaymentAgainstSummary,

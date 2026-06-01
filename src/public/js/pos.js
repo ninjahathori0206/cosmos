@@ -68,7 +68,7 @@
     )
   }
 
-  /** Drop plan fee saved without a Cx (localStorage survives refresh; customer does not). */
+  /** Drop plan fee saved without a Cx (membership requires linked customer). */
   function dropOrphanCartMembership() {
     if (!posCartMembershipSale || !posCartMembershipSale.plan_key) return false
     if (cartMembershipIsActive()) return false
@@ -77,16 +77,30 @@
     return true
   }
 
+  /** Persist cart lines, membership, and linked Cx across refresh (same tablet). */
   function saveCart() {
     try {
       localStorage.setItem(
         POS_CART_KEY,
         JSON.stringify({
           lines: obCart,
-          membership: cartMembershipIsActive() ? posCartMembershipSale : null
+          membership: cartMembershipIsActive() ? posCartMembershipSale : null,
+          customer_id: posSelectedCustomerId && posSelectedCustomerId > 0 ? posSelectedCustomerId : null,
+          customer_snapshot: posSelectedCustomerSnapshot || null
         })
       )
     } catch (_e) { /* storage unavailable */ }
+  }
+
+  function restoreCartCustomerFromStorage(snapshot, customerId) {
+    const id = customerId != null ? Number(customerId) : NaN
+    if (Number.isNaN(id) || id <= 0 || !snapshot || typeof snapshot !== 'object') return
+    const primaryName =
+      String(snapshot.primary_name || snapshot.full_name || '').trim() || ('Cx #' + id)
+    setPosCustomerSelection(id, snapshot.phone || '', {
+      primaryName: primaryName,
+      family_names: Array.isArray(snapshot.family_names) ? snapshot.family_names : []
+    })
   }
 
   function loadSavedCart() {
@@ -114,6 +128,9 @@
           posCartMembershipSale = null
         }
         dropOrphanCartMembership()
+        if (parsed.customer_id && parsed.customer_snapshot) {
+          restoreCartCustomerFromStorage(parsed.customer_snapshot, parsed.customer_id)
+        }
       }
     } catch (_e) { /* corrupt data — ignore */ }
   }
@@ -248,6 +265,14 @@
         session.token
       )
       posMembershipFamilyCache = data || null
+      if (
+        posMembershipFamilyCache &&
+        posMembershipFamilyCache.can_sell_membership === false &&
+        posCartMembershipSale
+      ) {
+        posCartMembershipSale = null
+        saveCart()
+      }
       if (banner) {
         if (posMembershipFamilyCache && posMembershipFamilyCache.role === 'dependent' && posMembershipFamilyCache.inherited_from) {
           const inf = posMembershipFamilyCache.inherited_from
@@ -559,21 +584,38 @@
       return
     }
     var primary = payload.primary_name || 'this customer'
-    var alias = payload.proposed_alias || ''
-    bodyEl.textContent =
-      'Mobile already registered as ' + primary + '. Add ' + alias + ' as an alias and continue?'
+    var proposed =
+      payload.proposed_family_name || payload.proposed_alias || ''
+    var fmt = typeof window.formatPosFamilyNameCopy === 'function'
+      ? window.formatPosFamilyNameCopy
+      : function (k, v) {
+          return 'Mobile already registered as ' + (v && v.primary) + '. Save ' + (v && v.name) + ' as a family name and continue?'
+        }
+    bodyEl.textContent = fmt('modalBody', { primary: primary, name: proposed })
     posAliasConfirmCallback = onConfirm
     overlay.classList.add('open')
     posLkLockModalScroll()
   }
 
-  function customerSearchDisplayParts(row) {
-    var alias = row.matched_alias_name && String(row.matched_alias_name).trim()
+  function customerSearchDisplayParts(row, opts) {
+    opts = opts || {}
     var primary = row.full_name || ''
-    if (alias) {
+    if (opts.primaryOnly) {
       return {
-        title: alias,
-        subNote: '(registered as ' + primary + ')'
+        title: primary || row.display_name || '',
+        subNote: ''
+      }
+    }
+    var matched =
+      (row.matched_family_name && String(row.matched_family_name).trim()) ||
+      (row.matched_alias_name && String(row.matched_alias_name).trim())
+    var fmt = typeof window.formatPosFamilyNameCopy === 'function'
+      ? window.formatPosFamilyNameCopy
+      : function (k, v) { return '(on file as ' + (v && v.primary) + ')' }
+    if (matched) {
+      return {
+        title: matched,
+        subNote: fmt('pickerSubline', { primary: primary })
       }
     }
     return {
@@ -582,8 +624,8 @@
     }
   }
 
-  function buildCustomerSearchRowHtml(row) {
-    var parts = customerSearchDisplayParts(row)
+  function buildCustomerSearchRowHtml(row, opts) {
+    var parts = customerSearchDisplayParts(row, opts)
     var cid = row.customer_id != null ? String(row.customer_id) : ''
     var subBits = [row.phone || '', cid ? ('ID ' + cid) : '', parts.subNote].filter(Boolean)
     var sub = subBits.join(' · ')
@@ -601,28 +643,34 @@
       full_name: fields.name,
       phone: fields.phone,
       email: fields.email != null ? fields.email : null,
-      confirm_alias: !!fields.confirm_alias
+      confirm_family_name: !!fields.confirm_family_name
     }
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
       var res = await apiPost('/api/pos/customer', payload, session.token)
       var data = res.data || {}
       var displayName = fields.name
-      if (data.alias_added && data.primary_name) displayName = data.primary_name
+      if (data.family_name_added && data.primary_name) displayName = data.primary_name
       else if (data.primary_name && !data.created) displayName = data.primary_name
-      var aliasList = (posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.aliases) ? posSelectedCustomerSnapshot.aliases.slice() : []
-      if (data.alias_added && fields.name) {
-        var newAlias = String(fields.name).trim()
-        if (newAlias && aliasList.indexOf(newAlias) < 0) aliasList.push(newAlias)
+      var familyList =
+        posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.family_names
+          ? posSelectedCustomerSnapshot.family_names.slice()
+          : []
+      if (data.family_name_added && fields.name) {
+        var newFn = String(fields.name).trim()
+        if (newFn && familyList.indexOf(newFn) < 0) familyList.push(newFn)
       }
       setPosCustomerSelection(data.customer_id, fields.phone, {
         primaryName: data.primary_name || displayName,
-        aliases: aliasList,
-        pendingPatientName: data.alias_added ? String(fields.name).trim() : null
+        family_names: familyList,
+        pendingPatientName: data.family_name_added ? String(fields.name).trim() : null
       })
       if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
-      if (data.alias_added && typeof cosmosToastInfo === 'function') {
-        cosmosToastInfo('Alias added — linked to existing Cx')
+      if (data.family_name_added && typeof cosmosToastInfo === 'function') {
+        var toastFn = typeof window.formatPosFamilyNameCopy === 'function'
+          ? window.formatPosFamilyNameCopy('toastAdded')
+          : 'Family name saved — linked to existing Cx'
+        cosmosToastInfo(toastFn)
       } else if (data.created && typeof cosmosToastSuccess === 'function') {
         cosmosToastSuccess('Cx created')
       } else if (typeof cosmosToastSuccess === 'function') {
@@ -631,11 +679,11 @@
       return data
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
-      if (err.code === 'PHONE_ALIAS_REQUIRED' && err.data && !fields.confirm_alias) {
+      if (err.code === 'PHONE_FAMILY_NAME_REQUIRED' && err.data && !fields.confirm_family_name) {
         return new Promise(function (resolve, reject) {
           openPosAliasConfirmModal(err.data, function () {
             closePosAliasConfirmModal()
-            posApiRegisterCustomer(session, Object.assign({}, fields, { confirm_alias: true }), btn)
+            posApiRegisterCustomer(session, Object.assign({}, fields, { confirm_family_name: true }), btn)
               .then(resolve)
               .catch(reject)
           })
@@ -1162,15 +1210,46 @@
     }, 0)
   }
 
-  /** Pre-tax lab line totals only — matches server advance_target basis (buildPaymentSummary). */
+  /** Lab lines after pro-rating order-level discount (matches server advance basis). */
   function computeLabSubtotalForAdvance() {
-    return roundMoney(
+    const bill = computeCartBillBreakdown()
+    const labPre = roundMoney(
       obCart.reduce(function (sum, line) {
         if (String(line.fulfillment || '').toUpperCase() !== 'LAB') return sum
         const qty = Math.max(1, Number(line.qty) || 1)
         return sum + computeLineDisplayUnit(line) * qty
       }, 0)
     )
+    const productSub = bill.productSubtotal
+    const disc = bill.discount
+    if (productSub > 0.009 && disc > 0.009 && labPre > 0.009) {
+      return roundMoney((labPre / productSub) * Math.max(0, productSub - disc))
+    }
+    return labPre
+  }
+
+  /** Persisted order: lab base for advance % (uses API summary when present). */
+  function computeLabSubtotalForAdvanceFromOrder(order, lines, ps) {
+    if (ps && ps.lab_subtotal_for_advance != null && Number(ps.lab_subtotal_for_advance) > 0.009) {
+      return roundMoney(Number(ps.lab_subtotal_for_advance))
+    }
+    const src = Array.isArray(lines) ? lines : []
+    let labPre = 0
+    for (let i = 0; i < src.length; i++) {
+      const l = src[i]
+      if (String(l.fulfillment || '').toUpperCase() !== 'LAB') continue
+      const lt = Number(l.line_total)
+      const alt = (Number(l.unit_price) || 0) * (Number(l.qty) || 1)
+      labPre += !isNaN(lt) && lt > 0 ? lt : alt
+    }
+    labPre = roundMoney(labPre)
+    const sub = roundMoney(Number(order.subtotal_amount) || 0)
+    const disc = roundMoney(Number(order.discount_amount) || 0)
+    const membershipAmt = roundMoney(Number(order.sold_membership_amount) || 0)
+    const productSub = Math.max(0, roundMoney(sub - membershipAmt))
+    if (productSub <= 0.009 || disc <= 0.009 || labPre <= 0.009) return labPre
+    const netProduct = Math.max(0, roundMoney(productSub - disc))
+    return roundMoney((labPre / productSub) * netProduct)
   }
 
   /**
@@ -1237,10 +1316,16 @@
     const familyBlocksSell =
       posMembershipFamilyCache &&
       posMembershipFamilyCache.can_sell_membership === false
+    const familyStillLoading = !!(
+      posSelectedCustomerId &&
+      posCanViewMembershipFamily() &&
+      posMembershipFamilyCache === null
+    )
     const canSell = !!(
       posSelectedCustomerId &&
       posCanSellMembership() &&
-      !familyBlocksSell
+      !familyBlocksSell &&
+      !familyStillLoading
     )
     const memActive = cartMembershipIsActive()
     if (btn) btn.hidden = !canSell
@@ -1376,6 +1461,13 @@
     }
   }
 
+  function effectiveLabAdvancePct() {
+    var raw = posSettings && posSettings.lab_advance_pct
+    if (raw == null || raw === '') return 40
+    var n = Number(raw)
+    return Number.isFinite(n) ? n : 40
+  }
+
   function buildPendingCheckoutTotals() {
     const sig = buildObCartFingerprint()
     let offerDisc = { amount: 0, offerId: null }
@@ -1450,7 +1542,7 @@
   let posDiscountPreviewInFlightSig = null
   /** Selected POS / CX customer row for cart reference (name, phone, id). */
   let posSelectedCustomerSnapshot = null
-  /** Pre-select patient name on next lens wizard open (from alias row in search). */
+  /** Pre-select patient name on next lens wizard open (from family-name row in search). */
   let posPendingLensPatientName = null
   let posSettings = {
     gst_rate: 0.05,
@@ -1465,6 +1557,9 @@
   let lensCatalogData = null
   let lensWizardLineIdx = -1
   let lensWizardBackRoute = POS_ROUTES.ORDER
+  /** 'new' = fresh wizard; 'edit' = reopen configured lab line with hydrate. */
+  let lensWizardOpenMode = 'new'
+  let lensWizardWasEditing = false
   let lensWizard = {
     step: 0,
     subPhase: 'profile',
@@ -1526,6 +1621,37 @@
   let _posConfirmDetailSnap = null
   let posDeliveryMode = 'STORE'
 
+  function orderKindNeedsDeliveryFields(orderKind) {
+    const k = String(orderKind || '').toUpperCase()
+    return k === 'LAB' || k === 'MIXED'
+  }
+
+  function initPayDeliveryExpectedDateIfEmpty() {
+    const dateInput = document.getElementById('pay-delivery-date')
+    if (!dateInput || dateInput.value) return
+    const [d, m, y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/')
+    const base = new Date(y + '-' + m + '-' + d + 'T00:00:00+05:30')
+    base.setDate(base.getDate() + 3)
+    const dy = base.getFullYear()
+    const dm = String(base.getMonth() + 1).padStart(2, '0')
+    const dd2 = String(base.getDate()).padStart(2, '0')
+    dateInput.value = dy + '-' + dm + '-' + dd2
+  }
+
+  /** Delivery mode + expected date — LAB and MIXED only. */
+  function syncPayDeliverySlotVisibility(orderKind) {
+    const slot = document.getElementById('pay-delivery-slot')
+    const show = orderKindNeedsDeliveryFields(orderKind)
+    if (slot) {
+      slot.hidden = !show
+      slot.style.display = show ? '' : 'none'
+    }
+    if (show) {
+      setPosDeliveryMode(posDeliveryMode)
+      initPayDeliveryExpectedDateIfEmpty()
+    }
+  }
+
   // ── Order Builder state ──────────────────────────────────────────────────
   let obCart = []
   /** @type {{ plan_key: string, display_name: string, price_paid: number }|null} */
@@ -1568,6 +1694,9 @@
   }
 
   function openQuickCxRegistration(prefillPhone) {
+    var overlay = document.getElementById('overlay-pos-customer-picker')
+    var pickerOpen = overlay && overlay.classList.contains('open')
+    if (!pickerOpen) openPosCustomerPickerModal()
     var scrollEl = document.getElementById('pos-cust-picker-scroll')
     var section = document.getElementById('cust-picker-quick-reg')
     var phoneEl = document.getElementById('cust-picker-new-phone')
@@ -1612,14 +1741,80 @@
     return String(snap.primary_name || snap.full_name || '').trim()
   }
 
+  function posRowFamilyNames(row) {
+    if (!row) return []
+    if (Array.isArray(row.family_names) && row.family_names.length) return row.family_names
+    return Array.isArray(row.aliases) ? row.aliases : []
+  }
+
+  function posRowMatchedFamilyName(row) {
+    if (!row) return ''
+    var m = row.matched_family_name && String(row.matched_family_name).trim()
+    if (m) return m
+    var legacy = row.matched_alias_name && String(row.matched_alias_name).trim()
+    return legacy || ''
+  }
+
+  function posSnapFamilyNames(snap) {
+    if (!snap) return []
+    if (Array.isArray(snap.family_names) && snap.family_names.length) return snap.family_names
+    return Array.isArray(snap.aliases) ? snap.aliases : []
+  }
+
+  function namesEqualLoose(a, b) {
+    return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase()
+  }
+
+  function syncLensPatientNameFromInputs() {
+    var rxNameEl = document.getElementById('pos-lk-rx-patient-name')
+    var name = ''
+    if (rxNameEl && String(rxNameEl.value || '').trim()) {
+      name = String(rxNameEl.value).trim()
+    } else if (lensWizard.patientName) {
+      name = String(lensWizard.patientName).trim()
+    } else {
+      name = posCustomerPrimaryName(posSelectedCustomerSnapshot) || ''
+    }
+    lensWizard.patientName = name
+    var line = resolveLensWizardCartLine()
+    if (line) line.patient_name = name
+    return name
+  }
+
+  function resolveLensPatientNameForSave() {
+    return syncLensPatientNameFromInputs()
+  }
+
+  async function ensureFamilyNameForPatient(session, patientName) {
+    var name = String(patientName || '').trim()
+    if (!name) return true
+    var snap = posSelectedCustomerSnapshot
+    if (!snap || !snap.phone) return true
+    var primary = posCustomerPrimaryName(snap)
+    if (namesEqualLoose(name, primary)) return true
+    var familyNames = posSnapFamilyNames(snap)
+    if (familyNames.some(function (fn) { return namesEqualLoose(fn, name) })) return true
+    try {
+      await posApiRegisterCustomer(session, {
+        name: name,
+        phone: snap.phone,
+        email: null,
+        confirm_family_name: false
+      }, null)
+      return true
+    } catch (_err) {
+      return false
+    }
+  }
+
   function shouldRenderCustomerSearchCard(q, row) {
     if (isLikelyMobileSearchQuery(q)) return true
-    if (row.matched_alias_name && String(row.matched_alias_name).trim()) return true
-    var aliases = row.aliases || []
-    if (!aliases.length) return false
+    if (posRowMatchedFamilyName(row)) return true
+    var familyNames = posRowFamilyNames(row)
+    if (!familyNames.length) return false
     var ql = String(q || '').trim().toLowerCase()
     if (!ql) return false
-    return aliases.some(function (a) {
+    return familyNames.some(function (a) {
       var al = String(a || '').trim().toLowerCase()
       return al.indexOf(ql) >= 0 || ql.indexOf(al) >= 0
     })
@@ -1630,7 +1825,7 @@
     var primary = String(row.full_name || '').trim()
     setPosCustomerSelection(row.customer_id, row.phone, {
       primaryName: primary,
-      aliases: row.aliases || [],
+      family_names: posRowFamilyNames(row),
       pendingPatientName: opts.pendingPatientName || null
     })
     if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx selected')
@@ -1638,10 +1833,8 @@
 
   function appendCustomerSearchCard(wrap, row, q, onDone) {
     var primary = String(row.full_name || '').trim()
-    var aliases = row.aliases || []
     var cid = row.customer_id != null ? String(row.customer_id) : ''
     var subPrimary = [row.phone || '', cid ? ('ID ' + cid) : ''].filter(Boolean).join(' · ')
-    var matchedAlias = row.matched_alias_name && String(row.matched_alias_name).trim()
     var card = document.createElement('div')
     card.className = 'pos-cust-picker-card'
     card.setAttribute('role', 'listitem')
@@ -1649,53 +1842,12 @@
     var primaryBtn = document.createElement('button')
     primaryBtn.type = 'button'
     primaryBtn.className = 'pos-cust-picker-row pos-cust-picker-row--primary tr-link'
-    primaryBtn.innerHTML =
-      '<span class="pos-cust-picker-row-av" aria-hidden="true">' + escapeHtml(customerPickerInitials(primary)) + '</span>' +
-      '<span class="pos-cust-picker-row-body">' +
-        '<span class="pos-cust-picker-row-name">' + escapeHtml(primary) + '</span>' +
-        (subPrimary ? '<span class="pos-cust-picker-row-sub">' + escapeHtml(subPrimary) + '</span>' : '') +
-      '</span>'
+    primaryBtn.innerHTML = buildCustomerSearchRowHtml(row, { primaryOnly: true })
     primaryBtn.addEventListener('click', function () {
       linkPosCustomerFromSearch(row, {})
       if (onDone) onDone()
     })
     card.appendChild(primaryBtn)
-
-    aliases.forEach(function (aliasName) {
-      var alias = String(aliasName || '').trim()
-      if (!alias) return
-      var isMatch = matchedAlias && alias.toLowerCase() === matchedAlias.toLowerCase()
-      var aliasBtn = document.createElement('button')
-      aliasBtn.type = 'button'
-      aliasBtn.className = 'pos-cust-picker-row pos-cust-picker-alias-row tr-link' + (isMatch ? ' pos-cust-picker-alias-row--match' : '')
-      aliasBtn.innerHTML =
-        '<span class="pos-cust-picker-row-body pos-cust-picker-alias-body">' +
-          '<span class="pos-cust-picker-row-name">' + escapeHtml(alias) + '</span>' +
-          '<span class="pos-cust-picker-row-sub">(registered as ' + escapeHtml(primary) + ')</span>' +
-        '</span>'
-      aliasBtn.addEventListener('click', function () {
-        linkPosCustomerFromSearch(row, { pendingPatientName: alias })
-        if (onDone) onDone()
-      })
-      card.appendChild(aliasBtn)
-    })
-
-    if (!aliases.length && isLikelyMobileSearchQuery(q)) {
-      var addWrap = document.createElement('div')
-      addWrap.className = 'pos-cust-picker-add-alias'
-      var addBtn = document.createElement('button')
-      addBtn.type = 'button'
-      addBtn.className = 'pos-lk-text-link pos-cust-picker-add-alias-btn'
-      addBtn.textContent = 'Add name for this mobile'
-      addBtn.addEventListener('click', function (e) {
-        e.preventDefault()
-        var digits = normalizeIndiaMobileDigits(q)
-        openQuickCxRegistration(digits.slice(0, 10))
-      })
-      addWrap.appendChild(addBtn)
-      card.appendChild(addWrap)
-    }
-
     wrap.appendChild(card)
   }
 
@@ -1738,12 +1890,17 @@
         posPendingLensPatientName = String(opts.pendingPatientName).trim()
       }
       posSelectedOfferId = null
+      posMembershipFamilyCache = null
       posSelectedCustomerId = id
       posSelectedCustomerSnapshot = {
         customer_id: id,
         primary_name: primaryName,
         full_name: primaryName,
-        aliases: Array.isArray(opts.aliases) ? opts.aliases.slice() : [],
+        family_names: Array.isArray(opts.family_names)
+          ? opts.family_names.slice()
+          : Array.isArray(opts.aliases)
+            ? opts.aliases.slice()
+            : [],
         phone: phone != null ? String(phone).trim() : ''
       }
       lensWizard.customerName = primaryName
@@ -1756,6 +1913,7 @@
       renderCartCustomerRef()
       syncCustomerPickerBannerAndActions()
       syncCartMembershipUi()
+      saveCart()
       return
     }
     posMembershipFamilyCache = null
@@ -1790,6 +1948,7 @@
     posCartOffers = []
     posSelectedOfferId = null
     posCartMembershipSale = null
+    posMembershipFamilyCache = null
     saveCart()
     const session = getPosSession()
     if (session && session.token) {
@@ -2157,7 +2316,7 @@
     void loadCartOffers(session)
   }
 
-  /** After pick/create in customer picker, close modal and return to cart (same as Continue). */
+  /** After pick/create in customer picker, close modal and return to cart. */
   function leaveCustomerScreenToCart() {
     closePosCustomerPickerModal()
     const session = getPosSession()
@@ -4319,6 +4478,114 @@
     navigate(POS_ROUTES.LENS)
   }
 
+  function emptyLensWizardRx() {
+    return {
+      od: { sph: '', cyl: '', axis: '', plano: false },
+      os: { sph: '', cyl: '', axis: '', plano: false },
+      pd: '',
+      doctor: ''
+    }
+  }
+
+  function mergeLensWizardRx(src) {
+    var out = emptyLensWizardRx()
+    if (!src || typeof src !== 'object') return out
+    if (src.od && typeof src.od === 'object') {
+      out.od = Object.assign({}, out.od, src.od)
+    }
+    if (src.os && typeof src.os === 'object') {
+      out.os = Object.assign({}, out.os, src.os)
+    }
+    if (src.pd != null) out.pd = String(src.pd)
+    if (src.doctor != null) out.doctor = String(src.doctor)
+    if (src.patient_name) out.patient_name = String(src.patient_name)
+    return out
+  }
+
+  function hydrateLensWizardFromLine(line) {
+    if (!line) {
+      resetLensWizardState()
+      return false
+    }
+    lensWizardWasEditing = true
+    var snap = posSelectedCustomerSnapshot
+    var primary = posCustomerPrimaryName(snap)
+    var pm = String(line.power_mode || '').trim()
+
+    if (pm === 'frame_only' || pm === 'frame_sunglasses') {
+      lensWizard = {
+        step: 2,
+        subPhase: 'profile',
+        powerType: pm,
+        category: null,
+        pkg: null,
+        addonIds: [],
+        powerMode: pm,
+        brandFilter: 'all',
+        customerName: primary || null,
+        patientName: String(line.patient_name || primary || '').trim() || null,
+        rx: emptyLensWizardRx()
+      }
+      return true
+    }
+
+    var bundle = line.lens_bundle
+    if (!bundle || !lensCatalogData) {
+      resetLensWizardState()
+      lensWizardWasEditing = false
+      return false
+    }
+
+    var catId = Number(bundle.category_id)
+    var pkgId = Number(bundle.package_id)
+    var categories = lensCatalogData.categories || []
+    var cat = categories.find(function (c) { return Number(c.id) === catId })
+    var pkg = cat && (cat.packages || []).find(function (p) { return Number(p.id) === pkgId })
+
+    if (!cat || !pkg) {
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn('Saved lens option is no longer available — pick again.')
+      }
+      resetLensWizardState()
+      lensWizardWasEditing = false
+      return false
+    }
+
+    var addonIds = Array.isArray(bundle.addon_ids)
+      ? bundle.addon_ids.map(function (id) { return Number(id) }).filter(function (n) { return Number.isFinite(n) })
+      : []
+    var patientName = String(line.patient_name || (line.rx && line.rx.patient_name) || primary || '').trim() || null
+
+    lensWizard = {
+      step: 2,
+      subPhase: 'profile',
+      powerType: 'category',
+      category: cat,
+      pkg: pkg,
+      addonIds: addonIds,
+      powerMode: line.power_mode || 'later',
+      brandFilter: 'all',
+      customerName: primary || null,
+      patientName: patientName,
+      rx: mergeLensWizardRx(line.rx)
+    }
+    return true
+  }
+
+  function openLensWizardForLine(idx, mode) {
+    if (!Number.isFinite(idx) || !obCart[idx] || !lensWizardAllowed(obCart[idx].product_type)) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Lenses aren’t enabled for this product type.')
+      return
+    }
+    lensWizardBackRoute = POS_ROUTES.ORDER
+    lensWizardLineIdx = idx
+    lensWizardOpenMode = mode === 'edit' ? 'edit' : 'new'
+    lensWizardWasEditing = false
+    pendingResumeOrder = true
+    saveCart()
+    navigate(POS_ROUTES.LENS)
+  }
+
   function resetLensWizardState() {
     var line = resolveLensWizardCartLine()
     var snap = posSelectedCustomerSnapshot
@@ -4340,7 +4607,7 @@
       brandFilter: 'all',
       customerName: primary || null,
       patientName: initialPatient,
-      rx: { od: { sph: '', cyl: '', axis: '', plano: false }, os: { sph: '', cyl: '', axis: '', plano: false }, pd: '', doctor: '' }
+      rx: emptyLensWizardRx()
     }
   }
 
@@ -4348,8 +4615,8 @@
     if (!posSelectedCustomerId || !posSelectedCustomerSnapshot) return ''
     var snap = posSelectedCustomerSnapshot
     var primary = posCustomerPrimaryName(snap)
-    var aliases = snap.aliases || []
-    if (!primary && !aliases.length) return ''
+    var familyNames = posSnapFamilyNames(snap)
+    if (!primary && !familyNames.length) return ''
     var selected = lensWizard.patientName || primary
     var parts = ['<div class="pos-lens-patient-block" role="group" aria-label="Who is this pair for?">']
     parts.push('<div class="pos-lens-patient-label">Who is this pair for?</div>')
@@ -4361,17 +4628,14 @@
       '<button type="button" class="pos-lens-patient-chip' + (selected === primary ? ' selected' : '') + '" data-lens-patient="' + attrPatient(primary) + '">' +
         escapeHtml(primary) + ' <span class="pos-lens-patient-chip-sub">(primary)</span></button>'
     )
-    aliases.forEach(function (aliasName) {
-      var alias = String(aliasName || '').trim()
-      if (!alias) return
+    familyNames.forEach(function (fnName) {
+      var familyName = String(fnName || '').trim()
+      if (!familyName) return
       parts.push(
-        '<button type="button" class="pos-lens-patient-chip' + (selected === alias ? ' selected' : '') + '" data-lens-patient="' + attrPatient(alias) + '">' +
-          escapeHtml(alias) + '</button>'
+        '<button type="button" class="pos-lens-patient-chip' + (selected === familyName ? ' selected' : '') + '" data-lens-patient="' + attrPatient(familyName) + '">' +
+          escapeHtml(familyName) + '</button>'
       )
     })
-    parts.push(
-      '<button type="button" class="pos-lens-patient-chip pos-lens-patient-chip--link" data-lens-patient-add="1">+ Add name</button>'
-    )
     parts.push('</div></div>')
     return parts.join('')
   }
@@ -4384,17 +4648,11 @@
         lensWizard.patientName = name
         var line = resolveLensWizardCartLine()
         if (line) line.patient_name = name
+        var rxNameEl = document.getElementById('pos-lk-rx-patient-name')
+        if (rxNameEl) rxNameEl.value = name
         renderLensStep()
       })
     })
-    var addBtn = root.querySelector('[data-lens-patient-add]')
-    if (addBtn) {
-      addBtn.addEventListener('click', function () {
-        var ph = posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.phone
-        if (ph) openQuickCxRegistration(ph)
-        else openPosCustomerPickerModal()
-      })
-    }
   }
 
   function syncCustomerPickerBannerAndActions() {
@@ -4505,19 +4763,11 @@
         return
       }
       rows.forEach(function (r) {
-        if (shouldRenderCustomerSearchCard(q, r)) {
-          appendCustomerSearchCard(wrap, r, q, function () {
-            syncCustomerPickerBannerAndActions()
-            leaveCustomerScreenToCart()
-          })
-          return
-        }
         const btn = document.createElement('button')
         btn.type = 'button'
         btn.className = 'pos-cust-row pos-cust-picker-row tr-link'
         btn.setAttribute('role', 'listitem')
-        var pickParts = customerSearchDisplayParts(r)
-        btn.innerHTML = buildCustomerSearchRowHtml(r)
+        btn.innerHTML = buildCustomerSearchRowHtml(r, { primaryOnly: true })
         btn.addEventListener('click', function () {
           linkPosCustomerFromSearch(r, {})
           syncCustomerPickerBannerAndActions()
@@ -4557,7 +4807,7 @@
         name: name,
         phone: phoneParsed.phone,
         email: emailEl && emailEl.value ? emailEl.value.trim() : null,
-        confirm_alias: false
+        confirm_family_name: false
       }, btn)
       leaveCustomerScreenToCart()
     } catch (_err) { /* toast handled */ }
@@ -4722,7 +4972,7 @@
       return
     }
     if (lensWizard.step === 2) {
-      confirmLensWizard()
+      void confirmLensWizard()
     }
   }
 
@@ -4730,10 +4980,9 @@
     syncLensWizardStepNumber()
     const body = document.getElementById('lens-step-body')
     if (!body || !lensCatalogData) return
-    var patientHtml = lensPatientChooserHtml()
-    if (lensWizard.step === 0) renderLensStep0PowerType(body, patientHtml)
-    else if (lensWizard.step === 1) renderLensStep1LensSelection(body, patientHtml)
-    else if (lensWizard.step === 2) renderLensStep2AddPower(body, patientHtml)
+    if (lensWizard.step === 0) renderLensStep0PowerType(body)
+    else if (lensWizard.step === 1) renderLensStep1LensSelection(body)
+    else if (lensWizard.step === 2) renderLensStep2AddPower(body, lensPatientChooserHtml())
     body.classList.toggle('pos-lens-body--step1-split', lensWizard.step === 1)
     const lensStep2AddonsScroll =
       lensWizard.step === 2 &&
@@ -4745,10 +4994,9 @@
   }
 
   // ── Lens step 0 — Dynamic wizard_entries from /api/pos/lens-catalog ─────────
-  function renderLensStep0PowerType(body, patientHtml) {
+  function renderLensStep0PowerType(body) {
     const entries = (lensCatalogData && lensCatalogData.wizard_entries) || []
     const html = []
-    if (patientHtml) html.push(patientHtml)
     html.push('<div class="pos-lk-lens-headrow">')
     html.push('  <div class="pos-lk-lens-section-title">Select your Power Type:</div>')
     html.push('</div>')
@@ -4790,7 +5038,6 @@
       html.push('</div>')
     }
     body.innerHTML = html.join('')
-    bindLensPatientChooser(body)
     body.querySelectorAll('[data-lw-entry-key]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var key = btn.getAttribute('data-lw-entry-key')
@@ -4825,7 +5072,7 @@
   }
 
   // ── Lens step 1 — lens packages for category chosen on step 0 (no category tabs) ────
-  function renderLensStep1LensSelection(body, patientHtml) {
+  function renderLensStep1LensSelection(body) {
     if (!lensWizard.category) {
       // Cannot show lens packages without a power type → fall back.
       lensWizard.step = 0
@@ -4845,7 +5092,6 @@
     const catName = String(lensWizard.category.name || '').trim()
 
     const html = []
-    if (patientHtml) html.push(patientHtml)
     html.push('<div class="pos-lk-lens-step1-layout">')
     html.push('<div class="pos-lk-lens-step1-chrome">')
     html.push('<div class="pos-lk-lens-choose-card" role="region" aria-label="Lens package filter">')
@@ -4911,7 +5157,6 @@
     html.push('</div>')
     html.push('</div>')
     body.innerHTML = html.join('')
-    bindLensPatientChooser(body)
 
     body.querySelectorAll('[data-brand-filter]').forEach(function (chip) {
       chip.addEventListener('click', function () {
@@ -4973,7 +5218,7 @@
     }
 
     const html = []
-    if (patientHtml) html.push(patientHtml)
+    if (showProfile && patientHtml) html.push(patientHtml)
     if (showProfile) {
       var billNote =
         primaryBill && lensWizard.patientName && lensWizard.patientName !== primaryBill
@@ -5064,7 +5309,7 @@
     }
 
     body.innerHTML = html.join('')
-    bindLensPatientChooser(body)
+    if (showProfile) bindLensPatientChooser(body)
 
     body.querySelectorAll('[data-pwm-key]').forEach(function (el) {
       el.addEventListener('click', function () {
@@ -5139,6 +5384,10 @@
       '</div>'
     }
     return '<div class="pos-lk-rx-inline">' +
+      '<div class="pos-lk-rx-field pos-lk-rx-patient-field">' +
+        '<span class="pos-lk-rx-field-lbl">Patient name</span>' +
+        '<input class="pos-lk-rx-input" id="pos-lk-rx-patient-name" placeholder="Name on prescription" autocomplete="name" aria-required="true">' +
+      '</div>' +
       '<div class="pos-lk-rx-grid">' + eyeBlock('od', 'RIGHT EYE (OD)') + eyeBlock('os', 'LEFT EYE (OS)') + '</div>' +
       '<div class="pos-lk-rx-fields" style="grid-template-columns: 1fr 2fr">' +
         '<div class="pos-lk-rx-field"><span class="pos-lk-rx-field-lbl">PD (mm)</span><input class="pos-lk-rx-input" id="pos-lk-rx-pd" placeholder="e.g. 63"></div>' +
@@ -5169,8 +5418,17 @@
     })
     const pd = document.getElementById('pos-lk-rx-pd')
     const doc = document.getElementById('pos-lk-rx-doctor')
+    const patientName = document.getElementById('pos-lk-rx-patient-name')
     if (pd) pd.addEventListener('input', function () { lensWizard.rx.pd = pd.value })
     if (doc) doc.addEventListener('input', function () { lensWizard.rx.doctor = doc.value })
+    if (patientName) {
+      patientName.addEventListener('input', function () {
+        lensWizard.patientName = patientName.value.trim()
+        var wizLine = resolveLensWizardCartLine()
+        if (wizLine) wizLine.patient_name = lensWizard.patientName
+        if (typeof cosmosFieldClear === 'function') cosmosFieldClear(patientName)
+      })
+    }
   }
 
   function syncLensWizardRxFormFromModel() {
@@ -5193,6 +5451,10 @@
     if (pdEl) pdEl.value = rx.pd != null ? String(rx.pd) : ''
     var docEl = document.getElementById('pos-lk-rx-doctor')
     if (docEl) docEl.value = rx.doctor != null ? String(rx.doctor) : ''
+    var patientEl = document.getElementById('pos-lk-rx-patient-name')
+    if (patientEl) {
+      patientEl.value = lensWizard.patientName || posCustomerPrimaryName(posSelectedCustomerSnapshot) || ''
+    }
   }
 
   function openLensRxManualModal() {
@@ -5302,7 +5564,7 @@
         name: name,
         phone: phoneParsed.phone,
         email: null,
-        confirm_alias: false
+        confirm_family_name: false
       }, btn)
       closeLensNewCustomerModal()
       refreshLensCustomerBanner()
@@ -5332,28 +5594,12 @@
         return
       }
       rows.forEach(function (r) {
-        if (shouldRenderCustomerSearchCard(q, r)) {
-          appendCustomerSearchCard(wrap, r, q, function () {
-            const nameElBanner = document.getElementById('pos-lk-customer-name')
-            const nm = posCustomerPrimaryName(posSelectedCustomerSnapshot)
-            if (nameElBanner) nameElBanner.textContent = nm
-            const av = document.querySelector('#pos-lk-customer-card .pos-lk-customer-avatar')
-            if (av) av.textContent = (nm || 'C').charAt(0).toUpperCase()
-            const dd = document.getElementById('pos-lk-cust-dropdown')
-            if (dd) dd.style.display = 'none'
-            maybeRefreshCartSidebar()
-          })
-          return
-        }
         const btn = document.createElement('button')
         btn.type = 'button'
         btn.className = 'pos-lk-cust-result'
-        var pickParts = customerSearchDisplayParts(r)
-        var subNote = pickParts.subNote
-          ? (' <span class="pos-lk-cust-alias-note">' + escapeHtml(pickParts.subNote) + '</span>')
-          : ''
         btn.innerHTML =
-          '<span>' + escapeHtml(pickParts.title) + subNote + '</span><span>' + escapeHtml(r.phone || '') + '</span>'
+          '<span>' + escapeHtml(customerSearchDisplayParts(r, { primaryOnly: true }).title) + '</span>' +
+          '<span>' + escapeHtml(r.phone || '') + '</span>'
         btn.addEventListener('click', function () {
           linkPosCustomerFromSearch(r, {})
           const nameElBanner = document.getElementById('pos-lk-customer-name')
@@ -5372,19 +5618,25 @@
     }
   }
 
-  function confirmLensWizard() {
+  async function confirmLensWizard() {
     syncLensWizardStepNumber()
     const line = resolveLensWizardCartLine()
     if (!line) {
       if (typeof cosmosToastError === 'function') cosmosToastError('No product selected.')
       return
     }
+    const session = getPosSession()
+    if (!session || !session.token) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Session expired.')
+      return
+    }
     const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
     try {
       if (!isInstantFrame) {
-        if (!lensWizard.patientName && !posCustomerPrimaryName(posSelectedCustomerSnapshot)) {
-          if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Choose who this pair is for.')
-          lensWizard.step = 0
+        var patientNm = resolveLensPatientNameForSave()
+        if (!patientNm) {
+          if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Enter patient name.')
+          lensWizard.step = 2
           renderLensStep()
           return
         }
@@ -5409,6 +5661,8 @@
         if (!lensWizard.powerMode) {
           lensWizard.powerMode = 'later'
         }
+        var familyOk = await ensureFamilyNameForPatient(session, patientNm)
+        if (!familyOk) return
         const selAddons = (lensWizard.pkg.addons || []).filter(function (a) {
           return lensWizard.addonIds.indexOf(a.id) >= 0
         })
@@ -5423,8 +5677,6 @@
           category_name: String((lensWizard.category && lensWizard.category.name) || '').trim()
         }
         line.power_mode = lensWizard.powerMode
-        var primaryNm = posCustomerPrimaryName(posSelectedCustomerSnapshot)
-        var patientNm = lensWizard.patientName || line.patient_name || primaryNm
         line.patient_name = patientNm
         if (lensWizard.powerMode === 'manual') {
           line.rx = JSON.parse(JSON.stringify(lensWizard.rx))
@@ -5450,7 +5702,10 @@
     saveCart()
     lensWizardLineIdx = -1
     navigate(POS_ROUTES.ORDER)
-    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Lens setup complete')
+    if (typeof cosmosToastSuccess === 'function') {
+      cosmosToastSuccess(lensWizardWasEditing ? 'Lens setup updated' : 'Lens setup complete')
+    }
+    lensWizardWasEditing = false
   }
 
   async function showLensWizardScreen(session) {
@@ -5482,8 +5737,13 @@
       navigate(POS_ROUTES.ORDER)
       return
     }
-    // Preserve any choices the user already made (back navigation), only reset
-    // when explicitly starting a fresh flow (handled in startLensFlowFromProduct).
+    var cartLineForWizard = lensWizardLineIdx >= 0 ? obCart[lensWizardLineIdx] : null
+    if (lensWizardOpenMode === 'edit') {
+      hydrateLensWizardFromLine(cartLineForWizard)
+    } else {
+      resetLensWizardState()
+    }
+    lensWizardOpenMode = 'new'
     syncLensWizardStepNumber()
     renderLensStep()
     showScreen('screen-pos-lens')
@@ -5495,6 +5755,7 @@
     const orderNoEl = document.getElementById('pay-order-no')
     const customerEl = document.getElementById('pay-customer-name')
     const balanceEl = document.getElementById('pay-balance-due')
+    const balanceLblEl = document.getElementById('pay-balance-due-lbl')
     const orderNo = opts && opts.orderNo ? String(opts.orderNo) : ''
     const customerName =
       opts && opts.customerName ? String(opts.customerName) : '—'
@@ -5502,13 +5763,40 @@
       opts && opts.balanceDue != null && !isNaN(Number(opts.balanceDue))
         ? Number(opts.balanceDue)
         : null
+    const dueLabel =
+      opts && opts.dueLabel ? String(opts.dueLabel) : 'Balance due'
     if (orderNoEl) orderNoEl.textContent = orderNo || 'New checkout'
     if (customerEl) customerEl.textContent = customerName || '—'
+    if (balanceLblEl) balanceLblEl.textContent = dueLabel
     if (balanceEl) {
       balanceEl.textContent =
         balanceDue != null ? formatRupees(balanceDue) : '—'
     }
     card.hidden = false
+  }
+
+  /** Lab first-pay: show advance due, not full bill total. */
+  function resolvePayScreenDue(opts) {
+    const labLike = !!(opts && opts.labLike)
+    const advanceRemaining = Math.max(0, Number(opts && opts.advanceRemaining) || 0)
+    const balanceRemaining = Math.max(0, Number(opts && opts.balanceRemaining) || 0)
+    const minAdvance = Math.max(0, Number(opts && opts.minAdvance) || 0)
+    const total = Math.max(0, Number(opts && opts.total) || 0)
+    if (labLike && advanceRemaining > 0.009) {
+      return {
+        dueLabel: 'Advance due',
+        dueAmount: advanceRemaining,
+        collectAmount: advanceRemaining,
+        stage: 'ADVANCE'
+      }
+    }
+    const due = balanceRemaining > 0.009 ? balanceRemaining : total
+    return {
+      dueLabel: 'Balance due',
+      dueAmount: due,
+      collectAmount: due,
+      stage: 'FULL'
+    }
   }
 
   async function showPaymentScreen(session) {
@@ -5520,7 +5808,6 @@
       if (payHint) payHint.textContent = ''
     }
     showScreen('screen-pos-payment')
-    setPosDeliveryMode(posDeliveryMode)
     setPosPaymentMutateLocked(false)
     const draftBanner = document.getElementById('pay-draft-banner')
     if (draftBanner) {
@@ -5539,23 +5826,32 @@
           'New checkout — order is created when you tap Pay. If payment fails, the bill is saved as Payment pending in Orders.'
       }
       const snap = posSelectedCustomerSnapshot || {}
-      syncPayContextHeader({
-        orderNo: '',
-        customerName: snap.full_name || snap.name || 'Walk-in',
-        balanceDue: total
-      })
       const labLike = pt.order_kind === 'LAB' || pt.order_kind === 'MIXED'
-      paySessionSnapshot = { stage: 'FULL', amount: total }
+      syncPayDeliverySlotVisibility(pt.order_kind)
       payMinimumAdvanceAmount = 0
-      payMinimumAdvancePct = Number(posSettings.lab_advance_pct) || 0
+      payMinimumAdvancePct = effectiveLabAdvancePct()
       if (labLike) {
         const labSubForAdv = computeLabSubtotalForAdvance()
         const subtotalForAdv = labSubForAdv > 0.009 ? labSubForAdv : (Number(pt.subtotal_amount) || total)
         payMinimumAdvanceAmount = Math.round(subtotalForAdv * (payMinimumAdvancePct / 100) * 100) / 100
-        if (payMinimumAdvanceAmount > 0.009) {
-          paySessionSnapshot = { stage: 'ADVANCE', amount: total }
-        }
       }
+      const pendingDue = resolvePayScreenDue({
+        labLike: labLike,
+        advanceRemaining: payMinimumAdvanceAmount,
+        balanceRemaining: total,
+        minAdvance: payMinimumAdvanceAmount,
+        total: total
+      })
+      paySessionSnapshot = {
+        stage: pendingDue.stage,
+        amount: pendingDue.collectAmount
+      }
+      syncPayContextHeader({
+        orderNo: '',
+        customerName: snap.full_name || snap.name || 'Walk-in',
+        dueLabel: pendingDue.dueLabel,
+        balanceDue: pendingDue.dueAmount
+      })
       const labAdvMode = labLike && payMinimumAdvanceAmount > 0.009
       const linesEl = document.getElementById('pay-summary-lines')
       if (linesEl) {
@@ -5655,6 +5951,7 @@
       return
     }
     if (!el || !lastCreatedOrder) {
+      syncPayDeliverySlotVisibility(null)
       clearPaymentOffersPanel()
       return
     }
@@ -5662,13 +5959,14 @@
     if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pay-summary', 4)
     paySessionSnapshot = { stage: 'FULL', amount: Number(lastCreatedOrder.total_amount) || 0 }
     payMinimumAdvanceAmount = 0
-    payMinimumAdvancePct = Number(posSettings.lab_advance_pct) || 0
+    payMinimumAdvancePct = effectiveLabAdvancePct()
     try {
       const detail = await apiGet('/api/pos/orders/' + lastCreatedOrder.order_id, session.token)
       if (detail.can_mutate === false) {
         setPosPaymentMutateLocked(true, 'Only the cashier who created this order can collect payment.')
       }
       const order = detail.order
+      syncPayDeliverySlotVisibility(order.order_kind)
       const payments = detail.payments || []
       const total = Number(order.total_amount)
       const ps = detail.payment_summary
@@ -5680,9 +5978,8 @@
         balanceRemaining = Number(ps.amount_remaining) || 0
       } else {
         const pct = Number(order.lab_advance_pct_snapshot) || 40
-        // Match server logic: advance is pct% of pre-tax subtotal, not GST-inclusive total
-        const subtotalForAdvance = Number(order.subtotal_amount) || total
-        const advanceTarget = Math.round(subtotalForAdvance * (pct / 100) * 100) / 100
+        const labBase = computeLabSubtotalForAdvanceFromOrder(order, detail.lines || [], ps)
+        const advanceTarget = Math.round(labBase * (pct / 100) * 100) / 100
         let advPaid = 0
         for (let i = 0; i < payments.length; i++) {
           if (payments[i].stage === 'ADVANCE') advPaid += Number(payments[i].amount) || 0
@@ -5695,6 +5992,9 @@
         }
         paidAll = Math.round(paidAll * 100) / 100
         balanceRemaining = Math.max(0, Math.round((total - paidAll) * 100) / 100)
+        if (labLike && paidAll + 0.01 >= advanceTarget && advanceTarget > 0.009) {
+          advanceRemaining = 0
+        }
       }
       if (labLike && advanceRemaining > 0.009) {
         paySessionSnapshot = { stage: 'ADVANCE', amount: advanceRemaining }
@@ -5709,22 +6009,18 @@
         advanceTargetDisplay = Number(ps.advance_target) || 0
         advPaidDisplay = Number(ps.paid_advance) || 0
       } else {
-        const subtotalForAdv = Number(order.subtotal_amount) || total
-        advanceTargetDisplay = Math.round(subtotalForAdv * (pctAdvDisplay / 100) * 100) / 100
+        const labBase = computeLabSubtotalForAdvanceFromOrder(order, detail.lines || [], ps)
+        advanceTargetDisplay = Math.round(labBase * (pctAdvDisplay / 100) * 100) / 100
         for (let k = 0; k < payments.length; k++) {
           if (payments[k].stage === 'ADVANCE') advPaidDisplay += Number(payments[k].amount) || 0
         }
         advPaidDisplay = Math.round(advPaidDisplay * 100) / 100
       }
       payMinimumAdvancePct = pctAdvDisplay
-      // Use the server's advance_target (pre-tax basis) — NOT total_amount (GST-inclusive).
-      // Recalculating from total inflates the minimum and causes "exceeds remaining advance" errors.
+      // Use the server's advance_target (discount-adjusted lab base) — NOT GST-inclusive total.
       payMinimumAdvanceAmount = advanceTargetDisplay > 0
-        ? Math.round((advanceTargetDisplay - advPaidDisplay) * 100) / 100
-        : Math.round((total * (pctAdvDisplay / 100)) * 100) / 100
-      if (paySessionSnapshot.stage === 'ADVANCE' && advPaidDisplay <= 0.009) {
-        paySessionSnapshot.amount = Math.max(paySessionSnapshot.amount, payMinimumAdvanceAmount)
-      }
+        ? Math.max(0, Math.round((advanceTargetDisplay - advPaidDisplay) * 100) / 100)
+        : Math.max(0, Math.round(computeLabSubtotalForAdvanceFromOrder(order, detail.lines || [], ps) * (pctAdvDisplay / 100) * 100) / 100)
       if (forceBalanceSettlement) {
         paySessionSnapshot = { stage: 'BALANCE', amount: Math.max(0, balanceRemaining) }
       }
@@ -5789,11 +6085,22 @@
       const sbt = document.getElementById('pos-lk-pay-savings-text')
       if (sb) sb.hidden = savings <= 0
       if (sbt) sbt.textContent = "You're saving " + formatRupees(savings) + " on this order"
-      // ── Amount card: default to full balance, show advance info ────────
-      const fullRemaining = Math.max(0, Math.round((total - (advPaidDisplay || 0)) * 100) / 100)
-      // Default: collect full amount; staff can reduce to minimum advance
+      // ── Amount card: default to advance due on lab, else full balance ────────
+      const fullRemaining = balanceRemaining > 0.009
+        ? balanceRemaining
+        : Math.max(0, Math.round((total - (Number(ps && ps.paid_total) || advPaidDisplay || 0)) * 100) / 100)
       if (!forceBalanceSettlement) {
-        paySessionSnapshot = { stage: labLike && advanceRemaining > 0.009 ? 'ADVANCE' : 'FULL', amount: fullRemaining }
+        const resumeDue = resolvePayScreenDue({
+          labLike: labLike,
+          advanceRemaining: advanceRemaining,
+          balanceRemaining: balanceRemaining,
+          minAdvance: payMinimumAdvanceAmount,
+          total: fullRemaining
+        })
+        paySessionSnapshot = {
+          stage: forceBalanceSettlement ? 'BALANCE' : resumeDue.stage,
+          amount: forceBalanceSettlement ? Math.max(0, balanceRemaining) : resumeDue.collectAmount
+        }
       }
       const collectAmt = Math.max(0, Number(paySessionSnapshot.amount) || 0)
       const amtInput = document.getElementById('pay-amount-input')
@@ -5841,10 +6148,18 @@
         order.customer_name ||
         (lastCreatedOrder && lastCreatedOrder.customer_name) ||
         '—'
+      const headerDue = resolvePayScreenDue({
+        labLike: labLike,
+        advanceRemaining: advanceRemaining,
+        balanceRemaining: balanceRemaining,
+        minAdvance: payMinimumAdvanceAmount,
+        total: total
+      })
       syncPayContextHeader({
         orderNo: order.order_no || (lastCreatedOrder && lastCreatedOrder.order_no) || '',
         customerName: cxName,
-        balanceDue: balanceRemaining
+        dueLabel: headerDue.dueLabel,
+        balanceDue: headerDue.dueAmount
       })
       // Hidden legacy summary slot is left untouched.
       el.innerHTML = ''
@@ -5869,22 +6184,7 @@
       const amtSpan2 = document.getElementById('pay-cta-amt')
       if (amtSpan2) amtSpan2.textContent = formatRupees(fallbackTotal)
     }
-    // Delivery sub-label
-    const paySub = document.getElementById('pay-delivery-sub')
-    if (paySub) {
-      paySub.textContent = session && session.store_name ? session.store_name : 'Store'
-    }
-    // Default delivery date: today + 3 days (IST)
-    const dateInput = document.getElementById('pay-delivery-date')
-    if (dateInput && !dateInput.value) {
-      const [d, m, y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/')
-      const base = new Date(y + '-' + m + '-' + d + 'T00:00:00+05:30')
-      base.setDate(base.getDate() + 3)
-      const dy = base.getFullYear()
-      const dm = String(base.getMonth() + 1).padStart(2, '0')
-      const dd2 = String(base.getDate()).padStart(2, '0')
-      dateInput.value = dy + '-' + dm + '-' + dd2
-    }
+    // Delivery date default handled in syncPayDeliverySlotVisibility when LAB/MIXED.
     const amtSpanFinal = document.getElementById('pay-cta-amt')
     if (amtSpanFinal) {
       const a = Math.max(0, Number(paySessionSnapshot.amount) || 0)
@@ -5900,7 +6200,9 @@
     const ps = data && data.payment_summary ? data.payment_summary : null
     const balanceDue = ps ? Math.max(0, Number(ps.amount_remaining) || 0) : 0
     const deliveryDateEl = document.getElementById('pay-delivery-date')
-    const deliveryDate = deliveryDateEl ? deliveryDateEl.value : ''
+    const receiptKind = (data && data.order_kind) || opts.order_kind || null
+    const needsDelivery = orderKindNeedsDeliveryFields(receiptKind)
+    const deliveryDate = needsDelivery && deliveryDateEl ? deliveryDateEl.value : ''
     const phone =
       opts.customerPhone ||
       (posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.phone) ||
@@ -5908,11 +6210,11 @@
     lastPaymentReceipt = {
       order_id: opts.receiptOrderId,
       order_no: opts.receiptOrderNo,
-      order_kind: (data && data.order_kind) || opts.order_kind || null,
+      order_kind: receiptKind,
       amount: opts.amount,
       method: opts.method,
       external_ref: opts.external_ref,
-      delivery_mode: posDeliveryMode,
+      delivery_mode: needsDelivery ? posDeliveryMode : null,
       delivery_date: deliveryDate,
       customer_phone: phone,
       customer_name: (posSelectedCustomerSnapshot && posCustomerPrimaryName(posSelectedCustomerSnapshot)) || opts.customerName || '',
@@ -6725,6 +7027,20 @@
     })
   }
 
+  function cartLinePatientLabelHtml(line) {
+    if (String(line.fulfillment || '').toUpperCase() !== 'LAB') return ''
+    var patient = String(line.patient_name || (line.rx && line.rx.patient_name) || '').trim()
+    if (!patient) return ''
+    var primary = posCustomerPrimaryName(posSelectedCustomerSnapshot)
+    if (!primary || namesEqualLoose(patient, primary)) return ''
+    return (
+      '<div class="pos-lk-cart-patient-row" role="status">' +
+        '<span class="pos-lk-cart-patient-lbl">For</span>' +
+        '<span class="pos-lk-cart-patient-name">' + escapeHtml(patient) + '</span>' +
+      '</div>'
+    )
+  }
+
   function cartLineRetailCardHtml(line, idx) {
     const rule = getTypeRule(line.product_type)
     const du = computeLineDisplayUnit(line)
@@ -6825,25 +7141,30 @@
       : formatRupees(lineTotal)
     const ribbon = showFreeRibbon ? '<div class="pos-lk-cart-ribbon" aria-hidden="true">FREE</div>' : ''
 
-    // Fulfillment toggle (dual-mode products only)
-    const fulfillToggle = isDual
-      ? '<div class="pos-ob-line-fulfill">' +
-        '<button type="button" class="pos-ob-mini-btn' + (line.fulfillment === 'INSTANT' ? ' active' : '') + '" data-action="set-instant" data-idx="' + idx + '">Frame only</button>' +
-        '<button type="button" class="pos-ob-mini-btn' + (line.fulfillment === 'LAB' ? ' active' : '') + '" data-action="set-lab" data-idx="' + idx + '">With lenses</button>' +
-        '</div>'
-      : ''
-
-    // Configure-lenses CTA for pending LAB
-    const configureBtn = (line.fulfillment === 'LAB' && line.lab_status !== 'complete')
+    // Lens wizard CTA — Select (pending) or Edit (configured lab line)
+    const labWizardOk = lensWizardAllowed(line.product_type)
+    const showSelectLenses =
+      labWizardOk &&
+      line.fulfillment === 'LAB' &&
+      !line.lens_bundle &&
+      (isDual || line.lab_status !== 'complete')
+    const showEditLenses =
+      labWizardOk &&
+      line.fulfillment === 'LAB' &&
+      line.lens_bundle
+    const configureBtn = showSelectLenses
       ? '<button type="button" class="pos-ob-mini-btn action-btn pos-lk-cart-config-btn" data-action="configure-lens" data-idx="' + idx + '">Select lenses →</button>'
+      : ''
+    const editLensBtn = showEditLenses
+      ? '<button type="button" class="pos-ob-mini-btn action-btn pos-lk-cart-config-btn pos-lk-cart-edit-btn" data-action="edit-lens" data-idx="' + idx + '">Edit lenses & power →</button>'
       : ''
 
     const rxFoot = (line.fulfillment === 'LAB' && (line.lab_status === 'pending_power' || line.power_mode === 'later'))
       ? '<div class="pos-lk-cart-rx-foot"><span class="pos-lk-cart-rx-foot-ic" aria-hidden="true">✓</span> Upload prescription after payment.</div>'
       : ''
 
-    const footerMeta = (fulfillToggle || configureBtn)
-      ? '<div class="pos-lk-cart-v2-meta">' + fulfillToggle + configureBtn + '</div>'
+    const footerMeta = (configureBtn || editLensBtn)
+      ? '<div class="pos-lk-cart-v2-meta">' + configureBtn + editLensBtn + '</div>'
       : ''
 
     let unitInlineHtml = ''
@@ -6882,6 +7203,7 @@
             colourChip +
           '</div>' +
           tagsHtml +
+          cartLinePatientLabelHtml(line) +
           unitInlineHtml +
           lensDescHtml +
           lensPackageHtml +
@@ -7001,36 +7323,11 @@
       delete copy.unit_barcode
       copy.qty = 1
       obCart.splice(idx + 1, 0, copy)
-    } else if (action === 'set-instant') {
-      obCart[idx].fulfillment = 'INSTANT'
-      obCart[idx].lab_status = null
-      obCart[idx].lens_bundle = null
-    } else if (action === 'set-lab') {
-      if (!obCart[idx] || !lensWizardAllowed(obCart[idx].product_type)) {
-        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Lenses aren’t enabled for this product type.')
-        return
-      }
-      lensWizardBackRoute = POS_ROUTES.ORDER
-      obCart[idx].fulfillment = 'LAB'
-      obCart[idx].lab_status = 'incomplete'
-      obCart[idx].lens_bundle = null
-      lensWizardLineIdx = idx
-      pendingResumeOrder = true
-      resetLensWizardState()
-      saveCart()
-      navigate(POS_ROUTES.LENS)
-      return
     } else if (action === 'configure-lens') {
-      if (!obCart[idx] || !lensWizardAllowed(obCart[idx].product_type)) {
-        if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Lenses aren’t enabled for this product type.')
-        return
-      }
-      lensWizardBackRoute = POS_ROUTES.ORDER
-      lensWizardLineIdx = idx
-      pendingResumeOrder = true
-      resetLensWizardState()
-      saveCart()
-      navigate(POS_ROUTES.LENS)
+      openLensWizardForLine(idx, 'new')
+      return
+    } else if (action === 'edit-lens') {
+      openLensWizardForLine(idx, 'edit')
       return
     }
     saveCart()
@@ -7244,10 +7541,11 @@
     }
     if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
+      const draftKind = buildPendingCheckoutTotals().order_kind
       await apiPost('/api/pos/checkout-draft', {
         cart_json: obCart,
         checkout_stage: 5,
-        delivery_mode: posDeliveryMode,
+        delivery_mode: orderKindNeedsDeliveryFields(draftKind) ? posDeliveryMode : null,
         customer_id: posSelectedCustomerId
       }, session.token)
       if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Draft saved for this tablet & staff.')
@@ -7654,10 +7952,30 @@
     }
 
     const sumParts = [
-      summary.order_kind ? ('Kind: ' + summary.order_kind) : '',
-      summary.paid_total != null ? ('Paid: ₹' + Number(summary.paid_total).toLocaleString('en-IN')) : '',
-      summary.amount_remaining != null ? ('Due: ₹' + Number(summary.amount_remaining).toLocaleString('en-IN')) : ''
-    ].filter(Boolean)
+      summary.order_kind ? ('Kind: ' + summary.order_kind) : ''
+    ]
+    const labLikeOrder = summary.order_kind === 'LAB' || summary.order_kind === 'MIXED'
+    if (labLikeOrder && summary.advance_target != null) {
+      sumParts.push('Advance target: ₹' + Number(summary.advance_target).toLocaleString('en-IN'))
+      const advPaidShow =
+        summary.paid_advance > 0.009
+          ? Number(summary.paid_advance)
+          : (Number(summary.advance_remaining) <= 0.009 && Number(summary.paid_total) > 0.009
+            ? Math.min(Number(summary.advance_target), Number(summary.paid_total))
+            : 0)
+      if (advPaidShow > 0.009) {
+        sumParts.push('Advance paid: ₹' + advPaidShow.toLocaleString('en-IN'))
+      } else if (Number(summary.advance_remaining) > 0.009) {
+        sumParts.push('Advance due: ₹' + Number(summary.advance_remaining).toLocaleString('en-IN'))
+      }
+    }
+    if (summary.paid_total != null) {
+      sumParts.push('Paid: ₹' + Number(summary.paid_total).toLocaleString('en-IN'))
+    }
+    if (summary.amount_remaining != null) {
+      sumParts.push('Balance due: ₹' + Number(summary.amount_remaining).toLocaleString('en-IN'))
+    }
+    const sumPartsFiltered = sumParts.filter(Boolean)
 
     const remainingDue = summary.amount_remaining != null ? Number(summary.amount_remaining) : 0
     const paidSoFar = summary.paid_total != null ? Number(summary.paid_total) : 0
@@ -7704,7 +8022,7 @@
       '<h3 class="pos-order-detail-h3">Products</h3>' +
       (blocks || '<div class="pos-order-detail-muted">No products listed.</div>') +
       '<h3 class="pos-order-detail-h3">Payments</h3>' +
-      (sumParts.length ? '<div class="pos-order-detail-sum">' + escapeHtml(sumParts.join(' · ')) + '</div>' : '') +
+      (sumPartsFiltered.length ? '<div class="pos-order-detail-sum">' + escapeHtml(sumPartsFiltered.join(' · ')) + '</div>' : '') +
       (payRows || '<div class="pos-order-detail-muted">No payments recorded.</div>') +
       payActionHtml +
       voidActionHtml
@@ -8904,7 +9222,10 @@
     rxBackdrop && rxBackdrop.addEventListener('click', closeLensRxManualModal)
     rxDismiss && rxDismiss.addEventListener('click', closeLensRxManualModal)
     rxCancel && rxCancel.addEventListener('click', closeLensRxManualModal)
-    rxDone && rxDone.addEventListener('click', closeLensRxManualModal)
+    rxDone && rxDone.addEventListener('click', function () {
+      syncLensPatientNameFromInputs()
+      closeLensRxManualModal()
+    })
     document.addEventListener('keydown', function onLensCustModalEscape(ev) {
       if (ev.key !== 'Escape') return
       if (custPick && custPick.classList.contains('open')) {

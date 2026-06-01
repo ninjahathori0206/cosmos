@@ -63,7 +63,8 @@ const RAW_PERMISSION_GROUPS = [
     ['foundry.master_catalogue.view', 'Master catalogue — View'],
     ['foundry.master_catalogue.edit', 'Master catalogue — Edit'],
     ['foundry.stock.view', 'Stock transfers — View'],
-    ['foundry.stock.create', 'Stock transfers — Create']
+    ['foundry.stock.create', 'Stock transfers — Create'],
+    ['foundry.units.trace', 'Unit trace — Search', 'Foundry Unit Search by 7-digit unit code']
   ]],
   ['Foundry — Store Connect', [
     ['foundry.transfers.view', 'Transfer requests — View'],
@@ -160,7 +161,9 @@ const RAW_PERMISSION_GROUPS = [
     ['army.hiring.job_openings.view', 'Hiring — View job openings'],
     ['army.hiring.job_openings.edit', 'Hiring — Publish / close job openings'],
     ['army.hiring.candidates.view', 'Hiring — View candidates & pipeline'],
-    ['army.hiring.candidates.edit', 'Hiring — Update candidate status']
+    ['army.hiring.candidates.edit', 'Hiring — Update candidate status'],
+    ['army.hiring.interview_templates.view', 'Hiring — View interview templates'],
+    ['army.hiring.interview_templates.edit', 'Hiring — Create / edit interview templates']
   ]]
 ];
 
@@ -189,7 +192,7 @@ function buildCatalogueGroups() {
 }
 
 /** Bump when adding keys — Command Unit fetches with this revision to avoid stale catalogue. */
-const PERMISSION_CATALOGUE_REVISION = '20260601-pos-membership-dependents';
+const PERMISSION_CATALOGUE_REVISION = '20260602-army-interview-templates';
 
 const PERMISSION_CATALOGUE_GROUPS = buildCatalogueGroups();
 

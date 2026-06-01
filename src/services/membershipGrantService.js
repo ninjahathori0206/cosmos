@@ -1,5 +1,17 @@
 const sql = require('mssql')
 
+let _hasPosOrderIdCol = null
+
+async function membershipHasPosOrderIdColumn(db) {
+  if (_hasPosOrderIdCol != null) return _hasPosOrderIdCol
+  const r = await db.request().query(`
+    SELECT COL_LENGTH('dbo.customer_memberships', 'pos_order_id') AS col_len
+  `)
+  const len = r.recordset && r.recordset[0] && r.recordset[0].col_len
+  _hasPosOrderIdCol = len != null && Number(len) > 0
+  return _hasPosOrderIdCol
+}
+
 /**
  * Load active membership plan by plan_key.
  * @param {import('mssql').ConnectionPool|import('mssql').Transaction} db
@@ -63,6 +75,7 @@ async function grantCustomerMembership(db, opts) {
   const posOrderId = opts.posOrderId ? parseInt(String(opts.posOrderId), 10) : null
   const validPosOrderId = posOrderId && Number.isFinite(posOrderId) && posOrderId > 0 ? posOrderId : null
   const uid = opts.createdByUserId != null ? Number(opts.createdByUserId) : null
+  const hasPosOrderLink = await membershipHasPosOrderIdColumn(db)
 
   const runInOwnTx = opts.useTransaction === true
   let tx = null
@@ -85,7 +98,11 @@ async function grantCustomerMembership(db, opts) {
       .input('pk', sql.NVarChar(50), planKey)
       .input('paid', sql.Decimal(12, 2), paid)
       .input('uid', sql.Int, uid)
-      .input('pos_order_id', sql.Int, validPosOrderId)
+    if (hasPosOrderLink) {
+      ins.input('pos_order_id', sql.Int, validPosOrderId)
+    }
+    const posOrderCols = hasPosOrderLink ? ', pos_order_id' : ''
+    const posOrderVals = hasPosOrderLink ? ', @pos_order_id' : ''
 
     let membershipId
     if (opts.expiresAt) {
@@ -93,39 +110,39 @@ async function grantCustomerMembership(db, opts) {
       ins.input('exp', sql.DateTime2, new Date(expStr.includes('T') ? expStr : expStr + 'T23:59:59+05:30'))
       const r = await ins.query(`
         INSERT INTO dbo.customer_memberships
-          (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id, pos_order_id)
+          (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id${posOrderCols})
         OUTPUT INSERTED.membership_id
         VALUES (
           @cid, @pk,
           DATEADD(MINUTE, 330, SYSUTCDATETIME()),
           @exp,
-          @paid, 1, @uid, @pos_order_id
+          @paid, 1, @uid${posOrderVals}
         )
       `)
       membershipId = r.recordset[0].membership_id
     } else if (validityType === 'LIFETIME') {
       const r = await ins.query(`
         INSERT INTO dbo.customer_memberships
-          (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id, pos_order_id)
+          (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id${posOrderCols})
         OUTPUT INSERTED.membership_id
         VALUES (
           @cid, @pk,
           DATEADD(MINUTE, 330, SYSUTCDATETIME()),
           '2099-12-31T23:59:59',
-          @paid, 1, @uid, @pos_order_id
+          @paid, 1, @uid${posOrderVals}
         )
       `)
       membershipId = r.recordset[0].membership_id
     } else {
       const r = await ins.input('days', sql.Int, days).query(`
         INSERT INTO dbo.customer_memberships
-          (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id, pos_order_id)
+          (customer_id, plan_key, purchased_at, expires_at, price_paid, is_active, created_by_user_id${posOrderCols})
         OUTPUT INSERTED.membership_id
         VALUES (
           @cid, @pk,
           DATEADD(MINUTE, 330, SYSUTCDATETIME()),
           DATEADD(DAY, @days, DATEADD(MINUTE, 330, SYSUTCDATETIME())),
-          @paid, 1, @uid, @pos_order_id
+          @paid, 1, @uid${posOrderVals}
         )
       `)
       membershipId = r.recordset[0].membership_id
@@ -181,5 +198,6 @@ function roundMoney(n) {
 module.exports = {
   loadActiveMembershipPlan,
   grantCustomerMembership,
-  resolveMembershipSaleAmount
+  resolveMembershipSaleAmount,
+  membershipHasPosOrderIdColumn
 }

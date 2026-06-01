@@ -366,7 +366,7 @@ async function getMembershipFamilyForCustomer(pool, customerId) {
     return {
       role: 'primary',
       can_add_dependents: true,
-      can_sell_membership: true,
+      can_sell_membership: false,
       inherited_from: null,
       resolved,
       active_membership: own,

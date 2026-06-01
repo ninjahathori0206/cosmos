@@ -7,9 +7,9 @@
 <link rel="icon" href="/favicon.ico" type="image/png" sizes="32x32">
 <title>Army HR — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/fonts.css">
-<link rel="stylesheet" href="/css/army-prototype.css?v=20260531-sp-theme">
+<link rel="stylesheet" href="/css/army-prototype.css?v=20260602-interview-b1">
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css">
-<script src="/js/cosmos-ui-polish.js?v=20260602-ist-ssot" defer></script>
+<script src="/js/cosmos-ui-polish.js?v=20260602-ist-wire" defer></script>
 </head>
 <body class="cosmos-app-shell">
 
@@ -22,6 +22,7 @@
     <div class="nav-group">Hiring</div>
     <div class="nav-item" data-page="dashboard" tabindex="0" role="button" aria-label="Dashboard"><span class="ic">📊</span> Dashboard</div>
     <div class="nav-item" data-page="job-openings" tabindex="0" role="button" aria-label="Job openings"><span class="ic">📋</span> Job Openings</div>
+    <div class="nav-item" data-page="interview-templates" tabindex="0" role="button" aria-label="Interview templates" id="nav-interview-templates" hidden><span class="ic">📅</span> Interview Templates</div>
     <div class="nav-item" data-page="pipeline" tabindex="0" role="button" aria-label="Candidate pipeline"><span class="ic">👥</span> Candidate Pipeline</div>
     <div class="nav-group">Portal</div>
     <div class="nav-item" id="nav-careers-link" tabindex="0" role="link" aria-label="Public careers portal"><span class="ic">🌐</span> Careers Portal</div>
@@ -64,9 +65,14 @@
   </section>
 
   <section class="page" id="page-job-openings" data-page="job-openings">
-    <div class="ph">
-      <div class="pt">Job openings</div>
-      <div class="ps">Review roster requests, publish roles to the careers portal, or close filled positions.</div>
+    <div class="ph sp-page-title-row">
+      <div>
+        <div class="pt">Job openings</div>
+        <div class="ps">Create draft roles, publish to the careers portal, or close filled positions.</div>
+      </div>
+      <div class="sp-page-tools">
+        <button type="button" class="btn primary" id="jobs-new-btn" hidden>+ New opening</button>
+      </div>
     </div>
     <div class="card">
       <div class="ch">
@@ -97,6 +103,40 @@
     </div>
   </section>
 
+  <section class="page" id="page-interview-templates" data-page="interview-templates">
+    <div class="ph sp-page-title-row">
+      <div>
+        <div class="pt">Interview templates</div>
+        <div class="ps">Reusable interview stages for job openings.</div>
+      </div>
+      <div class="sp-page-tools">
+        <button type="button" class="btn primary" id="templates-new-btn" hidden>+ New template</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch">
+        <div class="ct">All templates</div>
+        <div class="filters">
+          <input type="search" id="templates-filter-q" placeholder="Search templates…" aria-label="Search templates">
+        </div>
+      </div>
+      <div class="cb tw">
+        <table>
+          <thead>
+            <tr>
+              <th>Template name</th>
+              <th>Stages</th>
+              <th>Used by</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="templates-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <section class="page" id="page-pipeline" data-page="pipeline">
     <div class="ph">
       <div class="pt">Candidate pipeline</div>
@@ -116,8 +156,113 @@
   </section>
 </main>
 
+<div class="overlay" id="modal-job" role="dialog" aria-modal="true" aria-labelledby="modal-job-title">
+  <div class="modal modal-lg">
+    <div class="modal-h">
+      <h2 id="modal-job-title">New job opening</h2>
+      <button type="button" class="btn sm" id="modal-job-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-b">
+      <div class="army-form-error" id="modal-job-error" role="alert" hidden></div>
+      <div class="army-job-form">
+        <label class="army-form-field" for="job-form-title">
+          <span class="army-form-label">Job title *</span>
+          <input id="job-form-title" class="army-form-input" type="text" maxlength="200" placeholder="e.g. Sales Associate">
+        </label>
+        <div class="army-form-row">
+          <label class="army-form-field" for="job-form-department">
+            <span class="army-form-label">Department *</span>
+            <select id="job-form-department" class="army-form-input"></select>
+          </label>
+          <label class="army-form-field" for="job-form-store">
+            <span class="army-form-label">Store *</span>
+            <select id="job-form-store" class="army-form-input"></select>
+          </label>
+        </div>
+        <div class="army-form-row">
+          <label class="army-form-field" for="job-form-vacancies">
+            <span class="army-form-label">Vacancies *</span>
+            <input id="job-form-vacancies" class="army-form-input" type="number" min="1" max="99" value="1">
+          </label>
+          <label class="army-form-field" for="job-form-employment">
+            <span class="army-form-label">Employment type *</span>
+            <select id="job-form-employment" class="army-form-input"></select>
+          </label>
+        </div>
+        <div class="army-form-row">
+          <label class="army-form-field" for="job-form-location">
+            <span class="army-form-label">Location</span>
+            <input id="job-form-location" class="army-form-input" type="text" maxlength="200" placeholder="e.g. Bandra West, Mumbai">
+          </label>
+          <label class="army-form-field" for="job-form-apply-by">
+            <span class="army-form-label">Apply by</span>
+            <input id="job-form-apply-by" class="army-form-input" type="date">
+          </label>
+        </div>
+        <div class="army-form-highlight">
+          <label class="army-form-field" for="job-form-interview-template">
+            <span class="army-form-label">Interview template</span>
+            <select id="job-form-interview-template" class="army-form-input">
+              <option value="">None — manual pipeline only</option>
+            </select>
+            <span class="army-form-hint">When set, new applicants get these interview stages automatically.</span>
+          </label>
+        </div>
+        <label class="army-form-field" for="job-form-about">
+          <span class="army-form-label">About the role</span>
+          <textarea id="job-form-about" class="army-form-input army-form-textarea" rows="4" placeholder="Responsibilities and what the candidate will do…"></textarea>
+        </label>
+        <label class="army-form-field" for="job-form-requirements">
+          <span class="army-form-label">Requirements</span>
+          <textarea id="job-form-requirements" class="army-form-input army-form-textarea" rows="4" placeholder="One requirement per line"></textarea>
+        </label>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button type="button" class="btn" id="modal-job-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="modal-job-save">Save draft</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-template" role="dialog" aria-modal="true" aria-labelledby="modal-template-title">
+  <div class="modal modal-lg">
+    <div class="modal-h">
+      <h2 id="modal-template-title">New interview template</h2>
+      <button type="button" class="btn sm" id="modal-template-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-b">
+      <div class="army-form-error" id="modal-template-error" role="alert" hidden></div>
+      <div class="army-job-form">
+        <label class="army-form-field" for="template-form-name">
+          <span class="army-form-label">Template name *</span>
+          <input id="template-form-name" class="army-form-input" type="text" maxlength="120" placeholder="e.g. Retail Staff">
+        </label>
+        <label class="army-form-field" for="template-form-description">
+          <span class="army-form-label">Description</span>
+          <textarea id="template-form-description" class="army-form-input army-form-textarea" rows="3" placeholder="Optional summary for HR admins"></textarea>
+        </label>
+        <div class="army-form-section-head">
+          <div class="army-form-section-title">Interview stages</div>
+          <div class="army-form-hint">Order is top to bottom. Candidates progress through each stage.</div>
+        </div>
+        <div id="template-stages-list" class="army-template-stages"></div>
+        <button type="button" class="btn sm" id="template-add-stage">+ Add stage</button>
+        <label class="army-form-toggle">
+          <input type="checkbox" id="template-form-active" checked>
+          <span>Active template</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button type="button" class="btn" id="modal-template-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="modal-template-save">Save template</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="modal-candidate" role="dialog" aria-modal="true" aria-labelledby="modal-candidate-title">
-  <div class="modal">
+  <div class="modal modal-lg">
     <div class="modal-h">
       <h2 id="modal-candidate-title">Candidate detail</h2>
       <button type="button" class="btn sm" id="modal-candidate-close" aria-label="Close">✕</button>
@@ -132,6 +277,6 @@
 
 <script src="/js/cosmos-modules-catalog.js"></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
-<script src="/js/army-prototype.js?v=20260531-sidebar-footer"></script>
+<script src="/js/army-prototype.js?v=20260602-interview-b1"></script>
 </body>
 </html>

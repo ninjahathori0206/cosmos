@@ -18,13 +18,15 @@ Cursor rule: [`.cursor/rules/ist-timezone-rules.mdc`](../../.cursor/rules/ist-ti
 
 - Business timestamps are **`DATETIME2` IST wall clock** (naive — no offset column).
 - **Writes** in SQL: `DATEADD(MINUTE, 330, SYSUTCDATETIME())` or `dbo.cosmos_ist_now()` when deployed.
-- **Writes** in Node: `wallClockIso()` from `cosmosIst.js` for parameterized inserts, or embed `sqlNow()` in query text.
+- **Writes** in Node (POS orders/payments from `orderService.js`): pass `wallClockIso()` as `CAST(@created_at_ist AS DATETIME2(0))` — do **not** rely on SQL `DATEADD` alone if the SQL host clock drifts from true UTC.
 - **Do not** use `GETDATE()` for new code (host OS timezone is not guaranteed IST).
 
 ## Wire / API
 
-- JSON typically exposes ISO strings from the driver (e.g. `2026-05-27T14:30:00.000Z`).
-- **Display** treats values as the same instant the DB stored in IST wall clock; do not apply a second UTC→IST shift unless a column is documented as legacy UTC.
+- API emits **naive IST wall-clock** strings: `YYYY-MM-DDTHH:mm:ss` (no `Z`, no offset).
+- Node: use `sqlWireDatetime('col')` in SQL selects and `wireDatetimeFromSql()` when mapping rows.
+- **Do not** pass raw mssql `Date` objects to `res.json()` for business timestamps — the driver adds `Z` and breaks display.
+- Legacy responses ending in `Z` are still converted to IST in the browser until all endpoints are migrated.
 
 ## Display (UI)
 
@@ -47,6 +49,8 @@ const { sqlNow, wallClockIso, todayYmd, formatDateYmd, COSMOS_IST_TZ } = require
 
 - `sqlNow()` — SQL fragment for `NOW` in queries.
 - `wallClockIso()` — `YYYY-MM-DDTHH:mm:ss` IST for `DATETIME2` parameters.
+- `sqlWireDatetime('col')` — SQL `CONVERT(VARCHAR(19), col, 126)` for API wire strings.
+- `wireDatetimeFromSql(value)` — normalize row/API value to naive wire string (no `Z`).
 - `todayYmd()` — today's calendar date in IST as `YYYY-MM-DD`.
 - `formatDateYmd(d)` — any `Date` or parseable value → `YYYY-MM-DD` in IST.
 

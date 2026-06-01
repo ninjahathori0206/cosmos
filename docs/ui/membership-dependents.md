@@ -59,7 +59,7 @@ Offer eligibility uses `resolveMembershipForCustomer` (own membership wins; else
 ## POS rules
 
 - Dependent Cx: member offers apply via inherited plan; **Add membership plan** hidden when `can_sell_membership === false`.
-- Phone: same unique-mobile + alias rules as register Cx.
+- Phone: same unique-mobile + family-name rules as register Cx.
 
 ## Verification
 

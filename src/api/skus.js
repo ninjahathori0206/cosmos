@@ -50,6 +50,53 @@ function maskSkuStockQuantities(row) {
   return maskedRow;
 }
 
+const unitTraceAccess = [
+  requireModule('foundry'),
+  requirePermission('foundry.units.trace')
+];
+
+const unitTraceQuerySchema = Joi.object({
+  q: Joi.string().trim().max(20).required()
+});
+
+// GET /api/skus/units/trace?q=0010447 — Foundry unit custody + timeline + sale
+router.get(
+  '/units/trace',
+  ...unitTraceAccess,
+  async (req, res, next) => {
+    try {
+      const { error, value } = unitTraceQuerySchema.validate(req.query, { abortEarly: false });
+      if (error) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors: error.details.map((d) => d.message)
+        });
+      }
+      const raw = String(value.q || '').trim();
+      if (!/^\d{1,7}$/.test(raw)) {
+        return res.status(400).json({ success: false, message: 'Unit code must be 1–7 digits' });
+      }
+      const result = await executeStoredProcedure('sp_SKU_UnitTraceByBarcode', {
+        unit_barcode: { type: sql.VarChar(20), value: raw }
+      });
+      const unit = result.recordsets && result.recordsets[0] && result.recordsets[0][0];
+      if (!unit || !unit.unit_id) {
+        return res.status(404).json({ success: false, message: 'Unit barcode not found' });
+      }
+      const timeline = (result.recordsets && result.recordsets[1]) || [];
+      const saleRow = result.recordsets && result.recordsets[2] && result.recordsets[2][0];
+      const sale = saleRow && saleRow.order_id ? saleRow : null;
+      return res.json({ success: true, data: { unit, timeline, sale } });
+    } catch (err) {
+      if (err.code === 'EREQUEST') {
+        return res.status(400).json({ success: false, message: err.message });
+      }
+      return next(err);
+    }
+  }
+);
+
 // GET /api/skus — SKU catalogue with optional filters
 router.get(
   '/',
