@@ -1,0 +1,193 @@
+  /** Org-wide label format presets (server) + last-selected key (browser) */
+  const BC_FORMAT_KEY_STORAGE = 'cosmos.foundry.bcFormatKey.v1';
+  const BC_FORMAT_FIELD_MAP = [
+    { configKey: 'marginTop', inputId: 'bc-margin-top' },
+    { configKey: 'marginBottom', inputId: 'bc-margin-bottom' },
+    { configKey: 'marginLeft', inputId: 'bc-margin-left' },
+    { configKey: 'marginRight', inputId: 'bc-margin-right' },
+    { configKey: 'gapRow', inputId: 'bc-gap-row' },
+    { configKey: 'gapCol', inputId: 'bc-gap-col' },
+    { configKey: 'labelWidthMm', inputId: 'bc-label-width' },
+    { configKey: 'labelHeightMm', inputId: 'bc-label-height' },
+    { configKey: 'labelsPerRow', inputId: 'bc-labels-per-row' },
+    { configKey: 'dotsPerMm', inputId: 'bc-dots-per-mm' },
+    { configKey: 'qrCellSize', inputId: 'bc-qr-cell-size' },
+    { configKey: 'qrVisualSizeMm', inputId: 'bc-qr-visual-size-mm' },
+    { configKey: 'qrTopRatio', inputId: 'bc-qr-top-ratio' },
+    { configKey: 'textTopRatio', inputId: 'bc-text-top-ratio' },
+    { configKey: 'textXMul', inputId: 'bc-text-x-mul' },
+    { configKey: 'textYMul', inputId: 'bc-text-y-mul' },
+    { configKey: 'textFontId', inputId: 'bc-text-font-id' },
+    { configKey: 'textFontPt', inputId: 'bc-text-font-pt' }
+  ];
+  const BC_FORMAT_INPUT_IDS = BC_FORMAT_FIELD_MAP.map(function (f) { return f.inputId; });
+  let _bcLabelFormats = [];
+  let _bcLabelFormatsLoaded = false;
+
+  function _bcCanEditLabelFormats() {
+    return typeof foundryHasAnyPerm === 'function' && foundryHasAnyPerm('foundry.label_formats.edit');
+  }
+
+  function _bcRefreshLabelFormatActions() {
+    const wrap = document.getElementById('bc-format-actions');
+    if (wrap) wrap.style.display = _bcCanEditLabelFormats() ? '' : 'none';
+  }
+
+  function _bcReadStoredFormatKey() {
+    try { return String(localStorage.getItem(BC_FORMAT_KEY_STORAGE) || '').trim(); } catch (_e) { return ''; }
+  }
+
+  function _bcWriteStoredFormatKey(key) {
+    try { if (key) localStorage.setItem(BC_FORMAT_KEY_STORAGE, String(key)); } catch (_e) { /* ignore */ }
+  }
+
+  function _bcCollectFormatConfig() {
+    const out = { v: 1 };
+    BC_FORMAT_FIELD_MAP.forEach(function (f) {
+      const el = document.getElementById(f.inputId);
+      out[f.configKey] = el && 'value' in el ? el.value : '';
+    });
+    return out;
+  }
+
+  function _bcApplyFormatConfig(config) {
+    if (!config || typeof config !== 'object') return;
+    BC_FORMAT_FIELD_MAP.forEach(function (f) {
+      if (config[f.configKey] === undefined || config[f.configKey] === null) return;
+      const el = document.getElementById(f.inputId);
+      if (el && 'value' in el) el.value = String(config[f.configKey]);
+    });
+  }
+
+  function _bcPopulateFormatSelect(formats, selectedKey) {
+    const sel = document.getElementById('bc-format-select');
+    if (!sel) return;
+    const list = Array.isArray(formats) ? formats : [];
+    sel.innerHTML = list.map(function (f) {
+      const key = _bcEsc(f.format_key || '');
+      const name = _bcEsc(f.name || f.format_key || 'Format');
+      const def = f.is_default ? ' (default)' : '';
+      return '<option value="' + key + '">' + name + def + '</option>';
+    }).join('');
+    if (selectedKey && list.some(function (f) { return f.format_key === selectedKey; })) {
+      sel.value = selectedKey;
+    } else {
+      const def = list.find(function (f) { return f.is_default; });
+      if (def) sel.value = def.format_key;
+      else if (list[0]) sel.value = list[0].format_key;
+    }
+  }
+
+  function _bcGetSelectedFormatKey() {
+    return String(document.getElementById('bc-format-select')?.value || '').trim();
+  }
+
+  function _bcApplyLabelFormatByKey(formatKey) {
+    const key = String(formatKey || '').trim();
+    const fmt = _bcLabelFormats.find(function (f) { return f.format_key === key; });
+    if (fmt && fmt.config) _bcApplyFormatConfig(fmt.config);
+    if (key) _bcWriteStoredFormatKey(key);
+    bcRenderPreview();
+  }
+
+  async function _bcEnsureLabelFormatsLoaded() {
+    if (_bcLabelFormatsLoaded && _bcLabelFormats.length) return _bcLabelFormats;
+    try {
+      const res = await apiGet('/api/meta/label-print-formats');
+      const list = res && res.formats ? res.formats : (Array.isArray(res) ? res : []);
+      _bcLabelFormats = Array.isArray(list) ? list : [];
+    } catch (err) {
+      _bcLabelFormats = [];
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn(err.message || 'Could not load label formats — using on-screen defaults.');
+      }
+    }
+    _bcLabelFormatsLoaded = true;
+    return _bcLabelFormats;
+  }
+
+  window.bcOnFormatSelectChange = function() {
+    _bcApplyLabelFormatByKey(_bcGetSelectedFormatKey());
+  };
+
+  window.bcUpdateLabelFormat = async function() {
+    if (!_bcCanEditLabelFormats()) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('You do not have permission to edit label formats.');
+      return;
+    }
+    const key = _bcGetSelectedFormatKey();
+    if (!key) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a label format first.');
+      return;
+    }
+    const btn = document.getElementById('bc-format-update-btn');
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      const updated = await apiPut('/api/foundry/label-print-formats/' + encodeURIComponent(key), {
+        config: _bcCollectFormatConfig()
+      });
+      const row = updated && updated.format_key ? updated : (updated && updated.data ? updated.data : null);
+      if (row) {
+        const idx = _bcLabelFormats.findIndex(function (f) { return f.format_key === key; });
+        if (idx >= 0) _bcLabelFormats[idx] = row;
+      }
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Label format updated.');
+      bcRenderPreview();
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Update failed.');
+    }
+  };
+
+  window.bcSaveLabelFormatAsNew = async function() {
+    if (!_bcCanEditLabelFormats()) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('You do not have permission to create label formats.');
+      return;
+    }
+    const name = window.prompt('Name for this label format:', '');
+    if (!name || !String(name).trim()) return;
+    const btn = document.getElementById('bc-format-save-new-btn');
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      const created = await apiPost('/api/foundry/label-print-formats', {
+        name: String(name).trim(),
+        config: _bcCollectFormatConfig()
+      });
+      const row = created && created.format_key ? created : (created && created.data ? created.data : null);
+      if (row) {
+        _bcLabelFormats.push(row);
+        _bcPopulateFormatSelect(_bcLabelFormats, row.format_key);
+        _bcWriteStoredFormatKey(row.format_key);
+      }
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Label format saved.');
+      bcRenderPreview();
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed.');
+    }
+  };
+
+  window.bcSetDefaultLabelFormat = async function() {
+    if (!_bcCanEditLabelFormats()) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('You do not have permission to edit label formats.');
+      return;
+    }
+    const key = _bcGetSelectedFormatKey();
+    if (!key) return;
+    const btn = document.getElementById('bc-format-default-btn');
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      await apiPut('/api/foundry/label-print-formats/' + encodeURIComponent(key), { is_default: true });
+      _bcLabelFormats = _bcLabelFormats.map(function (f) {
+        return Object.assign({}, f, { is_default: f.format_key === key });
+      });
+      _bcPopulateFormatSelect(_bcLabelFormats, key);
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Default label format set.');
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not set default.');
+    }
+  };

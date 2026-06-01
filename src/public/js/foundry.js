@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btn = document.getElementById('pf-submit');
 
   if (form) {
-    const today = (() => { const [d,m,y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/'); return `${y}-${m}-${d}`; })();
+    const today = typeof window.cosmosIstToday === 'function' ? window.cosmosIstToday() : '';
     const dateInput = document.getElementById('pf-date');
     if (dateInput) dateInput.value = today;
 

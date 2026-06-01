@@ -50,6 +50,8 @@ const storeCollectionsRouter   = require('./src/api/storeCollections');
 const tabletsRouter            = require('./src/api/tablets');
 const customerAuthRouter       = require('./src/api/customerAuth');
 const customerAppRouter        = require('./src/api/customerApp');
+const armyCareersRouter        = require('./src/api/armyCareers');
+const armyHrRouter             = require('./src/api/armyHr');
 const { executeStoredProcedure, healthCheck } = require('./src/config/db');
 const {
   requireGoodsTransferDestinationStores,
@@ -228,6 +230,7 @@ const MODULE_SHELLS = {
   'command-unit': path.join(__dirname, 'CommandUnit_Prototype.html'),
   pos: path.join(__dirname, 'POS_Prototype.html'),
   cx: path.join(__dirname, 'Cx_Prototype.html'),
+  army: path.join(__dirname, 'Army_Prototype.html'),
 };
 
 function sendModuleShell(res, moduleKey) {
@@ -430,6 +433,7 @@ app.get(['/storepilot', '/storepilot/*'], (req, res) => sendModuleShell(res, 'st
 app.get(['/finance', '/finance/*'], (req, res) => sendModuleShell(res, 'finance'));
 app.get(['/command-unit', '/command-unit/*'], (req, res) => sendModuleShell(res, 'command-unit'));
 app.get(['/cx', '/cx/*'], (req, res) => sendModuleShell(res, 'cx'));
+app.get(['/army/hr', '/army/hr/*'], (req, res) => sendModuleShell(res, 'army'));
 // Health check
 app.get('/health', (req, res) => {
   res.json({
@@ -463,10 +467,19 @@ app.get('/health/db', async (req, res, next) => {
 app.use('/api/customer/auth', customerAuthRouter);
 app.use('/api/customer',      customerAppRouter);
 
+// Public Army careers portal — no auth (candidate-facing job listings)
+app.use('/api/army/careers', armyCareersRouter);
+
 // Eyewoot Go PWA shell + service worker
 app.get('/go', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'src', 'public', 'go.html'));
+});
+
+// Army public careers portal (mobile-first)
+app.get(['/army/careers', '/army/careers/*'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'src', 'public', 'army-careers.html'));
 });
 
 // Store OS PWA manifest
@@ -521,6 +534,7 @@ protectedApiRouter.get(
 protectedApiRouter.use('/transfer-requests', transferRequestsRouter);
 protectedApiRouter.use('/stock-transfer-docs', stockTransferDocsRouter);
 protectedApiRouter.use('/cx', cxRouter);
+protectedApiRouter.use('/army/hr', armyHrRouter);
 protectedApiRouter.use('/orders', ordersRouter);
 /* Meta: explicit mount so new catalogue routes work without stale sub-router cache */
 protectedApiRouter.get(

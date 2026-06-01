@@ -1,0 +1,27 @@
+/* Store Pilot — shared theme tokens (staff mobile / admin shells) */
+:root {
+  --navy: #0B1F33;
+  --navy2: #132F4A;
+  --acc: #1D6FD4;
+  --acc2: #2B8CFF;
+  --accL: #E8F4FF;
+  --accD: #1560B5;
+  --gold: #D97706;
+  --goldL: #FFFBEB;
+  --green: #059669;
+  --greenL: #ECFDF5;
+  --red: #DC2626;
+  --redL: #FEE2E2;
+  --orange: #C2410C;
+  --orangeL: #FFEDD5;
+  --teal: #0D9488;
+  --tealL: #CCFBF1;
+  --blue: #1D6FD4;
+  --blueL: #DBEAFE;
+  --bg: #F4F7FB;
+  --card: #FFFFFF;
+  --border: #D8E4F0;
+  --text1: #0F172A;
+  --text2: #5C6B7A;
+  --text3: #8B9CAE;
+}

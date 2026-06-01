@@ -48,4 +48,4 @@ This rule **extends** **`ui-ux-pen-first-workflow.mdc`** with an explicit **Mark
 - [ ] User approved design direction  
 - [ ] App/prototype code matches approval + **`ui-polish-rules.mdc`**  
 - [ ] Database/API changes, if any, **after** approval and aligned with UI contract  
-- [ ] `pencil-local` copy of `pencil-new.pen` synced if the repo uses it
+- [ ] `UIX/pencil-new.pen` updated; optional mirror `src/public/design/pencil-local/pencil-new.pen` synced if used

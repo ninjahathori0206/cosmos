@@ -1,0 +1,200 @@
+  let _bcCalibSaveTimer = null;
+  let _jsBarcodeLoader = null;
+  let _html5QrLoader = null;
+
+  function _loadScriptOnce(src, attrs, stateKey) {
+    if (window[stateKey]) return Promise.resolve();
+    if (attrs.loaderRef.current) return attrs.loaderRef.current;
+    attrs.loaderRef.current = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      if (attrs.integrity) script.integrity = attrs.integrity;
+      if (attrs.crossorigin) script.crossOrigin = attrs.crossorigin;
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(script);
+    }).finally(() => {
+      attrs.loaderRef.current = null;
+    });
+    return attrs.loaderRef.current;
+  }
+
+  function loadJsBarcodeLib() {
+    return _loadScriptOnce(
+      'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js',
+      {
+        integrity: 'sha384-Kk5SjBOKprEnGfyBWfD2zROFd1Cu8kwOXxG2GIhYPcoDL2rBJS9P8Ud1ZMy4412a',
+        crossorigin: 'anonymous',
+        loaderRef: {
+          get current() { return _jsBarcodeLoader; },
+          set current(v) { _jsBarcodeLoader = v; }
+        }
+      },
+      'JsBarcode'
+    );
+  }
+
+  let _qrCodeLoader = null;
+  const _BC_QR_CACHE_MAX = 500;
+  const _bcQrCache = new Map();
+
+  function _bcQrCacheSet(key, value) {
+    if (_bcQrCache.size >= _BC_QR_CACHE_MAX) {
+      _bcQrCache.delete(_bcQrCache.keys().next().value);
+    }
+    _bcQrCache.set(key, value);
+  }
+
+  function loadBcQrLib() {
+    if (window._QRCode_loaded && typeof QRCode !== 'undefined') return Promise.resolve();
+    if (_qrCodeLoader) return _qrCodeLoader;
+    const sources = [
+      '/js/vendor/qrcode.min.js',
+      'https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js'
+    ];
+    _qrCodeLoader = new Promise((resolve, reject) => {
+      let idx = 0;
+      function tryNext() {
+        if (typeof QRCode !== 'undefined') {
+          window._QRCode_loaded = true;
+          resolve();
+          return;
+        }
+        if (idx >= sources.length) {
+          reject(new Error('Failed to load QR library. Hard-refresh the page or check that /js/vendor/qrcode.min.js is reachable.'));
+          return;
+        }
+        const s = document.createElement('script');
+        s.src = sources[idx];
+        idx += 1;
+        s.async = true;
+        s.onload = () => {
+          if (typeof QRCode !== 'undefined') {
+            window._QRCode_loaded = true;
+            resolve();
+          } else {
+            tryNext();
+          }
+        };
+        s.onerror = tryNext;
+        document.head.appendChild(s);
+      }
+      tryNext();
+    }).finally(() => {
+      _qrCodeLoader = null;
+    });
+    return _qrCodeLoader;
+  }
+
+  function _bcEsc(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function _bcQrPayload(sk) {
+    const ub = sk.unit_barcode != null && String(sk.unit_barcode).trim() !== '' ? String(sk.unit_barcode).trim() : '';
+    if (/^\d{7}$/.test(ub)) return ub;
+    const sku = sk.sku_code || '';
+    const p = sk.pid != null && String(sk.pid).trim() !== '' ? String(sk.pid) : '';
+    const b = sk.barcode != null && String(sk.barcode).trim() !== '' ? String(sk.barcode) : '';
+    if (p) return p;
+    if (b && b !== sku) return b;
+    return sku;
+  }
+
+  async function _bcExpandSkusWithUnits(skus) {
+    const out = [];
+    for (let i = 0; i < skus.length; i++) {
+      const sk = skus[i];
+      let units = Array.isArray(sk.units) ? sk.units : null;
+      if (!units && sk.sku_id) {
+        try {
+          const res = await apiGet('/api/skus/' + encodeURIComponent(String(sk.sku_id)) + '/units');
+          units = Array.isArray(res) ? res : [];
+        } catch (_e) {
+          units = [];
+        }
+      }
+      if (units && units.length) {
+        for (let u = 0; u < units.length; u++) {
+          const row = units[u];
+          out.push(Object.assign({}, sk, {
+            unit_barcode: row.unit_barcode,
+            unit_no: row.unit_no,
+            quantity: 1
+          }));
+        }
+      } else {
+        out.push(sk);
+      }
+    }
+    return out;
+  }
+
+  function _bcIsUnitRow(sk) {
+    const ub = sk.unit_barcode != null ? String(sk.unit_barcode).trim() : '';
+    return /^\d{7}$/.test(ub);
+  }
+
+  function _bcRowCopies(sk) {
+    if (_bcIsUnitRow(sk)) return 1;
+    return Math.max(1, parseInt(String(sk.quantity || 1), 10) || 1);
+  }
+
+  window.openBarcodeModal = async function(skus, opts) {
+    opts = opts || {};
+    if (!skus || !skus.length) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No SKUs available to print.');
+      return;
+    }
+    _bcQrCache.clear();
+    _bcLabelFormatsLoaded = false;
+    try {
+      await Promise.all([loadJsBarcodeLib(), loadBcQrLib()]);
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to load print libraries.');
+      else alert(err.message || 'Failed to load print libraries.');
+      return;
+    }
+    _bcSkus = await _bcExpandSkusWithUnits(skus);
+    if (!_bcSkus.some(function (sk) { return sk.unit_barcode; }) && skus.some(function (sk) { return (Number(sk.quantity) || 0) > 0; })) {
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn('No unit barcodes for this SKU. Run maintenance backfill or re-generate SKU, then print again.');
+      }
+    }
+
+    _bcEnsureCalibrationListeners();
+    try {
+      await _bcTryReconnectUsbPrinter();
+    } catch (e) {
+      /* ignore */
+    }
+    if (_bcUsbDevice && _bcUsbDevice.opened) {
+      _bcUpdatePrinterStatus('connected', _bcUsbDevice.productName || 'USB printer');
+      _bcUpdateCalibrationHint(
+        'Horizontal calibration is remembered for this printer on this browser. Adjust below if a new roll still looks shifted.'
+      );
+    } else {
+      _bcUsbDevice = null;
+      _bcUpdatePrinterStatus(null);
+      _bcUpdateCalibrationHint(
+        'Connect USB once — saved horizontal calibration loads automatically for that printer.'
+      );
+    }
+
+    openM('modal-barcode-print');
+
+    const formats = await _bcEnsureLabelFormatsLoaded();
+    const storedKey = _bcReadStoredFormatKey();
+    _bcPopulateFormatSelect(formats, storedKey);
+    _bcApplyLabelFormatByKey(_bcGetSelectedFormatKey());
+    _bcRefreshLabelFormatActions();
+    _bcSchedulePersistCalibration();
+
+    setTimeout(bcRenderPreview, 100);
+  };

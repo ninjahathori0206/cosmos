@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const winston = require('winston')
+const { wallClockIso } = require('../lib/cosmosIst')
 const DailyRotateFile = require('winston-daily-rotate-file')
 
 const logDir = process.env.LOG_DIRECTORY || path.join(__dirname, '..', '..', 'logs')
@@ -14,7 +15,7 @@ if (!fs.existsSync(logDir)) {
 }
 
 function istLogTimestamp () {
-  return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T')
+  return wallClockIso()
 }
 
 const consoleTransport = new winston.transports.Console({

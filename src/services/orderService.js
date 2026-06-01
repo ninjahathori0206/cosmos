@@ -3,6 +3,7 @@ const { readSetting } = require('./procurementService')
 const { assertLabTransitionAllowed } = require('./labWorkflowAuth')
 const { resolveProductTypeRule } = require('../config/posProductTypeRule')
 const { resolvePosOrderDisplayStatus } = require('../config/posOrderDisplayCatalog')
+const { formatDateYmd } = require('../lib/cosmosIst')
 
 const ORDERS_ENGINE_MODE_KEY = 'orders_engine_mode'
 const MONEY_EPS = 0.02
@@ -1048,7 +1049,7 @@ async function allocateNextPosOrderSeq(transaction) {
 
 /** Indian FY label for invoice numbers, e.g. May 2026 → "2627". */
 function getIndianFyLabelForInvoice(date = new Date()) {
-  const istDateStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+  const istDateStr = formatDateYmd(date)
   const parts = istDateStr.split('-').map(Number)
   const y = parts[0]
   const m = parts[1]

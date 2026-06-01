@@ -207,7 +207,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ['foundry', '/foundry/dashboard'],
         ['finance', '/finance/dashboard'],
         ['storepilot', '/storepilot/dashboard'],
-        ['pos', '/storeos/login']
+        ['pos', '/storeos/login'],
+        ['army', '/army/hr/job-openings']
       ];
 
       function pickLanding() {
@@ -228,7 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!dest) {
         loginBtnDone(btn);
         throw new Error(
-          'No web module is enabled for your account (Command Unit, Foundry, Finance, StorePilot, Store OS are all off). ' +
+          'No web module is enabled for your account (Command Unit, Foundry, Finance, StorePilot, Store OS, Army HR are all off). ' +
             'Ask an administrator to turn on at least one module for your role in Roles → Module access, then try again.'
         );
       }

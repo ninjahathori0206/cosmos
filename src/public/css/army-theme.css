@@ -1,0 +1,27 @@
+/* Army HR module — shared Cosmos theme tokens (admin shell + careers portal) */
+:root {
+  --navy: #0B1F35;
+  --navy2: #13293D;
+  --acc: #047857;
+  --acc2: #059669;
+  --accL: #D1FAE5;
+  --accD: #065F46;
+  --green: #047857;
+  --greenL: #D1FAE5;
+  --gold: #B45309;
+  --goldL: #FEF3C7;
+  --red: #DC2626;
+  --redL: #FEE2E2;
+  --orange: #C2410C;
+  --orangeL: #FFEDD5;
+  --teal: #047857;
+  --tealL: #D1FAE5;
+  --blue: #1D4ED8;
+  --blueL: #DBEAFE;
+  --bg: #F4F9F7;
+  --card: #FFFFFF;
+  --border: #E2EDE8;
+  --text1: #0B1F35;
+  --text2: #475569;
+  --text3: #94A3B8;
+}

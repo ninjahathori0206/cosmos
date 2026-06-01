@@ -1966,7 +1966,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   function cuOfferDefaultFromDate() {
-    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    return typeof window.cosmosIstToday === 'function' ? window.cosmosIstToday() : '';
   }
 
   /** End date default: one year after valid-from so offers qualify for cart / Go date filters. */
@@ -1977,9 +1977,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const m = parts[1];
     const d = parts[2];
     if (!y || !m || !d) return cuOfferDefaultFromDate();
-    const end = new Date(Date.UTC(y, m - 1, d));
-    end.setUTCDate(end.getUTCDate() + 364);
-    return end.toISOString().slice(0, 10);
+    const anchor = new Date(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T12:00:00+05:30`);
+    anchor.setDate(anchor.getDate() + 364);
+    return typeof window.cosmosIstDateYmd === 'function' ? window.cosmosIstDateYmd(anchor) : cuOfferDefaultFromDate();
   }
 
   function syncCuOfferPreview() {
@@ -3472,7 +3472,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const titleEl = document.querySelector('#page-dashboard .page-title');
       if (titleEl) {
-        const hour = Number(new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', hour: 'numeric', hour12: false }));
+        const hour = typeof window.cosmosIstHour === 'function' ? window.cosmosIstHour() : 12;
         const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
         titleEl.textContent = `${greeting}, ${user.full_name || user.username || 'User'} 👋`;
       }

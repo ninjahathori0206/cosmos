@@ -1,0 +1,40 @@
+  <div class="page" id="page-lab-orders">
+    <div class="ph flex ic fy-lab-head">
+      <div class="fy-lab-head-text">
+        <div class="pt">Lab Orders</div>
+        <div class="xs td2 fy-lab-subtitle">All stores — monitor and advance lab order workflow from Sent-to-Lab through Dispatch.</div>
+      </div>
+      <div class="mla flex ic g2 fy-lab-tools">
+        <div class="sw fy-lab-search-wrap">
+          <span class="si" aria-hidden="true">🔍</span>
+          <input id="lab-orders-search" class="search fy-lab-search" placeholder="Search order, customer, store" oninput="if(window.debounceLabOrders) window.debounceLabOrders()">
+        </div>
+        <button type="button" class="btn fy-lab-refresh-btn" onclick="window.loadLabOrders && window.loadLabOrders()">Refresh</button>
+      </div>
+    </div>
+    <div class="tabs fy-lab-tabs" role="tablist" aria-label="Lab order filters">
+      <button type="button" class="tab active" id="fy-lab-tab-all" role="tab" onclick="setFyLabFilter('', this)">All</button>
+      <button type="button" class="tab" id="fy-lab-tab-pending" role="tab" onclick="setFyLabFilter('SENT_TO_LAB', this)">Pending Lab</button>
+      <button type="button" class="tab" id="fy-lab-tab-at-lab" role="tab" onclick="setFyLabFilter('LAB_FITTING', this)">At Lab</button>
+      <button type="button" class="tab" id="fy-lab-tab-qc" role="tab" onclick="setFyLabFilter('QC_PASS', this)">QC Pass</button>
+      <button type="button" class="tab" id="fy-lab-tab-dispatched" role="tab" onclick="setFyLabFilter('DISPATCHED_TO_STORE', this)">Dispatched</button>
+    </div>
+    <div class="card fy-lab-desktop-only">
+      <div class="tw">
+        <table class="table lab-orders-table">
+          <thead>
+            <tr>
+              <th>Order #</th>
+              <th>Customer</th>
+              <th>Store</th>
+              <th>Lab Status</th>
+              <th>Created</th>
+              <th style="width:270px">Action</th>
+            </tr>
+          </thead>
+          <tbody id="lab-orders-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="fy-lab-orders-mobile" class="fy-lab-mobile-list fy-lab-mobile-only" aria-live="polite"></div>
+  </div>

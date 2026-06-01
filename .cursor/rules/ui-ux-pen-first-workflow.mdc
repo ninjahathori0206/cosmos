@@ -20,7 +20,7 @@ Personal skill (all projects): **`pencil-first-ui-ux`** in `~/.cursor/skills/pen
 ## 1. Update the design source (`.pen`)
 
 - For non-trivial components, add or update a **Markdown UI spec** (e.g. `docs/ui/<feature>.md`) as described in **`component-build-md-pencil-then-db.mdc`**.
-- Primary Store OS / POS design file: **`pencil-new.pen`** at repo root (and keep **`src/public/design/pencil-local/pencil-new.pen`** in sync when you finish, if that copy exists).
+- **Single design source:** **`UIX/pencil-new.pen`** (all modules: Store OS, Store Pilot, Foundry, Command Unit, Army HR). Open this file in Pencil before MCP edits. Optionally mirror to **`src/public/design/pencil-local/pencil-new.pen`** after approval if that copy is still used locally.
 - **Only** modify `.pen` files through the **Pencil MCP** (`batch_get`, `batch_design`, etc.) — do **not** edit `.pen` with Read/Write/grep.
 - Follow **`.cursor/rules/pencil-mcp-no-notes.mdc`** — **never** add **`type: "note"`** documentation boxes on screens unless the user explicitly requests a note.
 - Match the affected **screen/frame** to the real app (see `.cursor/rules/pencil-pos-url-mapping.mdc` for path labels on frames).
@@ -60,4 +60,4 @@ Personal skill (all projects): **`pencil-first-ui-ux`** in `~/.cursor/skills/pen
 - [ ] User **approved** the design direction
 - [ ] HTML/CSS/JS updated and aligned with approval
 - [ ] UI polish rules satisfied
-- [ ] `pencil-local` copy updated if the repo uses it
+- [ ] `UIX/pencil-new.pen` updated; optional `pencil-local` mirror synced if used

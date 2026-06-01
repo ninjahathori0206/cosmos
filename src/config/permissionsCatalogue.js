@@ -155,7 +155,11 @@ const RAW_PERMISSION_GROUPS = [
     ['army.leaves.edit', 'Leaves — Approve / Reject'],
     ['army.payroll.view', 'Payroll — View'],
     ['army.payroll.create', 'Payroll — Create'],
-    ['army.payroll.edit', 'Payroll — Edit']
+    ['army.payroll.edit', 'Payroll — Edit'],
+    ['army.hiring.job_openings.view', 'Hiring — View job openings'],
+    ['army.hiring.job_openings.edit', 'Hiring — Publish / close job openings'],
+    ['army.hiring.candidates.view', 'Hiring — View candidates & pipeline'],
+    ['army.hiring.candidates.edit', 'Hiring — Update candidate status']
   ]]
 ];
 
@@ -184,7 +188,7 @@ function buildCatalogueGroups() {
 }
 
 /** Bump when adding keys — Command Unit fetches with this revision to avoid stale catalogue. */
-const PERMISSION_CATALOGUE_REVISION = '20260527-store-collection-book';
+const PERMISSION_CATALOGUE_REVISION = '20260531-army-hiring-pipeline';
 
 const PERMISSION_CATALOGUE_GROUPS = buildCatalogueGroups();
 

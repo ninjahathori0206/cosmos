@@ -16,21 +16,9 @@
   }
 
   function fmtDateTimeIst(v) {
+    if (typeof window.cosmosFmtDateTimeShort === 'function') return window.cosmosFmtDateTimeShort(v)
     if (!v) return ''
-    const d = new Date(v)
-    const date = d.toLocaleDateString('en-GB', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    })
-    const time = d.toLocaleTimeString('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    })
-    return date + ' \u00B7 ' + time
+    return String(v)
   }
 
   function orderKindLabel(kind) {

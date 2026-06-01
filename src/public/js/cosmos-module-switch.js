@@ -19,6 +19,7 @@
     if (p.indexOf('/storeos') === 0 || p.indexOf('/pos') === 0) return 'pos';
     if (p.indexOf('/command-unit') === 0) return 'command_unit';
     if (p.indexOf('/cx') === 0) return 'cx';
+    if (p.indexOf('/army/hr') === 0) return 'army';
     return '';
   }
 

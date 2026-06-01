@@ -111,7 +111,7 @@ BEGIN
       END
     ) AS location_name,
     sb.qty,
-    CONVERT(VARCHAR(20), sb.last_updated, 106) AS last_updated
+    CONVERT(VARCHAR(23), sb.last_updated, 126) AS last_updated
   FROM dbo.stock_balances sb
   WHERE sb.sku_id = @sku_id
     AND sb.qty > 0

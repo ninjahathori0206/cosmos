@@ -61,11 +61,6 @@ function escHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-function istToday() {
-  const [d, m, y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/');
-  return `${y}-${m}-${d}`;
-}
-
 function fmtDate(v) {
   if (typeof window.cosmosFmtDate === 'function') return window.cosmosFmtDate(v);
   if (!v) return '—';
@@ -519,7 +514,7 @@ window.loadSpLabOrders = async function () {
           <td>${r.customer_name || 'Walk-in'}${r.customer_phone ? `<div class="muted" style="font-size:12px">${r.customer_phone}</div>` : ''}</td>
           <td><span class="badge blue">${statusBadge}</span></td>
           <td>₹${Number(r.total_amount || 0).toFixed(2)}</td>
-          <td class="muted" style="font-size:12px">${new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</td>
+          <td class="muted" style="font-size:12px">${typeof cosmosFmtDateTime === 'function' ? cosmosFmtDateTime(r.created_at) : '—'}</td>
           <td>${actionHtml}</td>
         </tr>
       `
@@ -2493,7 +2488,7 @@ function loadReports() {
     const allTransfers = trResult.status === 'fulfilled' ? (trResult.value.data || []) : [];
     const storeOrCatSkus = skuResult.status === 'fulfilled' ? (skuResult.value.data || []) : [];
 
-    const istDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // "YYYY-MM-DD"
+    const istDateStr = typeof cosmosIstToday === 'function' ? cosmosIstToday() : '';
     const [iy, im, id] = istDateStr.split('-').map(Number);
     const monthStart = new Date(`${iy}-${String(im).padStart(2,'0')}-01T00:00:00+05:30`);
     const weekStart  = new Date(new Date(`${iy}-${String(im).padStart(2,'0')}-${String(id).padStart(2,'0')}T00:00:00+05:30`) - 6 * 864e5);
@@ -3532,11 +3527,9 @@ function fmtRupeesInv(v) {
 }
 
 function spInvFormatDateTime(v) {
+  if (typeof window.cosmosFmtDateTimeShort === 'function') return window.cosmosFmtDateTimeShort(v);
   if (!v) return '';
-  const d = new Date(v);
-  const date = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
-  const time = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
-  return date + ' · ' + time;
+  return String(v);
 }
 
 window.loadSpInvoices = async function (q) {
@@ -3602,7 +3595,7 @@ function spInvCsvDateParts(createdAt) {
   if (!createdAt) return { date: '', time: '' };
   const d = new Date(createdAt);
   return {
-    date: d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    date: typeof window.cosmosIstDateYmd === 'function' ? window.cosmosIstDateYmd(d) : '',
     time: d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
   };
 }
@@ -3662,7 +3655,7 @@ window.exportSpInvoicesCsv = async function () {
       return;
     }
     const built = spInvoiceListToCsvRows(rows);
-    const day = typeof istToday === 'function' ? istToday() : new Date().toISOString().slice(0, 10);
+    const day = typeof cosmosIstToday === 'function' ? cosmosIstToday() : '';
     window.cosmosDownloadCsv('store-invoices-' + day + '.csv', built.headers, built.data);
     if (typeof cosmosToastSuccess === 'function') {
       cosmosToastSuccess('Exported ' + rows.length + ' invoice(s) to CSV.');

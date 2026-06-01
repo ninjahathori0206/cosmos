@@ -359,12 +359,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const inr = (n) => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
   const inrD = (n) => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // ── IST date helper ───────────────────────────────────────────────────────
-  function istToday() {
-    const [d, m, y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/');
-    return `${y}-${m}-${d}`;
-  }
-
   function fmtDate(d) {
     if (typeof window.cosmosFmtDate === 'function') return window.cosmosFmtDate(d);
     if (!d) return '—';
@@ -1969,7 +1963,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (pdEl && h.purchase_date) {
         const d = new Date(h.purchase_date);
         if (pdEl._flatpickr) pdEl._flatpickr.setDate(d, true);
-        else pdEl.value = new Date(h.purchase_date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        else pdEl.value = typeof window.cosmosIstDateYmd === 'function' ? window.cosmosIstDateYmd(h.purchase_date) : '';
       }
 
       window._purchaseLineModes = {};
@@ -4096,7 +4090,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       disableMobile: true,
       onChange(selectedDates) {
         const iso = selectedDates[0]
-          ? selectedDates[0].toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+          ? (typeof window.cosmosDateToInputIso === 'function' ? window.cosmosDateToInputIso(selectedDates[0]) : '')
           : '';
         let hidden = el.parentElement.querySelector('input[type=hidden][data-fp]');
         if (!hidden) {
@@ -9407,10 +9401,9 @@ ${initScript}
     }
 
     function stFmtDate(v) {
+      if (typeof window.cosmosFmtDateTime === 'function') return window.cosmosFmtDateTime(v);
       if (!v) return '—';
-      const d = new Date(v);
-      if (isNaN(d)) return String(v);
-      return d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+      return String(v);
     }
 
     // ── Init (each visit to Goods Transfer — refresh destinations + history) ──
@@ -11200,7 +11193,7 @@ ${initScript}
       parts[0] + '-' + String(parts[1]).padStart(2, '0') + '-' + String(parts[2]).padStart(2, '0') + 'T12:00:00+05:30'
     );
     anchor.setDate(anchor.getDate() + deltaDays);
-    return anchor.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    return typeof window.cosmosIstDateYmd === 'function' ? window.cosmosIstDateYmd(anchor) : isoDate;
   }
 
   function ftrParseIsoYmdToIstDate(isoYmd) {
@@ -11213,7 +11206,7 @@ ${initScript}
 
   function ftrIsoYmdFromDate(d) {
     if (!d || !(d instanceof Date) || Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    return typeof window.cosmosIstDateYmd === 'function' ? window.cosmosIstDateYmd(d) : '';
   }
 
   function ftrSyncHistoryDateHidden(inputId, isoYmd) {

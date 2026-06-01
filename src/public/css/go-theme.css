@@ -1,0 +1,46 @@
+/* Eyewoot Go — shared theme tokens (customer PWA + careers portal) */
+:root {
+  --go-bg: #F7F5F2;
+  --go-bg2: #FFFFFF;
+  --go-bg3: #F0EDE8;
+  --go-border: #E2DDD6;
+  --go-text: #1A1714;
+  --go-text2: #6B6560;
+  --go-text3: #A09890;
+  --go-plus: #5B4FE8;
+  --go-plus2: #7B72F0;
+  --go-plus-bg: #EEEDFE;
+  --go-plus-dark: #4A40D4;
+  --go-green: #1A8C5A;
+  --go-green-bg: #E8F7EF;
+  --go-gold: #C8860A;
+  --go-gold-bg: #FDF3E0;
+  --go-red: #C43030;
+  --go-red-bg: #FEF0F0;
+  --go-blue: #1A56DB;
+  --go-blue-bg: #E8F0FE;
+  --go-r-sm: 10px;
+  --go-r-md: 14px;
+  --go-r-lg: 20px;
+  --go-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+
+  /* Cosmos-compatible aliases consumed by careers shell */
+  --bg: var(--go-bg);
+  --card: var(--go-bg2);
+  --border: var(--go-border);
+  --text1: var(--go-text);
+  --text2: var(--go-text2);
+  --text3: var(--go-text3);
+  --acc: var(--go-plus);
+  --acc2: var(--go-plus2);
+  --accL: var(--go-plus-bg);
+  --accD: var(--go-plus-dark);
+  --green: var(--go-green);
+  --greenL: var(--go-green-bg);
+  --gold: var(--go-gold);
+  --goldL: var(--go-gold-bg);
+  --red: var(--go-red);
+  --redL: var(--go-red-bg);
+  --blue: var(--go-blue);
+  --blueL: var(--go-blue-bg);
+}

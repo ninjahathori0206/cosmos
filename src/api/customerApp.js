@@ -4,6 +4,7 @@ const fs = require('fs');
 const multer = require('multer');
 const { getPool } = require('../config/db');
 const { authCustomerJwt } = require('../middleware/authCustomerJwt');
+const { wallClockIso } = require('../lib/cosmosIst');
 
 const router = express.Router();
 router.use(authCustomerJwt);
@@ -328,7 +329,7 @@ router.post('/eye-tests', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'At least one eye\'s SPH is required.' });
     }
 
-    const testedDate = tested_at || new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T');
+    const testedDate = tested_at || wallClockIso();
 
     const r = await pool.request()
       .input('cid',        cid)
@@ -622,7 +623,7 @@ router.get('/offers', async (req, res, next) => {
     `);
     const memRow = memR.recordset[0] || null;
 
-    const now = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T');
+    const now = wallClockIso();
     const r = await pool.request()
       .input('now', now)
       .query(`

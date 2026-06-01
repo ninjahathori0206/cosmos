@@ -70,8 +70,7 @@
   }
 
   function scIstToday() {
-    const [d, m, y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/');
-    return `${y}-${m}-${d}`;
+    return typeof window.cosmosIstToday === 'function' ? window.cosmosIstToday() : '';
   }
 
   function scFmtDate(v) {
@@ -92,11 +91,8 @@
   function scFmtIsoDateIst(d) {
     if (!d) return '';
     if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
-    try {
-      return new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    } catch (_) {
-      return '';
-    }
+    if (typeof window.cosmosIstDateYmd === 'function') return window.cosmosIstDateYmd(d);
+    return '';
   }
 
   function scIsSuperAdmin() {
@@ -157,15 +153,15 @@
     if (_scDatePreset === 'all') return { from: null, to: null };
     if (_scDatePreset === 'today') return { from: today, to: today };
     if (_scDatePreset === '7d') {
-      const istStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const istStr = typeof window.cosmosIstToday === 'function' ? window.cosmosIstToday() : '';
       const [y, m, d] = istStr.split('-').map(Number);
       const anchor = new Date(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T00:00:00+05:30`);
       const weekStart = new Date(anchor.getTime() - 6 * 864e5);
-      const from = weekStart.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const from = typeof window.cosmosIstDateYmd === 'function' ? window.cosmosIstDateYmd(weekStart) : '';
       return { from, to: today };
     }
     if (_scDatePreset === 'month') {
-      const istStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const istStr = typeof window.cosmosIstToday === 'function' ? window.cosmosIstToday() : '';
       const [y, m] = istStr.split('-');
       return { from: `${y}-${m}-01`, to: today };
     }

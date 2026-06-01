@@ -4,6 +4,7 @@ const sql = require('mssql');
 const { getPool, executeStoredProcedure } = require('../config/db');
 const orderService = require('./orderService');
 const { getPaymentMachineProviderLabel } = require('../config/paymentMachineProviderCatalog');
+const { formatDateYmd } = require('../lib/cosmosIst');
 
 async function getEngineMode(pool) {
   return orderService.getOrdersEngineMode(pool || await getPool());
@@ -29,7 +30,7 @@ function fmtIsoDateIst(value) {
   if (value == null) return null;
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
   try {
-    return new Date(value).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    return formatDateYmd(value) || null;
   } catch (_) {
     return null;
   }

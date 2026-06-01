@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1D6FD4">
+<link rel="icon" href="/favicon.ico" type="image/png" sizes="32x32">
+<title>Army HR — Cosmos ERP</title>
+<link rel="stylesheet" href="/css/fonts.css">
+<link rel="stylesheet" href="/css/army-prototype.css?v=20260531-sp-theme">
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css">
+<script src="/js/cosmos-ui-polish.js?v=20260602-ist-ssot" defer></script>
+</head>
+<body class="cosmos-app-shell">
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="cosmos-tag">Cosmos ERP</div>
+    <div class="module-name"><span class="mod-dot"></span> Army HR</div>
+  </div>
+  <nav class="sidebar-nav" id="army-nav">
+    <div class="nav-group">Hiring</div>
+    <div class="nav-item" data-page="dashboard" tabindex="0" role="button" aria-label="Dashboard"><span class="ic">📊</span> Dashboard</div>
+    <div class="nav-item" data-page="job-openings" tabindex="0" role="button" aria-label="Job openings"><span class="ic">📋</span> Job Openings</div>
+    <div class="nav-item" data-page="pipeline" tabindex="0" role="button" aria-label="Candidate pipeline"><span class="ic">👥</span> Candidate Pipeline</div>
+    <div class="nav-group">Portal</div>
+    <div class="nav-item" id="nav-careers-link" tabindex="0" role="link" aria-label="Public careers portal"><span class="ic">🌐</span> Careers Portal</div>
+  </nav>
+  <div class="sidebar-user sidebar-user--with-modules">
+    <div class="sidebar-user-top">
+      <div class="u-av" id="army-user-av">—</div>
+      <div class="sidebar-user-meta">
+        <div class="sidebar-user-name-row">
+          <div class="u-name" id="army-user-name">—</div>
+          <button type="button" class="sidebar-logout-btn" onclick="cosmosSignOut()" aria-label="Sign out" title="Sign out"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="16 17 21 12 16 7"/><line fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" x1="21" y1="12" x2="9" y2="12"/></svg></button>
+        </div>
+        <div class="u-role" id="army-user-role">—</div>
+      </div>
+    </div>
+    <div id="cosmos-module-switch-footer" data-current-module="army"></div>
+  </div>
+</aside>
+
+<main class="main">
+  <header class="topbar">
+    <div class="breadcrumb"><span>Army HR</span><span>/</span><span class="cur" id="army-breadcrumb">Dashboard</span></div>
+    <div class="tb-actions">
+      <button type="button" class="btn sm" id="army-refresh-btn">↻ Refresh</button>
+    </div>
+  </header>
+
+  <section class="page active" id="page-dashboard" data-page="dashboard">
+    <div class="ph">
+      <div class="pt">Hiring dashboard</div>
+      <div class="ps">Published roles and active pipeline at a glance.</div>
+    </div>
+    <div id="army-db-banner" class="banner-warn" style="display:none"></div>
+    <div class="sg4" id="army-stats-grid">
+      <div class="sc"><div class="sl">Published jobs</div><div class="sv" id="stat-published-jobs">0</div></div>
+      <div class="sc"><div class="sl">Total applications</div><div class="sv" id="stat-total-apps">0</div></div>
+      <div class="sc"><div class="sl">In screening</div><div class="sv" id="stat-screening">0</div></div>
+      <div class="sc"><div class="sl">In interview</div><div class="sv" id="stat-interview">0</div></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-job-openings" data-page="job-openings">
+    <div class="ph">
+      <div class="pt">Job openings</div>
+      <div class="ps">Review roster requests, publish roles to the careers portal, or close filled positions.</div>
+    </div>
+    <div class="card">
+      <div class="ch">
+        <div class="ct">All openings</div>
+        <div class="filters">
+          <select id="jobs-filter-status" aria-label="Filter by status">
+            <option value="">All statuses</option>
+          </select>
+          <input type="search" id="jobs-filter-q" placeholder="Search title or store…" aria-label="Search jobs">
+        </div>
+      </div>
+      <div class="cb tw">
+        <table>
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Store</th>
+              <th>Dept</th>
+              <th>Vacancies</th>
+              <th>Applications</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="jobs-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="page-pipeline" data-page="pipeline">
+    <div class="ph">
+      <div class="pt">Candidate pipeline</div>
+      <div class="ps">Track applications from apply through offer and joining.</div>
+    </div>
+    <div class="card">
+      <div class="ch">
+        <div class="ct">Pipeline board</div>
+        <div class="filters">
+          <input type="search" id="pipeline-filter-q" placeholder="Search name, phone, role…" aria-label="Search candidates">
+        </div>
+      </div>
+      <div class="cb">
+        <div class="pipeline-board" id="pipeline-board"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="overlay" id="modal-candidate" role="dialog" aria-modal="true" aria-labelledby="modal-candidate-title">
+  <div class="modal">
+    <div class="modal-h">
+      <h2 id="modal-candidate-title">Candidate detail</h2>
+      <button type="button" class="btn sm" id="modal-candidate-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-b" id="modal-candidate-body"></div>
+    <div class="modal-f">
+      <select id="modal-status-select" aria-label="Update status"></select>
+      <button type="button" class="btn primary" id="modal-status-save">Update status</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/cosmos-modules-catalog.js"></script>
+<script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
+<script src="/js/army-prototype.js?v=20260531-sidebar-footer"></script>
+</body>
+</html>

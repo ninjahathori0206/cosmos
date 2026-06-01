@@ -23,6 +23,7 @@ const {
   grantCustomerMembership,
   resolveMembershipSaleAmount
 } = require('../services/membershipGrantService')
+const { wallClockIso } = require('../lib/cosmosIst')
 
 const router = express.Router()
 
@@ -1377,7 +1378,7 @@ async function grantMembershipFromOrderRowIfNeeded(pool, { orderId, customerId, 
  * @param {{ prospectivePlanKey?: string|null }} [opts]
  */
 async function fetchEligibleCartOffersForPos(pool, customerId, opts = {}) {
-  const nowIST = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T')
+  const nowIST = wallClockIso()
 
   const r = await pool.request().input('now', nowIST).query(`
     SELECT offer_id, title, description, icon_emoji, discount_type,

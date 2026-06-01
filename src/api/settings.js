@@ -5,6 +5,7 @@ const { executeStoredProcedure, getPool } = require('../config/db');
 const { clearCacheByPrefix } = require('../cache/ttlCache');
 const { requireModule, requirePermission } = require('../middleware/authorize');
 const { writeAuditLog } = require('../services/auditService');
+const { wallClockIso } = require('../lib/cosmosIst');
 const { SCOPE_DIMENSIONS, ALLOWED_SCOPE_KINDS } = require('../config/offerScopeDimensions');
 const {
   validateScopeRefs,
@@ -961,7 +962,7 @@ router.post('/customer-offers', ...promotionsManage, async (req, res, next) => {
       isStructuredOfferType(discountType) && !structuredOfferTypeRespectsAllocation(discountType) ? [] : rawScopes;
     if (scopes.length) await validateScopeRefs(pool, scopes);
 
-    const istWall = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T');
+    const istWall = wallClockIso();
     const vf = value.valid_from ? String(value.valid_from).trim() : istWall;
     const vt = String(value.valid_to).trim();
 

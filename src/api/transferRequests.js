@@ -13,6 +13,7 @@ const {
   canConfirmTransferReceipt
 } = require('../config/storeRoles');
 const { buildDispatchSkuLines } = require('../services/transferDispatchUnits');
+const { formatDateYmd } = require('../lib/cosmosIst');
 const {
   isAllowedTransferRequestListView,
   DEFAULT_TRANSFER_REQUEST_LIST_VIEW,
@@ -145,7 +146,7 @@ router.get('/search-skus', ...transferModAndRaise, async (req, res, next) => {
 });
 
 function istDateStringFromDate(d) {
-  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  return formatDateYmd(d);
 }
 
 function istDateAddDays(isoDate, deltaDays) {

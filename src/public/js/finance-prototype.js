@@ -46,11 +46,6 @@ function fmtRs(v) {
   return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function istToday() {
-  const [d, m, y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/');
-  return `${y}-${m}-${d}`;
-}
-
 function fmtDate(v) {
   if (typeof window.cosmosFmtDate === 'function') return window.cosmosFmtDate(v);
   if (!v) return '—';
@@ -1722,11 +1717,9 @@ let _finInvStoreId    = '';
 let _finInvLoaded     = false;
 
 function finInvFmtDateTime(v) {
+  if (typeof window.cosmosFmtDateTimeShort === 'function') return window.cosmosFmtDateTimeShort(v);
   if (!v) return '';
-  const d = new Date(v);
-  const date = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
-  const time = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
-  return date + ' · ' + time;
+  return String(v);
 }
 
 function finInvFmtRs(v) {
@@ -1842,7 +1835,7 @@ function finInvCsvDateParts(createdAt) {
   if (!createdAt) return { date: '', time: '' };
   const d = new Date(createdAt);
   return {
-    date: d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    date: typeof window.cosmosIstDateYmd === 'function' ? window.cosmosIstDateYmd(d) : '',
     time: d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
   };
 }
@@ -1908,7 +1901,7 @@ window.exportFinInvoicesCsv = async function () {
       return;
     }
     const built = finInvoiceListToCsvRows(rows);
-    const day = typeof istToday === 'function' ? istToday() : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const day = typeof cosmosIstToday === 'function' ? cosmosIstToday() : '';
     window.cosmosDownloadCsv('sales-invoices-' + day + '.csv', built.headers, built.data);
     if (typeof cosmosToastSuccess === 'function') {
       cosmosToastSuccess('Exported ' + rows.length + ' invoice(s) to CSV.');

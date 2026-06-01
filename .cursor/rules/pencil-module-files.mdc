@@ -1,0 +1,51 @@
+---
+description: Pencil design — single monolith source at UIX/pencil-new.pen
+alwaysApply: true
+---
+
+# Pencil Design — Single source of truth
+
+## Rule (always apply)
+
+All Cosmos UI/UX design lives in **one** file:
+
+**`UIX/pencil-new.pen`**
+
+Do **not** create separate per-module `.pen` files under `UIX/` unless the user explicitly asks to split again.
+
+## What the monolith contains
+
+Organize screens as **top-level frames** (artboards) with `name` including the canonical route:
+
+| Area | Frame name prefix | Live reference |
+|------|-------------------|----------------|
+| Store OS / POS | `Store OS`, `Step 0`, `Order Creation`, `00 Tablet`, etc. | `POS_Prototype.html`, `docs/ui/store-os.md` |
+| Store Pilot | `SP —` | `StorePilot_Prototype.html` |
+| Foundry | `FY —`, Foundry desktop/mobile | `Foundry_Prototype.html` |
+| Command Unit | `CU —` | `CommandUnit_Prototype.html`, `docs/ui/command-unit-promotions.md` |
+| Army HR (Careers) | `AR Mobile —` | `src/public/army-careers.html`, `docs/ui/army-careers.md` |
+
+**Army HR frames (required):**
+
+- `AR Mobile — Careers Home · /army/careers`
+- `AR Mobile — Job Detail · /army/careers/:slug`
+- `AR Mobile — Apply Form · /army/careers/:slug/apply`
+- `AR Mobile — Application Status · /army/careers/status`
+
+Place new module artboards in **empty canvas space** (e.g. Army cluster ~x=14000) so frames do not overlap.
+
+## Workflow
+
+1. Open **`UIX/pencil-new.pen`** in **Pencil Design Editor** (required for MCP).
+2. Use Pencil MCP only (`batch_get`, `batch_design`, `get_screenshot`) — never Read/Write `.pen` as text.
+3. Follow **`ui-ux-pen-first-workflow.mdc`**, **`pencil-mcp-no-notes.mdc`**, **`pencil-pos-url-mapping.mdc`** (Store OS routes on frame names).
+4. Optional mirror copy: after a session, sync to `src/public/design/pencil-local/pencil-new.pen` **only if** the team still serves that path — **authoritative file is `UIX/pencil-new.pen`**.
+
+## Deprecated paths
+
+- Per-module `UIX/Store-OS.pen`, `UIX/Army-HR.pen`, etc. — **removed**; do not recreate.
+- Root `pencil-new.pen` — do not use for new work.
+
+## Exceptions
+
+- User explicitly requests a **split** into module files again → discuss layout, then update this rule.

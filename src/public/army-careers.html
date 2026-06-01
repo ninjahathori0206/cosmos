@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="/favicon.ico" type="image/png" sizes="32x32">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#5B4FE8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Eyewoot Careers</title>
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css">
+<link rel="stylesheet" href="/css/army-careers.css?v=20260531-go-theme">
+<script src="/js/cosmos-ui-polish.js?v=20260602-ist-ssot" defer></script>
+<script src="/js/army-careers.js?v=20260531-go-theme" defer></script>
+</head>
+<body class="army-careers-app">
+
+<section class="army-screen active" id="screen-careers-home" aria-label="Careers home">
+  <header class="army-topbar">
+    <span class="army-brand-mark" aria-hidden="true">E</span>
+    <span class="army-brand-name">Eyewoot</span>
+    <span class="army-brand-careers">Careers</span>
+  </header>
+
+  <div class="army-content">
+    <div class="army-hero">
+      <div class="army-hero-tag">HIRING NOW</div>
+      <h1 class="army-hero-title">Build Your Career at Eyewoot</h1>
+      <p class="army-hero-sub">Optical retail roles across Mumbai. Apply in minutes from your phone.</p>
+    </div>
+
+    <label class="army-search" for="careers-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="careers-search" type="search" inputmode="search" autocomplete="off" placeholder="Search by role or location..." aria-label="Search jobs">
+    </label>
+
+    <div class="army-chips-wrap" aria-label="Department filters">
+      <div class="army-chips" id="careers-chips" role="tablist"></div>
+    </div>
+
+    <div class="army-count" id="careers-count" aria-live="polite"></div>
+    <div class="army-jobs" id="careers-jobs" aria-live="polite"></div>
+
+    <button type="button" class="army-link-btn" id="careers-track-btn">Track my application →</button>
+  </div>
+</section>
+
+<section class="army-screen" id="screen-careers-detail" aria-label="Job detail">
+  <header class="army-topbar">
+    <button type="button" class="army-topbar-back" id="careers-back-btn" aria-label="Back to job listings">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <h1 class="army-topbar-title" id="careers-detail-title">Job detail</h1>
+  </header>
+
+  <div class="army-content" id="careers-detail-content"></div>
+
+  <div class="army-bottom-bar">
+    <button type="button" class="btn primary army-btn-primary" id="careers-detail-apply">Apply for this Role</button>
+  </div>
+</section>
+
+<section class="army-screen" id="screen-careers-apply" aria-label="Application form">
+  <header class="army-topbar">
+    <button type="button" class="army-topbar-back" id="careers-apply-back" aria-label="Back">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <h1 class="army-topbar-title" id="careers-apply-title">Apply</h1>
+  </header>
+
+  <div class="army-content" id="careers-apply-content">
+    <div class="army-form-error" id="careers-apply-error" role="alert" hidden></div>
+
+    <div class="army-detail-card army-apply-job-chip" id="careers-apply-job-summary"></div>
+
+    <div class="army-apply-progress" id="careers-apply-progress" aria-hidden="false">
+      <div class="army-apply-progress-label" id="careers-apply-step-label">Step 1 of 4</div>
+      <div class="army-apply-progress-track" role="progressbar" aria-valuemin="1" aria-valuemax="4" aria-valuenow="1" id="careers-apply-progress-bar">
+        <div class="army-apply-progress-fill" id="careers-apply-progress-fill" style="width:25%"></div>
+      </div>
+    </div>
+
+    <!-- Step 1: OTP -->
+    <div class="army-apply-step active" data-step="1" id="apply-step-1">
+      <div class="army-detail-card army-otp-card">
+        <h2 class="army-section-title">Verify WhatsApp number</h2>
+        <p class="army-section-body">We send a one-time code to confirm your number before you continue.</p>
+        <label class="army-field" for="apply-phone">
+          <span class="army-field-label">Mobile number</span>
+          <div class="army-field-row">
+            <span class="army-phone-prefix">+91</span>
+            <input id="apply-phone" class="army-input" type="tel" inputmode="numeric" maxlength="10" autocomplete="tel-national" placeholder="98765 43210">
+          </div>
+        </label>
+        <div class="army-otp-actions">
+          <button type="button" class="btn army-btn-secondary" id="apply-send-otp">Send OTP</button>
+        </div>
+        <div class="army-otp-verify" id="apply-otp-verify-wrap" hidden>
+          <label class="army-field" for="apply-otp">
+            <span class="army-field-label">6-digit OTP</span>
+            <input id="apply-otp" class="army-input" type="text" inputmode="numeric" maxlength="6" placeholder="Enter code">
+          </label>
+          <button type="button" class="btn army-btn-secondary" id="apply-verify-otp">Verify OTP</button>
+        </div>
+        <div class="army-verified-badge" id="apply-verified-badge" hidden>Number verified</div>
+      </div>
+    </div>
+
+    <!-- Step 2: Personal -->
+    <div class="army-apply-step" data-step="2" id="apply-step-2" hidden>
+      <form class="army-form" id="careers-apply-form" novalidate>
+        <div class="army-detail-card">
+          <h2 class="army-section-title">Personal details</h2>
+          <p class="army-section-body">Tell us about yourself. Fields marked with * are required.</p>
+
+          <label class="army-field" for="apply-full-name">
+            <span class="army-field-label">Full name *</span>
+            <input id="apply-full-name" class="army-input" type="text" autocomplete="name" placeholder="As on your ID">
+          </label>
+
+          <label class="army-field" for="apply-email">
+            <span class="army-field-label">Email *</span>
+            <input id="apply-email" class="army-input" type="email" autocomplete="email" placeholder="you@email.com">
+          </label>
+
+          <label class="army-field" for="apply-dob">
+            <span class="army-field-label">Date of birth *</span>
+            <input id="apply-dob" class="army-input" type="date">
+          </label>
+
+          <div class="army-field-row army-field-row-split">
+            <label class="army-field" for="apply-exp-years">
+              <span class="army-field-label">Experience (years)</span>
+              <input id="apply-exp-years" class="army-input" type="number" min="0" max="50" value="0">
+            </label>
+            <label class="army-field" for="apply-exp-months">
+              <span class="army-field-label">Months</span>
+              <input id="apply-exp-months" class="army-input" type="number" min="0" max="11" value="0">
+            </label>
+          </div>
+
+          <label class="army-field" for="apply-education">
+            <span class="army-field-label">Highest education *</span>
+            <select id="apply-education" class="army-input army-select"></select>
+          </label>
+
+          <label class="army-field" for="apply-preferred-store">
+            <span class="army-field-label">Preferred store (optional)</span>
+            <select id="apply-preferred-store" class="army-input army-select"></select>
+          </label>
+
+          <label class="army-field" for="apply-last-employer">
+            <span class="army-field-label">Current / last employer (optional)</span>
+            <input id="apply-last-employer" class="army-input" type="text" placeholder="Company name">
+          </label>
+
+          <label class="army-field" for="apply-referral">
+            <span class="army-field-label">Referral code (optional)</span>
+            <input id="apply-referral" class="army-input" type="text" placeholder="Employee or promoter code">
+          </label>
+        </div>
+      </form>
+    </div>
+
+    <!-- Step 3: Joining -->
+    <div class="army-apply-step" data-step="3" id="apply-step-3" hidden>
+      <div class="army-detail-card">
+        <h2 class="army-section-title">Joining availability</h2>
+        <p class="army-section-body">When can you start if selected?</p>
+
+        <div class="army-choice-segment" role="radiogroup" aria-label="Joining availability">
+          <label class="army-choice-option">
+            <input type="radio" name="joining_availability_key" value="INSTANT" id="apply-joining-instant" checked>
+            <span class="army-choice-label">Can join immediately</span>
+          </label>
+          <label class="army-choice-option">
+            <input type="radio" name="joining_availability_key" value="ON_NOTICE" id="apply-joining-notice">
+            <span class="army-choice-label">On notice period</span>
+          </label>
+        </div>
+
+        <div class="army-notice-fields" id="apply-notice-fields" hidden>
+          <label class="army-field" for="apply-notice-days">
+            <span class="army-field-label">Notice period remaining (days) *</span>
+            <input id="apply-notice-days" class="army-input" type="number" min="1" max="180" inputmode="numeric" placeholder="e.g. 30">
+          </label>
+          <label class="army-field" for="apply-expected-join-date">
+            <span class="army-field-label">Expected joining date *</span>
+            <input id="apply-expected-join-date" class="army-input" type="date">
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 4: CV -->
+    <div class="army-apply-step" data-step="4" id="apply-step-4" hidden>
+      <div class="army-detail-card">
+        <h2 class="army-section-title">Upload your CV</h2>
+        <p class="army-section-body">PDF or Word document, max 5 MB. Required to submit.</p>
+
+        <label class="army-file-drop" for="apply-resume" id="apply-resume-drop">
+          <input id="apply-resume" class="army-file-input" type="file" accept=".pdf,.doc,.docx,application/pdf" hidden>
+          <span class="army-file-drop-icon" aria-hidden="true">📄</span>
+          <span class="army-file-drop-title" id="apply-resume-label">Tap to upload CV</span>
+          <span class="army-file-drop-hint">PDF, DOC or DOCX · max 5 MB</span>
+        </label>
+      </div>
+
+      <div class="army-detail-card army-apply-review" id="apply-review-summary" hidden>
+        <h2 class="army-section-title">Review</h2>
+        <div class="army-apply-review-body" id="apply-review-body"></div>
+      </div>
+    </div>
+
+    <div class="army-success-card army-apply-success-panel" id="careers-apply-success" hidden aria-live="polite">
+      <div class="army-success-title">Application submitted</div>
+      <p class="army-section-body">Thank you. Our HR team will review your application and contact you on WhatsApp.</p>
+      <button type="button" class="btn army-btn-secondary" id="careers-apply-success-status">Track application status</button>
+    </div>
+  </div>
+
+  <div class="army-bottom-bar army-apply-bottom" id="careers-apply-bottom">
+    <button type="button" class="btn army-btn-secondary army-apply-back-btn" id="apply-wizard-back">Back</button>
+    <button type="button" class="btn primary army-btn-primary" id="apply-wizard-forward">Continue</button>
+  </div>
+</section>
+
+<section class="army-screen" id="screen-careers-status" aria-label="Application status">
+  <header class="army-topbar">
+    <button type="button" class="army-topbar-back" id="careers-status-back" aria-label="Back">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <h1 class="army-topbar-title">Track Application</h1>
+  </header>
+
+  <div class="army-content" id="careers-status-content">
+    <p class="army-hero-sub">Enter the mobile number you used when applying. We verify it with a WhatsApp OTP.</p>
+
+    <div class="army-detail-card army-otp-card">
+      <label class="army-field" for="status-phone">
+        <span class="army-field-label">Mobile number</span>
+        <div class="army-field-row">
+          <span class="army-phone-prefix">+91</span>
+          <input id="status-phone" class="army-input" type="tel" inputmode="numeric" maxlength="10" autocomplete="tel-national" placeholder="98765 43210">
+        </div>
+      </label>
+      <div class="army-otp-actions">
+        <button type="button" class="btn army-btn-secondary" id="status-send-otp">Send OTP</button>
+      </div>
+      <div class="army-otp-verify" id="status-otp-verify-wrap" hidden>
+        <label class="army-field" for="status-otp">
+          <span class="army-field-label">6-digit OTP</span>
+          <input id="status-otp" class="army-input" type="text" inputmode="numeric" maxlength="6" placeholder="Enter code">
+        </label>
+        <button type="button" class="btn army-btn-secondary" id="status-verify-otp">Verify &amp; show status</button>
+      </div>
+    </div>
+
+    <div id="careers-status-result" aria-live="polite"></div>
+  </div>
+</section>
+
+</body>
+</html>

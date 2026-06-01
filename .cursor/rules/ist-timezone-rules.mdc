@@ -9,6 +9,15 @@ alwaysApply: true
 IST = UTC + 05:30. No daylight saving. This rule is global and applies to
 every layer of the stack — frontend JS, backend Node.js, and SQL.
 
+**Canonical contract:** [`docs/architecture/ist-time.md`](../../docs/architecture/ist-time.md)
+
+**Implementations (do not duplicate):**
+- Browser: `cosmosFmtDate`, `cosmosFmtDateTime`, `cosmosFmtDateTimeShort`, `cosmosIstToday`, `cosmosDateToInputIso`, `cosmosIstHour` in `src/public/js/cosmos-ui-polish.js` (alias: `window.istToday = cosmosIstToday`)
+- Node: `src/lib/cosmosIst.js` (`sqlNow`, `wallClockIso`, `todayYmd`, `formatDateYmd`)
+- SQL: `sql/sp/cosmos_ist_time.sql` — `DATEADD(MINUTE, 330, SYSUTCDATETIME())`
+
+Run `npm run lint:ist` before merging date/time changes.
+
 ---
 
 ## LAYER 1 — Frontend JavaScript
@@ -35,9 +44,7 @@ new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digi
 
 ---
 
-### Getting "today's date" in IST — use `istToday()` helper
-
-This pattern ALREADY exists in several files. Use it everywhere.
+### Getting "today's date" in IST — use `cosmosIstToday()` (browser)
 
 #### ❌ Forbidden — relies on local/system clock timezone:
 ```js
@@ -45,16 +52,19 @@ const today = new Date().toISOString().split('T')[0]
 const today = new Date().toLocaleDateString('en-GB').split('/').reverse().join('-')
 ```
 
-#### ✅ Required — always derive date in IST:
+#### ✅ Required — `cosmos-ui-polish.js` (loaded on every shell):
 ```js
-function istToday() {
-  const [d, m, y] = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('/');
-  return `${y}-${m}-${d}`; // → "YYYY-MM-DD"
-}
+cosmosIstToday() // → "YYYY-MM-DD" in IST
+// backward-compat alias: istToday === cosmosIstToday
 ```
 
-This function is already defined in `finance-prototype.js`, `storepilot-prototype.js`,
-and `foundry.js`. Reuse it; do NOT rewrite a different version.
+#### ✅ Required — Node APIs:
+```js
+const { todayYmd } = require('../lib/cosmosIst');
+const today = todayYmd();
+```
+
+Do NOT add per-file `function istToday()` copies in prototypes.
 
 ---
 
@@ -65,9 +75,9 @@ and `foundry.js`. Reuse it; do NOT rewrite a different version.
 const hour = new Date().getHours()
 ```
 
-#### ✅ Required — IST hour:
+#### ✅ Required — IST hour (browser):
 ```js
-const hour = Number(new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', hour: 'numeric', hour12: false }));
+cosmosIstHour() // from cosmos-ui-polish.js
 ```
 
 ---

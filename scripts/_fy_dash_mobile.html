@@ -1,0 +1,68 @@
+    <div class="fy-dash-hero fy-dash-mobile-only">
+      <div class="fy-dash-greeting" id="fy-dash-greeting">Good morning</div>
+      <div class="fy-dash-greeting-sub" id="fy-dash-greeting-sub">Procurement overview</div>
+    </div>
+    <div class="ph fy-dash-head-desktop"><div class="pt">Foundry Dashboard</div></div>
+    <div class="sg4 fy-dash-stats">
+      <div class="sc" style="--sc-color:var(--acc)"><div class="sl">Active Purchases</div><div class="sv" id="dash-active-purchases">—</div><div class="sm" id="dash-pending-bill">— pending bill verification</div></div>
+      <div class="sc" style="--sc-color:var(--teal)"><div class="sl">SKUs in Catalogue</div><div class="sv" id="dash-skus">—</div><div class="sm">Live SKUs in system</div></div>
+      <div class="sc" style="--sc-color:var(--gold)"><div class="sl">Warehouse Stock</div><div class="sv" id="dash-warehouse">—</div><div class="sm">Units available for transfer</div></div>
+      <div class="sc" style="--sc-color:var(--green)"><div class="sl">Active Suppliers</div><div class="sv" id="dash-suppliers">—</div><div class="sm">Active vendor accounts</div></div>
+    </div>
+
+    <div class="fy-dash-quick-actions fy-dash-mobile-only" id="fy-dash-quick-actions" role="toolbar" aria-label="Quick actions"></div>
+
+    <div class="two-col mb4 fy-dash-panels">
+      <div class="card fy-dash-desktop-only">
+        <div class="ch"><div class="ct">Recent Purchases</div><button class="btn sm" type="button" onclick="nav('purchases',document.querySelector('[onclick*=purchases]'))">View All →</button></div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>ID</th><th>Brand / Collection</th><th>Qty</th><th>Rate</th><th>Stage</th></tr></thead>
+            <tbody id="dash-recent-purchases"><tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <section class="fy-dash-section fy-dash-mobile-only" aria-labelledby="fy-dash-recent-title">
+        <div class="fy-dash-section-head">
+          <h2 class="fy-dash-section-title" id="fy-dash-recent-title">Recent Purchases</h2>
+          <button class="fy-dash-section-link" type="button" onclick="nav('purchases',document.querySelector('[onclick*=purchases]'))">View all</button>
+        </div>
+        <div id="fy-dash-recent-mobile" class="fy-dash-card-list"></div>
+      </section>
+
+      <div class="card fy-dash-desktop-only">
+        <div class="ch"><div class="ct">Low Stock Alerts</div><span class="b b-gray" id="dash-low-stock-count">Loading…</span></div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>SKU</th><th>Product</th><th>Warehouse</th><th>Threshold</th></tr></thead>
+            <tbody id="dash-low-stock">
+              <tr><td colspan="4" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <section class="fy-dash-section fy-dash-mobile-only" aria-labelledby="fy-dash-low-title">
+        <div class="fy-dash-section-head">
+          <h2 class="fy-dash-section-title" id="fy-dash-low-title">Low Stock Alerts</h2>
+          <span class="b b-gray" id="fy-dash-low-stock-count-mobile">Loading…</span>
+        </div>
+        <div id="fy-dash-low-mobile" class="fy-dash-card-list"></div>
+      </section>
+    </div>
+
+    <div class="card fy-dash-desktop-only mb4">
+      <div class="ch"><div class="ct">Procurement Pipeline — All Active</div></div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Purchase ID</th><th>Brand · Collection · Style</th><th>Supplier</th><th>Qty</th><th>Purchase Rate</th><th>Stage</th><th>Days Open</th><th></th></tr></thead>
+          <tbody id="dash-pipeline"><tr><td colspan="8" style="text-align:center;padding:18px;color:var(--text3)">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <section class="fy-dash-section fy-dash-mobile-only fy-dash-pipeline-mobile" aria-labelledby="fy-dash-pipeline-title">
+      <h2 class="fy-dash-section-title" id="fy-dash-pipeline-title">Pipeline — Active</h2>
+      <div id="fy-dash-pipeline-mobile" class="fy-dash-card-list"></div>
+    </section>

@@ -108,6 +108,45 @@
     return p.year + '-' + p.month + '-' + p.day
   }
 
+  /** Any date → YYYY-MM-DD in IST (filters, flatpickr hidden fields) */
+  window.cosmosIstDateYmd = function cosmosIstDateYmd(v) {
+    var p = cosmosIstPartsFromValue(v == null ? new Date() : v, false)
+    if (!p) return ''
+    return p.year + '-' + p.month + '-' + p.day
+  }
+
+  /** Receipt / share-image: 27 May 2026 · 2:30 pm */
+  window.cosmosFmtDateTimeShort = function cosmosFmtDateTimeShort(v) {
+    if (v == null || v === '') return '—'
+    var dt = v instanceof Date ? v : new Date(v)
+    if (isNaN(dt.getTime())) return String(v)
+    var date = dt.toLocaleDateString('en-GB', {
+      timeZone: COSMOS_IST_TZ,
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    })
+    var time = dt.toLocaleTimeString('en-IN', {
+      timeZone: COSMOS_IST_TZ,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    })
+    return date + ' \u00B7 ' + time
+  }
+
+  /** flatpickr / calendar pick → hidden input YYYY-MM-DD (IST, not UTC slice) */
+  window.cosmosDateToInputIso = function cosmosDateToInputIso(d) {
+    return window.cosmosIstDateYmd(d)
+  }
+
+  /** IST hour 0–23 for greetings and time-of-day logic */
+  window.cosmosIstHour = function cosmosIstHour() {
+    return Number(new Date().toLocaleString('en-GB', { timeZone: COSMOS_IST_TZ, hour: 'numeric', hour12: false }))
+  }
+
+  window.istToday = window.cosmosIstToday
+
   function ensureToastContainer() {
     var existing = document.getElementById('cosmos-toast-container')
     if (existing) {

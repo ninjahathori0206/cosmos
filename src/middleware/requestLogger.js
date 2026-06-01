@@ -1,11 +1,12 @@
 const { logger } = require('../config/logger')
+const { wallClockIso } = require('../lib/cosmosIst')
 
 function requestLogger(req, res, next) {
   const start = Date.now()
   res.on('finish', () => {
     const duration = Date.now() - start
     const line = [
-      new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T'),
+      wallClockIso(),
       req.ip,
       req.method,
       req.originalUrl,

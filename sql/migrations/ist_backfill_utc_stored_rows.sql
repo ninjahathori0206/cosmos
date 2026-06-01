@@ -50,6 +50,8 @@ BEGIN TRANSACTION;
 
 BEGIN TRY
 
+  DECLARE @BackfillBefore DATETIME2(0) = '__BACKFILL_BEFORE__';
+
   -- ---- shared core ---------------------------------------------------------
   IF OBJECT_ID('dbo.users', 'U') IS NOT NULL
     UPDATE dbo.users SET
@@ -119,11 +121,18 @@ BEGIN TRY
       updated_at = DATEADD(MINUTE, 330, updated_at);
 
   IF OBJECT_ID('dbo.purchases', 'U') IS NOT NULL
+  BEGIN
     UPDATE dbo.purchases SET
       purchase_date = DATEADD(MINUTE, 330, purchase_date),
-      bill_date     = DATEADD(MINUTE, 330, bill_date),
       created_at    = DATEADD(MINUTE, 330, created_at),
-      updated_at    = DATEADD(MINUTE, 330, updated_at);
+      updated_at    = DATEADD(MINUTE, 330, updated_at)
+    WHERE created_at < @BackfillBefore;
+    IF COL_LENGTH(N'dbo.purchases', N'bill_date') IS NOT NULL
+      EXEC sp_executesql
+        N'UPDATE dbo.purchases SET bill_date = DATEADD(MINUTE, 330, bill_date)
+          WHERE bill_date IS NOT NULL AND created_at < @b',
+        N'@b DATETIME2(0)', @BackfillBefore;
+  END;
 
   IF OBJECT_ID('dbo.purchase_colours', 'U') IS NOT NULL
     UPDATE dbo.purchase_colours SET created_at = DATEADD(MINUTE, 330, created_at);
@@ -183,14 +192,21 @@ BEGIN TRY
       updated_at = DATEADD(MINUTE, 330, updated_at);
 
   IF OBJECT_ID('dbo.purchase_headers', 'U') IS NOT NULL
+  BEGIN
     UPDATE dbo.purchase_headers SET
       purchase_date = DATEADD(MINUTE, 330, purchase_date),
-      bill_date     = DATEADD(MINUTE, 330, bill_date),
       dispatched_at = DATEADD(MINUTE, 330, dispatched_at),
       received_at   = DATEADD(MINUTE, 330, received_at),
       warehouse_at  = DATEADD(MINUTE, 330, warehouse_at),
       created_at    = DATEADD(MINUTE, 330, created_at),
-      updated_at    = DATEADD(MINUTE, 330, updated_at);
+      updated_at    = DATEADD(MINUTE, 330, updated_at)
+    WHERE created_at < @BackfillBefore;
+    IF COL_LENGTH(N'dbo.purchase_headers', N'bill_date') IS NOT NULL
+      EXEC sp_executesql
+        N'UPDATE dbo.purchase_headers SET bill_date = DATEADD(MINUTE, 330, bill_date)
+          WHERE bill_date IS NOT NULL AND created_at < @b',
+        N'@b DATETIME2(0)', @BackfillBefore;
+  END;
 
   IF OBJECT_ID('dbo.purchase_items', 'U') IS NOT NULL
     UPDATE dbo.purchase_items SET created_at = DATEADD(MINUTE, 330, created_at);
@@ -280,6 +296,107 @@ BEGIN TRY
 
   IF OBJECT_ID('dbo.oe_order_status_log', 'U') IS NOT NULL
     UPDATE dbo.oe_order_status_log SET created_at = DATEADD(MINUTE, 330, created_at);
+
+  -- ---- customer app / memberships / offers -----------------------------------
+  IF OBJECT_ID('dbo.customer_auth', 'U') IS NOT NULL
+    UPDATE dbo.customer_auth SET
+      last_login = DATEADD(MINUTE, 330, last_login),
+      created_at = DATEADD(MINUTE, 330, created_at),
+      updated_at = DATEADD(MINUTE, 330, updated_at);
+
+  IF OBJECT_ID('dbo.membership_plans', 'U') IS NOT NULL
+    UPDATE dbo.membership_plans SET
+      created_at = DATEADD(MINUTE, 330, created_at);
+
+  IF OBJECT_ID('dbo.customer_memberships', 'U') IS NOT NULL
+    UPDATE dbo.customer_memberships SET
+      purchased_at = DATEADD(MINUTE, 330, purchased_at),
+      expires_at   = DATEADD(MINUTE, 330, expires_at),
+      created_at   = DATEADD(MINUTE, 330, created_at);
+
+  IF OBJECT_ID('dbo.customer_membership_dependents', 'U') IS NOT NULL
+    UPDATE dbo.customer_membership_dependents SET added_at = DATEADD(MINUTE, 330, added_at);
+
+  IF OBJECT_ID('dbo.customer_offers', 'U') IS NOT NULL
+    UPDATE dbo.customer_offers SET
+      valid_from = DATEADD(MINUTE, 330, valid_from),
+      valid_to   = DATEADD(MINUTE, 330, valid_to),
+      created_at = DATEADD(MINUTE, 330, created_at),
+      updated_at = DATEADD(MINUTE, 330, updated_at);
+
+  IF OBJECT_ID('dbo.customer_offer_scope', 'U') IS NOT NULL
+    UPDATE dbo.customer_offer_scope SET created_at = DATEADD(MINUTE, 330, created_at);
+
+  IF OBJECT_ID('dbo.offer_usage', 'U') IS NOT NULL
+   AND COL_LENGTH(N'dbo.offer_usage', N'used_at') IS NOT NULL
+    EXEC sp_executesql
+      N'UPDATE dbo.offer_usage SET used_at = DATEADD(MINUTE, 330, used_at) WHERE used_at < @b',
+      N'@b DATETIME2(0)', @BackfillBefore;
+
+  IF OBJECT_ID('dbo.eye_tests', 'U') IS NOT NULL
+    UPDATE dbo.eye_tests SET
+      tested_at  = DATEADD(MINUTE, 330, tested_at),
+      created_at = DATEADD(MINUTE, 330, created_at);
+
+  -- ---- units / transfer doc lines ------------------------------------------
+  IF OBJECT_ID('dbo.sku_units', 'U') IS NOT NULL
+    UPDATE dbo.sku_units SET
+      sold_at    = DATEADD(MINUTE, 330, sold_at),
+      created_at = DATEADD(MINUTE, 330, created_at);
+
+  IF OBJECT_ID('dbo.order_item_units', 'U') IS NOT NULL
+    UPDATE dbo.order_item_units SET created_at = DATEADD(MINUTE, 330, created_at);
+
+  IF OBJECT_ID('dbo.stock_transfer_doc_units', 'U') IS NOT NULL
+    UPDATE dbo.stock_transfer_doc_units SET created_at = DATEADD(MINUTE, 330, created_at);
+
+  -- ---- store collections / catalog -----------------------------------------
+  IF OBJECT_ID('dbo.store_type_catalog', 'U') IS NOT NULL
+    UPDATE dbo.store_type_catalog SET
+      created_at = DATEADD(MINUTE, 330, created_at),
+      updated_at = DATEADD(MINUTE, 330, updated_at);
+
+  IF OBJECT_ID('dbo.store_bank_accounts', 'U') IS NOT NULL
+    UPDATE dbo.store_bank_accounts SET
+      created_at = DATEADD(MINUTE, 330, created_at),
+      updated_at = DATEADD(MINUTE, 330, updated_at);
+
+  IF OBJECT_ID('dbo.store_payment_machines', 'U') IS NOT NULL
+    UPDATE dbo.store_payment_machines SET
+      created_at = DATEADD(MINUTE, 330, created_at),
+      updated_at = DATEADD(MINUTE, 330, updated_at);
+
+  IF OBJECT_ID('dbo.store_treasury_transfers', 'U') IS NOT NULL
+    UPDATE dbo.store_treasury_transfers SET
+      voided_at  = DATEADD(MINUTE, 330, voided_at),
+      created_at = DATEADD(MINUTE, 330, created_at),
+      updated_at = DATEADD(MINUTE, 330, updated_at);
+
+  IF OBJECT_ID('dbo.label_print_formats', 'U') IS NOT NULL
+    UPDATE dbo.label_print_formats SET
+      created_at = DATEADD(MINUTE, 330, created_at),
+      updated_at = DATEADD(MINUTE, 330, updated_at);
+
+  IF OBJECT_ID('dbo.pos_checkout_drafts', 'U') IS NOT NULL
+    UPDATE dbo.pos_checkout_drafts SET
+      updated_at = DATEADD(MINUTE, 330, updated_at);
+
+  -- ---- army HR -------------------------------------------------------------
+  IF OBJECT_ID('dbo.army_job_openings', 'U') IS NOT NULL
+    UPDATE dbo.army_job_openings SET
+      published_at = DATEADD(MINUTE, 330, published_at),
+      created_at   = DATEADD(MINUTE, 330, created_at),
+      updated_at   = DATEADD(MINUTE, 330, updated_at);
+
+  IF OBJECT_ID('dbo.army_candidates', 'U') IS NOT NULL
+    UPDATE dbo.army_candidates SET
+      created_at = DATEADD(MINUTE, 330, created_at),
+      updated_at = DATEADD(MINUTE, 330, updated_at);
+
+  IF OBJECT_ID('dbo.army_applications', 'U') IS NOT NULL
+    UPDATE dbo.army_applications SET
+      applied_at = DATEADD(MINUTE, 330, applied_at),
+      updated_at = DATEADD(MINUTE, 330, updated_at);
 
   COMMIT TRANSACTION;
   PRINT N'IST UTC backfill completed successfully. Verify sample rows, then deploy.';

@@ -5,6 +5,7 @@ const { authJwt } = require('../middleware/authJwt')
 const { requireModule, requireCxPermission } = require('../middleware/authorize')
 const orderService = require('../services/orderService')
 const { grantCustomerMembership } = require('../services/membershipGrantService')
+const { sqlNow, wallClockIso } = require('../lib/cosmosIst')
 
 const router = express.Router()
 
@@ -102,7 +103,7 @@ async function ensureMembershipPlansFromTiers (pool) {
   if (!tiers.length) return
 
   const linkTiers = await membershipPlansHasTierIdColumn(pool)
-  const nowSql = 'DATEADD(MINUTE, 330, SYSUTCDATETIME())'
+  const nowSql = sqlNow()
   for (const t of tiers) {
     const planKey = derivePlanKeyFromTier(t)
     const displayName = String(t.tier_name || planKey).trim().slice(0, 100)
@@ -363,7 +364,7 @@ router.post('/customers/:id/eye-tests', authJwt, requireModule('cx'), requireCxP
       pd, lens_type, notes
     } = req.body || {}
 
-    const testedDate = tested_at || new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T')
+    const testedDate = tested_at || wallClockIso()
 
     const r = await pool.request()
       .input('cid',      customerId)

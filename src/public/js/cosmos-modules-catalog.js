@@ -7,5 +7,6 @@ window.COSMOS_MODULES_CATALOG = [
   { key: 'storepilot', label: 'StorePilot', shortLabel: 'Store', icon: '🏬', href: '/storepilot/dashboard' },
   { key: 'pos', label: 'Store OS', shortLabel: 'POS', icon: '🧾', href: '/storeos/login' },
   { key: 'command_unit', label: 'Command Unit', shortLabel: 'Command', icon: '⚙️', href: '/command-unit/dashboard' },
-  { key: 'cx', label: 'CX', shortLabel: 'CX', icon: '📊', href: '/cx/dashboard' }
+  { key: 'cx', label: 'CX', shortLabel: 'CX', icon: '📊', href: '/cx/dashboard' },
+  { key: 'army', label: 'Army HR', shortLabel: 'Army', icon: '🪖', href: '/army/hr/job-openings' }
 ];

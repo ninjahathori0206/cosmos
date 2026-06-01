@@ -58,11 +58,33 @@
     sessionStorage.removeItem(POS_SESSION_KEY)
   }
 
+  /** Membership is only billable when a Cx is linked (same rule as checkout). */
+  function cartMembershipIsActive() {
+    return !!(
+      posSelectedCustomerId &&
+      posSelectedCustomerId > 0 &&
+      posCartMembershipSale &&
+      posCartMembershipSale.plan_key
+    )
+  }
+
+  /** Drop plan fee saved without a Cx (localStorage survives refresh; customer does not). */
+  function dropOrphanCartMembership() {
+    if (!posCartMembershipSale || !posCartMembershipSale.plan_key) return false
+    if (cartMembershipIsActive()) return false
+    posCartMembershipSale = null
+    saveCart()
+    return true
+  }
+
   function saveCart() {
     try {
       localStorage.setItem(
         POS_CART_KEY,
-        JSON.stringify({ lines: obCart, membership: posCartMembershipSale })
+        JSON.stringify({
+          lines: obCart,
+          membership: cartMembershipIsActive() ? posCartMembershipSale : null
+        })
       )
     } catch (_e) { /* storage unavailable */ }
   }
@@ -91,6 +113,7 @@
         } else {
           posCartMembershipSale = null
         }
+        dropOrphanCartMembership()
       }
     } catch (_e) { /* corrupt data — ignore */ }
   }
@@ -710,7 +733,7 @@
   }
 
   function getMembershipCartAmount() {
-    if (!posCartMembershipSale || !posCartMembershipSale.plan_key) return 0
+    if (!cartMembershipIsActive()) return 0
     const paid =
       posCartMembershipSale.price_paid != null
         ? posCartMembershipSale.price_paid
@@ -763,13 +786,12 @@
   }
 
   function prospectivePlanKeyFromCart() {
-    return posCartMembershipSale && posCartMembershipSale.plan_key
-      ? String(posCartMembershipSale.plan_key).trim()
-      : null
+    if (!cartMembershipIsActive()) return null
+    return String(posCartMembershipSale.plan_key).trim()
   }
 
   function buildMembershipSalePayload() {
-    if (!posCartMembershipSale || !posCartMembershipSale.plan_key) return null
+    if (!cartMembershipIsActive()) return null
     return {
       plan_key: posCartMembershipSale.plan_key,
       price_paid: getMembershipCartAmount()
@@ -781,20 +803,22 @@
   }
 
   function syncCartMembershipUi() {
+    dropOrphanCartMembership()
     const btn = document.getElementById('btn-cart-add-membership')
     const sub = document.getElementById('pos-cart-membership-tap-sub')
     const memRow = document.getElementById('pos-ob-membership-row')
     const memLbl = document.getElementById('pos-ob-membership-lbl')
     const memVal = document.getElementById('pos-ob-membership-val')
     const canSell = !!(posSelectedCustomerId && posCanSellMembership())
+    const memActive = cartMembershipIsActive()
     if (btn) btn.hidden = !canSell
     if (sub) {
-      sub.textContent = posCartMembershipSale
+      sub.textContent = memActive
         ? (posCartMembershipSale.display_name || posCartMembershipSale.plan_key) + ' · tap to change'
         : 'Sell Eyewoot membership on this bill'
     }
     if (memRow && memLbl && memVal) {
-      if (posCartMembershipSale) {
+      if (memActive) {
         memRow.hidden = false
         memLbl.textContent = posCartMembershipSale.display_name || posCartMembershipSale.plan_key
         memVal.textContent = formatRupees(getMembershipCartAmount())
@@ -4840,7 +4864,7 @@
           const du = computeLineDisplayUnit(line) * Math.max(1, Number(line.qty) || 1)
           lh += '<div><span>' + escapeHtml(nm) + '</span><span>' + formatRupees(du) + '</span></div>'
         }
-        if (posCartMembershipSale && posCartMembershipSale.plan_key) {
+        if (cartMembershipIsActive()) {
           const memNm =
             posCartMembershipSale.display_name || posCartMembershipSale.plan_key || 'Membership'
           lh +=
@@ -5850,6 +5874,7 @@
 
   function obRecalcTotals(opts) {
     opts = opts || {}
+    dropOrphanCartMembership()
     syncCartMembershipUi()
     const sig = buildObCartFingerprint()
     let offerDisc = { amount: 0, offerId: null }
@@ -6606,7 +6631,7 @@
       openPosCustomerPickerModal()
       return
     }
-    if (posCartMembershipSale && posCartMembershipSale.plan_key && !posCanSellMembership()) {
+    if (cartMembershipIsActive() && !posCanSellMembership()) {
       if (typeof cosmosToastError === 'function') {
         cosmosToastError('You do not have permission to sell membership on POS.')
       }
