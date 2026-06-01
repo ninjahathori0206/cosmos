@@ -919,32 +919,83 @@ async function finalizePaymentAfterInsert(pool, mode, storeId, orderId, body, em
 }
 
 /**
- * Create order + first payment in one transaction; finalize ledger after commit.
+ * Create order + first payment. Order is committed before payment attempt;
+ * on payment failure the OPEN order is retained (Payment pending).
  */
 async function checkoutAndPay(pool, mode, storeId, employeeId, { createParams, paymentBody }) {
-  const transaction = new sql.Transaction(pool)
-  await transaction.begin()
   let out
+  const createTxn = new sql.Transaction(pool)
+  await createTxn.begin()
   try {
-    out = await createOrderInTransaction(transaction, createParams)
-    const bundle = await fetchOrderBundleTransaction(transaction, out.order_id, storeId, mode)
+    out = await createOrderInTransaction(createTxn, createParams)
+    await createTxn.commit()
+  } catch (e) {
+    await createTxn.rollback()
+    throw e
+  }
+
+  function buildOrderDraft(bundle) {
+    const ps = bundle && bundle.payment_summary ? bundle.payment_summary : null
+    const customerId =
+      (createParams.value && createParams.value.customer_id) ||
+      (bundle && bundle.order && bundle.order.customer_id) ||
+      null
+    return {
+      order_id: out.order_id,
+      order_no: out.order_no,
+      order_kind: out.order_kind,
+      subtotal_amount: out.subtotal_amount,
+      discount_amount: out.discount_amount,
+      gst_amount: out.gst_amount,
+      total_amount: out.total_amount,
+      customer_id: customerId,
+      amount_remaining: ps != null ? ps.amount_remaining : out.total_amount,
+      payment_summary: ps
+    }
+  }
+
+  function paymentFailedError(message, bundle, statusCode) {
+    const err = new Error(message)
+    err.statusCode = statusCode || 422
+    err.code = 'PAYMENT_FAILED_ORDER_SAVED'
+    err.orderDraft = buildOrderDraft(bundle)
+    return err
+  }
+
+  const payTxn = new sql.Transaction(pool)
+  await payTxn.begin()
+  try {
+    const bundle = await fetchOrderBundleTransaction(payTxn, out.order_id, storeId, mode)
     if (!bundle) {
-      const err = new Error('Order not found after create.')
-      err.statusCode = 500
-      throw err
+      await payTxn.rollback()
+      throw paymentFailedError('Order not found after create.', null, 500)
     }
     const payBody = { ...paymentBody, order_id: out.order_id }
     const check = validatePaymentAgainstSummary(bundle.order, bundle.payment_summary, payBody)
     if (!check.ok) {
-      const err = new Error(check.message)
-      err.statusCode = 400
-      throw err
+      await payTxn.rollback()
+      throw paymentFailedError(check.message, bundle, 422)
     }
     const { tendered, changeGiven } = preparePaymentTenderFields(payBody)
-    await insertPaymentRow(transaction, mode, out.order_id, employeeId, payBody, tendered, changeGiven)
-    await transaction.commit()
+    await insertPaymentRow(payTxn, mode, out.order_id, employeeId, payBody, tendered, changeGiven)
+    await payTxn.commit()
   } catch (e) {
-    await transaction.rollback()
+    if (e.code !== 'PAYMENT_FAILED_ORDER_SAVED') {
+      try {
+        await payTxn.rollback()
+      } catch (_rollbackErr) {
+        /* ignore */
+      }
+      if (out && out.order_id) {
+        let bundle = null
+        try {
+          bundle = await fetchOrderBundle(pool, out.order_id, storeId, mode)
+        } catch (_fetchErr) {
+          /* ignore */
+        }
+        throw paymentFailedError(e.message || 'Payment failed.', bundle, e.statusCode || 422)
+      }
+    }
     throw e
   }
 
@@ -3068,7 +3119,7 @@ async function membershipPlansHasTierIdColumn(pool) {
   return len != null && Number(len) > 0
 }
 
-async function fetchCxCustomerRollup(pool, mode, { search, limit = 100 } = {}) {
+async function fetchCxCustomerRollup(pool, mode, { search, limit = 100, customerId = null } = {}) {
   const t = tableNames(mode)
   const lim = Math.min(500, Math.max(1, Number(limit) || 100))
   const linkTiers = await membershipPlansHasTierIdColumn(pool)
@@ -3117,6 +3168,10 @@ async function fetchCxCustomerRollup(pool, mode, { search, limit = 100 } = {}) {
     WHERE c.is_active = 1
   `
   const req = pool.request().input('lim', sql.Int, lim)
+  if (customerId != null && Number(customerId) > 0) {
+    query += ` AND c.customer_id = @cid `
+    req.input('cid', sql.Int, Number(customerId))
+  }
   if (search) {
     const digitsOnly = String(search).replace(/\D/g, '')
     if (digitsOnly.length >= 4 && digitsOnly.length >= String(search).replace(/\s/g, '').length * 0.7) {

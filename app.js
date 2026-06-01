@@ -47,6 +47,7 @@ const ordersRouter             = require('./src/api/orders');
 const metaRouter               = require('./src/api/meta');
 const labelPrintFormatsRouter  = require('./src/api/labelPrintFormats');
 const storeCollectionsRouter   = require('./src/api/storeCollections');
+const storepilotReportsRouter  = require('./src/api/storepilotReports');
 const tabletsRouter            = require('./src/api/tablets');
 const customerAuthRouter       = require('./src/api/customerAuth');
 const customerAppRouter        = require('./src/api/customerApp');
@@ -543,6 +544,13 @@ protectedApiRouter.get(
 );
 protectedApiRouter.use('/meta', metaRouter);
 protectedApiRouter.use('/collections', storeCollectionsRouter);
+/* Day store report — explicit mount (reliable after hot reload / PM2) */
+protectedApiRouter.get(
+  '/storepilot/reports/day-store',
+  ...storepilotReportsRouter.reportsViewMiddleware,
+  storepilotReportsRouter.handleDayStoreReportGet
+);
+protectedApiRouter.use('/storepilot/reports', storepilotReportsRouter);
 protectedApiRouter.use('/tablets', tabletsRouter);
 app.use('/api', protectedApiRouter);
 

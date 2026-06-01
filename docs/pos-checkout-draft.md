@@ -1,14 +1,28 @@
-# POS — draft-until-pay and unpaid orders
+# POS — draft-until-pay and payment-pending orders
 
-Store OS checkout no longer persists `pos_orders` when the cashier taps **Proceed** and then **Back** from payment. Orders are created atomically with the first successful payment.
+Store OS does **not** persist an order when the cashier taps **Proceed** and then **Back** from payment (in-memory `pendingCheckout` only).
 
-## Why a legacy bill still shows `OPEN` in the database
+When the cashier taps **Pay** and payment **fails validation**, the order **is kept** as `OPEN` with zero (or partial) payments — surfaced in **Orders → Active** as **Payment pending**.
 
-Rows such as **EW-ORD-1001** were inserted by the old flow (`POST /api/pos/orders` on Proceed). The persisted column `status` remains **`OPEN`** until the bill is paid or voided. Store OS does **not** change that column for underpaid bills; instead the API exposes:
+## Payment-fail retention (`checkout-and-pay`)
+
+Flow in [`checkoutAndPay`](../src/services/orderService.js):
+
+1. **Transaction A:** create order (`OPEN`), commit stock + unit barcodes.
+2. **Transaction B:** validate and insert payment.
+3. If step 2 fails → order remains; API returns **422** with `payment_failed: true` and `data.order_id` / `order_no`.
+
+Store OS shows a warning toast and stays on the payment screen so staff can retry or find the bill under **Orders → Active**.
+
+Post-success side effects (offer usage, coins, membership grant) run **only** after payment succeeds.
+
+## Display labels
+
+Rows such as **EW-ORD-1001** stay `status = OPEN` until paid or voided. The API exposes:
 
 - `is_unpaid`, `amount_remaining`, `amount_paid`
-- `display_status_label` → **Unpaid** (when `OPEN` and underpaid)
-- `display_status_css_class` → `unpaid`
+- `display_status_label` → **Payment pending** (when `OPEN` and underpaid)
+- `display_status_css_class` → `payment-pending`
 
 Labels come from [`src/config/posOrderDisplayCatalog.js`](../src/config/posOrderDisplayCatalog.js).
 
@@ -18,85 +32,56 @@ Tabs are defined in [`src/config/posOrderQueueCatalog.js`](../src/config/posOrde
 
 | Tab | `queue` | Behaviour |
 |-----|---------|-----------|
-| **Active** | `ACTIVE` | Zero-advance unpaid `OPEN` bills, `INSTANT` `OPEN`, and lab rows not in other queues |
+| **Active** | `ACTIVE` | Zero-payment / underpaid `OPEN` bills, `INSTANT` `OPEN`, lab rows not in other queues |
 | **Transit** | `TRANSIT` | Send to lab + send to store statuses; requires payment collected |
 | **LAB** | `LAB_AT_HQ` | HQ fitting / QC stages |
 | **Ready for HandOver** | `HANDOVER` | `READY_FOR_DELIVERY` through pre-invoice handover |
 | **Invoiced (Last 7)** | `INVOICED_7` | `INVOICED` within last 7 IST days |
 
-**Global search:** `GET /api/pos/orders?q=...&search_scope=all` — matches order no, customer name, or phone across all stores (no tab filter). Tabs remain store-scoped when the search box is empty.
+**Global search:** `GET /api/pos/orders?q=...&search_scope=all` — matches order no, customer name, or phone across all stores.
 
 ## Endpoints
 
-### `POST /api/pos/checkout-and-pay` (preferred for Store OS)
+### `POST /api/pos/checkout-and-pay` (Store OS Pay)
 
-Creates the order and records the first payment in one database transaction.
+Creates the order, then attempts the first payment.
 
-**Auth:** `pos.orders.create` and `pos.payment.collect` (same as proceeding to pay).
+**On success:** `200` with `order_id`, `order_no`, `payment_summary`, optional `invoice_no`.
 
-**Body:**
+**On payment failure (order saved):** `422` with:
 
 ```json
 {
-  "order": { /* same shape as POST /api/pos/orders */ },
-  "payment": {
-    "stage": "FULL | ADVANCE | BALANCE",
-    "method": "UPI | CARD | CASH | NONE",
-    "amount": 0,
-    "tendered": null,
-    "external_ref": null
+  "success": false,
+  "payment_failed": true,
+  "message": "Minimum advance is …",
+  "data": {
+    "order_id": 123,
+    "order_no": "EW-ORD-…",
+    "total_amount": 2300,
+    "amount_remaining": 2300,
+    "payment_summary": { … }
   }
 }
 ```
 
-`payment` must not include `order_id`; the server sets it after insert.
+### `POST /api/pos/orders` (legacy / tooling)
 
-**Response:** `data` includes `order_id`, `order_no`, totals, `payment_summary`, and optional `invoice_no`.
-
-### `POST /api/pos/orders` (legacy)
-
-Still available for tooling and integrations that create an OPEN order before payment. Store OS UI uses **checkout-and-pay** for new checkouts. Going back from payment after **Proceed** does not leave an unpaid row when using the new flow.
+Creates an `OPEN` order without payment. Still used by integrations.
 
 ### `POST /api/pos/payment`
 
-Records a payment on an existing order. Used when resuming an unpaid order (subsequent payments). **Creator-only:** `created_by_user_id` must match JWT `user_id` / `employee_id` unless the actor is `super_admin`.
-
-### `GET /api/pos/orders?draft=1` (alias `unpaid=1`)
-
-Lists store-visible **OPEN** orders where total payments are less than `total_amount` (minus epsilon). Rows include `created_by_user_id`, `amount_paid`, `amount_remaining`, `is_unpaid`, and display status fields.
-
-### `GET /api/pos/orders/:id`
-
-Includes `can_mutate`, `is_mine`, `created_by_user_id`, and display status on `order`.
+Records payment on an existing order (resume / retry after payment pending).
 
 ### `POST /api/pos/orders/:id/void-unpaid`
 
-Voids a **zero-payment** `OPEN` orphan: sets `status` to **`CANCELLED`**, restores store stock and unit barcodes when inventory was committed at order create.
+Voids a **zero-payment** `OPEN` bill: `CANCELLED`, restores stock and units.
 
-**Auth:** `pos.orders.void_unpaid` (falls back to `pos.orders.create` for migration).
+## Payment screen context
 
-**Rules:** creator-only (or `super_admin`); rejects if any payment exists or `paid_total > 0`.
-
-### `POST /api/pos/orders/:id/status`
-
-Lab workflow updates. Same **creator-only** rule as payment (with `super_admin` bypass).
-
-## Ownership
-
-- Orders store `created_by_user_id` on insert.
-- Staff JWT from `POST /api/pos/staff-login` sets `user_id` / `employee_id` to the matched staff user id.
-- Rows with **NULL** `created_by_user_id` cannot be mutated by non–super-admin users until data is repaired.
+See [`docs/ui/pos-payment-context-header.md`](ui/pos-payment-context-header.md) — order no, customer name, balance due on `/storeos/payment`.
 
 ## Related
 
-- `pos_checkout_drafts` remains a **per-staff cart resume** table, not the store-wide unpaid list.
-- One-time repair for duplicate order numbers: `sql/maintenance/sync_pos_order_seq_from_orders.sql`.
-
-## Clearing EW-ORD-1001
-
-1. Hard-refresh Store OS (cache-busted `pos.js`).
-2. Open **Orders → Unpaid / drafts** — bill shows **Unpaid**.
-3. If you created the bill, tap **Void bill** (or use `POST /api/pos/orders/:id/void-unpaid`).
-4. Re-assign `pos.orders.void_unpaid` in Command Unit if the button is missing after deploy.
-
-Do not set `CANCELLED` manually in SQL unless stock/units were already restored.
+- `pos_checkout_drafts` — per-staff **cart** resume JSON, not the store-wide unpaid list.
+- CX customer detail refreshes live stats via `GET /api/cx/customers/:id/summary`.

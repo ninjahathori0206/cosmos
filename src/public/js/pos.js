@@ -490,9 +490,24 @@
   }
 
   function toastPosCheckoutError(err, fallbackMessage) {
-    const msg = isPosSchemaMigrationApiError(err)
+    let msg = isPosSchemaMigrationApiError(err)
       ? POS_SCHEMA_MIGRATION_TOAST_MESSAGE
       : String((err && err.message) || fallbackMessage || 'Request failed')
+    if (!isPosSchemaMigrationApiError(err)) {
+      if (/Collect lab advance before balance/i.test(msg)) {
+        const minHint = payMinimumAdvanceAmount > 0.009
+          ? formatRupees(payMinimumAdvanceAmount)
+          : 'the lab advance minimum'
+        msg =
+          'Lab advance not met. Collect at least ' + minHint +
+          ', or pay the full bill amount upfront.'
+      } else if (/Minimum advance is/i.test(msg)) {
+        msg = msg + ' Or pay the full bill amount upfront.'
+      } else if (/not available for sale at this store/i.test(msg)) {
+        msg =
+          msg + ' Search Orders for this Cx or void the unpaid bill to release barcodes.'
+      }
+    }
     if (isPosSchemaMigrationApiError(err) && typeof cosmosToast === 'function') {
       cosmosToast(msg, 'error', 0)
       return
@@ -511,6 +526,7 @@
       err.status = res.status
       err.code = body.code
       err.data = body.data
+      err.payment_failed = body.payment_failed === true
       throw err
     }
     return body
@@ -1144,6 +1160,17 @@
     return obCart.reduce(function (sum, line) {
       return sum + computeLineDisplayUnit(line) * line.qty
     }, 0)
+  }
+
+  /** Pre-tax lab line totals only — matches server advance_target basis (buildPaymentSummary). */
+  function computeLabSubtotalForAdvance() {
+    return roundMoney(
+      obCart.reduce(function (sum, line) {
+        if (String(line.fulfillment || '').toUpperCase() !== 'LAB') return sum
+        const qty = Math.max(1, Number(line.qty) || 1)
+        return sum + computeLineDisplayUnit(line) * qty
+      }, 0)
+    )
   }
 
   /**
@@ -5462,6 +5489,28 @@
     showScreen('screen-pos-lens')
   }
 
+  function syncPayContextHeader(opts) {
+    const card = document.getElementById('pay-context-card')
+    if (!card) return
+    const orderNoEl = document.getElementById('pay-order-no')
+    const customerEl = document.getElementById('pay-customer-name')
+    const balanceEl = document.getElementById('pay-balance-due')
+    const orderNo = opts && opts.orderNo ? String(opts.orderNo) : ''
+    const customerName =
+      opts && opts.customerName ? String(opts.customerName) : '—'
+    const balanceDue =
+      opts && opts.balanceDue != null && !isNaN(Number(opts.balanceDue))
+        ? Number(opts.balanceDue)
+        : null
+    if (orderNoEl) orderNoEl.textContent = orderNo || 'New checkout'
+    if (customerEl) customerEl.textContent = customerName || '—'
+    if (balanceEl) {
+      balanceEl.textContent =
+        balanceDue != null ? formatRupees(balanceDue) : '—'
+    }
+    card.hidden = false
+  }
+
   async function showPaymentScreen(session) {
     const el = document.getElementById('pay-summary')
     function clearPaymentOffersPanel() {
@@ -5476,9 +5525,6 @@
     const draftBanner = document.getElementById('pay-draft-banner')
     if (draftBanner) {
       draftBanner.hidden = !pendingCheckout
-      if (pendingCheckout) {
-        draftBanner.textContent = 'Draft checkout — the order is created when you collect payment. Going back will not leave an unpaid bill.'
-      }
     }
     if (!session || !session.token) {
       clearPaymentOffersPanel()
@@ -5488,12 +5534,23 @@
       const pt = pendingCheckout.previewTotals || buildPendingCheckoutTotals()
       pendingCheckout.previewTotals = pt
       const total = Number(pt.total_amount) || 0
+      if (draftBanner) {
+        draftBanner.textContent =
+          'New checkout — order is created when you tap Pay. If payment fails, the bill is saved as Payment pending in Orders.'
+      }
+      const snap = posSelectedCustomerSnapshot || {}
+      syncPayContextHeader({
+        orderNo: '',
+        customerName: snap.full_name || snap.name || 'Walk-in',
+        balanceDue: total
+      })
       const labLike = pt.order_kind === 'LAB' || pt.order_kind === 'MIXED'
       paySessionSnapshot = { stage: 'FULL', amount: total }
       payMinimumAdvanceAmount = 0
       payMinimumAdvancePct = Number(posSettings.lab_advance_pct) || 0
       if (labLike) {
-        const subtotalForAdv = Number(pt.subtotal_amount) || total
+        const labSubForAdv = computeLabSubtotalForAdvance()
+        const subtotalForAdv = labSubForAdv > 0.009 ? labSubForAdv : (Number(pt.subtotal_amount) || total)
         payMinimumAdvanceAmount = Math.round(subtotalForAdv * (payMinimumAdvancePct / 100) * 100) / 100
         if (payMinimumAdvanceAmount > 0.009) {
           paySessionSnapshot = { stage: 'ADVANCE', amount: total }
@@ -5553,9 +5610,12 @@
           const v = Math.max(0, Number(this.value) || 0)
           paySessionSnapshot.amount = v
           if (amtSpan) amtSpan.textContent = formatRupees(v)
-          if (labAdvMode) {
+          if (labLike && v + 0.01 < total) {
             paySessionSnapshot.stage = 'ADVANCE'
-            if (amtBadge) amtBadge.style.display = v < total - 0.009 ? '' : 'none'
+            if (amtBadge) amtBadge.style.display = ''
+          } else if (labLike) {
+            paySessionSnapshot.stage = 'FULL'
+            if (amtBadge) amtBadge.style.display = 'none'
           } else {
             paySessionSnapshot.stage = 'FULL'
             if (amtBadge) amtBadge.style.display = 'none'
@@ -5568,7 +5628,7 @@
       }
       if (amtSpan) amtSpan.textContent = formatRupees(collectAmt)
       if (amtBadge) {
-        amtBadge.style.display = labAdvMode && collectAmt < total - 0.009 ? '' : 'none'
+        amtBadge.style.display = labLike && collectAmt + 0.01 < total ? '' : 'none'
       }
       if (amtLabel) {
         amtLabel.textContent =
@@ -5754,7 +5814,10 @@
           if (amtSpan) amtSpan.textContent = formatRupees(v)
           if (labLike && advanceRemaining > 0.009) {
             paySessionSnapshot.stage = 'ADVANCE'
-            if (amtBadge) amtBadge.style.display = v < fullRemaining - 0.009 ? '' : 'none'
+            if (amtBadge) amtBadge.style.display = v + 0.01 < fullRemaining ? '' : 'none'
+          } else if (labLike && v + 0.01 < fullRemaining) {
+            paySessionSnapshot.stage = forceBalanceSettlement ? 'BALANCE' : 'FULL'
+            if (amtBadge) amtBadge.style.display = 'none'
           } else {
             paySessionSnapshot.stage = 'FULL'
             if (amtBadge) amtBadge.style.display = 'none'
@@ -5773,6 +5836,16 @@
           amtHint.style.display = 'none'
         }
       }
+      const cxName =
+        (detail.customer && detail.customer.full_name) ||
+        order.customer_name ||
+        (lastCreatedOrder && lastCreatedOrder.customer_name) ||
+        '—'
+      syncPayContextHeader({
+        orderNo: order.order_no || (lastCreatedOrder && lastCreatedOrder.order_no) || '',
+        customerName: cxName,
+        balanceDue: balanceRemaining
+      })
       // Hidden legacy summary slot is left untouched.
       el.innerHTML = ''
     } catch (err) {
@@ -5868,6 +5941,23 @@
     navigate(POS_ROUTES.CONFIRM)
   }
 
+  /** LAB/MIXED: partial pay must use ADVANCE stage; full pay may use FULL. */
+  function normalizeLabPayStageBeforeSubmit(labKind, amt, orderDue) {
+    const kind = String(labKind || '').toUpperCase()
+    if (kind !== 'LAB' && kind !== 'MIXED') return
+    const due = Math.max(0, Number(orderDue) || 0)
+    const amount = Math.max(0, Number(amt) || 0)
+    if (due <= 0.009) return
+    if (amount + 0.01 >= due) {
+      paySessionSnapshot.stage = 'FULL'
+      return
+    }
+    if (forceBalanceSettlement && paySessionSnapshot.stage === 'BALANCE') return
+    if (paySessionSnapshot.stage === 'FULL' || paySessionSnapshot.stage === 'BALANCE') {
+      paySessionSnapshot.stage = 'ADVANCE'
+    }
+  }
+
   async function submitPayment() {
     if (submitPayment._inFlight) return
     submitPayment._inFlight = true
@@ -5916,9 +6006,7 @@
       const labKind = pendingCheckout && !lastCreatedOrder
         ? (pendingCheckout.previewTotals && pendingCheckout.previewTotals.order_kind)
         : lastCreatedOrder.order_kind
-      if (labKind === 'LAB' && paySessionSnapshot.stage === 'FULL' && payMinimumAdvanceAmount > 0.009) {
-        paySessionSnapshot.stage = 'ADVANCE'
-      }
+      normalizeLabPayStageBeforeSubmit(labKind, amt, orderDue)
       const payBody = {
         stage: paySessionSnapshot.stage,
         method: orderDue <= 0.009 ? 'NONE' : method,
@@ -5969,6 +6057,28 @@
       })
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (err.payment_failed && err.data && err.data.order_id) {
+        const d = err.data
+        const snap = posSelectedCustomerSnapshot || {}
+        lastCreatedOrder = {
+          order_id: d.order_id,
+          order_no: d.order_no || '',
+          order_kind: d.order_kind || '',
+          total_amount: d.total_amount,
+          customer_phone: snap.phone || '',
+          customer_name: snap.full_name || snap.name || ''
+        }
+        pendingCheckout = null
+        if (typeof cosmosToastWarn === 'function') {
+          cosmosToastWarn(
+            'Payment could not be collected. Order ' +
+              (d.order_no || String(d.order_id)) +
+              ' saved as Payment pending — collect from Orders or retry below.'
+          )
+        }
+        await showPaymentScreen(session)
+        return
+      }
       toastPosCheckoutError(err)
     }
     } finally {
@@ -8661,7 +8771,8 @@
         subtotal_amount: order.subtotal_amount,
         gst_amount: order.gst_amount,
         order_kind: order.order_kind,
-        customer_phone: cust.phone || ''
+        customer_phone: cust.phone || '',
+        customer_name: cust.full_name || order.customer_name || ''
       }
       forceBalanceSettlement = false
       navigate(POS_ROUTES.PAYMENT)

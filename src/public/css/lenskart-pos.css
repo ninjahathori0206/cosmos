@@ -347,7 +347,8 @@
 }
 
 .pos-order-status.open { background: var(--accL); color: var(--acc2); }
-.pos-order-status.unpaid { background: var(--goldL); color: var(--gold); }
+.pos-order-status.unpaid,
+.pos-order-status.payment-pending { background: var(--goldL); color: var(--gold); }
 .pos-order-status.paid { background: #DCFCE7; color: #16A34A; }
 .pos-order-status.delivered { background: #F3E8FF; color: #7E22CE; }
 .pos-order-status.cancelled { background: #FEE2E2; color: #DC2626; }
@@ -2066,6 +2067,55 @@ body.pos-lk-flow .pos-cust-banner {
   font-size: 14px;
   font-weight: 800;
   color: var(--lk-text);
+}
+
+.pos-lk-pay-context-card {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--accL);
+}
+
+.pos-lk-pay-context-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+@media (max-width: 720px) {
+  .pos-lk-pay-context-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pos-lk-pay-context-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pos-lk-pay-context-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pos-lk-pay-context-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos-lk-pay-context-balance {
+  color: var(--acc2);
+  font-size: 16px;
 }
 
 .pos-lk-delivery-line {

@@ -12,13 +12,13 @@
 <title>Store OS — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-bucket-z">
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
-<link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260601-mem-row-hidden">
+<link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260603-payment-pending">
 <script src="/js/cosmos-ui-polish.js?v=20260602-ist-ssot" defer></script>
 <script src="/js/cosmos-pwa-update.js?v=20260528-pwa-update" defer></script>
 <script src="/js/storeos-pwa.js?v=20260528-pwa-update" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260523-cart-bucket" defer></script>
-<script src="/js/pos.js?v=storeos-20260601-mem-row-hidden" defer></script>
+<script src="/js/pos.js?v=storeos-20260603-payment-pending" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -687,6 +687,22 @@
     <div class="pos-lk-pay-main">
       <div class="pos-lk-lens-toolbar" style="margin-bottom:8px">
         <button type="button" id="btn-pay-back" class="pos-lk-back-link" aria-label="Back" tabindex="0">‹ Cart</button>
+      </div>
+      <div id="pay-context-card" class="pos-lk-pay-context-card" hidden aria-label="Checkout context">
+        <div class="pos-lk-pay-context-grid">
+          <div class="pos-lk-pay-context-item">
+            <span class="pos-lk-pay-context-lbl">Order</span>
+            <strong id="pay-order-no" class="pos-lk-pay-context-val">—</strong>
+          </div>
+          <div class="pos-lk-pay-context-item">
+            <span class="pos-lk-pay-context-lbl">Customer</span>
+            <strong id="pay-customer-name" class="pos-lk-pay-context-val">—</strong>
+          </div>
+          <div class="pos-lk-pay-context-item pos-lk-pay-context-item--balance">
+            <span class="pos-lk-pay-context-lbl">Balance due</span>
+            <strong id="pay-balance-due" class="pos-lk-pay-context-val pos-lk-pay-context-balance">—</strong>
+          </div>
+        </div>
       </div>
       <div id="pay-draft-banner" class="pos-lk-pay-draft-banner" hidden role="status" style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:var(--goldL);color:var(--text1);font-size:13px;line-height:1.45"></div>
 

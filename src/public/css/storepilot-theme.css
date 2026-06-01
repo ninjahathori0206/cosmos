@@ -25,3 +25,49 @@
   --text2: #5C6B7A;
   --text3: #8B9CAE;
 }
+
+/* Day store report — reports page */
+.sp-day-report-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.sp-day-report-section {
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.sp-day-report-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text2);
+  margin-bottom: 12px;
+}
+.sp-day-report-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px 16px;
+}
+.sp-day-report-metric-label {
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 4px;
+}
+.sp-day-report-metric-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text1);
+  font-variant-numeric: tabular-nums;
+}
+.sp-day-report-section--compact .sp-day-report-metric-value {
+  font-size: 22px;
+  color: var(--acc);
+}
+@media print {
+  #day-store-report-card {
+    break-inside: avoid;
+  }
+}

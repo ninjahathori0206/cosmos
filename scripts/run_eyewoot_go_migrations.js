@@ -17,6 +17,7 @@ const MIGRATIONS = [
   '37_widen_customer_offers_discount_type.sql',
   '72_membership_plans_capabilities.sql',
   '73_customer_offers_capability_selector.sql',
+  '75_customer_memberships_pos_order_link.sql',
   '62_seed_membership_plans_default.sql',
   '63_membership_plans_link_tiers.sql'
 ];

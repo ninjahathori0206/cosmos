@@ -94,6 +94,58 @@ async function membershipPlansHasTierIdColumn (pool) {
   return len != null && Number(len) > 0
 }
 
+async function membershipHasPosOrderIdColumn (pool) {
+  const r = await pool.request().query(`
+    SELECT COL_LENGTH('dbo.customer_memberships', 'pos_order_id') AS col_len
+  `)
+  const len = r.recordset && r.recordset[0] && r.recordset[0].col_len
+  return len != null && Number(len) > 0
+}
+
+/** Active membership row for CX detail — schema-aware (tier link, pos_order_id, orders engine). */
+async function fetchActiveMembershipForCx (pool, customerId, mode) {
+  const linkTiers = await membershipPlansHasTierIdColumn(pool)
+  const hasPosOrderLink = await membershipHasPosOrderIdColumn(pool)
+  const ordersTable = mode === 'shared' ? 'dbo.oe_orders' : 'dbo.pos_orders'
+  const posOrderSelect = hasPosOrderLink ? 'm.pos_order_id,' : 'CAST(NULL AS INT) AS pos_order_id,'
+  const orderJoin = hasPosOrderLink
+    ? `LEFT JOIN ${ordersTable} o ON o.order_id = m.pos_order_id`
+    : ''
+  const orderNoSelect = hasPosOrderLink ? 'o.order_no AS linked_order_no' : 'CAST(NULL AS NVARCHAR(50)) AS linked_order_no'
+  const tierSelect = linkTiers
+    ? `p.tier_id,
+            t.tier_name,
+            t.loyalty_tier AS membership_type,
+            t.benefits AS tier_benefits`
+    : `NULL AS tier_id,
+            p.display_name AS tier_name,
+            NULL AS membership_type,
+            NULL AS tier_benefits`
+  const tierJoin = linkTiers ? 'LEFT JOIN dbo.membership_tiers t ON t.membership_id = p.tier_id' : ''
+
+  const memR = await pool.request().input('cid', customerId).query(`
+    SELECT TOP 1
+      m.membership_id,
+      m.plan_key,
+      m.purchased_at,
+      m.expires_at,
+      m.price_paid,
+      m.is_active,
+      ${posOrderSelect}
+      p.display_name AS plan_display_name,
+      ${tierSelect},
+      ${orderNoSelect}
+    FROM   dbo.customer_memberships m
+    JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
+    ${tierJoin}
+    ${orderJoin}
+    WHERE  m.customer_id = @cid AND m.is_active = 1
+      AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
+    ORDER BY m.expires_at DESC
+  `)
+  return memR.recordset[0] || null
+}
+
 /** Mirror Command Unit membership_tiers into membership_plans so CX grant can use CU-configured tiers. */
 async function ensureMembershipPlansFromTiers (pool) {
   let tiers = []
@@ -229,6 +281,35 @@ router.get('/plans', ...cxPlansMiddleware, handleCxMembershipPlans)
 /** GET /api/cx/membership-plans — alias */
 router.get('/membership-plans', ...cxPlansMiddleware, handleCxMembershipPlans)
 
+/** GET /api/cx/customers/:id/summary — live order count + lifetime for detail modal */
+router.get(
+  '/customers/:id/summary',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseInt(req.params.id, 10)
+      if (!customerId) {
+        return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      }
+      const pool = await getPool()
+      const mode = await orderService.getOrdersEngineMode(pool)
+      const rows = await orderService.fetchCxCustomerRollup(pool, mode, {
+        customerId,
+        limit: 1
+      })
+      const row = rows[0]
+      if (!row) {
+        return res.status(404).json({ success: false, message: 'Customer not found.' })
+      }
+      return res.json({ success: true, data: row })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
 /** GET /api/cx/customers/:id/membership — current active Eyewoot Go membership (if any) */
 router.get(
   '/customers/:id/membership',
@@ -248,55 +329,8 @@ router.get(
     const cust = custR.recordset[0]
     if (!cust) return res.status(404).json({ success: false, message: 'Customer not found.' })
 
-    const linkTiers = await membershipPlansHasTierIdColumn(pool)
-    const memR = linkTiers
-      ? await pool.request().input('cid', customerId).query(`
-          SELECT TOP 1
-            m.membership_id,
-            m.plan_key,
-            m.purchased_at,
-            m.expires_at,
-            m.price_paid,
-            m.is_active,
-            m.pos_order_id,
-            p.display_name AS plan_display_name,
-            p.tier_id,
-            t.tier_name,
-            t.loyalty_tier AS membership_type,
-            t.benefits AS tier_benefits,
-            o.order_no AS linked_order_no
-          FROM   dbo.customer_memberships m
-          JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
-          LEFT JOIN dbo.membership_tiers t ON t.membership_id = p.tier_id
-          LEFT JOIN dbo.pos_orders o ON o.order_id = m.pos_order_id
-          WHERE  m.customer_id = @cid AND m.is_active = 1
-            AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
-          ORDER BY m.expires_at DESC
-        `)
-      : await pool.request().input('cid', customerId).query(`
-          SELECT TOP 1
-            m.membership_id,
-            m.plan_key,
-            m.purchased_at,
-            m.expires_at,
-            m.price_paid,
-            m.is_active,
-            m.pos_order_id,
-            p.display_name AS plan_display_name,
-            NULL AS tier_id,
-            p.display_name AS tier_name,
-            NULL AS membership_type,
-            NULL AS tier_benefits,
-            o.order_no AS linked_order_no
-          FROM   dbo.customer_memberships m
-          JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
-          LEFT JOIN dbo.pos_orders o ON o.order_id = m.pos_order_id
-          WHERE  m.customer_id = @cid AND m.is_active = 1
-            AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
-          ORDER BY m.expires_at DESC
-        `)
-
-    const active = memR.recordset[0] || null
+    const mode = await orderService.getOrdersEngineMode(pool)
+    const active = await fetchActiveMembershipForCx(pool, customerId, mode)
     if (active) {
       active.membership_tier_label = active.tier_name || active.plan_display_name || active.plan_key
       active.membership_type_label = active.membership_type || null

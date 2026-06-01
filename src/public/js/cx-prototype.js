@@ -169,13 +169,34 @@ window.openCxCustomerDetail = async function (el) {
   if (phone) sub.push(phone)
   if (store) sub.push(store)
   document.getElementById('cx-cust-detail-sub').textContent = sub.join(' · ') || '—'
-  document.getElementById('cx-cust-detail-stats').innerHTML =
-    '<div class="cx-cust-detail-stat"><div class="lbl">Orders</div><div class="val">' +
-    escCx(orders || '0') +
-    '</div></div>' +
-    '<div class="cx-cust-detail-stat"><div class="lbl">Lifetime</div><div class="val">' +
-    escCx(revenue || fmtCxRs(0)) +
-    '</div></div>'
+  if (typeof window.cosmosSkeletonCards === 'function') {
+    window.cosmosSkeletonCards('cx-cust-detail-stats', 2)
+  } else {
+    document.getElementById('cx-cust-detail-stats').innerHTML =
+      '<div class="cx-cust-detail-stat"><div class="lbl">Orders</div><div class="val">' +
+      escCx(orders || '0') +
+      '</div></div>' +
+      '<div class="cx-cust-detail-stat"><div class="lbl">Lifetime</div><div class="val">' +
+      escCx(revenue || fmtCxRs(0)) +
+      '</div></div>'
+  }
+
+  function cxRenderCustomerDetailStats(row) {
+    var statsEl = document.getElementById('cx-cust-detail-stats')
+    if (!statsEl) return
+    var oc = row && row.order_count != null ? String(row.order_count) : orders || '0'
+    var rev =
+      row && row.lifetime_revenue != null
+        ? fmtCxRs(row.lifetime_revenue)
+        : revenue || fmtCxRs(0)
+    statsEl.innerHTML =
+      '<div class="cx-cust-detail-stat"><div class="lbl">Orders</div><div class="val">' +
+      escCx(oc) +
+      '</div></div>' +
+      '<div class="cx-cust-detail-stat"><div class="lbl">Lifetime</div><div class="val">' +
+      escCx(rev) +
+      '</div></div>'
+  }
 
   var memEl = document.getElementById('cx-cust-detail-membership')
   var depsEl = document.getElementById('cx-cust-detail-dependents')
@@ -213,6 +234,23 @@ window.openCxCustomerDetail = async function (el) {
 
   var ov = document.getElementById('modal-cx-customer-detail')
   if (ov) ov.style.display = 'flex'
+
+  try {
+    var summaryRes = await cxApiFetch('GET', '/api/cx/customers/' + id + '/summary')
+    if (summaryRes && summaryRes.data) {
+      cxRenderCustomerDetailStats(summaryRes.data)
+      if (summaryRes.data.full_name && !name) {
+        name = summaryRes.data.full_name
+        document.getElementById('cx-cust-detail-title').textContent = name
+        document.getElementById('cx-cust-detail-name').textContent = name
+        document.getElementById('cx-cust-detail-av').textContent = cxCustomerInitials(name)
+      }
+    } else {
+      cxRenderCustomerDetailStats(null)
+    }
+  } catch (_statsErr) {
+    cxRenderCustomerDetailStats(null)
+  }
 
   try {
     var statusRes = await cxApiFetch('GET', '/api/cx/customers/' + id + '/membership')

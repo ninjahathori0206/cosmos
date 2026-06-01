@@ -332,7 +332,10 @@ function loadStorePilotPage(id) {
       setTimeout(function () { window.openSpCreateRequestModal(); }, 0);
     }
   }
-  if (id === 'reports')            loadReports();
+  if (id === 'reports') {
+    initDayStoreReportDate();
+    loadReports();
+  }
   if (id === 'lab-orders')         loadSpLabOrders();
   if (id === 'invoices')           loadSpInvoices();
   if (id === 'collections' && typeof window.loadStoreCollections === 'function') loadStoreCollections('storepilot');
@@ -2463,6 +2466,129 @@ window.prefillTransferSku = function (skuId, skuCode, description) {
   }
 };
 
+// ── Day store report ───────────────────────────────────────────────────────────
+function spFmtRs(v) {
+  return '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function initDayStoreReportDate() {
+  const dateEl = document.getElementById('day-store-report-date');
+  if (!dateEl) return;
+  const today = typeof cosmosIstToday === 'function' ? cosmosIstToday() : '';
+  if (today && !dateEl.value) dateEl.value = today;
+}
+
+function renderDayStoreReportBody(data) {
+  const body = document.getElementById('day-store-report-body');
+  if (!body || !data) return;
+  const inv = data.invoiced || {};
+  const bk = data.booking || {};
+  const col = data.collection || {};
+  const dateLabel = data.report_date
+    ? (typeof cosmosFmtDate === 'function' ? cosmosFmtDate(data.report_date) : data.report_date)
+    : '';
+  const storeLabel = data.store_name ? escHtml(data.store_name) : 'This store';
+
+  body.innerHTML = `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px">${storeLabel} · ${escHtml(dateLabel)}</div>
+    <div class="sp-day-report-sections">
+      <section class="sp-day-report-section">
+        <div class="sp-day-report-section-title">Invoiced (today)</div>
+        <div class="sp-day-report-metrics">
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Today&apos;s revenue (invoiced)</div>
+            <div class="sp-day-report-metric-value">${spFmtRs(inv.revenue)}</div>
+          </div>
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Number of bills</div>
+            <div class="sp-day-report-metric-value">${Number(inv.bill_count) || 0}</div>
+          </div>
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Average invoice amount</div>
+            <div class="sp-day-report-metric-value">${spFmtRs(inv.avg_invoice_amount)}</div>
+          </div>
+        </div>
+      </section>
+      <section class="sp-day-report-section">
+        <div class="sp-day-report-section-title">Booking (today)</div>
+        <div class="sp-day-report-metrics">
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Today&apos;s booking</div>
+            <div class="sp-day-report-metric-value">${spFmtRs(bk.revenue)}</div>
+          </div>
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Orders booked</div>
+            <div class="sp-day-report-metric-value">${Number(bk.order_count) || 0}</div>
+          </div>
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Average booking amount</div>
+            <div class="sp-day-report-metric-value">${spFmtRs(bk.avg_booking_amount)}</div>
+          </div>
+        </div>
+      </section>
+      <section class="sp-day-report-section">
+        <div class="sp-day-report-section-title">Collection (today)</div>
+        <div class="sp-day-report-metrics">
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Today&apos;s collection</div>
+            <div class="sp-day-report-metric-value">${spFmtRs(col.total)}</div>
+          </div>
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Bank collection (UPI + card)</div>
+            <div class="sp-day-report-metric-value">${spFmtRs(col.bank)}</div>
+          </div>
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Cash collection</div>
+            <div class="sp-day-report-metric-value">${spFmtRs(col.cash)}</div>
+          </div>
+        </div>
+      </section>
+      <section class="sp-day-report-section sp-day-report-section--compact">
+        <div class="sp-day-report-section-title">Membership</div>
+        <div class="sp-day-report-metrics">
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Total membership sold</div>
+            <div class="sp-day-report-metric-value">${Number(data.memberships_sold) || 0}</div>
+          </div>
+        </div>
+      </section>
+    </div>`;
+}
+
+window.generateDayStoreReport = async function () {
+  const btn = document.getElementById('btn-generate-day-store-report');
+  const body = document.getElementById('day-store-report-body');
+  const dateEl = document.getElementById('day-store-report-date');
+
+  if (!_storeId) {
+    if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Sign in with a store account to generate this report.');
+    return;
+  }
+
+  const reportDate = (dateEl && dateEl.value) || (typeof cosmosIstToday === 'function' ? cosmosIstToday() : '');
+  if (!reportDate) {
+    if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a report date.');
+    return;
+  }
+
+  if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+  if (body) body.innerHTML = '<div id="day-store-report-skeleton"></div>';
+  if (body && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('day-store-report-skeleton', 4);
+
+  try {
+    const qs = new URLSearchParams({ date: reportDate });
+    const res = await apiGet('/api/storepilot/reports/day-store?' + qs.toString());
+    renderDayStoreReportBody(res.data || {});
+    if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+  } catch (err) {
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+    if (body) {
+      body.innerHTML = '<div class="empty"><div class="empty-ic">📊</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">Could not load report</div><div style="font-size:13px;color:var(--text2);margin-bottom:16px">' + escHtml(err.message || 'Request failed') + '</div><button type="button" class="btn primary" onclick="generateDayStoreReport()">Try again</button></div>';
+    }
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to generate day store report.');
+  }
+};
+
 // ── Reports ────────────────────────────────────────────────────────────────────
 function loadReports() {
   const statsEl = document.getElementById('reports-stats');
@@ -2471,8 +2597,10 @@ function loadReports() {
 
   const now = new Date();
   if (monthEl) monthEl.textContent = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month: 'long', year: 'numeric' });
-  if (statsEl) statsEl.innerHTML = '<div style="grid-column:1/-1;padding:16px;color:var(--text3);font-size:13px">Loading report data…</div>';
-  if (tableEl) tableEl.innerHTML = '<div class="empty-state"><div class="ei">⏳</div><div class="et">Loading…</div></div>';
+  if (statsEl && typeof cosmosSkeletonCards === 'function') cosmosSkeletonCards('reports-stats', 4);
+  else if (statsEl) statsEl.innerHTML = '';
+  if (tableEl && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('reports-transfer-table', 5);
+  else if (tableEl) tableEl.innerHTML = '';
 
   const qs = new URLSearchParams({ top_n: 500 });
   if (_storeId) qs.set('to_store_id', _storeId);
@@ -2512,24 +2640,24 @@ function loadReports() {
       statsEl.innerHTML = `
         <div class="sc" style="--sc-color:var(--acc)">
           <div class="sl">Transfers this month</div>
-          <div class="sv">${thisMonth.length}</div>
+          <div class="sv" data-count="${thisMonth.length}">${thisMonth.length}</div>
           <div class="sm">Inbound ${_storeId ? 'to this store' : 'network-wide'}</div>
         </div>
         <div class="sc" style="--sc-color:var(--gold)">
           <div class="sl">Transfers this week</div>
-          <div class="sv">${thisWeek.length}</div>
+          <div class="sv" data-count="${thisWeek.length}">${thisWeek.length}</div>
           <div class="sm">Last 7 days</div>
         </div>
-        <div class="sc" style="--sc-color:var(--blue)">
+        <div class="sc" style="--sc-color:var(--teal)">
           <div class="sl">${skuLabel}</div>
-          <div class="sv">${skuCount}</div>
+          <div class="sv" data-count="${skuCount}">${skuCount}</div>
           <div class="sm">${skuMeta}</div>
-        </div>
-        <div class="sc" style="--sc-color:#94A3B8;opacity:0.75">
-          <div class="sl">Revenue this month</div>
-          <div class="sv" style="color:var(--text3)">—</div>
-          <div class="sm" style="color:var(--text3)">Not available</div>
         </div>`;
+      if (typeof cosmosCountUp === 'function') {
+        statsEl.querySelectorAll('.sv[data-count]').forEach(function (el) {
+          cosmosCountUp(el, Number(el.getAttribute('data-count')) || 0);
+        });
+      }
     }
 
     if (tableEl) {

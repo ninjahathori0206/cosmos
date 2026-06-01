@@ -2175,6 +2175,15 @@ router.post('/checkout-and-pay', ...posCheckoutAndPay, async (req, res, next) =>
       }
     })
   } catch (err) {
+    if (err.code === 'PAYMENT_FAILED_ORDER_SAVED' && err.orderDraft) {
+      return res.status(422).json({
+        success: false,
+        payment_failed: true,
+        code: err.code,
+        message: err.message,
+        data: err.orderDraft
+      })
+    }
     if (err.statusCode === 400 || err.statusCode === 403 || err.statusCode === 500) {
       return res.status(err.statusCode).json({ success: false, message: err.message })
     }

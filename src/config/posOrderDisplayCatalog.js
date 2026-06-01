@@ -4,9 +4,9 @@
  */
 
 const POS_ORDER_UNPAID_DISPLAY = {
-  key: 'unpaid',
-  label: 'Unpaid',
-  cssClass: 'unpaid'
+  key: 'payment_pending',
+  label: 'Payment pending',
+  cssClass: 'payment-pending'
 }
 
 /**

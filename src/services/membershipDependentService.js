@@ -25,6 +25,40 @@ const CAPABILITY_COLS_MP = `
   mp.can_create_sub_cards
 `
 
+const CAPABILITY_COLS_FALLBACK_P = `
+  CAST(0 AS BIT) AS has_plus_access,
+  CAST(NULL AS DECIMAL(5,2)) AS extra_cashback_pct,
+  CAST(NULL AS DECIMAL(5,2)) AS flat_discount_pct,
+  CAST(0 AS BIT) AS has_one_time_discount,
+  CAST(0 AS BIT) AS can_create_sub_cards
+`
+
+const CAPABILITY_COLS_FALLBACK_MP = `
+  CAST(0 AS BIT) AS has_plus_access,
+  CAST(NULL AS DECIMAL(5,2)) AS extra_cashback_pct,
+  CAST(NULL AS DECIMAL(5,2)) AS flat_discount_pct,
+  CAST(0 AS BIT) AS has_one_time_discount,
+  CAST(0 AS BIT) AS can_create_sub_cards
+`
+
+let _capabilityColsCache = null
+
+async function membershipPlanCapabilitySelect(pool, planAlias) {
+  if (_capabilityColsCache) {
+    return planAlias === 'mp' ? _capabilityColsCache.mp : _capabilityColsCache.p
+  }
+  const r = await pool.request().query(`
+    SELECT COL_LENGTH('dbo.membership_plans', 'has_plus_access') AS col_len
+  `)
+  const len = r.recordset && r.recordset[0] && r.recordset[0].col_len
+  const hasCaps = len != null && Number(len) > 0
+  _capabilityColsCache = {
+    p: hasCaps ? CAPABILITY_COLS_P : CAPABILITY_COLS_FALLBACK_P,
+    mp: hasCaps ? CAPABILITY_COLS_MP : CAPABILITY_COLS_FALLBACK_MP
+  }
+  return planAlias === 'mp' ? _capabilityColsCache.mp : _capabilityColsCache.p
+}
+
 function httpError(message, statusCode) {
   const err = new Error(message)
   err.statusCode = statusCode
@@ -35,6 +69,7 @@ function httpError(message, statusCode) {
  * Active membership row owned by customer (primary holder).
  */
 async function getOwnActiveMembership(pool, customerId) {
+  const capCols = await membershipPlanCapabilitySelect(pool, 'p')
   const r = await pool.request().input('cid', sql.Int, customerId).query(`
     SELECT TOP 1
       m.membership_id,
@@ -44,7 +79,7 @@ async function getOwnActiveMembership(pool, customerId) {
       m.price_paid,
       p.display_name AS plan_name,
       p.max_dependents,
-      ${CAPABILITY_COLS_P}
+      ${capCols}
     FROM   dbo.customer_memberships m
     JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
     WHERE  m.customer_id = @cid AND m.is_active = 1
@@ -84,6 +119,7 @@ async function resolveMembershipForCustomer(pool, customerId) {
     }
   }
 
+  const capCols = await membershipPlanCapabilitySelect(pool, 'mp')
   const depR = await pool.request().input('cid', sql.Int, customerId).query(`
     SELECT TOP 1
       d.dependent_id,
@@ -93,7 +129,7 @@ async function resolveMembershipForCustomer(pool, customerId) {
       pc.full_name AS primary_full_name,
       pc.phone AS primary_phone,
       mp.plan_key,
-      ${CAPABILITY_COLS_MP}
+      ${capCols}
     FROM   dbo.customer_membership_dependents d
     JOIN   dbo.customer_memberships m ON m.membership_id = d.membership_id
     JOIN   dbo.membership_plans mp ON mp.plan_key = m.plan_key

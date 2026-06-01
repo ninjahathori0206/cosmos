@@ -634,9 +634,23 @@
       </div>
     </div>
     <div class="sp-page-body">
-    <div class="sg4" id="reports-stats">
-      <div style="grid-column:1/-1;padding:16px;color:var(--text3);font-size:13px">Loading report data…</div>
+    <div class="card" id="day-store-report-card" style="margin-bottom:16px;border-top:3px solid var(--acc)">
+      <div class="ch" style="flex-wrap:wrap;gap:10px">
+        <div>
+          <div class="ct">Day store report</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px;font-weight:400">Daily snapshot — invoiced sales, bookings, collections, and memberships (IST).</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap">
+          <input type="date" id="day-store-report-date" class="fi" style="max-width:160px" aria-label="Report date">
+          <button type="button" class="btn primary sm" id="btn-generate-day-store-report" onclick="generateDayStoreReport()">Generate report</button>
+        </div>
+      </div>
+      <div id="day-store-report-body" class="cb">
+        <div style="font-size:13px;color:var(--text3)">Choose a date and tap Generate report, or generate for today.</div>
+      </div>
     </div>
+
+    <div class="sg4" id="reports-stats"></div>
 
     <div class="card">
       <div class="ch">
@@ -649,16 +663,6 @@
     </div>
 
     <div class="two-col">
-      <div class="card" style="border-top-color:#94A3B8;opacity:0.8">
-        <div class="ch">
-          <div class="ct" style="color:var(--text2)">Revenue report</div>
-          <span class="b b-gray" style="font-size:10px;margin-left:auto">Requires POS</span>
-        </div>
-        <div class="cb" style="color:var(--text3);font-size:13px">
-          Daily, weekly, and monthly revenue summaries — vs targets, prior periods, and top-performing SKUs.
-          Will populate automatically once Store OS (POS) is live.
-        </div>
-      </div>
       <div class="card" style="border-top-color:#94A3B8;opacity:0.8">
         <div class="ch">
           <div class="ct" style="color:var(--text2)">Orders report</div>

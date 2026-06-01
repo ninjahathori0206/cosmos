@@ -22,7 +22,7 @@
     emptyCopy: {
       ACTIVE: {
         title: 'No active orders',
-        subtext: 'Instant pickups and store-side work appear here. Use Transit or LAB tabs for lab pipeline orders.'
+        subtext: 'Unpaid lab bills and instant pickups appear here. Search by order no or Cx phone — not cashier name. Paid instant sales: Invoiced (Last 7) tab.'
       },
       TRANSIT: {
         title: 'Nothing in transit',
