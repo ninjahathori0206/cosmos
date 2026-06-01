@@ -38,6 +38,8 @@
     "migrate:77-partial-transfer-receive": "node scripts/run-migration-77-partial-transfer-receive.js",
     "migrate:78-army-hiring-pipeline": "node scripts/run-migration-78-army-hiring-pipeline.js",
     "migrate:79-army-application-joining": "node scripts/run-migration-79-army-application-joining.js",
+    "migrate:80-pos-customer-aliases": "node scripts/run-migration-80-pos-customer-aliases.js",
+    "maintenance:merge-duplicate-pos-customers": "node scripts/merge-duplicate-pos-customers-by-phone.js",
     "maintenance:repair-transfer-request-qty": "node scripts/repair-transfer-request-line-qty.js",
     "deploy:sp-stock-transfer-units": "node scripts/deploy-sp-stock-transfer-units.js",
     "verify:atomic-dispatch-shipment": "node scripts/verify-atomic-dispatch-shipment.js",

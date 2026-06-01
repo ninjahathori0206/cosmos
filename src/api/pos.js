@@ -24,6 +24,8 @@ const {
   resolveMembershipSaleAmount
 } = require('../services/membershipGrantService')
 const { wallClockIso } = require('../lib/cosmosIst')
+const { parseIndiaMobileForSave } = require('../lib/indiaMobile')
+const posCustomerRegister = require('../services/posCustomerRegisterService')
 
 const router = express.Router()
 
@@ -357,19 +359,22 @@ const setPinSchema = Joi.object({
   pin:         Joi.string().length(4).pattern(/^\d{4}$/).required()
 })
 
-/** Strip non-digits; drop leading 91 or trunk 0 — expect 10-digit Indian mobile (starts 6–9). */
+/** @deprecated use src/lib/indiaMobile — kept for any in-file references */
 function normalizeIndiaMobileDigits(raw) {
-  let d = String(raw || '').replace(/\D/g, '')
-  if (d.length === 12 && d.startsWith('91')) d = d.slice(2)
-  if (d.length === 11 && d.startsWith('0')) d = d.slice(1)
-  return d
+  return posCustomerRegister.normalizeIndiaMobileDigits(raw)
 }
 
 const customerCreateSchema = Joi.object({
   full_name:     Joi.string().min(1).max(200).required(),
   phone:         Joi.string().min(1).max(30).required(),
   email:         Joi.string().max(200).allow(null, '').optional(),
-  home_store_id: Joi.number().integer().positive().allow(null)
+  home_store_id: Joi.number().integer().positive().allow(null),
+  confirm_alias: Joi.boolean().default(false)
+})
+
+const customerCheckPhoneSchema = Joi.object({
+  phone:      Joi.string().min(1).max(30).required(),
+  full_name:  Joi.string().max(200).allow('', null).optional()
 })
 
 const posOrderLineItemSchema = Joi.object({
@@ -1615,8 +1620,42 @@ router.get('/customer-search', ...posCustomersView, async (req, res, next) => {
     const result = await executeStoredProcedure('sp_POS_CustomerSearch', {
       q: { type: sql.NVarChar(200), value: q }
     })
-    return res.json({ success: true, data: result.recordset || [] })
+    const pool = await getPool()
+    const rows = result.recordset || []
+    const enriched = []
+    for (const row of rows) {
+      const aliases = await posCustomerRegister.listAliases(pool, row.customer_id)
+      const primary = String(row.full_name || '').trim()
+      const aliasList = aliases.filter(
+        (a) => a.toLowerCase() !== primary.toLowerCase()
+      )
+      enriched.push({ ...row, aliases: aliasList })
+    }
+    return res.json({ success: true, data: enriched })
   } catch (err) {
+    return next(err)
+  }
+})
+
+// ── POST /api/pos/customer/check-phone — duplicate mobile / alias preview ─────
+router.post('/customer/check-phone', ...posCustomersCreate, async (req, res, next) => {
+  try {
+    const { error, value } = customerCheckPhoneSchema.validate(req.body || {})
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.details.map((d) => d.message).join(' ')
+      })
+    }
+    const pool = await getPool()
+    const data = await posCustomerRegister.checkPhone(pool, value.phone, {
+      proposedName: value.full_name
+    })
+    return res.json({ success: true, data })
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, message: err.message })
+    }
     return next(err)
   }
 })
@@ -1633,26 +1672,36 @@ router.post('/customer', ...posCustomersCreate, async (req, res, next) => {
         errors: parts
       })
     }
-    const phoneNorm = normalizeIndiaMobileDigits(value.phone)
-    if (!/^[6-9]\d{9}$/.test(phoneNorm)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Phone must be a valid 10-digit Indian mobile (optional +91 or leading 0).'
-      })
+    const parsed = parseIndiaMobileForSave(value.phone)
+    if (!parsed.ok) {
+      return res.status(400).json({ success: false, message: parsed.message })
     }
-    value.phone = phoneNorm
     const homeRaw = Number(req.user && req.user.store_id)
     const homeFallback = Number.isFinite(homeRaw) && homeRaw > 0 ? homeRaw : null
     const homeStore = value.home_store_id != null ? value.home_store_id : homeFallback
-    const result = await executeStoredProcedure('sp_POS_CustomerCreate', {
-      full_name:     { type: sql.NVarChar(200), value: value.full_name },
-      phone:         { type: sql.NVarChar(20),  value: value.phone },
-      email:         { type: sql.NVarChar(200), value: (value.email && String(value.email).trim()) || null },
-      home_store_id: { type: sql.Int, value: homeStore || null }
+    const employeeId = req.user && req.user.employee_id != null ? Number(req.user.employee_id) : null
+    const pool = await getPool()
+    const out = await posCustomerRegister.registerCustomer(pool, {
+      fullName: value.full_name,
+      phone: parsed.phone,
+      email: (value.email && String(value.email).trim()) || null,
+      homeStoreId: homeStore || null,
+      confirmAlias: !!value.confirm_alias,
+      createdByUserId: Number.isFinite(employeeId) ? employeeId : null
     })
-    const row = (result.recordset || [])[0]
-    return res.json({ success: true, data: { customer_id: row.customer_id } })
+    return res.json({ success: true, data: out })
   } catch (err) {
+    if (err.statusCode === 409 && err.code === 'PHONE_ALIAS_REQUIRED') {
+      return res.status(409).json({
+        success: false,
+        message: err.message,
+        code: err.code,
+        data: err.payload
+      })
+    }
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, message: err.message })
+    }
     return next(err)
   }
 })

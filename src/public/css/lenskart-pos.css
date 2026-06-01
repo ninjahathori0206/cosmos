@@ -4654,6 +4654,116 @@ body.pos-target-tablet-landscape.pos-lk-flow .pos-lk-page {
   color: var(--lk-text-muted, #64748b);
 }
 
+.pos-cust-picker-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 8px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--card, #fff);
+}
+
+.pos-cust-picker-card .pos-cust-picker-row {
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.pos-cust-picker-card .pos-cust-picker-row--primary {
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.pos-cust-picker-alias-row {
+  padding-left: 28px !important;
+  background: var(--bg, #f8fafc);
+}
+
+.pos-cust-picker-alias-row--match {
+  background: var(--accL, #eff6ff);
+}
+
+.pos-cust-picker-alias-body {
+  padding-left: 0;
+}
+
+.pos-cust-picker-add-alias {
+  padding: 8px 14px 12px 28px;
+  background: var(--bg, #f8fafc);
+  border-top: 1px dashed var(--border, #e2e8f0);
+}
+
+.pos-cust-picker-add-alias-btn {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pos-lens-patient-block {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--accL, #eff6ff);
+  border: 1px solid var(--border, #e2e8f0);
+}
+
+.pos-lens-patient-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text1, #0f172a);
+  margin-bottom: 10px;
+}
+
+.pos-lens-patient-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pos-lens-patient-chip {
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #cbd5e1);
+  background: var(--card, #fff);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text1, #0f172a);
+  cursor: pointer;
+}
+
+.pos-lens-patient-chip.selected {
+  border-color: var(--acc2, #1d4ed8);
+  background: var(--acc2, #1d4ed8);
+  color: #fff;
+}
+
+.pos-lens-patient-chip.selected .pos-lens-patient-chip-sub {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.pos-lens-patient-chip-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text3, #64748b);
+}
+
+.pos-lens-patient-chip--link {
+  border-style: dashed;
+  color: var(--acc2, #1d4ed8);
+}
+
+.pos-lk-customer-bill-note {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text3, #64748b);
+  margin-top: 2px;
+}
+
 .pos-cust-picker-scroll {
   max-height: min(52vh, 420px);
   overflow-y: auto;
@@ -5079,7 +5189,8 @@ body.pos-lk-flow #screen-pos-order-builder.active #btn-ob-add-more.pos-ob-add-mo
 
 /* [hidden] loses to author display:flex without this in Chromium/WebKit */
 body.pos-lk-flow #screen-pos-order-builder.active #btn-ob-add-more.pos-ob-add-more-btn[hidden],
-body.pos-lk-flow #screen-pos-order-builder #btn-cart-add-membership[hidden] {
+body.pos-lk-flow #screen-pos-order-builder #btn-cart-add-membership[hidden],
+body.pos-lk-flow #screen-pos-order-builder #pos-ob-membership-row[hidden] {
   display: none !important;
   pointer-events: none !important;
 }

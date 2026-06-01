@@ -228,8 +228,118 @@
     if (token) headers['Authorization'] = 'Bearer ' + token
     const res = await fetch(path, { method: 'POST', headers, body: JSON.stringify(payload) })
     const body = await res.json()
-    if (!res.ok || !body.success) throw new Error(body.message || 'Request failed')
+    if (!res.ok || !body.success) {
+      const err = new Error(body.message || 'Request failed')
+      err.status = res.status
+      err.code = body.code
+      err.data = body.data
+      throw err
+    }
     return body
+  }
+
+  var posAliasConfirmCallback = null
+
+  function closePosAliasConfirmModal() {
+    var overlay = document.getElementById('overlay-pos-cust-alias-confirm')
+    if (overlay) overlay.classList.remove('open')
+    posAliasConfirmCallback = null
+    posLkUnlockModalScroll()
+  }
+
+  function openPosAliasConfirmModal(payload, onConfirm) {
+    var overlay = document.getElementById('overlay-pos-cust-alias-confirm')
+    var bodyEl = document.getElementById('pos-cust-alias-body')
+    if (!overlay || !bodyEl) {
+      if (typeof onConfirm === 'function') onConfirm()
+      return
+    }
+    var primary = payload.primary_name || 'this customer'
+    var alias = payload.proposed_alias || ''
+    bodyEl.textContent =
+      'Mobile already registered as ' + primary + '. Add ' + alias + ' as an alias and continue?'
+    posAliasConfirmCallback = onConfirm
+    overlay.classList.add('open')
+    posLkLockModalScroll()
+  }
+
+  function customerSearchDisplayParts(row) {
+    var alias = row.matched_alias_name && String(row.matched_alias_name).trim()
+    var primary = row.full_name || ''
+    if (alias) {
+      return {
+        title: alias,
+        subNote: '(registered as ' + primary + ')'
+      }
+    }
+    return {
+      title: row.display_name || primary,
+      subNote: ''
+    }
+  }
+
+  function buildCustomerSearchRowHtml(row) {
+    var parts = customerSearchDisplayParts(row)
+    var cid = row.customer_id != null ? String(row.customer_id) : ''
+    var subBits = [row.phone || '', cid ? ('ID ' + cid) : '', parts.subNote].filter(Boolean)
+    var sub = subBits.join(' · ')
+    return (
+      '<span class="pos-cust-picker-row-av" aria-hidden="true">' + escapeHtml(customerPickerInitials(parts.title)) + '</span>' +
+      '<span class="pos-cust-picker-row-body">' +
+        '<span class="pos-cust-picker-row-name">' + escapeHtml(parts.title) + '</span>' +
+        (sub ? '<span class="pos-cust-picker-row-sub">' + escapeHtml(sub) + '</span>' : '') +
+      '</span>'
+    )
+  }
+
+  async function posApiRegisterCustomer(session, fields, btn) {
+    var payload = {
+      full_name: fields.name,
+      phone: fields.phone,
+      email: fields.email != null ? fields.email : null,
+      confirm_alias: !!fields.confirm_alias
+    }
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      var res = await apiPost('/api/pos/customer', payload, session.token)
+      var data = res.data || {}
+      var displayName = fields.name
+      if (data.alias_added && data.primary_name) displayName = data.primary_name
+      else if (data.primary_name && !data.created) displayName = data.primary_name
+      var aliasList = (posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.aliases) ? posSelectedCustomerSnapshot.aliases.slice() : []
+      if (data.alias_added && fields.name) {
+        var newAlias = String(fields.name).trim()
+        if (newAlias && aliasList.indexOf(newAlias) < 0) aliasList.push(newAlias)
+      }
+      setPosCustomerSelection(data.customer_id, fields.phone, {
+        primaryName: data.primary_name || displayName,
+        aliases: aliasList,
+        pendingPatientName: data.alias_added ? String(fields.name).trim() : null
+      })
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+      if (data.alias_added && typeof cosmosToastInfo === 'function') {
+        cosmosToastInfo('Alias added — linked to existing Cx')
+      } else if (data.created && typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('Cx created')
+      } else if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('Cx selected')
+      }
+      return data
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (err.code === 'PHONE_ALIAS_REQUIRED' && err.data && !fields.confirm_alias) {
+        return new Promise(function (resolve, reject) {
+          openPosAliasConfirmModal(err.data, function () {
+            closePosAliasConfirmModal()
+            posApiRegisterCustomer(session, Object.assign({}, fields, { confirm_alias: true }), btn)
+              .then(resolve)
+              .catch(reject)
+          })
+        })
+      }
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+      throw err
+    }
   }
 
   async function apiPut(path, payload, token) {
@@ -824,6 +934,8 @@
         memVal.textContent = formatRupees(getMembershipCartAmount())
       } else {
         memRow.hidden = true
+        memLbl.textContent = 'Membership'
+        memVal.textContent = formatRupees(0)
       }
     }
     const removeBtn = document.getElementById('btn-cart-membership-remove')
@@ -1016,6 +1128,8 @@
   let posDiscountPreviewInFlightSig = null
   /** Selected POS / CX customer row for cart reference (name, phone, id). */
   let posSelectedCustomerSnapshot = null
+  /** Pre-select patient name on next lens wizard open (from alias row in search). */
+  let posPendingLensPatientName = null
   let posSettings = {
     gst_rate: 0.05,
     lab_advance_pct: 40,
@@ -1171,17 +1285,146 @@
     })
   }
 
-  function setPosCustomerSelection(customerId, fullName, phone) {
+  function posCustomerPrimaryName(snap) {
+    if (!snap) return ''
+    return String(snap.primary_name || snap.full_name || '').trim()
+  }
+
+  function shouldRenderCustomerSearchCard(q, row) {
+    if (isLikelyMobileSearchQuery(q)) return true
+    if (row.matched_alias_name && String(row.matched_alias_name).trim()) return true
+    var aliases = row.aliases || []
+    if (!aliases.length) return false
+    var ql = String(q || '').trim().toLowerCase()
+    if (!ql) return false
+    return aliases.some(function (a) {
+      var al = String(a || '').trim().toLowerCase()
+      return al.indexOf(ql) >= 0 || ql.indexOf(al) >= 0
+    })
+  }
+
+  function linkPosCustomerFromSearch(row, opts) {
+    opts = opts || {}
+    var primary = String(row.full_name || '').trim()
+    setPosCustomerSelection(row.customer_id, row.phone, {
+      primaryName: primary,
+      aliases: row.aliases || [],
+      pendingPatientName: opts.pendingPatientName || null
+    })
+    if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx selected')
+  }
+
+  function appendCustomerSearchCard(wrap, row, q, onDone) {
+    var primary = String(row.full_name || '').trim()
+    var aliases = row.aliases || []
+    var cid = row.customer_id != null ? String(row.customer_id) : ''
+    var subPrimary = [row.phone || '', cid ? ('ID ' + cid) : ''].filter(Boolean).join(' · ')
+    var matchedAlias = row.matched_alias_name && String(row.matched_alias_name).trim()
+    var card = document.createElement('div')
+    card.className = 'pos-cust-picker-card'
+    card.setAttribute('role', 'listitem')
+
+    var primaryBtn = document.createElement('button')
+    primaryBtn.type = 'button'
+    primaryBtn.className = 'pos-cust-picker-row pos-cust-picker-row--primary tr-link'
+    primaryBtn.innerHTML =
+      '<span class="pos-cust-picker-row-av" aria-hidden="true">' + escapeHtml(customerPickerInitials(primary)) + '</span>' +
+      '<span class="pos-cust-picker-row-body">' +
+        '<span class="pos-cust-picker-row-name">' + escapeHtml(primary) + '</span>' +
+        (subPrimary ? '<span class="pos-cust-picker-row-sub">' + escapeHtml(subPrimary) + '</span>' : '') +
+      '</span>'
+    primaryBtn.addEventListener('click', function () {
+      linkPosCustomerFromSearch(row, {})
+      if (onDone) onDone()
+    })
+    card.appendChild(primaryBtn)
+
+    aliases.forEach(function (aliasName) {
+      var alias = String(aliasName || '').trim()
+      if (!alias) return
+      var isMatch = matchedAlias && alias.toLowerCase() === matchedAlias.toLowerCase()
+      var aliasBtn = document.createElement('button')
+      aliasBtn.type = 'button'
+      aliasBtn.className = 'pos-cust-picker-row pos-cust-picker-alias-row tr-link' + (isMatch ? ' pos-cust-picker-alias-row--match' : '')
+      aliasBtn.innerHTML =
+        '<span class="pos-cust-picker-row-body pos-cust-picker-alias-body">' +
+          '<span class="pos-cust-picker-row-name">' + escapeHtml(alias) + '</span>' +
+          '<span class="pos-cust-picker-row-sub">(registered as ' + escapeHtml(primary) + ')</span>' +
+        '</span>'
+      aliasBtn.addEventListener('click', function () {
+        linkPosCustomerFromSearch(row, { pendingPatientName: alias })
+        if (onDone) onDone()
+      })
+      card.appendChild(aliasBtn)
+    })
+
+    if (!aliases.length && isLikelyMobileSearchQuery(q)) {
+      var addWrap = document.createElement('div')
+      addWrap.className = 'pos-cust-picker-add-alias'
+      var addBtn = document.createElement('button')
+      addBtn.type = 'button'
+      addBtn.className = 'pos-lk-text-link pos-cust-picker-add-alias-btn'
+      addBtn.textContent = 'Add name for this mobile'
+      addBtn.addEventListener('click', function (e) {
+        e.preventDefault()
+        var digits = normalizeIndiaMobileDigits(q)
+        openQuickCxRegistration(digits.slice(0, 10))
+      })
+      addWrap.appendChild(addBtn)
+      card.appendChild(addWrap)
+    }
+
+    wrap.appendChild(card)
+  }
+
+  function buildRxSnapshotFromObCart() {
+    var labLines = obCart.filter(function (l) {
+      return l.fulfillment === 'LAB' && (l.rx || l.patient_name)
+    })
+    if (!labLines.length) return null
+    if (labLines.length === 1) {
+      var l0 = labLines[0]
+      var rx0 = l0.rx ? JSON.parse(JSON.stringify(l0.rx)) : {}
+      if (l0.patient_name && !rx0.patient_name) rx0.patient_name = l0.patient_name
+      if (!rx0.patient_name && !rx0.od && !rx0.os) return l0.patient_name ? { patient_name: l0.patient_name } : null
+      return rx0
+    }
+    return {
+      version: 2,
+      lines: labLines.map(function (l) {
+        var rx = l.rx ? JSON.parse(JSON.stringify(l.rx)) : {}
+        if (l.patient_name && !rx.patient_name) rx.patient_name = l.patient_name
+        return {
+          line_key: cartLineKey(l),
+          pair_index: l.pair_index != null ? l.pair_index : null,
+          patient_name: rx.patient_name || l.patient_name || null,
+          od: rx.od,
+          os: rx.os,
+          pd: rx.pd,
+          doctor: rx.doctor
+        }
+      })
+    }
+  }
+
+  function setPosCustomerSelection(customerId, phone, opts) {
+    opts = opts || {}
     const id = customerId != null ? Number(customerId) : NaN
     if (!Number.isNaN(id) && id > 0) {
+      var primaryName = String(opts.primaryName || '').trim() || ('Cx #' + id)
+      if (opts.pendingPatientName) {
+        posPendingLensPatientName = String(opts.pendingPatientName).trim()
+      }
       posSelectedOfferId = null
       posSelectedCustomerId = id
       posSelectedCustomerSnapshot = {
         customer_id: id,
-        full_name: String(fullName || '').trim() || ('Cx #' + id),
+        primary_name: primaryName,
+        full_name: primaryName,
+        aliases: Array.isArray(opts.aliases) ? opts.aliases.slice() : [],
         phone: phone != null ? String(phone).trim() : ''
       }
-      lensWizard.customerName = posSelectedCustomerSnapshot.full_name
+      lensWizard.customerName = primaryName
       const session = getPosSession()
       if (session && session.token) {
         void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
@@ -1194,6 +1437,7 @@
     }
     posSelectedCustomerId = null
     posSelectedCustomerSnapshot = null
+    posPendingLensPatientName = null
     lensWizard.customerName = null
     posCartOffers = []
     posSelectedOfferId = null
@@ -1202,9 +1446,8 @@
     const session = getPosSession()
     if (session && session.token) {
       void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
-    } else {
-      obRecalcTotals()
     }
+    obRecalcTotals()
     renderCartCustomerRef()
     syncCustomerPickerBannerAndActions()
     syncCartMembershipUi()
@@ -1213,6 +1456,7 @@
   function clearPosCustomerSelection() {
     posSelectedCustomerId = null
     posSelectedCustomerSnapshot = null
+    posPendingLensPatientName = null
     lensWizard.customerName = null
     posCartOffers = []
     posSelectedOfferId = null
@@ -1222,9 +1466,8 @@
     if (session && session.token) {
       void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
       void refreshPosCoinBalance(session)
-    } else {
-      obRecalcTotals()
     }
+    obRecalcTotals()
     renderCartCustomerRef()
     syncCustomerPickerBannerAndActions()
     syncCartMembershipUi()
@@ -1374,7 +1617,7 @@
         ? '<div class="pos-lk-cart-cust-coins" title="Cashback Coins balance">◈ ' + Number(snap.coins).toLocaleString('en-IN') + ' Coins' + (snap.rupee_value > 0 ? ' · ≈ ₹' + snap.rupee_value : '') + '</div>'
         : ''
       body.innerHTML =
-        '<div class="pos-lk-cart-cust-name">' + escapeHtml(snap.full_name) + '</div>' +
+        '<div class="pos-lk-cart-cust-name">' + escapeHtml(posCustomerPrimaryName(snap)) + '</div>' +
         phoneRow +
         coinRow +
         '<div class="pos-lk-cart-cust-meta">Cx ID · ' + escapeHtml(String(snap.customer_id)) + '</div>'
@@ -3748,6 +3991,15 @@
   }
 
   function resetLensWizardState() {
+    var line = resolveLensWizardCartLine()
+    var snap = posSelectedCustomerSnapshot
+    var primary = posCustomerPrimaryName(snap)
+    var initialPatient =
+      (line && line.patient_name) ||
+      posPendingLensPatientName ||
+      primary ||
+      null
+    if (posPendingLensPatientName) posPendingLensPatientName = null
     lensWizard = {
       step: 0,
       subPhase: 'profile',
@@ -3757,8 +4009,62 @@
       addonIds: [],
       powerMode: null,
       brandFilter: 'all',
-      customerName: lensWizard && lensWizard.customerName ? lensWizard.customerName : null,
+      customerName: primary || null,
+      patientName: initialPatient,
       rx: { od: { sph: '', cyl: '', axis: '', plano: false }, os: { sph: '', cyl: '', axis: '', plano: false }, pd: '', doctor: '' }
+    }
+  }
+
+  function lensPatientChooserHtml() {
+    if (!posSelectedCustomerId || !posSelectedCustomerSnapshot) return ''
+    var snap = posSelectedCustomerSnapshot
+    var primary = posCustomerPrimaryName(snap)
+    var aliases = snap.aliases || []
+    if (!primary && !aliases.length) return ''
+    var selected = lensWizard.patientName || primary
+    var parts = ['<div class="pos-lens-patient-block" role="group" aria-label="Who is this pair for?">']
+    parts.push('<div class="pos-lens-patient-label">Who is this pair for?</div>')
+    parts.push('<div class="pos-lens-patient-chips">')
+    function attrPatient(name) {
+      return String(name || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    }
+    parts.push(
+      '<button type="button" class="pos-lens-patient-chip' + (selected === primary ? ' selected' : '') + '" data-lens-patient="' + attrPatient(primary) + '">' +
+        escapeHtml(primary) + ' <span class="pos-lens-patient-chip-sub">(primary)</span></button>'
+    )
+    aliases.forEach(function (aliasName) {
+      var alias = String(aliasName || '').trim()
+      if (!alias) return
+      parts.push(
+        '<button type="button" class="pos-lens-patient-chip' + (selected === alias ? ' selected' : '') + '" data-lens-patient="' + attrPatient(alias) + '">' +
+          escapeHtml(alias) + '</button>'
+      )
+    })
+    parts.push(
+      '<button type="button" class="pos-lens-patient-chip pos-lens-patient-chip--link" data-lens-patient-add="1">+ Add name</button>'
+    )
+    parts.push('</div></div>')
+    return parts.join('')
+  }
+
+  function bindLensPatientChooser(root) {
+    if (!root) return
+    root.querySelectorAll('[data-lens-patient]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var name = btn.getAttribute('data-lens-patient')
+        lensWizard.patientName = name
+        var line = resolveLensWizardCartLine()
+        if (line) line.patient_name = name
+        renderLensStep()
+      })
+    })
+    var addBtn = root.querySelector('[data-lens-patient-add]')
+    if (addBtn) {
+      addBtn.addEventListener('click', function () {
+        var ph = posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.phone
+        if (ph) openQuickCxRegistration(ph)
+        else openPosCustomerPickerModal()
+      })
     }
   }
 
@@ -3770,7 +4076,7 @@
       banner.classList.remove('pos-cust-picker-banner--required', 'pos-cust-picker-banner--selected')
       if (posSelectedCustomerSnapshot) {
         var ph = posSelectedCustomerSnapshot.phone ? ' · ' + posSelectedCustomerSnapshot.phone : ''
-        banner.textContent = 'Selected: ' + posSelectedCustomerSnapshot.full_name + ph
+        banner.textContent = 'Selected: ' + posCustomerPrimaryName(posSelectedCustomerSnapshot) + ph
         banner.classList.add('pos-cust-picker-banner--selected')
       } else if (posSelectedCustomerId) {
         banner.textContent = 'Selected Cx id: ' + posSelectedCustomerId
@@ -3870,21 +4176,21 @@
         return
       }
       rows.forEach(function (r) {
+        if (shouldRenderCustomerSearchCard(q, r)) {
+          appendCustomerSearchCard(wrap, r, q, function () {
+            syncCustomerPickerBannerAndActions()
+            leaveCustomerScreenToCart()
+          })
+          return
+        }
         const btn = document.createElement('button')
         btn.type = 'button'
         btn.className = 'pos-cust-row pos-cust-picker-row tr-link'
         btn.setAttribute('role', 'listitem')
-        var cid = r.customer_id != null ? String(r.customer_id) : ''
-        var sub = [r.phone || '', cid ? ('ID ' + cid) : ''].filter(Boolean).join(' · ')
-        btn.innerHTML =
-          '<span class="pos-cust-picker-row-av" aria-hidden="true">' + escapeHtml(customerPickerInitials(r.full_name)) + '</span>' +
-          '<span class="pos-cust-picker-row-body">' +
-            '<span class="pos-cust-picker-row-name">' + escapeHtml(r.full_name || '') + '</span>' +
-            (sub ? '<span class="pos-cust-picker-row-sub">' + escapeHtml(sub) + '</span>' : '') +
-          '</span>'
+        var pickParts = customerSearchDisplayParts(r)
+        btn.innerHTML = buildCustomerSearchRowHtml(r)
         btn.addEventListener('click', function () {
-          setPosCustomerSelection(r.customer_id, r.full_name, r.phone)
-          if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx selected')
+          linkPosCustomerFromSearch(r, {})
           syncCustomerPickerBannerAndActions()
           leaveCustomerScreenToCart()
         })
@@ -3917,21 +4223,15 @@
       return
     }
     const btn = document.getElementById('cust-picker-btn-create')
-    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
-      const res = await apiPost('/api/pos/customer', {
-        full_name: name,
+      await posApiRegisterCustomer(session, {
+        name: name,
         phone: phoneParsed.phone,
-        email: emailEl && emailEl.value ? emailEl.value.trim() : null
-      }, session.token)
-      setPosCustomerSelection(res.data.customer_id, name, phoneParsed.phone)
-      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
-      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx created')
+        email: emailEl && emailEl.value ? emailEl.value.trim() : null,
+        confirm_alias: false
+      }, btn)
       leaveCustomerScreenToCart()
-    } catch (err) {
-      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
-      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
-    }
+    } catch (_err) { /* toast handled */ }
   }
 
   function bindCustomerLensPayEvents() {
@@ -4101,9 +4401,10 @@
     syncLensWizardStepNumber()
     const body = document.getElementById('lens-step-body')
     if (!body || !lensCatalogData) return
-    if (lensWizard.step === 0) renderLensStep0PowerType(body)
-    else if (lensWizard.step === 1) renderLensStep1LensSelection(body)
-    else if (lensWizard.step === 2) renderLensStep2AddPower(body)
+    var patientHtml = lensPatientChooserHtml()
+    if (lensWizard.step === 0) renderLensStep0PowerType(body, patientHtml)
+    else if (lensWizard.step === 1) renderLensStep1LensSelection(body, patientHtml)
+    else if (lensWizard.step === 2) renderLensStep2AddPower(body, patientHtml)
     body.classList.toggle('pos-lens-body--step1-split', lensWizard.step === 1)
     const lensStep2AddonsScroll =
       lensWizard.step === 2 &&
@@ -4115,9 +4416,10 @@
   }
 
   // ── Lens step 0 — Dynamic wizard_entries from /api/pos/lens-catalog ─────────
-  function renderLensStep0PowerType(body) {
+  function renderLensStep0PowerType(body, patientHtml) {
     const entries = (lensCatalogData && lensCatalogData.wizard_entries) || []
     const html = []
+    if (patientHtml) html.push(patientHtml)
     html.push('<div class="pos-lk-lens-headrow">')
     html.push('  <div class="pos-lk-lens-section-title">Select your Power Type:</div>')
     html.push('</div>')
@@ -4159,6 +4461,7 @@
       html.push('</div>')
     }
     body.innerHTML = html.join('')
+    bindLensPatientChooser(body)
     body.querySelectorAll('[data-lw-entry-key]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var key = btn.getAttribute('data-lw-entry-key')
@@ -4193,7 +4496,7 @@
   }
 
   // ── Lens step 1 — lens packages for category chosen on step 0 (no category tabs) ────
-  function renderLensStep1LensSelection(body) {
+  function renderLensStep1LensSelection(body, patientHtml) {
     if (!lensWizard.category) {
       // Cannot show lens packages without a power type → fall back.
       lensWizard.step = 0
@@ -4213,6 +4516,7 @@
     const catName = String(lensWizard.category.name || '').trim()
 
     const html = []
+    if (patientHtml) html.push(patientHtml)
     html.push('<div class="pos-lk-lens-step1-layout">')
     html.push('<div class="pos-lk-lens-step1-chrome">')
     html.push('<div class="pos-lk-lens-choose-card" role="region" aria-label="Lens package filter">')
@@ -4278,6 +4582,7 @@
     html.push('</div>')
     html.push('</div>')
     body.innerHTML = html.join('')
+    bindLensPatientChooser(body)
 
     body.querySelectorAll('[data-brand-filter]').forEach(function (chip) {
       chip.addEventListener('click', function () {
@@ -4323,8 +4628,12 @@
     if (av) av.textContent = (customerName || 'W').trim().charAt(0).toUpperCase()
   }
 
-  function renderLensStep2AddPower(body) {
-    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected Cx #' + posSelectedCustomerId : 'No Cx selected')
+  function renderLensStep2AddPower(body, patientHtml) {
+    const customerName =
+      lensWizard.patientName ||
+      lensWizard.customerName ||
+      (posSelectedCustomerId ? 'Selected Cx #' + posSelectedCustomerId : 'No Cx selected')
+    const primaryBill = posCustomerPrimaryName(posSelectedCustomerSnapshot)
     const initial = customerName ? customerName.trim().charAt(0).toUpperCase() : '?'
     const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
     const hasPkgAddons = !isInstantFrame && lensWizard.pkg && (lensWizard.pkg.addons || []).length
@@ -4335,13 +4644,19 @@
     }
 
     const html = []
+    if (patientHtml) html.push(patientHtml)
     if (showProfile) {
+      var billNote =
+        primaryBill && lensWizard.patientName && lensWizard.patientName !== primaryBill
+          ? '<span class="pos-lk-customer-bill-note">Bill / invoice: ' + escapeHtml(primaryBill) + '</span>'
+          : ''
       html.push('<div class="pos-lk-customer-card" id="pos-lk-customer-card">' +
         '<div class="pos-lk-customer-left">' +
           '<div class="pos-lk-customer-avatar">' + escapeHtml(initial) + '</div>' +
           '<div class="pos-lk-customer-meta">' +
             '<span class="pos-lk-customer-lbl">Shopping for</span>' +
             '<span class="pos-lk-customer-name" id="pos-lk-customer-name">' + escapeHtml(customerName) + '</span>' +
+            billNote +
           '</div>' +
         '</div>' +
         '<button type="button" class="pos-lk-text-link" id="pos-lk-customer-change">Change</button>' +
@@ -4420,6 +4735,7 @@
     }
 
     body.innerHTML = html.join('')
+    bindLensPatientChooser(body)
 
     body.querySelectorAll('[data-pwm-key]').forEach(function (el) {
       el.addEventListener('click', function () {
@@ -4652,21 +4968,19 @@
       if (phoneEl && typeof cosmosFieldError === 'function') cosmosFieldError(phoneEl, phoneParsed.message)
       return
     }
-    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
     try {
-      const res = await apiPost('/api/pos/customer', { full_name: name, phone: phoneParsed.phone, email: null }, session.token)
-      setPosCustomerSelection(res.data.customer_id, name, phoneParsed.phone)
+      await posApiRegisterCustomer(session, {
+        name: name,
+        phone: phoneParsed.phone,
+        email: null,
+        confirm_alias: false
+      }, btn)
       closeLensNewCustomerModal()
       refreshLensCustomerBanner()
       const dd = document.getElementById('pos-lk-cust-dropdown')
       if (dd) dd.style.display = 'none'
-      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx created and linked.')
       maybeRefreshCartSidebar()
-    } catch (err) {
-      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
-    } finally {
-      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
-    }
+    } catch (_err) { /* toast handled */ }
   }
 
   async function runInlineCustomerSearch() {
@@ -4689,20 +5003,37 @@
         return
       }
       rows.forEach(function (r) {
+        if (shouldRenderCustomerSearchCard(q, r)) {
+          appendCustomerSearchCard(wrap, r, q, function () {
+            const nameElBanner = document.getElementById('pos-lk-customer-name')
+            const nm = posCustomerPrimaryName(posSelectedCustomerSnapshot)
+            if (nameElBanner) nameElBanner.textContent = nm
+            const av = document.querySelector('#pos-lk-customer-card .pos-lk-customer-avatar')
+            if (av) av.textContent = (nm || 'C').charAt(0).toUpperCase()
+            const dd = document.getElementById('pos-lk-cust-dropdown')
+            if (dd) dd.style.display = 'none'
+            maybeRefreshCartSidebar()
+          })
+          return
+        }
         const btn = document.createElement('button')
         btn.type = 'button'
         btn.className = 'pos-lk-cust-result'
-        btn.innerHTML = '<span>' + escapeHtml(r.full_name || '') + '</span><span>' + escapeHtml(r.phone || '') + '</span>'
+        var pickParts = customerSearchDisplayParts(r)
+        var subNote = pickParts.subNote
+          ? (' <span class="pos-lk-cust-alias-note">' + escapeHtml(pickParts.subNote) + '</span>')
+          : ''
+        btn.innerHTML =
+          '<span>' + escapeHtml(pickParts.title) + subNote + '</span><span>' + escapeHtml(r.phone || '') + '</span>'
         btn.addEventListener('click', function () {
-          setPosCustomerSelection(r.customer_id, r.full_name, r.phone)
+          linkPosCustomerFromSearch(r, {})
           const nameElBanner = document.getElementById('pos-lk-customer-name')
-          const nm = posSelectedCustomerSnapshot ? posSelectedCustomerSnapshot.full_name : ''
+          const nm = posCustomerPrimaryName(posSelectedCustomerSnapshot)
           if (nameElBanner) nameElBanner.textContent = nm
           const av = document.querySelector('#pos-lk-customer-card .pos-lk-customer-avatar')
           if (av) av.textContent = (nm || 'C').charAt(0).toUpperCase()
           const dd = document.getElementById('pos-lk-cust-dropdown')
           if (dd) dd.style.display = 'none'
-          if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx selected')
           maybeRefreshCartSidebar()
         })
         wrap.appendChild(btn)
@@ -4722,6 +5053,12 @@
     const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
     try {
       if (!isInstantFrame) {
+        if (!lensWizard.patientName && !posCustomerPrimaryName(posSelectedCustomerSnapshot)) {
+          if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Choose who this pair is for.')
+          lensWizard.step = 0
+          renderLensStep()
+          return
+        }
         if (!lensWizard.powerType) {
           if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Choose a power type.')
           lensWizard.step = 0
@@ -4757,8 +5094,14 @@
           category_name: String((lensWizard.category && lensWizard.category.name) || '').trim()
         }
         line.power_mode = lensWizard.powerMode
+        var primaryNm = posCustomerPrimaryName(posSelectedCustomerSnapshot)
+        var patientNm = lensWizard.patientName || line.patient_name || primaryNm
+        line.patient_name = patientNm
         if (lensWizard.powerMode === 'manual') {
           line.rx = JSON.parse(JSON.stringify(lensWizard.rx))
+          line.rx.patient_name = patientNm
+        } else if (patientNm) {
+          line.rx = { patient_name: patientNm }
         } else {
           line.rx = null
         }
@@ -5197,7 +5540,7 @@
       delivery_mode: posDeliveryMode,
       delivery_date: deliveryDate,
       customer_phone: phone,
-      customer_name: (posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.full_name) || opts.customerName || '',
+      customer_name: (posSelectedCustomerSnapshot && posCustomerPrimaryName(posSelectedCustomerSnapshot)) || opts.customerName || '',
       customer_email: (posSelectedCustomerSnapshot && posSelectedCustomerSnapshot.email) || opts.customerEmail || '',
       invoice_no: (data && data.invoice_no) || null,
       balance_due: balanceDue
@@ -6673,8 +7016,7 @@
     await loadPosBootstrap(session)
     const lines = buildPosOrderLinesFromObCart()
     // Pick the first cart line that captured a per-line Rx in the Lens wizard.
-    const rxLine = obCart.find(function (l) { return l.rx })
-    const rxSnap = rxLine ? rxLine.rx : null
+    const rxSnap = buildRxSnapshotFromObCart()
     let discInfo = { amount: 0, offerId: null }
     try {
       var qp = posSelectedCustomerId ? ('?customer_id=' + encodeURIComponent(String(posSelectedCustomerId))) : ''
@@ -6775,8 +7117,19 @@
     if (!rx || typeof rx !== 'object') {
       return '<p class="pos-order-detail-muted">No prescription snapshot on this order.</p>'
     }
+    if (rx.version === 2 && Array.isArray(rx.lines)) {
+      return rx.lines.map(function (ln) {
+        var head = ln.patient_name
+          ? '<div class="pos-order-detail-rx-patient" style="font-weight:600;margin-bottom:6px">' + escapeHtml(ln.patient_name) + '</div>'
+          : ''
+        return head + posFormatRxBlockHtml(ln)
+      }).join('<hr class="pos-order-detail-rx-sep" style="margin:12px 0;border:none;border-top:1px solid var(--border)">')
+    }
     const od = rx.od || {}
     const os = rx.os || {}
+    var patientHead = rx.patient_name
+      ? '<div class="pos-order-detail-rx-patient" style="font-weight:600;margin-bottom:6px">Patient: ' + escapeHtml(rx.patient_name) + '</div>'
+      : ''
     function eyeLine(label, e) {
       if (e && e.plano) return escapeHtml(label + ': Plano')
       const p = []
@@ -6789,7 +7142,7 @@
     const lines = [eyeLine('OD (right)', od), eyeLine('OS (left)', os)]
     if (rx.pd) lines.push(escapeHtml('PD: ' + String(rx.pd) + ' mm'))
     if (rx.doctor) lines.push(escapeHtml('Doctor: ' + String(rx.doctor)))
-    return '<ul class="pos-order-detail-rx-list">' + lines.map(function (line) { return '<li>' + line + '</li>' }).join('') + '</ul>'
+    return patientHead + '<ul class="pos-order-detail-rx-list">' + lines.map(function (line) { return '<li>' + line + '</li>' }).join('') + '</ul>'
   }
 
   function posFormatLensBundleHtml(b) {
@@ -8018,6 +8371,27 @@
     }
   }
 
+  function bindPosCustAliasConfirmModal() {
+    var overlay = document.getElementById('overlay-pos-cust-alias-confirm')
+    if (!overlay) return
+    var backdrop = document.getElementById('pos-cust-alias-backdrop')
+    var dismiss = document.getElementById('pos-cust-alias-dismiss')
+    var cancelBtn = document.getElementById('btn-pos-cust-alias-cancel')
+    var confirmBtn = document.getElementById('btn-pos-cust-alias-confirm')
+    function onCancel() { closePosAliasConfirmModal() }
+    backdrop && backdrop.addEventListener('click', onCancel)
+    dismiss && dismiss.addEventListener('click', onCancel)
+    cancelBtn && cancelBtn.addEventListener('click', onCancel)
+    confirmBtn &&
+      confirmBtn.addEventListener('click', function () {
+        if (typeof posAliasConfirmCallback === 'function') {
+          var fn = posAliasConfirmCallback
+          posAliasConfirmCallback = null
+          fn()
+        }
+      })
+  }
+
   function bindPosLensNewCustomerModal() {
     var custPick = document.getElementById('overlay-pos-customer-picker')
     var custBackdrop = document.getElementById('pos-cust-picker-backdrop')
@@ -8237,6 +8611,7 @@
     loadSavedCart()
     syncCartMembershipUi()
     renderCartCustomerRef()
+    bindPosCustAliasConfirmModal()
     bindPosLensNewCustomerModal()
     document.addEventListener('visibilitychange', function onPosVisibilityRefresh() {
       if (document.visibilityState !== 'visible') return

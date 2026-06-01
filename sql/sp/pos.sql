@@ -486,26 +486,41 @@ BEGIN
          ELSE N'%' + LTRIM(RTRIM(@q)) + N'%' END;
 
   SELECT TOP 50
-    customer_id,
-    full_name,
-    phone,
-    email,
-    home_store_id,
-    is_active,
-    created_at
-  FROM dbo.pos_customers
-  WHERE is_active = 1
+    c.customer_id,
+    c.full_name,
+    c.phone,
+    c.email,
+    c.home_store_id,
+    c.is_active,
+    c.created_at,
+    am.matched_alias_name,
+    CASE
+      WHEN am.matched_alias_name IS NOT NULL THEN am.matched_alias_name
+      ELSE c.full_name
+    END AS display_name
+  FROM dbo.pos_customers c
+  OUTER APPLY (
+    SELECT TOP 1 a.alias_name AS matched_alias_name
+    FROM dbo.pos_customer_aliases a
+    WHERE a.customer_id = c.customer_id
+      AND @search IS NOT NULL
+      AND a.alias_name LIKE @search
+    ORDER BY a.alias_id
+  ) am
+  WHERE c.is_active = 1
     AND (
       @search IS NULL
-      OR phone     LIKE @search
-      OR full_name LIKE @search
-      OR email     LIKE @search
+      OR c.phone     LIKE @search
+      OR c.full_name LIKE @search
+      OR c.email     LIKE @search
+      OR am.matched_alias_name IS NOT NULL
     )
-  ORDER BY updated_at DESC, customer_id DESC;
+  ORDER BY c.updated_at DESC, c.customer_id DESC;
 END;
 GO
 
 -- ─── sp_POS_CustomerCreate ───────────────────────────────────────────────────
+-- Legacy insert only — prefer API posCustomerRegisterService for alias / unique phone.
 CREATE OR ALTER PROCEDURE dbo.sp_POS_CustomerCreate
   @full_name     NVARCHAR(200),
   @phone         NVARCHAR(20),

@@ -5,6 +5,8 @@ const multer = require('multer');
 const { getPool } = require('../config/db');
 const { authCustomerJwt } = require('../middleware/authCustomerJwt');
 const { wallClockIso } = require('../lib/cosmosIst');
+const { parseIndiaMobileForSave } = require('../lib/indiaMobile');
+const posCustomerRegister = require('../services/posCustomerRegisterService');
 
 const router = express.Router();
 router.use(authCustomerJwt);
@@ -541,26 +543,20 @@ router.post('/membership/add-dependent', async (req, res, next) => {
       return res.status(400).json({ success: false, message: `Maximum ${mem.max_dependents} family members allowed.` });
     }
 
-    const depR = await pool.request().input('phone', phone.trim()).query(`
-      SELECT customer_id FROM dbo.pos_customers WHERE phone = @phone AND is_active = 1
-    `);
-    let depCustomer = depR.recordset[0];
-    if (!depCustomer) {
-      // Auto-register: create a minimal pos_customers record so the dependent can be added
-      // without requiring them to visit the store first.
-      const insR = await pool.request()
-        .input('phone', phone.trim())
-        .input('full_name', `Dependent (${phone.trim()})`)
-        .query(`
-          INSERT INTO dbo.pos_customers (phone, full_name, is_active, created_at)
-          OUTPUT INSERTED.customer_id
-          VALUES (@phone, @full_name, 1, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
-        `);
-      depCustomer = insR.recordset[0];
-      if (!depCustomer) {
-        return res.status(500).json({ success: false, message: 'Could not register the dependent. Please try again.' });
-      }
+    const parsed = parseIndiaMobileForSave(phone);
+    if (!parsed.ok) {
+      return res.status(400).json({ success: false, message: parsed.message });
     }
+    const depLabel = `Dependent (${parsed.phone})`;
+    const reg = await posCustomerRegister.registerCustomer(pool, {
+      fullName: depLabel,
+      phone: parsed.phone,
+      email: null,
+      homeStoreId: null,
+      confirmAlias: true,
+      createdByUserId: null
+    });
+    const depCustomer = { customer_id: reg.customer_id };
 
     if (depCustomer.customer_id === cid) {
       return res.status(400).json({ success: false, message: 'You cannot add yourself as a dependent.' });
