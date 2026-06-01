@@ -25,6 +25,7 @@ const { FOUNDRY_LABEL_FORMAT_READ_PERMS } = require('../config/foundryLabelForma
 const { getTreasuryLedgerMetaForApi } = require('../config/treasuryLedgerCatalog');
 const { getPaymentMachineProviderCatalog } = require('../config/paymentMachineProviderCatalog')
 const { MEMBERSHIP_CAPABILITY_GROUPS } = require('../config/membershipCapabilityGroups');
+const { getMembershipDependentRelationshipsForApi } = require('../config/membershipDependentRelationshipsCatalog');
 
 const router = express.Router();
 
@@ -194,6 +195,14 @@ router.get(
   requireAnyModule(['command_unit', 'cx', 'pos']),
   (req, res) => {
     res.json({ success: true, data: MEMBERSHIP_CAPABILITY_GROUPS });
+  }
+);
+
+router.get(
+  '/membership-dependent-relationships',
+  requireAnyModule(['command_unit', 'cx', 'pos']),
+  (req, res) => {
+    res.json({ success: true, data: getMembershipDependentRelationshipsForApi() });
   }
 );
 

@@ -26,8 +26,25 @@ const {
 const { wallClockIso } = require('../lib/cosmosIst')
 const { parseIndiaMobileForSave } = require('../lib/indiaMobile')
 const posCustomerRegister = require('../services/posCustomerRegisterService')
+const {
+  resolveMembershipForCustomer,
+  getMembershipFamilyForCustomer,
+  addDependent: addMembershipDependent,
+  removeDependent: removeMembershipDependent
+} = require('../services/membershipDependentService')
+const { isValidMembershipDependentRelationship } = require('../config/membershipDependentRelationshipsCatalog')
+const {
+  isPosSchemaMigrationSqlError,
+  posSchemaMigrationHttpBody
+} = require('../config/posSchemaMigrationHints')
 
 const router = express.Router()
+
+function respondPosSchemaMigrationIfNeeded(err, res) {
+  if (!isPosSchemaMigrationSqlError(err)) return false
+  const mapped = posSchemaMigrationHttpBody()
+  return res.status(mapped.status).json(mapped.body)
+}
 
 /** POS tablet JWT — same requirePermission as staff login pipeline (role_permissions → JWT.permissions). */
 const posCatalogue = [authJwt, requireModule('pos'), requirePermission('pos.catalogue.view')]
@@ -43,6 +60,16 @@ const posPaymentCollect = [authJwt, requireModule('pos'), requirePermission('pos
 /** Atomic first payment + order insert (Store OS checkout). */
 const posCheckoutAndPay = [authJwt, requireModule('pos'), requirePermission('pos.orders.create', 'pos.payment.collect')]
 const posMembershipSell = [authJwt, requireModule('pos'), requirePermission('pos.membership.sell')]
+const posMembershipDependents = [
+  authJwt,
+  requireModule('pos'),
+  requirePermission('pos.membership.dependents.manage')
+]
+const posMembershipFamilyView = [
+  authJwt,
+  requireModule('pos'),
+  requirePermission('pos.membership.sell', 'pos.membership.dependents.manage')
+]
 const posLabWorkflow = [authJwt, requireModule('pos'), requirePermission('pos.lab.workflow')]
 const posStaffPinSet = [authJwt, requireModule('pos'), requirePermission('pos.staff.pin.set')]
 
@@ -1400,21 +1427,8 @@ async function fetchEligibleCartOffersForPos(pool, customerId, opts = {}) {
   let rows = r.recordset || []
 
   if (customerId && !Number.isNaN(customerId)) {
-    const memR = await pool.request().input('cid', customerId).query(`
-      SELECT TOP 1
-        cm.plan_key,
-        mp.has_plus_access,
-        mp.extra_cashback_pct,
-        mp.flat_discount_pct,
-        mp.has_one_time_discount,
-        mp.can_create_sub_cards
-      FROM   dbo.customer_memberships cm
-      JOIN   dbo.membership_plans mp ON mp.plan_key = cm.plan_key
-      WHERE  cm.customer_id = @cid AND cm.is_active = 1
-        AND  cm.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
-      ORDER BY cm.expires_at DESC
-    `)
-    let memRow = memR.recordset[0] || null
+    const resolved = await resolveMembershipForCustomer(pool, customerId)
+    let memRow = resolved.capabilities || null
 
     if (!memRow && opts.prospectivePlanKey) {
       const pk = String(opts.prospectivePlanKey).trim()
@@ -1516,6 +1530,91 @@ router.get('/membership-plans', ...posMembershipSell, async (req, res, next) => 
     return next(err)
   }
 })
+
+// ── GET /api/pos/customers/:customerId/membership-family ───────────────────────
+router.get('/customers/:customerId/membership-family', ...posMembershipFamilyView, async (req, res, next) => {
+  try {
+    const customerId = parseInt(req.params.customerId, 10)
+    if (!customerId) {
+      return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+    }
+    const pool = await getPool()
+    const data = await getMembershipFamilyForCustomer(pool, customerId)
+    return res.json({ success: true, data })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+const posAddDependentSchema = Joi.object({
+  phone: Joi.string().trim().required(),
+  relationship: Joi.string().trim().required(),
+  full_name: Joi.string().trim().max(200).allow('', null).optional()
+})
+
+// ── POST /api/pos/customers/:customerId/membership/dependents ─────────────────
+router.post('/customers/:customerId/membership/dependents', ...posMembershipDependents, async (req, res, next) => {
+  try {
+    const { error, value } = posAddDependentSchema.validate(req.body || {}, {
+      allowUnknown: false,
+      stripUnknown: true
+    })
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      })
+    }
+    if (!isValidMembershipDependentRelationship(value.relationship)) {
+      return res.status(400).json({ success: false, message: 'Invalid relationship.' })
+    }
+    const customerId = parseInt(req.params.customerId, 10)
+    if (!customerId) {
+      return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+    }
+    const pool = await getPool()
+    const data = await addMembershipDependent(pool, {
+      primaryCustomerId: customerId,
+      phone: value.phone,
+      relationship: value.relationship,
+      fullName: value.full_name,
+      createdByUserId: req.user?.user_id || null
+    })
+    return res.status(201).json({ success: true, data })
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, message: err.message })
+    }
+    return next(err)
+  }
+})
+
+// ── DELETE /api/pos/customers/:customerId/membership/dependents/:dependentId ──
+router.delete(
+  '/customers/:customerId/membership/dependents/:dependentId',
+  ...posMembershipDependents,
+  async (req, res, next) => {
+    try {
+      const customerId = parseInt(req.params.customerId, 10)
+      const dependentId = parseInt(req.params.dependentId, 10)
+      if (!customerId || !dependentId) {
+        return res.status(400).json({ success: false, message: 'Invalid customer or dependent ID.' })
+      }
+      const pool = await getPool()
+      const data = await removeMembershipDependent(pool, {
+        primaryCustomerId: customerId,
+        dependentId
+      })
+      return res.json({ success: true, data })
+    } catch (err) {
+      if (err.statusCode) {
+        return res.status(err.statusCode).json({ success: false, message: err.message })
+      }
+      return next(err)
+    }
+  }
+)
 
 // ── POST /api/pos/preview-order-discount — selected offer or chooser candidates ───
 router.post('/preview-order-discount', ...posPreviewDiscount, async (req, res, next) => {
@@ -1981,12 +2080,7 @@ router.post('/orders', ...posOrdersCreate, async (req, res, next) => {
     if (err.message && err.message.includes('Insufficient stock')) {
       return res.status(400).json({ success: false, message: err.message })
     }
-    if (err.message && (err.message.includes('inventory_committed') || err.message.includes('Invalid column name') || err.message.includes('sold_membership'))) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database migration required: run sql/migrations/76_pos_orders_membership_sale.sql (and pos_checkout_inventory_drafts.sql if needed).'
-      })
-    }
+    if (respondPosSchemaMigrationIfNeeded(err, res)) return
     return next(err)
   }
 })
@@ -2087,12 +2181,7 @@ router.post('/checkout-and-pay', ...posCheckoutAndPay, async (req, res, next) =>
     if (err.message && err.message.includes('Insufficient stock')) {
       return res.status(400).json({ success: false, message: err.message })
     }
-    if (err.message && (err.message.includes('inventory_committed') || err.message.includes('Invalid column name') || err.message.includes('sold_membership'))) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database migration required: run sql/migrations/76_pos_orders_membership_sale.sql (and pos_checkout_inventory_drafts.sql if needed).'
-      })
-    }
+    if (respondPosSchemaMigrationIfNeeded(err, res)) return
     return next(err)
   }
 })
@@ -2269,6 +2358,7 @@ router.post('/payment', posPaymentCollect, async (req, res, next) => {
     if (err.statusCode === 400 || err.statusCode === 403 || err.statusCode === 404) {
       return res.status(err.statusCode).json({ success: false, message: err.message })
     }
+    if (respondPosSchemaMigrationIfNeeded(err, res)) return
     return next(err)
   }
 })

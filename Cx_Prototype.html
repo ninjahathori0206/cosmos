@@ -741,10 +741,42 @@
       </div>
       <div id="cx-cust-detail-stats" class="cx-cust-detail-stats"></div>
       <div id="cx-cust-detail-membership" style="font-size:13px;color:var(--text2);min-height:20px"></div>
+      <div id="cx-cust-detail-dependents" style="margin-top:12px;font-size:13px;color:var(--text2);min-height:20px"></div>
       <div class="gm-actions" style="margin-top:16px">
         <button type="button" class="btn primary" id="cx-cust-detail-grant-btn" style="display:none">Grant / renew membership</button>
+        <button type="button" class="btn" id="cx-cust-detail-family-btn" style="display:none">Add Your Buddy</button>
         <button type="button" class="btn" onclick="closeCxCustomerDetail()">Close</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add membership buddy ─────────────────────────── -->
+<div class="overlay" id="modal-cx-family-member" style="display:none" role="dialog" aria-modal="true" aria-labelledby="cx-family-modal-title" onclick="if(event.target===this)closeCxFamilyMemberModal()">
+  <div class="cx-modal" style="max-width:420px" onclick="event.stopPropagation()">
+    <div class="cx-mh">
+      <div class="cx-mt" id="cx-family-modal-title">Add Your Buddy</div>
+      <button type="button" class="cx-mclose" onclick="closeCxFamilyMemberModal()" aria-label="Close">✕</button>
+    </div>
+    <div class="cx-mb">
+      <input type="hidden" id="cx-family-customer-id">
+      <div class="fgrp">
+        <label for="cx-family-phone">Mobile <span class="label-req">*</span></label>
+        <input type="tel" id="cx-family-phone" placeholder="10-digit Indian mobile">
+      </div>
+      <div class="fgrp">
+        <label for="cx-family-relationship">Relationship <span class="label-req">*</span></label>
+        <select id="cx-family-relationship"><option value="">Select…</option></select>
+      </div>
+      <div class="fgrp">
+        <label for="cx-family-name">Name (optional)</label>
+        <input type="text" id="cx-family-name" maxlength="200" placeholder="Display name">
+      </div>
+      <div id="cx-family-form-error" class="form-error" style="display:none;color:var(--red);font-size:13px;margin-top:8px"></div>
+    </div>
+    <div class="cx-modal-ft">
+      <button type="button" class="btn primary" id="cx-family-save-btn" onclick="saveCxFamilyMember()">Add Your Buddy</button>
+      <button type="button" class="btn" onclick="closeCxFamilyMemberModal()">Cancel</button>
     </div>
   </div>
 </div>

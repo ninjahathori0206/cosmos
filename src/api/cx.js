@@ -5,6 +5,14 @@ const { authJwt } = require('../middleware/authJwt')
 const { requireModule, requireCxPermission } = require('../middleware/authorize')
 const orderService = require('../services/orderService')
 const { grantCustomerMembership } = require('../services/membershipGrantService')
+const {
+  getMembershipFamilyForCustomer,
+  addDependent: addMembershipDependent,
+  removeDependent: removeMembershipDependent,
+  listDependents,
+  getOwnActiveMembership
+} = require('../services/membershipDependentService')
+const { isValidMembershipDependentRelationship } = require('../config/membershipDependentRelationshipsCatalog')
 const { sqlNow, wallClockIso } = require('../lib/cosmosIst')
 
 const router = express.Router()
@@ -294,17 +302,97 @@ router.get(
       active.membership_type_label = active.membership_type || null
     }
 
+    const family = await getMembershipFamilyForCustomer(pool, customerId)
+    let dependents = family.dependents || []
+    let slots_remaining = family.slots_remaining
+    let max_dependents = family.max_dependents
+    if (active && family.role === 'primary') {
+      dependents = await listDependents(pool, active.membership_id)
+      max_dependents = (await getOwnActiveMembership(pool, customerId))?.max_dependents ?? max_dependents
+      slots_remaining = Math.max(0, max_dependents - dependents.length)
+    }
+
     return res.json({
       success: true,
       data: {
         customer: { customer_id: cust.customer_id, full_name: cust.full_name, phone: cust.phone, is_active: !!cust.is_active },
-        active_membership: active
+        active_membership: active,
+        dependents,
+        slots_remaining,
+        max_dependents,
+        membership_role: family.role,
+        inherited_from: family.inherited_from
       }
     })
   } catch (err) {
     return next(err)
   }
 })
+
+/** POST /api/cx/customers/:id/membership/dependents */
+router.post(
+  '/customers/:id/membership/dependents',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.membership.manage'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseInt(req.params.id, 10)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+
+      const { phone, relationship, full_name: fullName } = req.body || {}
+      if (!phone || !relationship) {
+        return res.status(400).json({ success: false, message: 'Phone and relationship are required.' })
+      }
+      if (!isValidMembershipDependentRelationship(relationship)) {
+        return res.status(400).json({ success: false, message: 'Invalid relationship.' })
+      }
+
+      const pool = await getPool()
+      const data = await addMembershipDependent(pool, {
+        primaryCustomerId: customerId,
+        phone,
+        relationship,
+        fullName,
+        createdByUserId: req.user?.user_id || null
+      })
+      return res.status(201).json({ success: true, data })
+    } catch (err) {
+      if (err.statusCode) {
+        return res.status(err.statusCode).json({ success: false, message: err.message })
+      }
+      return next(err)
+    }
+  }
+)
+
+/** DELETE /api/cx/customers/:id/membership/dependents/:dependentId */
+router.delete(
+  '/customers/:id/membership/dependents/:dependentId',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.membership.manage'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseInt(req.params.id, 10)
+      const dependentId = parseInt(req.params.dependentId, 10)
+      if (!customerId || !dependentId) {
+        return res.status(400).json({ success: false, message: 'Invalid customer or dependent ID.' })
+      }
+      const pool = await getPool()
+      const data = await removeMembershipDependent(pool, {
+        primaryCustomerId: customerId,
+        dependentId
+      })
+      return res.json({ success: true, data })
+    } catch (err) {
+      if (err.statusCode) {
+        return res.status(err.statusCode).json({ success: false, message: err.message })
+      }
+      return next(err)
+    }
+  }
+)
 
 /**
  * POST /api/cx/customers/:id/membership — grant / renew Eyewoot Go membership

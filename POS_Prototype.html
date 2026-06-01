@@ -527,8 +527,10 @@
           <div class="pos-lk-cart-cust-empty-title">Cx required at checkout</div>
           <div class="pos-lk-cart-cust-empty-sub">Select or register a Cx before payment.</div>
         </div>
+        <div id="pos-cart-membership-family-banner" class="pos-cart-membership-family-banner" hidden></div>
         <div id="pos-lk-cart-customer-actions" class="pos-lk-cart-customer-actions">
           <button type="button" id="btn-cart-customer-action" class="pos-lk-cart-customer-btn pos-lk-cart-customer-btn--primary" tabindex="0" aria-label="Select Cx">Select Cx</button>
+          <button type="button" id="btn-cart-family-members" class="pos-lk-cart-customer-btn" tabindex="0" aria-label="Your buddies on membership" hidden>Your Buddies</button>
           <button type="button" id="btn-cart-cx-clear" class="pos-lk-cart-customer-btn pos-lk-cart-cx-clear-btn" tabindex="0" aria-label="Clear Cx" hidden>Clear Cx</button>
         </div>
       </div>
@@ -1173,6 +1175,31 @@
     <div id="pos-cart-membership-list" class="pos-lk-offers-list" role="listbox" aria-label="Membership plans"></div>
     <div style="padding:12px 16px 20px;border-top:1px solid var(--border)">
       <button type="button" class="btn" id="btn-cart-membership-remove" style="width:100%">Remove membership from cart</button>
+    </div>
+  </div>
+</div>
+
+<div id="overlay-pos-cart-family" class="pos-lens-newcust-overlay pos-cart-coupon-overlay" role="dialog" aria-modal="true" aria-labelledby="pos-cart-family-title">
+  <div class="pos-lens-newcust-backdrop" id="pos-cart-family-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-lens-newcust-sheet--wide">
+    <div class="pos-cust-picker-head">
+      <button type="button" class="pos-lk-back-link pos-cart-coupon-back" id="btn-cart-family-back" aria-label="Back">‹</button>
+      <h2 id="pos-cart-family-title" class="pos-cart-coupon-title">Your Buddies</h2>
+    </div>
+    <div id="pos-cart-family-inherited" class="pos-cart-family-inherited" hidden></div>
+    <div id="pos-cart-family-list" class="pos-lk-offers-list" role="list"></div>
+    <div id="pos-cart-family-add-panel" class="pos-cart-family-add-panel" hidden>
+      <div class="pos-cust-picker-section-title">Add Your Buddy</div>
+      <label class="pos-lk-field-lbl" for="pos-family-phone">Mobile</label>
+      <input type="tel" id="pos-family-phone" class="pos-lk-input" placeholder="10-digit mobile" autocomplete="tel">
+      <label class="pos-lk-field-lbl" for="pos-family-relationship">Relationship</label>
+      <select id="pos-family-relationship" class="pos-lk-input"></select>
+      <label class="pos-lk-field-lbl" for="pos-family-name">Name (optional)</label>
+      <input type="text" id="pos-family-name" class="pos-lk-input" placeholder="Display name" maxlength="200">
+      <button type="button" class="btn primary" id="btn-pos-family-add" style="width:100%;margin-top:12px">Add Your Buddy</button>
+    </div>
+    <div class="pos-cust-picker-actions">
+      <button type="button" class="btn" id="btn-cart-family-close" style="width:100%">Close</button>
     </div>
   </div>
 </div>

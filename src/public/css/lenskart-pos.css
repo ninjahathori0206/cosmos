@@ -4415,6 +4415,65 @@ body.pos-target-tablet-landscape.pos-lk-flow .pos-lk-page {
   margin: 4px 0 14px;
 }
 
+.pos-cart-membership-family-banner {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--tealL);
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.pos-cart-family-inherited {
+  margin: 0 16px 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--accL);
+  color: var(--acc2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.pos-cart-family-add-panel {
+  padding: 0 16px 16px;
+}
+
+.pos-cart-family-add-panel .pos-lk-field-lbl {
+  display: block;
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+}
+
+.pos-cart-family-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pos-cart-family-row__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.pos-cart-family-row__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text1);
+}
+
+.pos-cart-family-row__sub {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 2px;
+}
+
 .pos-lens-customer-picker-sheet .pos-cust-form {
   display: flex;
   flex-direction: column;

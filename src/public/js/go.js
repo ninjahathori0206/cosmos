@@ -339,6 +339,16 @@ var GO = (function () {
     }
   }
 
+  function populateGoDepRelationshipSelect(options) {
+    var sel = document.getElementById('dep-relationship');
+    if (!sel) return;
+    var rows = options || [];
+    sel.innerHTML = '<option value="">Select relationship</option>' +
+      rows.map(function (o) {
+        return '<option value="' + o.key + '">' + o.label + '</option>';
+      }).join('');
+  }
+
   /* ── MEMBERSHIP ── */
   async function loadMembership() {
     var body = document.getElementById('membership-body');
@@ -348,7 +358,14 @@ var GO = (function () {
 
     try {
       var res = await goApi('GET', '/membership');
-      var { membership: mem, benefits, dependents } = res.data;
+      var data = res.data || {};
+      var mem = data.membership;
+      var benefits = data.benefits || [];
+      var dependents = data.dependents || [];
+      var canAdd = !!data.can_add_dependents;
+      var inherited = data.inherited_from;
+      var relOpts = data.relationship_options || [];
+      populateGoDepRelationshipSelect(relOpts);
 
       if (!mem) {
         body.innerHTML = '<div class="no-membership"><div class="nm-emoji">⭐</div>'
@@ -357,8 +374,10 @@ var GO = (function () {
         return;
       }
 
-      var expiryDays = daysLeft(mem.expires_at);
-      var depSlots   = mem.max_dependents - dependents.length;
+      var isInherited = !!mem.inherited || data.membership_source === 'dependent';
+      var expiryDays = mem.expires_at ? daysLeft(mem.expires_at) : '—';
+      var maxDep = mem.max_dependents != null ? mem.max_dependents : 0;
+      var depSlots = canAdd && maxDep > 0 ? maxDep - dependents.length : 0;
 
       var benefitsHtml = benefits.map(function (b) {
         return '<div class="row-item"><div class="row-icon" style="background:var(--plus-bg)">' + b.icon_emoji + '</div>'
@@ -366,33 +385,56 @@ var GO = (function () {
           + '<div class="row-right"><span class="pill pill-green" style="font-size:10px">Active</span></div></div>';
       }).join('<div class="divider" style="margin:0"></div>');
 
+      var inheritedBanner = '';
+      if (isInherited && inherited) {
+        inheritedBanner = '<div class="card anim" style="margin-bottom:12px;padding:14px;background:var(--accL);color:var(--acc2)">'
+          + '<div style="font-size:13px;font-weight:600">Buddy plan</div>'
+          + '<div style="font-size:12px;margin-top:6px;line-height:1.45">You receive <strong>' + (mem.plan_name || 'Plus') + '</strong> benefits through '
+          + '<strong>' + (inherited.full_name || "your buddy's plan") + '</strong>'
+          + (inherited.relationship_label ? ' (' + inherited.relationship_label + ')' : '') + '.</div></div>';
+      }
+
       var depsHtml = dependents.map(function (d) {
+        var rel = d.relationship_label || d.relationship || '';
         return '<div class="row-item"><div class="dep-avatar">' + initials(d.full_name) + '</div>'
-          + '<div><div class="row-title">' + d.full_name + '</div><div class="row-sub">+91 ' + d.phone + '</div></div>'
+          + '<div><div class="row-title">' + d.full_name + '</div><div class="row-sub">'
+          + (d.phone ? '+91 ' + d.phone : '') + (rel ? ' · ' + rel : '') + '</div></div>'
           + '<div class="row-right"><span class="pill pill-plus" style="font-size:10px">Plus</span></div></div>';
       }).join('<div class="divider" style="margin:0"></div>');
 
       var addDepHtml = '';
-      if (depSlots > 0) {
+      if (canAdd && depSlots > 0) {
         addDepHtml = '<div class="divider" style="margin:0"></div>'
           + '<div class="row-item" onclick="openModal(\'overlay-add-dep\')" style="opacity:.7">'
           + '<div style="width:40px;height:40px;border-radius:11px;border:1.5px dashed var(--border2);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--text3);flex-shrink:0">+</div>'
-          + '<div><div class="row-title" style="color:var(--text3)">Add family member</div><div class="row-sub">' + depSlots + ' slot' + (depSlots > 1 ? 's' : '') + ' remaining</div></div></div>';
+          + '<div><div class="row-title" style="color:var(--text3)">Add Your Buddy</div><div class="row-sub">' + depSlots + ' slot' + (depSlots > 1 ? 's' : '') + ' remaining</div></div></div>';
       }
 
-      body.innerHTML =
-        '<div class="mem-hero anim"><div class="mem-hero-tag">✦ ' + mem.plan_name + '</div>'
-        + '<div class="mem-hero-title">Active Plan</div>'
-        + '<div class="mem-hero-purchased">Purchased ' + fmtDate(mem.purchased_at) + ' · ' + fmtMoney(mem.price_paid) + '/year</div>'
-        + '<div class="mem-hero-stats">'
+      var heroTitle = isInherited ? 'Buddy Plan' : 'Active Plan';
+      var heroPurchased = isInherited
+        ? ('Linked to ' + (inherited && inherited.full_name ? inherited.full_name : 'plan holder'))
+        : ('Purchased ' + fmtDate(mem.purchased_at) + (mem.price_paid != null ? ' · ' + fmtMoney(mem.price_paid) + '/year' : ''));
+
+      var familySection = '';
+      if (canAdd || dependents.length) {
+        familySection = '<div class="section-label">Your Buddies <span style="color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;font-size:12px">('
+          + dependents.length + (maxDep ? ' of ' + maxDep : '') + ')</span></div>'
+          + '<div class="card anim anim-2">' + (depsHtml || '') + addDepHtml + '</div>';
+      }
+
+      body.innerHTML = inheritedBanner
+        + '<div class="mem-hero anim"><div class="mem-hero-tag">✦ ' + (mem.plan_name || mem.plan_key) + '</div>'
+        + '<div class="mem-hero-title">' + heroTitle + '</div>'
+        + '<div class="mem-hero-purchased">' + heroPurchased + '</div>'
+        + (mem.expires_at ? '<div class="mem-hero-stats">'
         + '<div class="mem-stat"><div class="mem-stat-label">Expires</div><div class="mem-stat-val">' + fmtDate(mem.expires_at) + '</div></div>'
         + '<div class="mem-stat-divider"></div>'
         + '<div class="mem-stat"><div class="mem-stat-label">Days left</div><div class="mem-stat-val">' + expiryDays + '</div></div>'
-        + '</div></div>'
+        + '</div>' : '')
+        + '</div>'
         + '<div class="section-label">Your Benefits</div>'
         + '<div class="card anim anim-1">' + benefitsHtml + '</div>'
-        + '<div class="section-label">Family Members <span style="color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0;font-size:12px">(' + dependents.length + ' of ' + mem.max_dependents + ')</span></div>'
-        + '<div class="card anim anim-2">' + (depsHtml || '') + addDepHtml + '</div>'
+        + familySection
         + '<div style="padding:4px 16px 16px"><button class="btn-secondary">Renew at Store</button></div>';
     } catch (e) {
       body.innerHTML = '<div style="padding:32px 16px;text-align:center;color:var(--red)">' + e.message + '</div>';
@@ -783,26 +825,45 @@ var GO = (function () {
 
   /* ── Add Dependent ── */
   window.addDependent = async function () {
-    var phone = document.getElementById('dep-phone').value.trim();
-    var rel   = document.getElementById('dep-relationship').value.trim();
+    var phoneEl = document.getElementById('dep-phone');
+    var relEl   = document.getElementById('dep-relationship');
+    var phone = phoneEl ? phoneEl.value.trim() : '';
+    var rel   = relEl ? relEl.value.trim() : '';
     var errEl = document.getElementById('dep-error');
     var btn   = document.getElementById('dep-btn');
 
     errEl.classList.remove('visible');
-    if (!phone || !rel) { errEl.textContent = 'Please fill all fields.'; errEl.classList.add('visible'); return; }
+    if (!phone) {
+      if (phoneEl && typeof cosmosFieldError === 'function') cosmosFieldError(phoneEl, 'Required');
+      else { errEl.textContent = 'Please enter mobile number.'; errEl.classList.add('visible'); }
+      return;
+    }
+    if (phoneEl && typeof cosmosFieldClear === 'function') cosmosFieldClear(phoneEl);
+    if (!rel) {
+      if (relEl && typeof cosmosFieldError === 'function') cosmosFieldError(relEl, 'Required');
+      else { errEl.textContent = 'Please select relationship.'; errEl.classList.add('visible'); }
+      return;
+    }
+    if (relEl && typeof cosmosFieldClear === 'function') cosmosFieldClear(relEl);
 
-    btn.disabled = true; btn.textContent = 'Adding…';
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    else if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
     try {
-      var res = await goApi('POST', '/membership/add-dependent', { phone, relationship: rel });
+      var res = await goApi('POST', '/membership/add-dependent', { phone: phone, relationship: rel });
       var linkBox = document.getElementById('invite-link-box');
       document.getElementById('invite-link-url').textContent = res.invite_link;
       linkBox.classList.add('visible');
-      btn.textContent = '✓ Added';
-      goToast('Family member added!', 'success');
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      else if (btn) { btn.textContent = '✓ Added'; }
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Buddy added!');
+      else goToast('Buddy added!', 'success');
       meCache = null;
+      void loadMembership();
     } catch (e) {
       errEl.textContent = e.message; errEl.classList.add('visible');
-      btn.disabled = false; btn.textContent = 'Add Member';
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      else if (btn) { btn.disabled = false; btn.textContent = 'Add Your Buddy'; }
+      if (typeof cosmosToastError === 'function') cosmosToastError(e.message);
     }
   };
 

@@ -174,6 +174,263 @@
     return posJwtPermissions().indexOf('pos.membership.sell') !== -1
   }
 
+  function posCanManageMembershipDependents() {
+    const session = getPosSession()
+    if (session && session.token) {
+      const p = decodeJwtPayloadUnverified(session.token)
+      if (p && String(p.role || '').toLowerCase() === 'super_admin') return true
+    }
+    return posJwtPermissions().indexOf('pos.membership.dependents.manage') !== -1
+  }
+
+  function posCanViewMembershipFamily() {
+    return posCanSellMembership() || posCanManageMembershipDependents()
+  }
+
+  let posMembershipFamilyCache = null
+  let posMembershipRelationshipOptions = null
+
+  async function loadPosMembershipRelationshipOptions(session) {
+    if (posMembershipRelationshipOptions) return posMembershipRelationshipOptions
+    try {
+      const rows = await apiGet('/api/meta/membership-dependent-relationships', session.token)
+      posMembershipRelationshipOptions = Array.isArray(rows) ? rows : []
+    } catch (_e) {
+      posMembershipRelationshipOptions = [
+        { key: 'spouse', label: 'Spouse' },
+        { key: 'parent', label: 'Parent' },
+        { key: 'child', label: 'Child' },
+        { key: 'sibling', label: 'Sibling' },
+        { key: 'other', label: 'Other' }
+      ]
+    }
+    return posMembershipRelationshipOptions
+  }
+
+  function fillPosRelationshipSelect(selectEl, options) {
+    if (!selectEl) return
+    const opts = options || []
+    selectEl.innerHTML =
+      '<option value="">Select relationship</option>' +
+      opts
+        .map(function (o) {
+          return (
+            '<option value="' +
+            escapeHtml(String(o.key)) +
+            '">' +
+            escapeHtml(String(o.label || o.key)) +
+            '</option>'
+          )
+        })
+        .join('')
+  }
+
+  async function refreshPosMembershipFamily(session) {
+    posMembershipFamilyCache = null
+    const cid = posSelectedCustomerId
+    const banner = document.getElementById('pos-cart-membership-family-banner')
+    const famBtn = document.getElementById('btn-cart-family-members')
+    if (!cid || !session || !session.token) {
+      if (banner) banner.hidden = true
+      if (famBtn) famBtn.hidden = true
+      syncCartMembershipUi()
+      return
+    }
+    if (!posCanViewMembershipFamily()) {
+      if (banner) banner.hidden = true
+      if (famBtn) famBtn.hidden = true
+      syncCartMembershipUi()
+      return
+    }
+    try {
+      const data = await apiGet(
+        '/api/pos/customers/' + encodeURIComponent(String(cid)) + '/membership-family',
+        session.token
+      )
+      posMembershipFamilyCache = data || null
+      if (banner) {
+        if (posMembershipFamilyCache && posMembershipFamilyCache.role === 'dependent' && posMembershipFamilyCache.inherited_from) {
+          const inf = posMembershipFamilyCache.inherited_from
+          banner.textContent =
+            'Plus · buddy of ' +
+            (inf.full_name || 'plan holder') +
+            (inf.relationship_label ? ' (' + inf.relationship_label + ')' : '')
+          banner.hidden = false
+        } else {
+          banner.hidden = true
+        }
+      }
+      if (famBtn) {
+        const role = posMembershipFamilyCache && posMembershipFamilyCache.role
+        if (role === 'primary' || role === 'dependent') {
+          famBtn.hidden = false
+          const n = (posMembershipFamilyCache.dependents && posMembershipFamilyCache.dependents.length) || 0
+          const max = posMembershipFamilyCache.max_dependents || 0
+          if (role === 'primary' && max > 0) {
+            famBtn.textContent = 'Your Buddies (' + n + '/' + max + ')'
+          } else if (role === 'dependent') {
+            famBtn.textContent = 'Buddy plan'
+          } else {
+            famBtn.textContent = 'Your Buddies'
+          }
+        } else {
+          famBtn.hidden = true
+        }
+      }
+    } catch (_e) {
+      posMembershipFamilyCache = null
+      if (banner) banner.hidden = true
+      if (famBtn) famBtn.hidden = true
+    }
+    syncCartMembershipUi()
+  }
+
+  function closePosFamilyModal() {
+    const ov = document.getElementById('overlay-pos-cart-family')
+    if (ov) ov.classList.remove('open')
+  }
+
+  async function openPosFamilyModal() {
+    if (!posSelectedCustomerId) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Select a Cx first.')
+      return
+    }
+    const session = getPosSession()
+    if (!session || !session.token) return
+    const ov = document.getElementById('overlay-pos-cart-family')
+    const list = document.getElementById('pos-cart-family-list')
+    const inherited = document.getElementById('pos-cart-family-inherited')
+    const addPanel = document.getElementById('pos-cart-family-add-panel')
+    if (!ov || !list) return
+    ov.classList.add('open')
+    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pos-cart-family-list', 3)
+    await refreshPosMembershipFamily(session)
+    const fam = posMembershipFamilyCache || {}
+    const relOpts = await loadPosMembershipRelationshipOptions(session)
+    fillPosRelationshipSelect(document.getElementById('pos-family-relationship'), relOpts)
+
+    if (inherited) {
+      if (fam.role === 'dependent' && fam.inherited_from) {
+        const inf = fam.inherited_from
+        inherited.innerHTML =
+          'This Cx receives <strong>Plus</strong> benefits through <strong>' +
+          escapeHtml(inf.full_name || 'plan holder') +
+          '</strong>' +
+          (inf.relationship_label ? ' (' + escapeHtml(inf.relationship_label) + ')' : '') +
+          '.'
+        inherited.hidden = false
+      } else {
+        inherited.hidden = true
+        inherited.innerHTML = ''
+      }
+    }
+
+    const deps = Array.isArray(fam.dependents) ? fam.dependents : []
+    if (!deps.length) {
+      list.innerHTML =
+        '<div style="padding:16px;font-size:13px;color:var(--text2)">No buddies linked yet.</div>'
+    } else {
+      list.innerHTML = deps
+        .map(function (d) {
+          const removeBtn =
+            fam.role === 'primary' && posCanManageMembershipDependents()
+              ? '<button type="button" class="btn sm pos-family-remove-btn" data-dependent-id="' +
+                escapeHtml(String(d.dependent_id)) +
+                '">Remove</button>'
+              : ''
+          return (
+            '<div class="pos-cart-family-row">' +
+            '<div class="pos-cart-family-row__meta">' +
+            '<div class="pos-cart-family-row__name">' +
+            escapeHtml(d.full_name || 'Buddy') +
+            '</div>' +
+            '<div class="pos-cart-family-row__sub">' +
+            escapeHtml(d.relationship_label || d.relationship || '') +
+            (d.phone ? ' · ' + escapeHtml(d.phone) : '') +
+            '</div></div>' +
+            removeBtn +
+            '</div>'
+          )
+        })
+        .join('')
+      list.querySelectorAll('.pos-family-remove-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          void handlePosRemoveFamilyMember(session, btn.getAttribute('data-dependent-id'))
+        })
+      })
+    }
+
+    if (addPanel) {
+      const canAdd =
+        fam.role === 'primary' &&
+        fam.can_add_dependents &&
+        posCanManageMembershipDependents() &&
+        (fam.slots_remaining == null || fam.slots_remaining > 0)
+      addPanel.hidden = !canAdd
+    }
+  }
+
+  async function handlePosRemoveFamilyMember(session, dependentId) {
+    const cid = posSelectedCustomerId
+    const did = parseInt(dependentId, 10)
+    if (!cid || !did || !session || !session.token) return
+    try {
+      await apiDelete(
+        '/api/pos/customers/' +
+          encodeURIComponent(String(cid)) +
+          '/membership/dependents/' +
+          encodeURIComponent(String(did)),
+        session.token
+      )
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Buddy removed.')
+      await refreshPosMembershipFamily(session)
+      await openPosFamilyModal()
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not remove.')
+    }
+  }
+
+  async function submitPosAddFamilyMember() {
+    const cid = posSelectedCustomerId
+    const session = getPosSession()
+    if (!cid || !session || !session.token) return
+    const phoneEl = document.getElementById('pos-family-phone')
+    const relEl = document.getElementById('pos-family-relationship')
+    const nameEl = document.getElementById('pos-family-name')
+    const btn = document.getElementById('btn-pos-family-add')
+    const phone = phoneEl ? phoneEl.value.trim() : ''
+    const relationship = relEl ? relEl.value.trim() : ''
+    const full_name = nameEl ? nameEl.value.trim() : ''
+    if (!phone) {
+      if (phoneEl && typeof cosmosFieldError === 'function') cosmosFieldError(phoneEl, 'Required')
+      return
+    }
+    if (phoneEl && typeof cosmosFieldClear === 'function') cosmosFieldClear(phoneEl)
+    if (!relationship) {
+      if (relEl && typeof cosmosFieldError === 'function') cosmosFieldError(relEl, 'Required')
+      return
+    }
+    if (relEl && typeof cosmosFieldClear === 'function') cosmosFieldClear(relEl)
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      await apiPost(
+        '/api/pos/customers/' + encodeURIComponent(String(cid)) + '/membership/dependents',
+        { phone: phone, relationship: relationship, full_name: full_name || undefined },
+        session.token
+      )
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Buddy added.')
+      if (phoneEl) phoneEl.value = ''
+      if (nameEl) nameEl.value = ''
+      if (relEl) relEl.value = ''
+      await refreshPosMembershipFamily(session)
+      await openPosFamilyModal()
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not add your buddy.')
+    }
+  }
+
   function getPosTabletToken() {
     try {
       return localStorage.getItem(POS_TABLET_TOKEN_KEY) || ''
@@ -222,6 +479,27 @@
     return body
   }
 
+  /** Matches src/config/posSchemaMigrationHints.js — shown when checkout columns are missing. */
+  const POS_SCHEMA_MIGRATION_TOAST_MESSAGE =
+    'Database migration required: run sql/migrations/76_pos_orders_membership_sale.sql (and pos_checkout_inventory_drafts.sql if needed).'
+
+  function isPosSchemaMigrationApiError(err) {
+    const msg = String((err && err.message) || '')
+    if (err && Number(err.status) === 503 && msg.indexOf('Database migration required') >= 0) return true
+    return msg.indexOf('Database migration required') >= 0
+  }
+
+  function toastPosCheckoutError(err, fallbackMessage) {
+    const msg = isPosSchemaMigrationApiError(err)
+      ? POS_SCHEMA_MIGRATION_TOAST_MESSAGE
+      : String((err && err.message) || fallbackMessage || 'Request failed')
+    if (isPosSchemaMigrationApiError(err) && typeof cosmosToast === 'function') {
+      cosmosToast(msg, 'error', 0)
+      return
+    }
+    if (typeof cosmosToastError === 'function') cosmosToastError(msg)
+  }
+
   async function apiPost(path, payload, token) {
     await ensureCosmosApiKeyFromBootstrap()
     const headers = { 'Content-Type': 'application/json', 'X-API-Key': getApiKey() }
@@ -236,6 +514,16 @@
       throw err
     }
     return body
+  }
+
+  async function apiDelete(path, token) {
+    await ensureCosmosApiKeyFromBootstrap()
+    const headers = { 'X-API-Key': getApiKey() }
+    if (token) headers['Authorization'] = 'Bearer ' + token
+    const res = await fetch(path, { method: 'DELETE', headers })
+    const body = await res.json()
+    if (!res.ok || !body.success) throw new Error(body.message || 'Request failed')
+    return body.data
   }
 
   var posAliasConfirmCallback = null
@@ -919,7 +1207,14 @@
     const memRow = document.getElementById('pos-ob-membership-row')
     const memLbl = document.getElementById('pos-ob-membership-lbl')
     const memVal = document.getElementById('pos-ob-membership-val')
-    const canSell = !!(posSelectedCustomerId && posCanSellMembership())
+    const familyBlocksSell =
+      posMembershipFamilyCache &&
+      posMembershipFamilyCache.can_sell_membership === false
+    const canSell = !!(
+      posSelectedCustomerId &&
+      posCanSellMembership() &&
+      !familyBlocksSell
+    )
     const memActive = cartMembershipIsActive()
     if (btn) btn.hidden = !canSell
     if (sub) {
@@ -1429,12 +1724,14 @@
       if (session && session.token) {
         void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
         void refreshPosCoinBalance(session)
+        void refreshPosMembershipFamily(session)
       }
       renderCartCustomerRef()
       syncCustomerPickerBannerAndActions()
       syncCartMembershipUi()
       return
     }
+    posMembershipFamilyCache = null
     posSelectedCustomerId = null
     posSelectedCustomerSnapshot = null
     posPendingLensPatientName = null
@@ -1442,11 +1739,16 @@
     posCartOffers = []
     posSelectedOfferId = null
     posCartMembershipSale = null
+    posMembershipFamilyCache = null
     saveCart()
     const session = getPosSession()
     if (session && session.token) {
       void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
     }
+    const famBanner = document.getElementById('pos-cart-membership-family-banner')
+    const famBtn = document.getElementById('btn-cart-family-members')
+    if (famBanner) famBanner.hidden = true
+    if (famBtn) famBtn.hidden = true
     obRecalcTotals()
     renderCartCustomerRef()
     syncCustomerPickerBannerAndActions()
@@ -5667,7 +5969,7 @@
       })
     } catch (err) {
       if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
-      if (typeof cosmosToastError === 'function') cosmosToastError(err.message)
+      toastPosCheckoutError(err)
     }
     } finally {
       submitPayment._inFlight = false
@@ -6753,6 +7055,24 @@
         void openPosMembershipPickerModal()
       })
     }
+    const btnCartFamilyMembers = document.getElementById('btn-cart-family-members')
+    if (btnCartFamilyMembers) {
+      btnCartFamilyMembers.addEventListener('click', function () {
+        void openPosFamilyModal()
+      })
+    }
+    const btnPosFamilyAdd = document.getElementById('btn-pos-family-add')
+    if (btnPosFamilyAdd) {
+      btnPosFamilyAdd.addEventListener('click', function () {
+        void submitPosAddFamilyMember()
+      })
+    }
+    const btnCartFamilyBack = document.getElementById('btn-cart-family-back')
+    const backdropCartFamily = document.getElementById('pos-cart-family-backdrop')
+    const btnCartFamilyClose = document.getElementById('btn-cart-family-close')
+    if (btnCartFamilyBack) btnCartFamilyBack.addEventListener('click', closePosFamilyModal)
+    if (backdropCartFamily) backdropCartFamily.addEventListener('click', closePosFamilyModal)
+    if (btnCartFamilyClose) btnCartFamilyClose.addEventListener('click', closePosFamilyModal)
     if (btnCartCouponBack) {
       btnCartCouponBack.addEventListener('click', function () { setCartCouponOverlayOpen(false) })
     }

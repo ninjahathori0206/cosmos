@@ -178,12 +178,21 @@ window.openCxCustomerDetail = async function (el) {
     '</div></div>'
 
   var memEl = document.getElementById('cx-cust-detail-membership')
+  var depsEl = document.getElementById('cx-cust-detail-dependents')
   var grantBtn = document.getElementById('cx-cust-detail-grant-btn')
+  var familyBtn = document.getElementById('cx-cust-detail-family-btn')
   if (memEl) {
     if (typeof window.cosmosSkeletonRows === 'function') {
       window.cosmosSkeletonRows('cx-cust-detail-membership', 1)
     } else {
       memEl.innerHTML = '<div class="skel skel-text" style="max-width:100%"></div>'
+    }
+  }
+  if (depsEl) {
+    if (typeof window.cosmosSkeletonRows === 'function') {
+      window.cosmosSkeletonRows('cx-cust-detail-dependents', 1)
+    } else {
+      depsEl.innerHTML = ''
     }
   }
   if (grantBtn) {
@@ -195,25 +204,94 @@ window.openCxCustomerDetail = async function (el) {
       }
     }
   }
+  if (familyBtn) {
+    familyBtn.style.display = 'none'
+    familyBtn.onclick = function () {
+      window.openCxFamilyMemberModal(id)
+    }
+  }
 
   var ov = document.getElementById('modal-cx-customer-detail')
   if (ov) ov.style.display = 'flex'
 
   try {
     var statusRes = await cxApiFetch('GET', '/api/cx/customers/' + id + '/membership')
-    var active = (statusRes.data && statusRes.data.active_membership) || null
-    if (!memEl) return
-    if (active) {
-      memEl.innerHTML =
-        '<div style="padding:12px;border-radius:10px;background:var(--greenL);color:var(--green);font-weight:600">' +
-        'Active tier: <strong>' +
-        escCx(cxMembershipLabelFromActive(active)) +
-        '</strong><br><span style="font-weight:500;font-size:12px">Expires ' +
-        escCx(fmtCxDateOnly(active.expires_at)) +
-        '</span></div>'
-    } else {
-      memEl.innerHTML =
-        '<div style="padding:12px;border-radius:10px;background:var(--bg2);color:var(--text2)">No active Eyewoot Go membership.</div>'
+    var payload = statusRes.data || {}
+    var active = payload.active_membership || null
+    var dependents = payload.dependents || []
+    var inherited = payload.inherited_from
+    var role = payload.membership_role || 'none'
+    var slots = payload.slots_remaining
+    var maxDep = payload.max_dependents
+
+    if (memEl) {
+      if (role === 'dependent' && inherited) {
+        memEl.innerHTML =
+          '<div style="padding:12px;border-radius:10px;background:var(--accL);color:var(--acc2);font-weight:600">' +
+          'Buddy plan via <strong>' + escCx(inherited.full_name || 'plan holder') + '</strong>' +
+          (inherited.relationship_label ? ' (' + escCx(inherited.relationship_label) + ')' : '') +
+          '</div>'
+      } else if (active) {
+        memEl.innerHTML =
+          '<div style="padding:12px;border-radius:10px;background:var(--greenL);color:var(--green);font-weight:600">' +
+          'Active tier: <strong>' +
+          escCx(cxMembershipLabelFromActive(active)) +
+          '</strong><br><span style="font-weight:500;font-size:12px">Expires ' +
+          escCx(fmtCxDateOnly(active.expires_at)) +
+          '</span></div>'
+      } else {
+        memEl.innerHTML =
+          '<div style="padding:12px;border-radius:10px;background:var(--bg2);color:var(--text2)">No active Eyewoot Go membership.</div>'
+      }
+    }
+
+    if (depsEl) {
+      if (role === 'dependent') {
+        depsEl.innerHTML = ''
+      } else if (active && dependents.length) {
+        var listHtml = dependents
+          .map(function (d) {
+            var remove =
+              window.cosmosCxAllows(['cx.membership.manage'])
+                ? ' <button type="button" class="btn sm" data-cx-dep-remove="' +
+                  escCx(String(d.dependent_id)) +
+                  '" style="margin-left:8px">Remove</button>'
+                : ''
+            return (
+              '<div style="padding:8px 0;border-bottom:1px solid var(--border)">' +
+              '<strong>' +
+              escCx(d.full_name || 'Buddy') +
+              '</strong> · ' +
+              escCx(d.relationship_label || d.relationship || '') +
+              (d.phone ? ' · ' + escCx(d.phone) : '') +
+              remove +
+              '</div>'
+            )
+          })
+          .join('')
+        depsEl.innerHTML =
+          '<div style="font-weight:600;color:var(--text1);margin-bottom:6px">Your Buddies (' +
+          dependents.length +
+          (maxDep ? '/' + maxDep : '') +
+          ')</div>' +
+          listHtml
+        depsEl.querySelectorAll('[data-cx-dep-remove]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            void cxRemoveFamilyMember(id, btn.getAttribute('data-cx-dep-remove'))
+          })
+        })
+      } else if (active) {
+        depsEl.innerHTML =
+          '<div style="color:var(--text2)">No buddies linked' +
+          (slots != null && maxDep ? ' (' + slots + ' slots left)' : '') +
+          '.</div>'
+      } else {
+        depsEl.innerHTML = ''
+      }
+    }
+
+    if (familyBtn && window.cosmosCxAllows(['cx.membership.manage'])) {
+      familyBtn.style.display = role === 'primary' && active && (slots == null || slots > 0) ? '' : 'none'
     }
   } catch (err) {
     if (memEl) {
@@ -221,6 +299,122 @@ window.openCxCustomerDetail = async function (el) {
         '<span style="color:var(--red)">' +
         escCx(err && err.message ? err.message : 'Could not load membership status.') +
         '</span>'
+    }
+    if (depsEl) depsEl.innerHTML = ''
+  }
+}
+
+var _cxRelationshipOptionsCache = null
+
+async function cxLoadRelationshipOptions() {
+  if (_cxRelationshipOptionsCache) return _cxRelationshipOptionsCache
+  try {
+    var res = await cxApiFetch('GET', '/api/meta/membership-dependent-relationships')
+    _cxRelationshipOptionsCache = Array.isArray(res.data) ? res.data : []
+  } catch (_e) {
+    _cxRelationshipOptionsCache = [
+      { key: 'spouse', label: 'Spouse' },
+      { key: 'parent', label: 'Parent' },
+      { key: 'child', label: 'Child' },
+      { key: 'sibling', label: 'Sibling' },
+      { key: 'other', label: 'Other' }
+    ]
+  }
+  return _cxRelationshipOptionsCache
+}
+
+function cxFillRelationshipSelect(selectEl, options) {
+  if (!selectEl) return
+  selectEl.innerHTML =
+    '<option value="">Select…</option>' +
+    (options || [])
+      .map(function (o) {
+        return '<option value="' + escCx(o.key) + '">' + escCx(o.label || o.key) + '</option>'
+      })
+      .join('')
+}
+
+window.closeCxFamilyMemberModal = function () {
+  var ov = document.getElementById('modal-cx-family-member')
+  if (ov) ov.style.display = 'none'
+}
+
+window.openCxFamilyMemberModal = async function (customerId) {
+  if (!window.cosmosCxAllows(['cx.membership.manage'])) {
+    if (typeof window.cosmosToastWarn === 'function') {
+      window.cosmosToastWarn('No permission to manage buddies.')
+    }
+    return
+  }
+  document.getElementById('cx-family-customer-id').value = String(customerId)
+  document.getElementById('cx-family-phone').value = ''
+  document.getElementById('cx-family-name').value = ''
+  var errEl = document.getElementById('cx-family-form-error')
+  if (errEl) errEl.style.display = 'none'
+  var opts = await cxLoadRelationshipOptions()
+  cxFillRelationshipSelect(document.getElementById('cx-family-relationship'), opts)
+  var ov = document.getElementById('modal-cx-family-member')
+  if (ov) ov.style.display = 'flex'
+}
+
+window.saveCxFamilyMember = async function () {
+  var customerId = parseInt(document.getElementById('cx-family-customer-id').value, 10)
+  var phone = document.getElementById('cx-family-phone').value.trim()
+  var relationship = document.getElementById('cx-family-relationship').value.trim()
+  var full_name = document.getElementById('cx-family-name').value.trim()
+  var errEl = document.getElementById('cx-family-form-error')
+  var btn = document.getElementById('cx-family-save-btn')
+  if (!customerId || !phone || !relationship) {
+    if (errEl) {
+      errEl.textContent = 'Phone and relationship are required.'
+      errEl.style.display = 'block'
+    }
+    return
+  }
+  if (errEl) errEl.style.display = 'none'
+  if (btn && typeof window.cosmosBtnLoading === 'function') window.cosmosBtnLoading(btn)
+  try {
+    await cxApiFetch('POST', '/api/cx/customers/' + customerId + '/membership/dependents', {
+      phone: phone,
+      relationship: relationship,
+      full_name: full_name || undefined
+    })
+    if (typeof window.cosmosToastSuccess === 'function') {
+      window.cosmosToastSuccess('Buddy added.')
+    }
+    window.closeCxFamilyMemberModal()
+    window.closeCxCustomerDetail()
+    var el = document.querySelector('[data-cid="' + customerId + '"]')
+    if (el) await window.openCxCustomerDetail(el)
+    if (btn && typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn)
+  } catch (err) {
+    if (btn && typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn)
+    if (errEl) {
+      errEl.textContent = err && err.message ? err.message : 'Could not add your buddy.'
+      errEl.style.display = 'block'
+    }
+    if (typeof window.cosmosToastError === 'function') {
+      window.cosmosToastError(err && err.message ? err.message : 'Could not add your buddy.')
+    }
+  }
+}
+
+async function cxRemoveFamilyMember(customerId, dependentId) {
+  var did = parseInt(dependentId, 10)
+  if (!customerId || !did) return
+  try {
+    await cxApiFetch(
+      'DELETE',
+      '/api/cx/customers/' + customerId + '/membership/dependents/' + did
+    )
+    if (typeof window.cosmosToastSuccess === 'function') {
+      window.cosmosToastSuccess('Buddy removed.')
+    }
+    var el = document.querySelector('[data-cid="' + customerId + '"]')
+    if (el) await window.openCxCustomerDetail(el)
+  } catch (err) {
+    if (typeof window.cosmosToastError === 'function') {
+      window.cosmosToastError(err && err.message ? err.message : 'Could not remove.')
     }
   }
 }

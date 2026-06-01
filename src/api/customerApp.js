@@ -5,8 +5,13 @@ const multer = require('multer');
 const { getPool } = require('../config/db');
 const { authCustomerJwt } = require('../middleware/authCustomerJwt');
 const { wallClockIso } = require('../lib/cosmosIst');
-const { parseIndiaMobileForSave } = require('../lib/indiaMobile');
-const posCustomerRegister = require('../services/posCustomerRegisterService');
+const {
+  getMembershipDependentRelationshipsForApi,
+  resolveMembershipForCustomer,
+  getOwnActiveMembership,
+  listDependents,
+  addDependent: addMembershipDependent
+} = require('../services/membershipDependentService');
 
 const router = express.Router();
 router.use(authCustomerJwt);
@@ -467,40 +472,71 @@ router.get('/membership', async (req, res, next) => {
     const pool = await getPool();
     const cid = req.customerId;
 
-    const [memR, benefitsR, depsR] = await Promise.all([
-      pool.request().input('cid', cid).query(`
-        SELECT TOP 1 m.membership_id, m.plan_key, m.purchased_at, m.expires_at,
-               m.price_paid, p.display_name AS plan_name, p.max_dependents
-        FROM   dbo.customer_memberships m
-        JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
-        WHERE  m.customer_id = @cid AND m.is_active = 1
-          AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
-        ORDER BY m.expires_at DESC
-      `),
+    const [resolved, benefitsR] = await Promise.all([
+      resolveMembershipForCustomer(pool, cid),
       pool.request().query(`
         SELECT b.benefit_id, b.plan_key, b.icon_emoji, b.title, b.description, b.sort_order
         FROM   dbo.membership_plan_benefits b
         WHERE  b.is_active = 1
         ORDER BY b.plan_key, b.sort_order
-      `),
-      pool.request().input('cid', cid).query(`
-        SELECT d.dependent_id, d.relationship, d.added_at,
-               c.customer_id, c.full_name, c.phone
-        FROM   dbo.customer_memberships m
-        JOIN   dbo.customer_membership_dependents d ON d.membership_id = m.membership_id
-        JOIN   dbo.pos_customers c ON c.customer_id = d.customer_id
-        WHERE  m.customer_id = @cid AND m.is_active = 1
-          AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
       `)
     ]);
 
-    const membership = memR.recordset[0] || null;
-    const benefits   = benefitsR.recordset.filter(b => !membership || b.plan_key === membership.plan_key);
-    const dependents = depsR.recordset;
+    let membership = null;
+    let dependents = [];
+    let inherited_from = null;
+    const can_add_dependents = resolved.source === 'own';
+
+    if (resolved.source === 'own') {
+      const own = await getOwnActiveMembership(pool, cid);
+      membership = own;
+      if (own) {
+        dependents = await listDependents(pool, own.membership_id);
+      }
+    } else if (resolved.source === 'dependent' && resolved.primary) {
+      const primaryMem = await getOwnActiveMembership(pool, resolved.primary.customer_id);
+      inherited_from = {
+        customer_id: resolved.primary.customer_id,
+        full_name: resolved.primary.full_name,
+        phone: resolved.primary.phone,
+        plan_key: resolved.plan_key,
+        relationship: resolved.relationship,
+        relationship_label: resolved.relationship_label,
+        plan_name: primaryMem?.plan_name || resolved.plan_key,
+        expires_at: primaryMem?.expires_at || null
+      };
+      membership = primaryMem
+        ? {
+            membership_id: primaryMem.membership_id,
+            plan_key: primaryMem.plan_key,
+            plan_name: primaryMem.plan_name,
+            purchased_at: primaryMem.purchased_at,
+            expires_at: primaryMem.expires_at,
+            price_paid: primaryMem.price_paid,
+            max_dependents: primaryMem.max_dependents,
+            inherited: true
+          }
+        : {
+            plan_key: resolved.plan_key,
+            plan_name: resolved.plan_key,
+            inherited: true
+          };
+    }
+
+    const planKey = membership?.plan_key || null;
+    const benefits = benefitsR.recordset.filter((b) => !planKey || b.plan_key === planKey);
 
     return res.json({
       success: true,
-      data: { membership, benefits, dependents }
+      data: {
+        membership,
+        benefits,
+        dependents,
+        membership_source: resolved.source,
+        inherited_from,
+        can_add_dependents,
+        relationship_options: getMembershipDependentRelationshipsForApi()
+      }
     });
   } catch (err) {
     return next(err);
@@ -509,78 +545,22 @@ router.get('/membership', async (req, res, next) => {
 
 /* ══════════════════════════════════════════════════════════════
    POST /api/customer/membership/add-dependent
-   Adds a family member to the primary membership.
+   Adds a buddy to the primary membership.
    Returns an invite link they can share via WhatsApp.
 ══════════════════════════════════════════════════════════════ */
 router.post('/membership/add-dependent', async (req, res, next) => {
   try {
     const pool = await getPool();
     const cid = req.customerId;
-    const { phone, relationship } = req.body || {};
+    const { phone, relationship, full_name: fullName } = req.body || {};
 
-    if (!phone || !relationship) {
-      return res.status(400).json({ success: false, message: 'Phone and relationship are required.' });
-    }
-
-    const memR = await pool.request().input('cid', cid).query(`
-      SELECT TOP 1 m.membership_id, p.max_dependents
-      FROM   dbo.customer_memberships m
-      JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
-      WHERE  m.customer_id = @cid AND m.is_active = 1
-        AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
-      ORDER BY m.expires_at DESC
-    `);
-
-    const mem = memR.recordset[0];
-    if (!mem) {
-      return res.status(403).json({ success: false, message: 'No active Eyewoot Plus membership found.' });
-    }
-
-    const countR = await pool.request().input('mid', mem.membership_id).query(`
-      SELECT COUNT(*) AS cnt FROM dbo.customer_membership_dependents WHERE membership_id = @mid
-    `);
-    if (countR.recordset[0].cnt >= mem.max_dependents) {
-      return res.status(400).json({ success: false, message: `Maximum ${mem.max_dependents} family members allowed.` });
-    }
-
-    const parsed = parseIndiaMobileForSave(phone);
-    if (!parsed.ok) {
-      return res.status(400).json({ success: false, message: parsed.message });
-    }
-    const depLabel = `Dependent (${parsed.phone})`;
-    const reg = await posCustomerRegister.registerCustomer(pool, {
-      fullName: depLabel,
-      phone: parsed.phone,
-      email: null,
-      homeStoreId: null,
-      confirmAlias: true,
+    const result = await addMembershipDependent(pool, {
+      primaryCustomerId: cid,
+      phone,
+      relationship,
+      fullName,
       createdByUserId: null
     });
-    const depCustomer = { customer_id: reg.customer_id };
-
-    if (depCustomer.customer_id === cid) {
-      return res.status(400).json({ success: false, message: 'You cannot add yourself as a dependent.' });
-    }
-
-    const existR = await pool.request()
-      .input('mid', mem.membership_id)
-      .input('dep_cid', depCustomer.customer_id)
-      .query(`
-        SELECT 1 FROM dbo.customer_membership_dependents
-        WHERE membership_id = @mid AND customer_id = @dep_cid
-      `);
-    if (existR.recordset.length) {
-      return res.status(409).json({ success: false, message: 'This member is already linked to your plan.' });
-    }
-
-    await pool.request()
-      .input('mid', mem.membership_id)
-      .input('dep_cid', depCustomer.customer_id)
-      .input('rel', relationship)
-      .query(`
-        INSERT INTO dbo.customer_membership_dependents (membership_id, customer_id, relationship)
-        VALUES (@mid, @dep_cid, @rel)
-      `);
 
     const host = process.env.APP_BASE_URL || 'http://localhost:4000';
     const inviteLink = `${host}/go`;
@@ -588,9 +568,13 @@ router.post('/membership/add-dependent', async (req, res, next) => {
     return res.status(201).json({
       success: true,
       invite_link: inviteLink,
-      message: `Family member added! Share this link with them so they can set up their account: ${inviteLink}`
+      data: result,
+      message: `Buddy added! Share this link with them so they can set up their account: ${inviteLink}`
     });
   } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
     return next(err);
   }
 });
@@ -603,21 +587,8 @@ router.get('/offers', async (req, res, next) => {
     const pool = await getPool();
     const cid = req.customerId;
 
-    const memR = await pool.request().input('cid', cid).query(`
-      SELECT TOP 1
-        cm.plan_key,
-        mp.has_plus_access,
-        mp.extra_cashback_pct,
-        mp.flat_discount_pct,
-        mp.has_one_time_discount,
-        mp.can_create_sub_cards
-      FROM   dbo.customer_memberships cm
-      JOIN   dbo.membership_plans mp ON mp.plan_key = cm.plan_key
-      WHERE  cm.customer_id = @cid AND cm.is_active = 1
-        AND  cm.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
-      ORDER BY cm.expires_at DESC
-    `);
-    const memRow = memR.recordset[0] || null;
+    const resolved = await resolveMembershipForCustomer(pool, cid);
+    const memRow = resolved.capabilities || null;
 
     const now = wallClockIso();
     const r = await pool.request()
