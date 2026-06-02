@@ -567,6 +567,16 @@
     return body.data
   }
 
+  async function apiPatch(path, payload, token) {
+    await ensureCosmosApiKeyFromBootstrap()
+    const headers = { 'Content-Type': 'application/json', 'X-API-Key': getApiKey() }
+    if (token) headers['Authorization'] = 'Bearer ' + token
+    const res = await fetch(path, { method: 'PATCH', headers, body: JSON.stringify(payload) })
+    const body = await res.json()
+    if (!res.ok || !body.success) throw new Error(body.message || 'Request failed')
+    return body.data
+  }
+
   var posAliasConfirmCallback = null
 
   function closePosAliasConfirmModal() {
@@ -883,6 +893,7 @@
     if (sbLetter) sbLetter.textContent = letter
     if (sbName)   sbName.textContent   = (s && s.name)       ? s.name       : ''
     if (sbStore)  sbStore.textContent  = (s && s.store_name) ? s.store_name : ''
+    posGatepassSyncUi()
   }
 
   // ── Screen navigation (internal — callers use navigate()) ───────────────
@@ -1959,6 +1970,59 @@
     renderCartCustomerRef()
     syncCustomerPickerBannerAndActions()
     syncCartMembershipUi()
+  }
+
+  /** Clear active sale: cart, Cx, selection, lens wizard, checkout draft, persisted cart. */
+  function resetPosActiveOrderState(opts) {
+    opts = opts || {}
+    obCart = []
+    pendingOrderSelection = null
+    selectedProductId = null
+    pendingResumeOrder = false
+    pendingCheckout = null
+    lastCreatedOrder = null
+    lensWizardLineIdx = -1
+    lensWizardBackRoute = POS_ROUTES.ORDER
+    lensWizardOpenMode = 'new'
+    lensWizardWasEditing = false
+    posPendingLensPatientName = null
+    paySessionSnapshot = { stage: 'FULL', amount: 0 }
+    forceBalanceSettlement = false
+    posDeliveryMode = 'STORE'
+    if (typeof setPosDeliveryMode === 'function') setPosDeliveryMode('STORE')
+    lensWizard = {
+      step: 0,
+      subPhase: 'profile',
+      powerType: null,
+      category: null,
+      pkg: null,
+      addonIds: [],
+      powerMode: null,
+      brandFilter: 'all',
+      customerName: null,
+      patientName: null,
+      rx: {
+        od: { sph: '', cyl: '', axis: '', plano: false },
+        os: { sph: '', cyl: '', axis: '', plano: false },
+        pd: '',
+        doctor: ''
+      }
+    }
+    if (!opts.keepPaymentReceipt) lastPaymentReceipt = null
+    clearCartStorage()
+    clearPosCustomerSelection()
+    if (opts.refreshUi !== false) {
+      obRenderCart()
+      renderCartCustomerRef()
+      syncCartMembershipUi()
+      var session = getPosSession()
+      if (session && session.token) refreshCartSidebar(session)
+    }
+  }
+
+  function startNewPosSale() {
+    resetPosActiveOrderState()
+    navigate(POS_ROUTES.CATALOGUE)
   }
 
   function fmtOfferDateIso(v) {
@@ -4692,6 +4756,420 @@
     if (!overlay || !overlay.classList.contains('open')) return
     overlay.classList.remove('open')
     posLkUnlockModalScroll()
+    if (posCxSearchInstance && typeof posCxSearchInstance.close === 'function') {
+      posCxSearchInstance.close()
+    }
+  }
+
+  // ── GatePass (visitor queue + cosmos-cx-search) ───────────────────────────
+  var posCxSearchInstance = null
+  var posGatepassPollTimer = null
+  var posGatepassActiveVisitor = null
+  var posGatepassPurposeOptions = null
+
+  function posGatepassHasPerm(key) {
+    var perms = posJwtPermissions().map(function (p) { return String(p).toLowerCase() })
+    var session = getPosSession()
+    if (session && session.token) {
+      var p = decodeJwtPayloadUnverified(session.token)
+      if (p && String(p.role || '').toLowerCase() === 'super_admin') return true
+    }
+    return perms.indexOf(String(key).toLowerCase()) !== -1
+  }
+
+  function posGatepassStoreId() {
+    var session = getPosSession()
+    if (session && session.store_id != null) return Number(session.store_id)
+    return selectedStoreId != null ? Number(selectedStoreId) : null
+  }
+
+  function posGatepassApiGet(path) {
+    var session = getPosSession()
+    if (!session || !session.token) return Promise.reject(new Error('Not signed in'))
+    return apiGet(path, session.token)
+  }
+
+  function posGatepassApiPatch(path, payload) {
+    var session = getPosSession()
+    if (!session || !session.token) return Promise.reject(new Error('Not signed in'))
+    return apiPatch(path, payload, session.token)
+  }
+
+  function posGatepassApiPost(path, payload) {
+    var session = getPosSession()
+    if (!session || !session.token) return Promise.reject(new Error('Not signed in'))
+    return apiPost(path, payload, session.token).then(function (body) { return body.data })
+  }
+
+  function posGatepassSyncUi() {
+    var canView = posGatepassHasPerm('gatepass.view')
+    var canCheckin = posGatepassHasPerm('gatepass.checkin')
+    var navBtn = document.getElementById('btn-gatepass-checkin-nav')
+    var widget = document.getElementById('pos-gatepass-widget')
+    if (navBtn) navBtn.hidden = !canCheckin
+    if (widget) widget.hidden = !canView
+    if (canView) {
+      void posGatepassRefreshWidget()
+      posGatepassStartPoll()
+    } else {
+      posGatepassStopPoll()
+    }
+  }
+
+  function posGatepassStartPoll() {
+    posGatepassStopPoll()
+    if (!posGatepassHasPerm('gatepass.view')) return
+    posGatepassPollTimer = window.setInterval(function () {
+      void posGatepassRefreshWidget()
+    }, 30000)
+  }
+
+  function posGatepassStopPoll() {
+    if (posGatepassPollTimer) {
+      window.clearInterval(posGatepassPollTimer)
+      posGatepassPollTimer = null
+    }
+  }
+
+  async function posGatepassLoadPurposes() {
+    if (posGatepassPurposeOptions) return posGatepassPurposeOptions
+    try {
+      posGatepassPurposeOptions = await posGatepassApiGet('/api/meta/gatepass-purposes')
+    } catch (_e) {
+      posGatepassPurposeOptions = []
+    }
+    return posGatepassPurposeOptions
+  }
+
+  function posGatepassFillPurposeSelect(selectEl) {
+    if (!selectEl) return
+    void posGatepassLoadPurposes().then(function (rows) {
+      while (selectEl.options.length > 1) selectEl.remove(1)
+      ;(rows || []).forEach(function (p) {
+        var opt = document.createElement('option')
+        opt.value = p.key
+        opt.textContent = p.label
+        selectEl.appendChild(opt)
+      })
+    })
+  }
+
+  function posGatepassPurposeLabel(key) {
+    if (!key || !posGatepassPurposeOptions) return key || ''
+    for (var i = 0; i < posGatepassPurposeOptions.length; i++) {
+      if (posGatepassPurposeOptions[i].key === key) return posGatepassPurposeOptions[i].label
+    }
+    return key
+  }
+
+  function posGatepassLinkCtxFromCentralCx(ctx) {
+    if (ctx.has_customer && ctx.customer_data) {
+      linkPosCustomerFromSearch(ctx.customer_data, {})
+      return true
+    }
+    if (ctx.has_customer && ctx.customer_id) {
+      linkPosCustomerFromSearch({
+        customer_id: ctx.customer_id,
+        full_name: (ctx.customer_data && ctx.customer_data.full_name) || ctx.name,
+        phone: ctx.phone,
+        display_name: ctx.customer_data && ctx.customer_data.display_name,
+        family_names: ctx.customer_data && ctx.customer_data.family_names
+      }, {})
+      return true
+    }
+    return false
+  }
+
+  function posGatepassHandleVisitorSelect(ctx) {
+    if (posGatepassLinkCtxFromCentralCx(ctx)) {
+      syncCustomerPickerBannerAndActions()
+      closePosCustomerPickerModal()
+      leaveCustomerScreenToCart()
+      return
+    }
+    var digits = window.cosmosCxSearch && window.cosmosCxSearch.normalizeDigits
+      ? window.cosmosCxSearch.normalizeDigits(ctx.phone)
+      : String(ctx.phone || '').replace(/\D/g, '').slice(-10)
+    if (digits.length >= 10) {
+      posGatepassApiGet('/api/pos/customer-search?q=' + encodeURIComponent(digits)).then(function (rows) {
+        var list = Array.isArray(rows) ? rows : (rows && rows.data) || []
+        var hit = null
+        for (var i = 0; i < list.length; i++) {
+          if (String(list[i].phone || '').replace(/\D/g, '').slice(-10) === digits) {
+            hit = list[i]
+            break
+          }
+        }
+        if (!hit && list.length) hit = list[0]
+        if (hit) {
+          ctx.has_customer = true
+          ctx.customer_data = hit
+          ctx.customer_id = hit.customer_id
+          if (posGatepassLinkCtxFromCentralCx(ctx)) {
+            syncCustomerPickerBannerAndActions()
+            closePosCustomerPickerModal()
+            leaveCustomerScreenToCart()
+            return
+          }
+        }
+        posGatepassOpenQuickCxFromVisitor(ctx)
+      }).catch(function () {
+        posGatepassOpenQuickCxFromVisitor(ctx)
+      })
+      return
+    }
+    posGatepassOpenQuickCxFromVisitor(ctx)
+  }
+
+  function posGatepassOpenQuickCxFromVisitor(ctx) {
+    openQuickCxRegistration(window.cosmosCxSearch && window.cosmosCxSearch.normalizeDigits
+      ? window.cosmosCxSearch.normalizeDigits(ctx.phone)
+      : ctx.phone)
+    var nameEl = document.getElementById('cust-picker-new-name')
+    if (nameEl && ctx.name) nameEl.value = ctx.name
+    if (typeof cosmosToastInfo === 'function') {
+      cosmosToastInfo('No CX profile — use Quick Cx registration below.')
+    }
+  }
+
+  function posGatepassInitCxSearch() {
+    if (typeof window.cosmosCxSearch === 'undefined') return
+    var inputEl = document.getElementById('cust-picker-search-input')
+    var storeId = posGatepassStoreId()
+    if (!inputEl || !storeId) return
+    if (posCxSearchInstance && typeof posCxSearchInstance.destroy === 'function') {
+      posCxSearchInstance.destroy()
+    }
+    posCxSearchInstance = window.cosmosCxSearch.init({
+      inputEl: inputEl,
+      storeId: storeId,
+      apiGet: function (path) { return posGatepassApiGet(path) },
+      apiPatch: function (path, payload) { return posGatepassApiPatch(path, payload) },
+      onSelect: function (ctx) { posGatepassHandleVisitorSelect(ctx) },
+      onCheckInNew: function (phone) {
+        closePosCustomerPickerModal()
+        openGatepassCheckInModal(phone, '')
+      }
+    })
+  }
+
+  function openGatepassCheckInModal(prefillPhone, prefillName) {
+    if (!posGatepassHasPerm('gatepass.checkin')) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('You do not have check-in permission.')
+      return
+    }
+    var overlay = document.getElementById('overlay-gatepass-checkin')
+    if (!overlay) return
+    var phoneEl = document.getElementById('gatepass-checkin-phone')
+    var nameEl = document.getElementById('gatepass-checkin-name')
+    var notesEl = document.getElementById('gatepass-checkin-notes')
+    var purposeEl = document.getElementById('gatepass-checkin-purpose')
+    posGatepassFillPurposeSelect(purposeEl)
+    if (phoneEl) {
+      phoneEl.value = prefillPhone || ''
+      if (typeof cosmosFieldClear === 'function') cosmosFieldClear(phoneEl)
+    }
+    if (nameEl) {
+      nameEl.value = prefillName || ''
+      if (typeof cosmosFieldClear === 'function') cosmosFieldClear(nameEl)
+    }
+    if (notesEl) notesEl.value = ''
+    overlay.classList.add('open')
+    posLkLockModalScroll()
+    window.requestAnimationFrame(function () {
+      if (phoneEl && !prefillPhone) phoneEl.focus()
+      else if (nameEl) nameEl.focus()
+    })
+  }
+
+  function closeGatepassCheckInModal() {
+    var overlay = document.getElementById('overlay-gatepass-checkin')
+    if (!overlay || !overlay.classList.contains('open')) return
+    overlay.classList.remove('open')
+    posLkUnlockModalScroll()
+  }
+
+  async function submitGatepassCheckIn(btn) {
+    var phoneEl = document.getElementById('gatepass-checkin-phone')
+    var nameEl = document.getElementById('gatepass-checkin-name')
+    var purposeEl = document.getElementById('gatepass-checkin-purpose')
+    var notesEl = document.getElementById('gatepass-checkin-notes')
+    var name = nameEl ? nameEl.value.trim() : ''
+    var phoneParsed = parsePosCustomerMobileForSave(phoneEl ? phoneEl.value : '')
+    if (!phoneParsed.ok) {
+      if (phoneEl && typeof cosmosFieldError === 'function') cosmosFieldError(phoneEl, phoneParsed.message)
+      return
+    }
+    if (!name) {
+      if (nameEl && typeof cosmosFieldError === 'function') cosmosFieldError(nameEl, 'Required')
+      return
+    }
+    var storeId = posGatepassStoreId()
+    if (!storeId) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Store context missing.')
+      return
+    }
+    if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn)
+    try {
+      var data = await posGatepassApiPost('/api/gatepass/checkin', {
+        name: name,
+        phone: phoneParsed.phone,
+        store_id: storeId,
+        channel: 'staff_tablet',
+        purpose: purposeEl && purposeEl.value ? purposeEl.value : null,
+        notes: notesEl && notesEl.value ? notesEl.value.trim() : null
+      })
+      if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn)
+      closeGatepassCheckInModal()
+      if (data && data.already_checked_in) {
+        if (typeof cosmosToastInfo === 'function') cosmosToastInfo('Visitor already in queue.')
+      } else if (typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('Visitor checked in')
+      }
+      void posGatepassRefreshWidget()
+    } catch (err) {
+      if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn)
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Check-in failed')
+    }
+  }
+
+  async function posGatepassRefreshWidget() {
+    if (!posGatepassHasPerm('gatepass.view')) return
+    var storeId = posGatepassStoreId()
+    var list = document.getElementById('pos-gatepass-widget-list')
+    var countEl = document.getElementById('pos-gatepass-widget-count')
+    if (!storeId || !list) return
+    try {
+      var rows = await posGatepassApiGet('/api/gatepass/queue/' + encodeURIComponent(storeId))
+      list.innerHTML = ''
+      if (!rows || !rows.length) {
+        var empty = document.createElement('div')
+        empty.className = 'pos-gatepass-widget-empty'
+        empty.innerHTML = '<div style="font-weight:600;margin-bottom:4px">No visitors waiting</div><div>Check in walk-ins to see them here.</div>'
+        list.appendChild(empty)
+        if (countEl) countEl.textContent = '0'
+        return
+      }
+      if (countEl) countEl.textContent = String(rows.length)
+      await posGatepassLoadPurposes()
+      rows.forEach(function (v) {
+        var btn = document.createElement('button')
+        btn.type = 'button'
+        btn.className = 'pos-gatepass-widget-row tr-link'
+        btn.setAttribute('role', 'listitem')
+        var dot = v.has_customer ? '🟢' : '🟠'
+        var purpose = v.purpose ? posGatepassPurposeLabel(v.purpose) : 'General'
+        var wait = v.wait_minutes != null ? v.wait_minutes + 'm' : ''
+        btn.innerHTML = '<div class="pos-gatepass-widget-row-name">' + dot + ' ' + escapeHtml(v.name) + '</div>'
+          + '<div class="pos-gatepass-widget-row-meta">' + escapeHtml(purpose) + ' · ' + escapeHtml(wait) + '</div>'
+        btn.addEventListener('click', function () { openGatepassActionsSheet(v) })
+        list.appendChild(btn)
+      })
+    } catch (_err) {
+      /* silent poll failure */
+    }
+  }
+
+  function openGatepassActionsSheet(visitor) {
+    posGatepassActiveVisitor = visitor
+    var overlay = document.getElementById('overlay-gatepass-actions')
+    var summary = document.getElementById('gatepass-actions-summary')
+    if (!overlay || !summary) return
+    var purpose = visitor.purpose ? posGatepassPurposeLabel(visitor.purpose) : '—'
+    summary.innerHTML = '<strong>' + escapeHtml(visitor.name) + '</strong><br>'
+      + escapeHtml(visitor.phone) + '<br>Purpose: ' + escapeHtml(purpose)
+      + '<br>Status: ' + escapeHtml(visitor.status || '')
+    var inSvc = document.getElementById('gatepass-action-in-service')
+    var closeBtn = document.getElementById('gatepass-action-close')
+    var selectBtn = document.getElementById('gatepass-action-select')
+    if (inSvc) inSvc.hidden = !posGatepassHasPerm('gatepass.action')
+    if (closeBtn) closeBtn.hidden = !posGatepassHasPerm('gatepass.action')
+    if (selectBtn) selectBtn.hidden = !posGatepassHasPerm('gatepass.view')
+    overlay.classList.add('open')
+    posLkLockModalScroll()
+  }
+
+  function closeGatepassActionsSheet() {
+    var overlay = document.getElementById('overlay-gatepass-actions')
+    if (!overlay || !overlay.classList.contains('open')) return
+    overlay.classList.remove('open')
+    posGatepassActiveVisitor = null
+    posLkUnlockModalScroll()
+  }
+
+  async function posGatepassPatchStatus(status) {
+    if (!posGatepassActiveVisitor) return
+    try {
+      await posGatepassApiPatch('/api/gatepass/visitor/' + posGatepassActiveVisitor.visitor_id + '/status', { status: status })
+      closeGatepassActionsSheet()
+      void posGatepassRefreshWidget()
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Visitor updated')
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Update failed')
+    }
+  }
+
+  function posGatepassActionSelectForCart() {
+    if (!posGatepassActiveVisitor) return
+    var v = posGatepassActiveVisitor
+    closeGatepassActionsSheet()
+    var ctx = {
+      visitor_id: v.visitor_id,
+      name: v.name,
+      phone: v.phone,
+      customer_id: v.customer_id,
+      has_customer: !!(v.has_customer || v.customer_id),
+      customer_data: null
+    }
+    if (ctx.has_customer && ctx.customer_id) {
+      void posGatepassApiGet('/api/pos/customer-search?q=' + encodeURIComponent(ctx.phone)).then(function (rows) {
+        var list = Array.isArray(rows) ? rows : []
+        ctx.customer_data = list[0] || null
+        posGatepassHandleVisitorSelect(ctx)
+      }).catch(function () {
+        posGatepassHandleVisitorSelect(ctx)
+      })
+      return
+    }
+    posGatepassHandleVisitorSelect(ctx)
+  }
+
+  function bindGatepassModule() {
+    var navBtn = document.getElementById('btn-gatepass-checkin-nav')
+    var widgetCheckin = document.getElementById('pos-gatepass-widget-checkin')
+    var submitBtn = document.getElementById('gatepass-checkin-submit')
+    var cancelBtn = document.getElementById('gatepass-checkin-cancel')
+    var dismissBtn = document.getElementById('gatepass-checkin-dismiss')
+    var backdrop = document.getElementById('gatepass-checkin-backdrop')
+    var actDismiss = document.getElementById('gatepass-actions-dismiss')
+    var actBackdrop = document.getElementById('gatepass-actions-backdrop')
+    var actSelect = document.getElementById('gatepass-action-select')
+    var actInSvc = document.getElementById('gatepass-action-in-service')
+    var actClose = document.getElementById('gatepass-action-close')
+
+    if (navBtn) navBtn.addEventListener('click', function () { openGatepassCheckInModal('', '') })
+    if (widgetCheckin) widgetCheckin.addEventListener('click', function () { openGatepassCheckInModal('', '') })
+    if (submitBtn) submitBtn.addEventListener('click', function () { void submitGatepassCheckIn(submitBtn) })
+    if (cancelBtn) cancelBtn.addEventListener('click', closeGatepassCheckInModal)
+    if (dismissBtn) dismissBtn.addEventListener('click', closeGatepassCheckInModal)
+    if (backdrop) backdrop.addEventListener('click', closeGatepassCheckInModal)
+    if (actDismiss) actDismiss.addEventListener('click', closeGatepassActionsSheet)
+    if (actBackdrop) actBackdrop.addEventListener('click', closeGatepassActionsSheet)
+    if (actSelect) actSelect.addEventListener('click', posGatepassActionSelectForCart)
+    if (actInSvc) actInSvc.addEventListener('click', function () { void posGatepassPatchStatus('in_service') })
+    if (actClose) actClose.addEventListener('click', function () {
+      var st = posGatepassActiveVisitor && posGatepassActiveVisitor.status
+      void posGatepassPatchStatus(st === 'in_service' ? 'completed' : 'no_show')
+    })
+
+    var phoneEl = document.getElementById('gatepass-checkin-phone')
+    var nameEl = document.getElementById('gatepass-checkin-name')
+    if (phoneEl && typeof cosmosFieldClear === 'function') {
+      phoneEl.addEventListener('input', function () { cosmosFieldClear(phoneEl) })
+    }
+    if (nameEl && typeof cosmosFieldClear === 'function') {
+      nameEl.addEventListener('input', function () { cosmosFieldClear(nameEl) })
+    }
   }
 
   function openPosCustomerPickerModal() {
@@ -4725,6 +5203,7 @@
     window.requestAnimationFrame(function () {
       if (pickSearch) pickSearch.focus()
     })
+    posGatepassInitCxSearch()
   }
 
   async function runCustomerSearch() {
@@ -4901,9 +5380,9 @@
     })
 
     const btnConfirmBack = document.getElementById('btn-confirm-back')
-    if (btnConfirmBack) btnConfirmBack.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
+    if (btnConfirmBack) btnConfirmBack.addEventListener('click', startNewPosSale)
     const btnConfirmNew = document.getElementById('btn-confirm-new-order')
-    if (btnConfirmNew) btnConfirmNew.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
+    if (btnConfirmNew) btnConfirmNew.addEventListener('click', startNewPosSale)
     const btnConfirmPrint = document.getElementById('btn-confirm-view-invoice')
     if (btnConfirmPrint) {
       btnConfirmPrint.addEventListener('click', function () {
@@ -5488,6 +5967,8 @@
     closePosCustomerPickerModal()
     closeLensRxManualModal()
     closeLensNewCustomerModal()
+    closeGatepassCheckInModal()
+    closeGatepassActionsSheet()
   }
 
   function computeLensSearchPrefillForNewCustomer(q) {
@@ -6227,19 +6708,7 @@
         'Balance due: ' + formatRupees(balanceDue) + ' — collect from Orders when ready.'
       )
     }
-    lastCreatedOrder = null
-    pendingCheckout = null
-    paySessionSnapshot = { stage: 'FULL', amount: 0 }
-    forceBalanceSettlement = false
-    obCart = []
-    posSelectedOfferId = null
-    posCartMembershipSale = null
-    clearCartStorage()
-    saveCart()
-    obRenderCart()
-    syncCartMembershipUi()
-    const session = getPosSession()
-    if (session && session.token) refreshCartSidebar(session)
+    resetPosActiveOrderState({ keepPaymentReceipt: true })
     navigate(POS_ROUTES.CONFIRM)
   }
 
@@ -7027,6 +7496,13 @@
     })
   }
 
+  function cartLineInstantFrameOnlyDone(line) {
+    return (
+      line.fulfillment === 'INSTANT' &&
+      (line.power_mode === 'frame_only' || line.power_mode === 'frame_sunglasses')
+    )
+  }
+
   function cartLinePatientLabelHtml(line) {
     if (String(line.fulfillment || '').toUpperCase() !== 'LAB') return ''
     var patient = String(line.patient_name || (line.rx && line.rx.patient_name) || '').trim()
@@ -7133,6 +7609,17 @@
         '<span class="pos-lk-cart-lens-lbl">Lens · pending setup</span>' +
         '<span class="pos-lk-cart-lens-price">—</span>' +
         '</div>'
+    } else if (
+      isDual &&
+      line.fulfillment === 'INSTANT' &&
+      !line.lens_bundle &&
+      !cartLineInstantFrameOnlyDone(line)
+    ) {
+      lensDescHtml =
+        '<div class="pos-lk-cart-lens-row pos-lk-cart-lens-row--pending">' +
+        '<span class="pos-lk-cart-lens-lbl">Lens · add when customer wants prescription lenses</span>' +
+        '<span class="pos-lk-cart-lens-price">—</span>' +
+        '</div>'
     }
 
     const showFreeRibbon = lineTotal < 0.02
@@ -7145,15 +7632,20 @@
     const labWizardOk = lensWizardAllowed(line.product_type)
     const showSelectLenses =
       labWizardOk &&
-      line.fulfillment === 'LAB' &&
       !line.lens_bundle &&
-      (isDual || line.lab_status !== 'complete')
+      !cartLineInstantFrameOnlyDone(line) &&
+      (
+        (line.fulfillment === 'LAB' && line.lab_status !== 'complete') ||
+        (isDual && line.fulfillment === 'INSTANT')
+      )
     const showEditLenses =
       labWizardOk &&
       line.fulfillment === 'LAB' &&
       line.lens_bundle
+    const selectLensesLabel =
+      isDual && line.fulfillment === 'INSTANT' ? 'Add lenses →' : 'Select lenses →'
     const configureBtn = showSelectLenses
-      ? '<button type="button" class="pos-ob-mini-btn action-btn pos-lk-cart-config-btn" data-action="configure-lens" data-idx="' + idx + '">Select lenses →</button>'
+      ? '<button type="button" class="pos-ob-mini-btn action-btn pos-lk-cart-config-btn" data-action="configure-lens" data-idx="' + idx + '">' + selectLensesLabel + '</button>'
       : ''
     const editLensBtn = showEditLenses
       ? '<button type="button" class="pos-ob-mini-btn action-btn pos-lk-cart-config-btn pos-lk-cart-edit-btn" data-action="edit-lens" data-idx="' + idx + '">Edit lenses & power →</button>'
@@ -9233,6 +9725,18 @@
         closePosCustomerPickerModal()
         return
       }
+      var gpCheckin = document.getElementById('overlay-gatepass-checkin')
+      if (gpCheckin && gpCheckin.classList.contains('open')) {
+        ev.preventDefault()
+        closeGatepassCheckInModal()
+        return
+      }
+      var gpActions = document.getElementById('overlay-gatepass-actions')
+      if (gpActions && gpActions.classList.contains('open')) {
+        ev.preventDefault()
+        closeGatepassActionsSheet()
+        return
+      }
       if (rxOverlay && rxOverlay.classList.contains('open')) {
         ev.preventDefault()
         closeLensRxManualModal()
@@ -9351,7 +9855,7 @@
       if (!btn) return
       var key = btn.getAttribute('data-pos-sb-nav')
       if (key === 'catalogue')  navigate(POS_ROUTES.CATALOGUE)
-      if (key === 'new-order')  navigate(POS_ROUTES.CATALOGUE)
+      if (key === 'new-order')  startNewPosSale()
       if (key === 'orders')     navigate(POS_ROUTES.ORDERS)
     })
 
@@ -9365,6 +9869,7 @@
     renderCartCustomerRef()
     bindPosCustAliasConfirmModal()
     bindPosLensNewCustomerModal()
+    bindGatepassModule()
     document.addEventListener('visibilitychange', function onPosVisibilityRefresh() {
       if (document.visibilityState !== 'visible') return
       var visSession = getPosSession()

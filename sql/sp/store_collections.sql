@@ -528,12 +528,20 @@ BEGIN
     SET @net_amount = @gross_amount;
 
     CREATE TABLE #cashsum (
-      store_id INT, store_cash_balance DECIMAL(12,2),
-      machine_upi_pending DECIMAL(12,2), machine_card_pending DECIMAL(12,2),
-      machine_total_pending DECIMAL(12,2), store_bank_balance DECIMAL(12,2),
-      collected_today_cash DECIMAL(12,2), collected_today_upi DECIMAL(12,2),
-      collected_today_card DECIMAL(12,2), collected_all_cash DECIMAL(12,2),
-      collected_all_upi DECIMAL(12,2), collected_all_card DECIMAL(12,2)
+      store_id INT,
+      store_cash_balance DECIMAL(12,2),
+      machine_upi_pending DECIMAL(12,2),
+      machine_card_pending DECIMAL(12,2),
+      machine_total_pending DECIMAL(12,2),
+      unsettled_machine_from DATE,
+      unsettled_machine_to DATE,
+      store_bank_balance DECIMAL(12,2),
+      collected_today_cash DECIMAL(12,2),
+      collected_today_upi DECIMAL(12,2),
+      collected_today_card DECIMAL(12,2),
+      collected_all_cash DECIMAL(12,2),
+      collected_all_upi DECIMAL(12,2),
+      collected_all_card DECIMAL(12,2)
     );
     INSERT INTO #cashsum EXEC dbo.sp_Treasury_GetSummary @store_id = @store_id, @engine_mode = @engine_mode;
     SELECT TOP 1 @cash_bal = store_cash_balance FROM #cashsum;

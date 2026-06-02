@@ -2,7 +2,7 @@
 
 const sql = require('mssql');
 const { getPool } = require('../config/db');
-const { formatIstIso } = require('../lib/cosmosIst');
+const { wireDatetimeFromSql } = require('../lib/cosmosIst');
 const {
   isAllowedArmyInterviewerRoleKey,
   getArmyInterviewerRoleByKey
@@ -54,8 +54,8 @@ function mapTemplateRow(row, stages) {
       ? stages.map((s) => s.stage_name).join(' → ')
       : (row.stages_summary || ''),
     stages: stages || [],
-    created_at: formatIstIso(row.created_at),
-    updated_at: formatIstIso(row.updated_at)
+    created_at: wireDatetimeFromSql(row.created_at),
+    updated_at: wireDatetimeFromSql(row.updated_at)
   };
 }
 

@@ -605,6 +605,19 @@
     document.getElementById('sc-cd-date').value = scIstToday();
     document.getElementById('sc-cd-notes').value = '';
     document.getElementById('sc-cd-error').style.display = 'none';
+    let hint = document.getElementById('sc-cd-balance-hint');
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.id = 'sc-cd-balance-hint';
+      hint.className = 'xs td3';
+      hint.style.marginBottom = '10px';
+      const amountGrp = document.getElementById('sc-cd-amount');
+      if (amountGrp && amountGrp.parentElement) {
+        amountGrp.parentElement.insertBefore(hint, amountGrp.nextSibling);
+      }
+    }
+    const avail = Number(_scSummary.store_cash_balance) || 0;
+    hint.textContent = 'Available Store Cash: ' + scFmtRs(avail);
     document.getElementById('overlay-sc-cash-deposit').classList.add('open');
   };
 
@@ -621,6 +634,13 @@
     const amount = Number(amountEl.value);
     if (!amount || amount <= 0) {
       if (typeof cosmosFieldError === 'function') cosmosFieldError(amountEl, 'Enter a valid amount');
+      return;
+    }
+    const availCash = _scSummary ? Number(_scSummary.store_cash_balance) || 0 : 0;
+    if (amount > availCash + 0.02) {
+      if (typeof cosmosFieldError === 'function') {
+        cosmosFieldError(amountEl, 'Amount exceeds Store Cash balance (' + scFmtRs(availCash) + ')');
+      }
       return;
     }
     if (typeof cosmosFieldClear === 'function') cosmosFieldClear(amountEl);

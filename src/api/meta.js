@@ -26,6 +26,7 @@ const { getTreasuryLedgerMetaForApi } = require('../config/treasuryLedgerCatalog
 const { getPaymentMachineProviderCatalog } = require('../config/paymentMachineProviderCatalog')
 const { MEMBERSHIP_CAPABILITY_GROUPS } = require('../config/membershipCapabilityGroups');
 const { getMembershipDependentRelationshipsForApi } = require('../config/membershipDependentRelationshipsCatalog');
+const { getGatepassPurposeCatalog } = require('../config/gatepassPurposeCatalog');
 
 const router = express.Router();
 
@@ -204,6 +205,15 @@ router.get(
   requireAnyModule(['command_unit', 'cx', 'pos']),
   (req, res) => {
     res.json({ success: true, data: getMembershipDependentRelationshipsForApi() });
+  }
+);
+
+router.get(
+  '/gatepass-purposes',
+  requireAnyModule(['pos', 'storepilot']),
+  requirePermission('gatepass.view', 'gatepass.checkin'),
+  (req, res) => {
+    res.json({ success: true, data: getGatepassPurposeCatalog() });
   }
 );
 

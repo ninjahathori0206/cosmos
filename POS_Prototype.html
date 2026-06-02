@@ -13,13 +13,15 @@
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-bucket-z">
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
 <link rel="stylesheet" href="/css/lenskart-pos.css?v=storeos-20260603-lab-edit-lenses">
+<link rel="stylesheet" href="/css/cosmos-cx-search.css?v=gatepass-p1">
 <script src="/js/cosmos-ui-polish.js?v=20260602-ist-wire" defer></script>
 <script src="/js/cosmos-pwa-update.js?v=20260528-pwa-update" defer></script>
 <script src="/js/storeos-pwa.js?v=20260528-pwa-update" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260523-cart-bucket" defer></script>
 <script src="/js/pos-customer-family-name-copy.js" defer></script>
-<script src="/js/pos.js?v=storeos-20260603-lens-step2-no-patient-field" defer></script>
+<script src="/js/cosmos-cx-search.js?v=gatepass-p1" defer></script>
+<script src="/js/pos.js?v=storeos-20260603-dual-lens-cta" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -365,6 +367,10 @@
         </div>
       </div>
       <div class="pos-catalogue-topbar-cart">
+        <button type="button" id="btn-gatepass-checkin-nav" class="pos-lk-header-cart-btn pos-gatepass-checkin-nav-btn" aria-label="Check in visitor" tabindex="0" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4-4v-2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          <span class="pos-gatepass-checkin-nav-label">Check In</span>
+        </button>
         <button id="btn-pos-header-cart" class="pos-lk-header-cart-btn" type="button" aria-label="Open cart" tabindex="0">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="9" cy="20" r="1"></circle>
@@ -1041,6 +1047,15 @@
     </button>
   </nav>
 
+  <section id="pos-gatepass-widget" class="pos-gatepass-widget" aria-label="Visitor queue" hidden>
+    <div class="pos-gatepass-widget-head">
+      <span class="pos-gatepass-widget-title">Visitors</span>
+      <span id="pos-gatepass-widget-count" class="pos-gatepass-widget-count" aria-live="polite">0</span>
+    </div>
+    <div id="pos-gatepass-widget-list" class="pos-gatepass-widget-list" role="list"></div>
+    <button type="button" id="pos-gatepass-widget-checkin" class="pos-gatepass-widget-checkin-btn" tabindex="0">+ Check In</button>
+  </section>
+
   <!-- Spacer -->
   <div class="pos-sb-spacer"></div>
   <div class="pos-sb-divider"></div>
@@ -1128,13 +1143,13 @@
       <section class="pos-cust-section pos-cust-section--picker" aria-label="Find Cx">
         <label class="pos-field-label" for="cust-picker-search-input">Find Cx</label>
         <div class="pos-cust-picker-search-row">
-          <div class="pos-cust-picker-search-field">
+          <div class="pos-cust-picker-search-field cosmos-cx-search-wrap">
             <span class="pos-cust-picker-search-ico" aria-hidden="true">⌕</span>
-            <input id="cust-picker-search-input" class="pos-search-input pos-cust-picker-search-input" type="search" autocomplete="off" placeholder="Phone or name" aria-label="Search Cx">
+            <input id="cust-picker-search-input" class="pos-search-input pos-cust-picker-search-input" type="tel" inputmode="tel" autocomplete="off" placeholder="Phone number" aria-label="Search visitors by phone">
           </div>
-          <button type="button" id="cust-picker-btn-search" class="pos-cust-picker-search-btn" tabindex="0">Search</button>
+          <button type="button" id="cust-picker-btn-search" class="pos-cust-picker-search-btn" tabindex="0" hidden>Search</button>
         </div>
-        <div id="cust-picker-results" class="pos-cust-results pos-cust-results--picker" role="list" aria-live="polite"></div>
+        <div id="cust-picker-results" class="pos-cust-results pos-cust-results--picker pos-cust-results--gatepass-hidden" role="list" aria-live="polite" hidden></div>
       </section>
       <div class="pos-cust-picker-divider" role="separator" aria-hidden="true"></div>
       <section id="cust-picker-quick-reg" class="pos-cust-section pos-cust-section--picker" aria-label="Quick Cx registration">
@@ -1153,6 +1168,53 @@
     <div class="pos-lens-newcust-actions pos-cust-picker-actions">
       <button type="button" id="cust-picker-btn-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
       <button type="button" id="cust-picker-btn-done" class="pos-next-btn pos-lens-newcust-btn-submit">Continue to cart</button>
+    </div>
+  </div>
+</div>
+
+<!-- GatePass — staff check-in -->
+<div id="overlay-gatepass-checkin" class="pos-lens-newcust-overlay" role="dialog" aria-modal="true" aria-labelledby="gatepass-checkin-title">
+  <div class="pos-lens-newcust-backdrop" id="gatepass-checkin-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-lens-newcust-sheet--wide">
+    <div class="pos-lens-newcust-head">
+      <div>
+        <h2 id="gatepass-checkin-title" class="pos-lens-newcust-title">Check In Visitor</h2>
+        <p class="pos-lens-newcust-sub">Register a walk-in. They appear in the live queue immediately.</p>
+      </div>
+      <button type="button" class="pos-lens-newcust-dismiss" id="gatepass-checkin-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <div class="pos-cust-form" style="padding:0 4px">
+      <label class="pos-field-label" for="gatepass-checkin-phone">Mobile</label>
+      <input id="gatepass-checkin-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="10-digit mobile" aria-label="Visitor mobile">
+      <label class="pos-field-label" for="gatepass-checkin-name">Full name</label>
+      <input id="gatepass-checkin-name" class="pos-search-input" type="text" autocomplete="name" placeholder="Visitor name" aria-label="Visitor name">
+      <label class="pos-field-label" for="gatepass-checkin-purpose">Purpose (optional)</label>
+      <select id="gatepass-checkin-purpose" class="pos-search-input" aria-label="Visit purpose">
+        <option value="">— Select —</option>
+      </select>
+      <label class="pos-field-label" for="gatepass-checkin-notes">Notes (optional)</label>
+      <textarea id="gatepass-checkin-notes" class="pos-search-input" rows="2" placeholder="Optional note" aria-label="Check-in notes"></textarea>
+    </div>
+    <div class="pos-lens-newcust-actions">
+      <button type="button" id="gatepass-checkin-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
+      <button type="button" id="gatepass-checkin-submit" class="pos-next-btn pos-lens-newcust-btn-submit">Check In</button>
+    </div>
+  </div>
+</div>
+
+<!-- GatePass — visitor row action sheet -->
+<div id="overlay-gatepass-actions" class="pos-lens-newcust-overlay pos-gatepass-actions-overlay" role="dialog" aria-modal="true" aria-labelledby="gatepass-actions-title">
+  <div class="pos-lens-newcust-backdrop" id="gatepass-actions-backdrop" tabindex="-1"></div>
+  <div class="pos-lens-newcust-sheet pos-gatepass-actions-sheet">
+    <div class="pos-lens-newcust-head">
+      <h2 id="gatepass-actions-title" class="pos-lens-newcust-title">Visitor</h2>
+      <button type="button" class="pos-lens-newcust-dismiss" id="gatepass-actions-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <div id="gatepass-actions-summary" class="pos-gatepass-actions-summary"></div>
+    <div class="pos-gatepass-actions-btns">
+      <button type="button" id="gatepass-action-select" class="pos-next-btn">Select for cart</button>
+      <button type="button" id="gatepass-action-in-service" class="pos-lens-newcust-btn-cancel">Mark In-Service</button>
+      <button type="button" id="gatepass-action-close" class="pos-lens-newcust-btn-cancel">Close Visit</button>
     </div>
   </div>
 </div>

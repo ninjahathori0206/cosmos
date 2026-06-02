@@ -122,6 +122,11 @@ const RAW_PERMISSION_GROUPS = [
     ['storepilot.collections.deposit', 'Collection Book — Record cash deposit'],
     ['storepilot.collections.settle', 'Collection Book — Record machine settlement']
   ]],
+  ['GatePass (Visitors)', [
+    ['gatepass.view', 'GatePass — View queue & search visitors'],
+    ['gatepass.checkin', 'GatePass — Staff check-in'],
+    ['gatepass.action', 'GatePass — Select, assign, close visit']
+  ]],
   ['Store OS (POS)', [
     ['pos.catalogue.view', 'POS — Catalogue, startup & lens config'],
     ['pos.promotions.view', 'POS — Active offers (cart sidebar)'],
@@ -192,7 +197,7 @@ function buildCatalogueGroups() {
 }
 
 /** Bump when adding keys — Command Unit fetches with this revision to avoid stale catalogue. */
-const PERMISSION_CATALOGUE_REVISION = '20260602-army-interview-templates';
+const PERMISSION_CATALOGUE_REVISION = '20260602-gatepass-phase1';
 
 const PERMISSION_CATALOGUE_GROUPS = buildCatalogueGroups();
 

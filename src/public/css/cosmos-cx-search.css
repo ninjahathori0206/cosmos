@@ -1,0 +1,184 @@
+/* cosmos-cx-search — GatePass visitor resolver dropdown (global component) */
+
+.cosmos-cx-search-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.cosmos-cx-search-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 1200;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  padding: 8px 0;
+}
+
+.cosmos-cx-search-dropdown[hidden] {
+  display: none !important;
+}
+
+.cosmos-cx-search-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text3, #64748b);
+  padding: 6px 12px 4px;
+}
+
+.cosmos-cx-search-empty {
+  font-size: 12px;
+  color: var(--text3, #64748b);
+  padding: 8px 12px 12px;
+}
+
+.cosmos-cx-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.cosmos-cx-search-row:hover,
+.cosmos-cx-search-row:focus-visible {
+  background: var(--accL, #eff6ff);
+  outline: none;
+}
+
+.cosmos-cx-search-row-col-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.cosmos-cx-search-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text1, #0f172a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cosmos-cx-search-row-phone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text3, #64748b);
+  margin-top: 2px;
+}
+
+.cosmos-cx-search-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cosmos-cx-search-dot--linked {
+  background: var(--green, #1d9e75);
+}
+
+.cosmos-cx-search-dot--unlinked {
+  background: var(--gold, #ef9f27);
+}
+
+.cosmos-cx-search-row-col-mid {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.cosmos-cx-search-badge {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cosmos-cx-search-badge--blue {
+  color: var(--acc2, #1e40af);
+  background: var(--accL, #eff6ff);
+}
+
+.cosmos-cx-search-badge--purple {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.cosmos-cx-search-badge--amber {
+  color: #b45309;
+  background: var(--goldL, #fef3c7);
+}
+
+.cosmos-cx-search-badge--gray {
+  color: var(--text2, #475569);
+  background: var(--bg, #f1f5f9);
+}
+
+.cosmos-cx-search-row-col-right {
+  width: 72px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text3, #64748b);
+}
+
+.cosmos-cx-search-row-col-right--warn {
+  color: var(--gold, #ef9f27);
+  font-weight: 600;
+}
+
+.cosmos-cx-search-highlight {
+  background: #534ab7;
+  color: #fff;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.cosmos-cx-search-new-row {
+  border-top: 1px solid var(--border, #e2e8f0);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.cosmos-cx-search-new-row .cosmos-cx-search-row-name {
+  color: var(--acc2, #1e40af);
+}
+
+.cosmos-cx-search-skeleton {
+  padding: 8px 12px;
+}
+
+.cosmos-cx-search-skeleton-bar {
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--bg, #f1f5f9) 25%, #e2e8f0 50%, var(--bg, #f1f5f9) 75%);
+  background-size: 200% 100%;
+  animation: cosmos-cx-search-shimmer 1.2s infinite;
+  margin-bottom: 8px;
+}
+
+@keyframes cosmos-cx-search-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

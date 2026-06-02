@@ -45,6 +45,8 @@
     "migrate:81-pos-customer-family-names": "node scripts/run-migration-81-pos-customer-family-names.js",
     "migrate:82-storepilot-day-store-report": "node scripts/run-migration-82-storepilot-day-store-report.js",
     "migrate:83-sku-unit-trace": "node scripts/run-migration-83-sku-unit-trace.js",
+    "migrate:84-gatepass-phase1": "node scripts/run-migration-84-gatepass-phase1.js",
+    "migrate:85-gatepass-link-customers": "node scripts/run-migration-85-gatepass-link-customers.js",
     "maintenance:merge-duplicate-pos-customers": "node scripts/merge-duplicate-pos-customers-by-phone.js",
     "maintenance:repair-transfer-request-qty": "node scripts/repair-transfer-request-line-qty.js",
     "deploy:sp-stock-transfer-units": "node scripts/deploy-sp-stock-transfer-units.js",

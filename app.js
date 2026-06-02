@@ -53,6 +53,7 @@ const customerAuthRouter       = require('./src/api/customerAuth');
 const customerAppRouter        = require('./src/api/customerApp');
 const armyCareersRouter        = require('./src/api/armyCareers');
 const armyHrRouter             = require('./src/api/armyHr');
+const gatepassRouter           = require('./src/api/gatepass');
 const { executeStoredProcedure, healthCheck } = require('./src/config/db');
 const {
   requireGoodsTransferDestinationStores,
@@ -535,6 +536,7 @@ protectedApiRouter.get(
 protectedApiRouter.use('/transfer-requests', transferRequestsRouter);
 protectedApiRouter.use('/stock-transfer-docs', stockTransferDocsRouter);
 protectedApiRouter.use('/cx', cxRouter);
+protectedApiRouter.use('/gatepass', gatepassRouter);
 protectedApiRouter.use('/army/hr', armyHrRouter);
 protectedApiRouter.use('/orders', ordersRouter);
 /* Meta: explicit mount so new catalogue routes work without stale sub-router cache */

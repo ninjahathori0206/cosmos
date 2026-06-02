@@ -34,6 +34,7 @@ Legacy: `Order Creation - Cart (legacy) · /pos/order` (superseded).
 - **Line card spacing (May 2026):** 6px copy rhythm, dashed divider 6px/2px margins, total row directly below unit input, footer meta with top border (**Select lenses →** when lens setup pending)
 - **Lab line patient row (Jun 2026):** when `patient_name` on a LAB line differs from linked primary Cx, show muted **`For · {name}`** chip (`.pos-lk-cart-patient-row`) after product tags, before lens status / package rows
 - **Configured lab line footer (Jun 2026):** when LAB line has `lens_bundle` (`complete` or `pending_power`), show full-width outline **Edit lenses & power →** (`.pos-lk-cart-edit-btn` in `.pos-lk-cart-v2-meta`). Pending lines **without** bundle keep primary **Select lenses →** (`.pos-lk-cart-config-btn`).
+- **DUAL eyeglasses (Jun 2026):** lines added as **INSTANT** pickup may still show **Add lenses →** and a pending lens hint until staff runs the wizard (frame-only choice hides the CTA).
 - Offer-applied chip uses green surface on bill rail
 
 ## Implementation
