@@ -1,6 +1,7 @@
 const sql = require('mssql')
 
 let _hasPosOrderIdCol = null
+let _hasPosMembershipSaleIdCol = null
 
 async function membershipHasPosOrderIdColumn(db) {
   if (_hasPosOrderIdCol != null) return _hasPosOrderIdCol
@@ -10,6 +11,16 @@ async function membershipHasPosOrderIdColumn(db) {
   const len = r.recordset && r.recordset[0] && r.recordset[0].col_len
   _hasPosOrderIdCol = len != null && Number(len) > 0
   return _hasPosOrderIdCol
+}
+
+async function membershipHasPosMembershipSaleIdColumn(db) {
+  if (_hasPosMembershipSaleIdCol != null) return _hasPosMembershipSaleIdCol
+  const r = await db.request().query(`
+    SELECT COL_LENGTH('dbo.customer_memberships', 'pos_membership_sale_id') AS col_len
+  `)
+  const len = r.recordset && r.recordset[0] && r.recordset[0].col_len
+  _hasPosMembershipSaleIdCol = len != null && Number(len) > 0
+  return _hasPosMembershipSaleIdCol
 }
 
 /**
@@ -33,7 +44,7 @@ async function loadActiveMembershipPlan(db, planKey) {
 /**
  * Grant or renew customer membership (deactivates prior active rows).
  * @param {import('mssql').ConnectionPool|import('mssql').Transaction} db — pool or active transaction
- * @param {{ customerId: number, planKey: string, pricePaid?: number|null, validityDays?: number|null, expiresAt?: string|null, posOrderId?: number|null, createdByUserId?: number|null, useTransaction?: boolean }} opts
+ * @param {{ customerId: number, planKey: string, pricePaid?: number|null, validityDays?: number|null, expiresAt?: string|null, posOrderId?: number|null, posMembershipSaleId?: number|null, createdByUserId?: number|null, useTransaction?: boolean }} opts
  * @returns {Promise<{ membership_id: number }>}
  */
 async function grantCustomerMembership(db, opts) {
@@ -74,8 +85,14 @@ async function grantCustomerMembership(db, opts) {
 
   const posOrderId = opts.posOrderId ? parseInt(String(opts.posOrderId), 10) : null
   const validPosOrderId = posOrderId && Number.isFinite(posOrderId) && posOrderId > 0 ? posOrderId : null
+  const posMembershipSaleId = opts.posMembershipSaleId ? parseInt(String(opts.posMembershipSaleId), 10) : null
+  const validPosMembershipSaleId =
+    posMembershipSaleId && Number.isFinite(posMembershipSaleId) && posMembershipSaleId > 0
+      ? posMembershipSaleId
+      : null
   const uid = opts.createdByUserId != null ? Number(opts.createdByUserId) : null
   const hasPosOrderLink = await membershipHasPosOrderIdColumn(db)
+  const hasPosMembershipSaleLink = await membershipHasPosMembershipSaleIdColumn(db)
 
   const runInOwnTx = opts.useTransaction === true
   let tx = null
@@ -98,11 +115,19 @@ async function grantCustomerMembership(db, opts) {
       .input('pk', sql.NVarChar(50), planKey)
       .input('paid', sql.Decimal(12, 2), paid)
       .input('uid', sql.Int, uid)
-    if (hasPosOrderLink) {
+    const extraCols = []
+    const extraVals = []
+    if (hasPosMembershipSaleLink && validPosMembershipSaleId) {
+      ins.input('pos_membership_sale_id', sql.Int, validPosMembershipSaleId)
+      extraCols.push('pos_membership_sale_id')
+      extraVals.push('@pos_membership_sale_id')
+    } else if (hasPosOrderLink && validPosOrderId) {
       ins.input('pos_order_id', sql.Int, validPosOrderId)
+      extraCols.push('pos_order_id')
+      extraVals.push('@pos_order_id')
     }
-    const posOrderCols = hasPosOrderLink ? ', pos_order_id' : ''
-    const posOrderVals = hasPosOrderLink ? ', @pos_order_id' : ''
+    const posOrderCols = extraCols.length ? ', ' + extraCols.join(', ') : ''
+    const posOrderVals = extraVals.length ? ', ' + extraVals.join(', ') : ''
 
     let membershipId
     if (opts.expiresAt) {
@@ -199,5 +224,6 @@ module.exports = {
   loadActiveMembershipPlan,
   grantCustomerMembership,
   resolveMembershipSaleAmount,
-  membershipHasPosOrderIdColumn
+  membershipHasPosOrderIdColumn,
+  membershipHasPosMembershipSaleIdColumn
 }

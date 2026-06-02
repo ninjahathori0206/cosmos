@@ -155,10 +155,51 @@
   padding: 0 1px;
 }
 
+.cosmos-cx-search-row-col-right--cx {
+  color: var(--text2, #475569);
+  font-weight: 500;
+}
+
+.cosmos-cx-search-section-label--cx {
+  margin-top: 4px;
+  border-top: 1px solid var(--border, #e2e8f0);
+  padding-top: 10px;
+}
+
 .cosmos-cx-search-new-row {
   border-top: 1px solid var(--border, #e2e8f0);
   margin-top: 4px;
-  padding-top: 4px;
+  padding: 4px 8px 8px;
+}
+
+.cosmos-cx-search-create-cx-row {
+  padding: 8px 8px 4px;
+  border-top: 1px solid var(--border, #e2e8f0);
+  margin-top: 4px;
+}
+
+.cosmos-cx-search-create-cx-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--acc2, #1d4ed8);
+  border-radius: 10px;
+  background: var(--accL, #eff6ff);
+  color: var(--acc2, #1d4ed8);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cosmos-cx-search-create-cx-btn:hover,
+.cosmos-cx-search-create-cx-btn:focus-visible {
+  background: var(--acc2, #1d4ed8);
+  color: #fff;
+  outline: none;
 }
 
 .cosmos-cx-search-new-row .cosmos-cx-search-row-name {

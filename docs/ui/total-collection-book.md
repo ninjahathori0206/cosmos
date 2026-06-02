@@ -15,8 +15,10 @@ Store staff and HQ Finance need one place to see **where customer money sits** a
 | **Store Cash** | Cash payments | Cash deposited to bank |
 | **Payment Machine** | UPI + Card via Mswipe/Paytm | Machine settlement to bank (after charges) |
 | **Store Bank** | Credits from deposits + settlements | View-only balance in v1 |
+| **Membership Cash** | Membership plan cash (`pos_membership_payments`) | Separate from product cash |
+| **Membership Machine** | Membership UPI/Card | Separate from product machine |
 
-Each store has **one bank account** and **one payment machine provider** (Mswipe or Paytm).
+Each store has **one bank account** and **one payment machine provider** (Mswipe or Paytm). Product and membership ledgers are **software-separated** (same physical drawer/terminal in v1).
 
 ---
 
@@ -32,6 +34,8 @@ Above the ledger table (per store detail view):
 | Store Cash | `store_cash` | Cash collections + cash deposits (out) |
 | Payment Machine | `payment_machine` | UPI/Card collections + machine settlements (out) |
 | Store Bank | `store_bank` | Bank credits from deposits/settlements |
+| Membership Cash | `membership_store_cash` | Membership cash collections |
+| Membership Machine | `membership_payment_machine` | Membership UPI/Card collections |
 
 ### Date range (IST)
 

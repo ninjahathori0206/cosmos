@@ -126,13 +126,17 @@
     const map = {
       store_cash: 'Store Cash',
       payment_machine: 'Payment Machine',
-      store_bank: 'Store Bank'
+      store_bank: 'Store Bank',
+      membership_store_cash: 'Membership Cash',
+      membership_payment_machine: 'Membership Machine',
+      membership_store_bank: 'Membership Bank'
     };
     return map[key] || key;
   }
 
   function scRowTypeLabel(row) {
     if (row.row_type === 'collection') return 'Collection';
+    if (row.row_type === 'membership_collection') return 'Membership';
     if (row.row_type === 'cash_deposit') return 'Cash deposit';
     if (row.row_type === 'machine_settlement') return 'Machine settlement';
     if (row.row_type === 'bank_credit') return 'Bank credit';
@@ -482,6 +486,16 @@
         <div class="sc-ledger-label">Store Bank</div>
         <div class="sc-ledger-value">${scFmtRs(summary.store_bank_balance)}</div>
         <div class="sc-ledger-sub">${summary.bank_account ? scEsc(summary.bank_account.bank_name) + ' ···' + scEsc(String(summary.bank_account.account_no || '').slice(-4)) : 'Bank account not set'}</div>
+      </div>
+      <div class="sc-ledger-card" style="--sc-accent:var(--teal)">
+        <div class="sc-ledger-label">Membership Cash</div>
+        <div class="sc-ledger-value">${scFmtRs(summary.membership_store_cash_balance)}</div>
+        <div class="sc-ledger-sub">Today ${scFmtRs(summary.membership_collected_today_cash)}</div>
+      </div>
+      <div class="sc-ledger-card" style="--sc-accent:var(--orange)">
+        <div class="sc-ledger-label">Membership Machine</div>
+        <div class="sc-ledger-value">${scFmtRs(summary.membership_machine_total_pending)}</div>
+        <div class="sc-ledger-sub">UPI ${scFmtRs(summary.membership_machine_upi_pending)} · Card ${scFmtRs(summary.membership_machine_card_pending)}</div>
       </div>`;
   }
 
@@ -514,7 +528,7 @@
 
   async function scLoadStoreDetail() {
     if (!_scStoreId) return;
-    if (typeof cosmosSkeletonCards === 'function') cosmosSkeletonCards('sc-summary-cards', 3);
+    if (typeof cosmosSkeletonCards === 'function') cosmosSkeletonCards('sc-summary-cards', 5);
     const sumRes = await scApiGet('/api/collections/summary' + scStoreQuery());
     _scSummary = sumRes.data;
     if (_scSummary && _scSummary.store_code) _scStoreCode = _scSummary.store_code;

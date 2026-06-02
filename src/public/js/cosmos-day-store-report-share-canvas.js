@@ -67,10 +67,11 @@
     const inv = d.invoiced || {}
     const bk = d.booking || {}
     const col = d.collection || {}
+    const mcol = d.membership_collection || {}
     const storeName = String(d.store_name || 'Store').trim()
     const dateLabel = fmtDateLabel(d.report_date)
     const W = 400
-    const H = 720
+    const H = 820
     const canvas = document.createElement('canvas')
     canvas.width = W
     canvas.height = H
@@ -102,20 +103,23 @@
       { label: 'Avg invoice', value: fmtRs(inv.avg_invoice_amount) }
     ], mx, innerW)
 
-    y += drawSection(ctx, y, 'BOOKING (TODAY)', [
-      { label: "Today's booking", value: fmtRs(bk.revenue) },
-      { label: 'Orders booked', value: String(Number(bk.order_count) || 0) },
-      { label: 'Avg booking', value: fmtRs(bk.avg_booking_amount) }
+    y += drawSection(ctx, y, 'PRODUCT BOOKING (TODAY)', [
+      { label: "Today's product booking", value: fmtRs(bk.revenue) },
+      { label: 'Product orders booked', value: String(Number(bk.order_count) || 0) },
+      { label: 'Avg product booking', value: fmtRs(bk.avg_booking_amount) }
     ], mx, innerW)
 
-    y += drawSection(ctx, y, 'COLLECTION (TODAY)', [
-      { label: "Today's collection", value: fmtRs(col.total) },
+    y += drawSection(ctx, y, 'COLLECTION — PRODUCTS', [
+      { label: 'Product collection', value: fmtRs(col.total) },
       { label: 'Bank (UPI + card)', value: fmtRs(col.bank) },
       { label: 'Cash', value: fmtRs(col.cash) }
     ], mx, innerW)
 
-    y += drawSection(ctx, y, 'MEMBERSHIP', [
-      { label: 'Total membership sold', value: String(Number(d.memberships_sold) || 0) }
+    y += drawSection(ctx, y, 'MEMBERSHIP COLLECTION', [
+      { label: 'Membership collected', value: fmtRs(mcol.total) },
+      { label: 'Bank (UPI + card)', value: fmtRs(mcol.bank) },
+      { label: 'Cash', value: fmtRs(mcol.cash) },
+      { label: 'Memberships sold', value: String(Number(d.memberships_sold) || 0) }
     ], mx, innerW)
 
     ctx.fillStyle = '#B0BCCC'

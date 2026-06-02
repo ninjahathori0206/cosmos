@@ -46,6 +46,11 @@ function mapDayStoreRow(row) {
       bank: roundMoney(row.bank_collection),
       cash: roundMoney(row.cash_collection)
     },
+    membership_collection: {
+      total: roundMoney(row.membership_collection_total),
+      bank: roundMoney(row.membership_bank_collection),
+      cash: roundMoney(row.membership_cash_collection)
+    },
     memberships_sold: Number(row.memberships_sold) || 0
   };
 }
@@ -78,6 +83,9 @@ async function getDayStoreReport(storeId, reportDateYmd) {
       collection_total: 0,
       bank_collection: 0,
       cash_collection: 0,
+      membership_collection_total: 0,
+      membership_bank_collection: 0,
+      membership_cash_collection: 0,
       memberships_sold: 0
     });
   }

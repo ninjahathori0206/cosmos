@@ -2483,10 +2483,12 @@ function dayStoreReportIsEmpty(data) {
   const inv = data.invoiced || {};
   const bk = data.booking || {};
   const col = data.collection || {};
+  const mcol = data.membership_collection || {};
   return (
     !(Number(inv.bill_count) || 0) &&
     !(Number(bk.order_count) || 0) &&
     !(Number(col.total) || 0) &&
+    !(Number(mcol.total) || 0) &&
     !(Number(data.memberships_sold) || 0)
   );
 }
@@ -2497,6 +2499,7 @@ function renderDayStoreReportBody(data) {
   const inv = data.invoiced || {};
   const bk = data.booking || {};
   const col = data.collection || {};
+  const mcol = data.membership_collection || {};
   const dateLabel = data.report_date
     ? (typeof cosmosFmtDate === 'function' ? cosmosFmtDate(data.report_date) : data.report_date)
     : '';
@@ -2527,44 +2530,56 @@ function renderDayStoreReportBody(data) {
         </div>
       </section>
       <section class="sp-day-report-section">
-        <div class="sp-day-report-section-title">Booking (today)</div>
+        <div class="sp-day-report-section-title">Product booking (today)</div>
         <div class="sp-day-report-metrics">
           <div class="sp-day-report-metric">
-            <div class="sp-day-report-metric-label">Today&apos;s booking</div>
+            <div class="sp-day-report-metric-label">Today&apos;s product booking</div>
             <div class="sp-day-report-metric-value">${spFmtRs(bk.revenue)}</div>
           </div>
           <div class="sp-day-report-metric">
-            <div class="sp-day-report-metric-label">Orders booked</div>
+            <div class="sp-day-report-metric-label">Product orders booked</div>
             <div class="sp-day-report-metric-value">${Number(bk.order_count) || 0}</div>
           </div>
           <div class="sp-day-report-metric">
-            <div class="sp-day-report-metric-label">Average booking amount</div>
+            <div class="sp-day-report-metric-label">Average product booking</div>
             <div class="sp-day-report-metric-value">${spFmtRs(bk.avg_booking_amount)}</div>
           </div>
         </div>
       </section>
       <section class="sp-day-report-section">
-        <div class="sp-day-report-section-title">Collection (today)</div>
+        <div class="sp-day-report-section-title">Collection — products (today)</div>
         <div class="sp-day-report-metrics">
           <div class="sp-day-report-metric">
-            <div class="sp-day-report-metric-label">Today&apos;s collection</div>
+            <div class="sp-day-report-metric-label">Product collection</div>
             <div class="sp-day-report-metric-value">${spFmtRs(col.total)}</div>
           </div>
           <div class="sp-day-report-metric">
-            <div class="sp-day-report-metric-label">Bank collection (UPI + card)</div>
+            <div class="sp-day-report-metric-label">Bank (UPI + card)</div>
             <div class="sp-day-report-metric-value">${spFmtRs(col.bank)}</div>
           </div>
           <div class="sp-day-report-metric">
-            <div class="sp-day-report-metric-label">Cash collection</div>
+            <div class="sp-day-report-metric-label">Cash</div>
             <div class="sp-day-report-metric-value">${spFmtRs(col.cash)}</div>
           </div>
         </div>
       </section>
-      <section class="sp-day-report-section sp-day-report-section--compact">
-        <div class="sp-day-report-section-title">Membership</div>
+      <section class="sp-day-report-section">
+        <div class="sp-day-report-section-title">Membership collection (today)</div>
         <div class="sp-day-report-metrics">
           <div class="sp-day-report-metric">
-            <div class="sp-day-report-metric-label">Total membership sold</div>
+            <div class="sp-day-report-metric-label">Membership collected</div>
+            <div class="sp-day-report-metric-value">${spFmtRs(mcol.total)}</div>
+          </div>
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Bank (UPI + card)</div>
+            <div class="sp-day-report-metric-value">${spFmtRs(mcol.bank)}</div>
+          </div>
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Cash</div>
+            <div class="sp-day-report-metric-value">${spFmtRs(mcol.cash)}</div>
+          </div>
+          <div class="sp-day-report-metric">
+            <div class="sp-day-report-metric-label">Memberships sold</div>
             <div class="sp-day-report-metric-value">${Number(data.memberships_sold) || 0}</div>
           </div>
         </div>

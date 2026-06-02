@@ -18,6 +18,7 @@ Live visitor queue per store: staff check-in, search/select visitors via shared 
 
 1. **In store now** — `waiting` / `in_service`, longest wait first, max 20
 2. **Last exited (24h)** — `completed` in rolling 24h IST, max 5
+3. **Cx profiles** — when input is a full **10-digit** phone and staff has `pos.customers.view`: parallel `GET /api/pos/customer-search?q=`; badge **Cx profile**, right column **Not in store**. Always shown **alongside** visitor rows when the central Cx phone matches (even if an exited visitor shares the phone — pick **Cx profile** for the registered billing name).
 
 ### Row layout (3-column strip)
 
@@ -29,11 +30,12 @@ Live visitor queue per store: staff check-in, search/select visitors via shared 
 
 ### Behaviours
 
-- Focus with 0 digits → dropdown opens, both sections unfiltered
+- Focus with 0 digits → dropdown opens, both visitor sections unfiltered
 - Typing → live filter, 150ms debounce, digit highlight
-- 10 digits, no match → “Check in as new visitor” → opens check-in panel
-- Select in-store + linked customer (visitor row or central phone match) → load CX from `customer-search`, attach to bill, set `in_service`
-- Select in-store, phone not in central Cx → Quick Cx registration entry point
+- **10 digits**, no visitor match, Cx exists → Section 3 shows `pos_customers` row(s); select → **link cart + staff check-in** (`POST /api/gatepass/checkin`, then `in_service` if permitted)
+- **10 digits**, no visitor match, no Cx → **Check in as new visitor** → opens check-in panel
+- Select in-store visitor + linked customer → load CX from `customer-search`, attach to bill, set `in_service`
+- Select in-store visitor, phone not in central Cx → Quick Cx registration entry point
 - Escape / click outside → close, retain input value
 
 ### Loading / error

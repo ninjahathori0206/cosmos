@@ -86,6 +86,22 @@ sequenceDiagram
 | **Membership-only cart** | No SKU lines required; `order_kind` can be `MEMBERSHIP` |
 | **Mixed** | Eyewear lines + membership on one bill |
 
+### Dual invoice (eyewear + membership)
+
+When the cart has **both** product lines and a membership plan:
+
+- **One Pay Now** — cashier still collects a single amount.
+- Backend creates **one product order** + **`pos_membership_sales`** row (no EW-ORD for membership).
+- **Two invoices**: product tax invoice (`EW-INV-{FY}-{store}-{seq}`) and **membership M-invoice** (`EW-INV-{FY}-{store}-M-{seq}`, no GST).
+- **Advance (LAB/MIXED):** full membership fee is allocated **first**; remainder goes to product **`ADVANCE`**. Minimum tendered = membership fee + product advance minimum.
+- `POST /api/pos/checkout-and-pay` response adds: `membership_sale_id`, `membership_invoice_no` (aliases: `membership_order_id` = sale id for transition).
+- Membership grant links `customer_memberships.pos_membership_sale_id`.
+- **Membership-only** cart: **no product order** — only M-invoice + membership sale.
+
+**StorePilot Day Store Report:** product **Collection** excludes legacy `MEMBERSHIP` orders; **Membership collection** sums `pos_membership_payments` that day.
+
+**Collection Book:** membership payments post to **`membership_store_cash`** / **`membership_payment_machine`** ledgers (separate from product ledgers).
+
 ### DOM / frames
 
 | Screen area | Element |
@@ -107,7 +123,8 @@ sequenceDiagram
 | GET | `/api/pos/membership-plans` | Active plans; requires `pos.membership.sell` |
 | GET | `/api/pos/cart-offers?customer_id=&prospective_plan_key=` | Prospective member offers in cart |
 | POST | `/api/pos/preview-order-discount` | Body may include `membership_sale` |
-| POST | `/api/pos/checkout-and-pay` | `order.membership_sale: { plan_key, price_paid }`; returns `membership_id` when granted |
+| POST | `/api/pos/checkout-and-pay` | `order.membership_sale: { plan_key, price_paid }`; returns `membership_id`, `membership_sale_id`, `membership_invoice_no` |
+| GET | `/api/pos/membership-sales/:id` | M-invoice detail for preview/share |
 
 Grant after payment: `src/services/membershipGrantService.js` (shared with CX comp grants).
 
@@ -122,7 +139,20 @@ Grant after payment: `src/services/membershipGrantService.js` (shared with CX co
 | Modal: **404** on membership-plans | Old Node process | Kill port 4000, `npm start` |
 | Modal: empty list | No active plans | Command Unit → Membership Plans |
 | Checkout fails | Migration 76 not run | Run `76_pos_orders_membership_sale.sql` |
+| Checkout fails (linked order) | Migration 87 not run | Run `npm run migrate:87-pos-linked-membership` |
 | Coin balance **422** | Stale server before column fix | Restart server (uses `setting_key` / `setting_value`) |
+
+---
+
+## Retroactive split (legacy combined orders)
+
+Orders checked out **before** M-invoice shipped may still have membership on the **product** `pos_orders` row.
+
+**Split combined rows:** `npm run maintenance:split-legacy-membership-orders` (creates `pos_membership_sales` + M-invoice; requires migration **88**).
+
+**Migrate old MEMBERSHIP orders:** `npm run maintenance:migrate-membership-orders-to-sales` (EW-ORD MEMBERSHIP rows → sales; marks orders `MIGRATED`).
+
+Always **`--dry-run`** first.
 
 ---
 

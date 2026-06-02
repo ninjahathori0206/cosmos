@@ -38,6 +38,17 @@ BEGIN
   INNER JOIN ' + @orders_table + N' o ON o.order_id = p.order_id
   WHERE o.store_id = @store_id
     AND ISNULL(o.status, N'''') <> N''CANCELLED''
+    AND UPPER(LTRIM(RTRIM(ISNULL(o.order_kind, N'''')))) <> N''MEMBERSHIP''
+),
+mem_pay AS (
+  SELECT
+    mp.amount,
+    UPPER(LTRIM(RTRIM(mp.method))) AS method,
+    CONVERT(DATE, mp.created_at) AS pay_date
+  FROM dbo.pos_membership_payments mp
+  INNER JOIN dbo.pos_membership_sales ms ON ms.membership_sale_id = mp.membership_sale_id
+  WHERE ms.store_id = @store_id
+    AND ISNULL(ms.status, N'''') = N''PAID''
 ),
 settled_dates AS (
   SELECT period_from, period_to
@@ -85,7 +96,15 @@ SELECT
   ISNULL((SELECT SUM(amount) FROM pay WHERE method = N''CARD'' AND pay_date = @today), 0) AS collected_today_card,
   ISNULL((SELECT SUM(amount) FROM pay WHERE method = N''CASH''), 0) AS collected_all_cash,
   ISNULL((SELECT SUM(amount) FROM pay WHERE method = N''UPI''), 0) AS collected_all_upi,
-  ISNULL((SELECT SUM(amount) FROM pay WHERE method = N''CARD''), 0) AS collected_all_card
+  ISNULL((SELECT SUM(amount) FROM pay WHERE method = N''CARD''), 0) AS collected_all_card,
+  ISNULL((SELECT SUM(amount) FROM mem_pay WHERE method = N''CASH''), 0) AS membership_store_cash_balance,
+  ISNULL((SELECT SUM(amount) FROM mem_pay WHERE method IN (N''UPI'', N''CARD'')), 0) AS membership_machine_total_pending,
+  ISNULL((SELECT SUM(amount) FROM mem_pay WHERE method = N''UPI''), 0) AS membership_machine_upi_pending,
+  ISNULL((SELECT SUM(amount) FROM mem_pay WHERE method = N''CARD''), 0) AS membership_machine_card_pending,
+  ISNULL((SELECT SUM(amount) FROM mem_pay WHERE method = N''CASH'' AND pay_date = @today), 0) AS membership_collected_today_cash,
+  ISNULL((SELECT SUM(amount) FROM mem_pay WHERE method = N''UPI'' AND pay_date = @today), 0) AS membership_collected_today_upi,
+  ISNULL((SELECT SUM(amount) FROM mem_pay WHERE method = N''CARD'' AND pay_date = @today), 0) AS membership_collected_today_card,
+  CAST(0 AS DECIMAL(12,2)) AS membership_store_bank_balance
 ';
 
   EXEC sp_executesql @sql,
@@ -135,6 +154,7 @@ BEGIN
   INNER JOIN ' + @orders_table + N' o ON o.order_id = p.order_id
   WHERE o.store_id = @store_id
     AND ISNULL(o.status, N'''') <> N''CANCELLED''
+    AND UPPER(LTRIM(RTRIM(ISNULL(o.order_kind, N'''')))) <> N''MEMBERSHIP''
     AND UPPER(LTRIM(RTRIM(p.method))) IN (N''UPI'', N''CARD'')
 ),
 settled_dates AS (
@@ -220,6 +240,32 @@ BEGIN
   INNER JOIN ' + @orders_table + N' o ON o.order_id = p.order_id
   WHERE o.store_id = @store_id
     AND ISNULL(o.status, N'''') <> N''CANCELLED''
+    AND UPPER(LTRIM(RTRIM(ISNULL(o.order_kind, N'''')))) <> N''MEMBERSHIP''
+),
+mem_collections AS (
+  SELECT
+    N''membership_collection'' AS row_type,
+    mp.payment_id AS source_id,
+    ms.membership_sale_id AS order_id,
+    ms.invoice_no AS order_no,
+    CONVERT(DATE, mp.created_at) AS entry_date,
+    mp.created_at AS entry_at,
+    CASE UPPER(LTRIM(RTRIM(mp.method)))
+      WHEN N''CASH'' THEN N''membership_store_cash''
+      ELSE N''membership_payment_machine''
+    END AS ledger_key,
+    UPPER(LTRIM(RTRIM(mp.method))) AS sub_method,
+    N''in'' AS direction,
+    mp.amount,
+    NULL AS charges_amount,
+    NULL AS net_amount,
+    mp.external_ref,
+    NULL AS bank_ref,
+    mp.stage AS payment_stage
+  FROM dbo.pos_membership_payments mp
+  INNER JOIN dbo.pos_membership_sales ms ON ms.membership_sale_id = mp.membership_sale_id
+  WHERE ms.store_id = @store_id
+    AND ISNULL(ms.status, N'''') = N''PAID''
 ),
 transfers AS (
   SELECT
@@ -263,6 +309,8 @@ transfers AS (
 ),
 combined AS (
   SELECT * FROM collections
+  UNION ALL
+  SELECT * FROM mem_collections
   UNION ALL
   SELECT * FROM transfers
 )
@@ -336,7 +384,15 @@ BEGIN
       collected_today_card DECIMAL(12,2),
       collected_all_cash DECIMAL(12,2),
       collected_all_upi DECIMAL(12,2),
-      collected_all_card DECIMAL(12,2)
+      collected_all_card DECIMAL(12,2),
+      membership_store_cash_balance DECIMAL(12,2),
+      membership_machine_total_pending DECIMAL(12,2),
+      membership_machine_upi_pending DECIMAL(12,2),
+      membership_machine_card_pending DECIMAL(12,2),
+      membership_collected_today_cash DECIMAL(12,2),
+      membership_collected_today_upi DECIMAL(12,2),
+      membership_collected_today_card DECIMAL(12,2),
+      membership_store_bank_balance DECIMAL(12,2)
     );
 
     INSERT INTO #sum
@@ -541,10 +597,18 @@ BEGIN
       collected_today_card DECIMAL(12,2),
       collected_all_cash DECIMAL(12,2),
       collected_all_upi DECIMAL(12,2),
-      collected_all_card DECIMAL(12,2)
+      collected_all_card DECIMAL(12,2),
+      membership_store_cash_balance DECIMAL(12,2),
+      membership_machine_total_pending DECIMAL(12,2),
+      membership_machine_upi_pending DECIMAL(12,2),
+      membership_machine_card_pending DECIMAL(12,2),
+      membership_collected_today_cash DECIMAL(12,2),
+      membership_collected_today_upi DECIMAL(12,2),
+      membership_collected_today_card DECIMAL(12,2),
+      membership_store_bank_balance DECIMAL(12,2)
     );
     INSERT INTO #cashsum EXEC dbo.sp_Treasury_GetSummary @store_id = @store_id, @engine_mode = @engine_mode;
-    SELECT TOP 1 @cash_bal = store_cash_balance FROM #cashsum;
+    SELECT TOP 1 @cash_bal = store_cash_balance + ISNULL(membership_store_cash_balance, 0) FROM #cashsum;
     DROP TABLE #cashsum;
 
     IF @gross_amount > @cash_bal + 0.02

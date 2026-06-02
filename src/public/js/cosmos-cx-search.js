@@ -74,6 +74,51 @@
     }
   }
 
+  function visitorListHasPhone(list, digits) {
+    if (!digits || digits.length !== 10) return false;
+    return (list || []).some(function (v) {
+      return normalizeDigits(v.phone) === digits;
+    });
+  }
+
+  /** Full 10-digit match against pos_customers (always shown alongside visitor rows). */
+  function filterCxProfiles(cxList, digits) {
+    if (digits.length !== 10) return [];
+    return (cxList || []).filter(function (row) {
+      return normalizeDigits(row.phone) === digits;
+    });
+  }
+
+  function resolveCanSearchCx(inst) {
+    if (typeof inst.canSearchCx === 'function') return !!inst.canSearchCx();
+    return inst.canSearchCx === true;
+  }
+
+  function cxDisplayName(row) {
+    return String(row.display_name || row.full_name || row.primary_name || '').trim() || ('Cx #' + row.customer_id);
+  }
+
+  function buildCxRow(customer, fragment, inst) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cosmos-cx-search-row tr-link';
+    btn.setAttribute('role', 'option');
+    var name = cxDisplayName(customer);
+    var badge = '<span class="cosmos-cx-search-badge cosmos-cx-search-badge--blue">Cx profile</span>';
+    var rightLabel = 'Not in store';
+    btn.innerHTML =
+      '<span class="cosmos-cx-search-row-col-left">'
+      + '<div class="cosmos-cx-search-row-name">' + escapeHtml(name) + '</div>'
+      + '<div class="cosmos-cx-search-row-phone"><span class="cosmos-cx-search-dot cosmos-cx-search-dot--linked" aria-hidden="true"></span>'
+      + highlightPhone(customer.phone, fragment) + '</div></span>'
+      + '<span class="cosmos-cx-search-row-col-mid">' + badge + '</span>'
+      + '<span class="cosmos-cx-search-row-col-right cosmos-cx-search-row-col-right--cx">' + escapeHtml(rightLabel) + '</span>';
+    btn.addEventListener('click', function () {
+      inst.handleSelectCx(customer);
+    });
+    return btn;
+  }
+
   function buildRow(visitor, fragment, isExited) {
     var btn = document.createElement('button');
     btn.type = 'button';
@@ -112,10 +157,24 @@
     return btn;
   }
 
-  function renderDropdown(dropdown, inStore, exited, fragment, inst) {
+  function renderDropdown(dropdown, inStore, exited, cxProfiles, fragment, inst) {
     dropdown.innerHTML = '';
     dropdown.hidden = false;
     dropdown.setAttribute('role', 'listbox');
+
+    var digits = normalizeDigits(fragment);
+    var all = inStore.concat(exited);
+    var noVisitorPhoneMatch = digits.length === 10 && !visitorListHasPhone(all, digits);
+
+    if (digits.length === 10 && cxProfiles.length) {
+      var secCx = document.createElement('div');
+      secCx.className = 'cosmos-cx-search-section-label cosmos-cx-search-section-label--cx';
+      secCx.textContent = 'Cx profiles';
+      dropdown.appendChild(secCx);
+      cxProfiles.forEach(function (cx) {
+        dropdown.appendChild(buildCxRow(cx, fragment, inst));
+      });
+    }
 
     var sec1 = document.createElement('div');
     sec1.className = 'cosmos-cx-search-section-label';
@@ -157,12 +216,23 @@
       });
     }
 
-    var digits = normalizeDigits(fragment);
-    var all = inStore.concat(exited);
-    var matched = digits.length >= 10 && !all.some(function (v) {
-      return normalizeDigits(v.phone) === digits;
-    });
-    if (matched) {
+    if (digits.length === 10 && !cxProfiles.length && typeof inst.onCreateCx === 'function') {
+      var createWrap = document.createElement('div');
+      createWrap.className = 'cosmos-cx-search-create-cx-row';
+      var createBtn = document.createElement('button');
+      createBtn.type = 'button';
+      createBtn.className = 'cosmos-cx-search-create-cx-btn';
+      createBtn.textContent = 'Create Cx';
+      createBtn.setAttribute('aria-label', 'Create new Cx profile for ' + digits);
+      createBtn.addEventListener('click', function () {
+        dropdown.hidden = true;
+        inst.onCreateCx(digits);
+      });
+      createWrap.appendChild(createBtn);
+      dropdown.appendChild(createWrap);
+    }
+
+    if (noVisitorPhoneMatch && !cxProfiles.length) {
       var wrap = document.createElement('div');
       wrap.className = 'cosmos-cx-search-new-row';
       var btn = document.createElement('button');
@@ -221,6 +291,8 @@
       apiPatch: opts.apiPatch,
       onSelect: opts.onSelect,
       onCheckInNew: opts.onCheckInNew,
+      onCreateCx: opts.onCreateCx,
+      canSearchCx: opts.canSearchCx === true,
       debounceMs: opts.debounceMs || 150,
       _timer: null,
       destroy: function () {
@@ -237,12 +309,28 @@
         showSkeleton(dropdown);
         var url = '/api/gatepass/search?storeId=' + encodeURIComponent(inst.storeId)
           + '&phone=' + encodeURIComponent(fragment);
+        var cxUrl = '/api/pos/customer-search?q=' + encodeURIComponent(fragment);
+
         return loadPurposes(inst.apiGet).then(function () {
           return inst.apiGet(url);
-        }).then(function (payload) {
-          var data = payload && payload.data ? payload.data : payload;
-          renderDropdown(dropdown, data.inStore || [], data.exited || [], fragment, inst);
-          inputEl.setAttribute('aria-expanded', 'true');
+        }).then(function (gpPayload) {
+          var data = gpPayload && gpPayload.data ? gpPayload.data : gpPayload;
+          var inStore = data.inStore || [];
+          var exited = data.exited || [];
+          var cxProfiles = Array.isArray(data.cxProfiles) ? data.cxProfiles.slice() : [];
+
+          function done(profiles) {
+            renderDropdown(dropdown, inStore, exited, profiles, fragment, inst);
+            inputEl.setAttribute('aria-expanded', 'true');
+          }
+
+          if (fragment.length === 10 && !cxProfiles.length && resolveCanSearchCx(inst) && inst.apiGet) {
+            return inst.apiGet(cxUrl).then(function (cxRaw) {
+              var cxList = Array.isArray(cxRaw) ? cxRaw : (cxRaw && cxRaw.data) || [];
+              done(filterCxProfiles(cxList, fragment));
+            }).catch(function () { done([]); });
+          }
+          done(cxProfiles);
         }).catch(function (err) {
           inst.close();
           if (typeof window.cosmosToastError === 'function') {
@@ -275,6 +363,7 @@
       handleSelect: function (visitor) {
         inst.close();
         var ctx = {
+          source: 'visitor',
           visitor_id: visitor.visitor_id,
           name: visitor.name,
           phone: visitor.phone,
@@ -293,6 +382,21 @@
         chain.then(function () {
           if (typeof inst.onSelect === 'function') inst.onSelect(ctx);
         });
+      },
+      handleSelectCx: function (customer) {
+        inst.close();
+        var ctx = {
+          source: 'cx',
+          visitor_id: null,
+          name: cxDisplayName(customer),
+          phone: customer.phone,
+          customer_id: customer.customer_id,
+          has_customer: true,
+          customer_data: customer,
+          purpose: null,
+          status: null
+        };
+        if (typeof inst.onSelect === 'function') inst.onSelect(ctx);
       },
       _docClick: function (e) {
         if (!wrap.contains(e.target)) inst.close();
@@ -322,6 +426,7 @@
   }
 
   window.cosmosCxSearch = {
+    BUILD: 'gatepass-cx-fallback-v5',
     init: function (opts) {
       return createInstance(opts || {});
     },

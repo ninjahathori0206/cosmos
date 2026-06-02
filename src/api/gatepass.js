@@ -93,6 +93,25 @@ async function enrichVisitorList(pool, list) {
   return Promise.all((list || []).map((v) => enrichVisitorWithCentralCx(pool, v)));
 }
 
+async function lookupCxProfilesByPhone(pool, phone) {
+  const normalized = normalizeIndiaPhone(phone);
+  if (!normalized || normalized.length !== 10) return [];
+  const result = await executeStoredProcedure('sp_POS_CustomerSearch', {
+    q: { type: sql.NVarChar(200), value: normalized }
+  });
+  const rows = result.recordset || [];
+  return rows
+    .filter((row) => normalizeIndiaPhone(row.phone) === normalized)
+    .map((row) => ({
+      customer_id: row.customer_id != null ? Number(row.customer_id) : null,
+      full_name: row.full_name,
+      phone: row.phone,
+      email: row.email || null,
+      display_name: row.display_name || row.full_name,
+      home_store_id: row.home_store_id != null ? Number(row.home_store_id) : null
+    }));
+}
+
 function mapVisitorRow(row) {
   if (!row) return null;
   return {
@@ -192,11 +211,17 @@ router.get('/search', ...gatepassView, async (req, res, next) => {
     const pool = await getPool();
     const inStore = await enrichVisitorList(pool, (sets[0] || []).map(mapVisitorRow).filter(Boolean));
     const exited = await enrichVisitorList(pool, (sets[1] || []).map(mapVisitorRow).filter(Boolean));
+    let cxProfiles = [];
+    /* gatepass.view already required for this route — include central Cx at full mobile without pos.customers.view in JWT (staff PIN sessions refresh permissions separately). */
+    if (fragment.length === 10) {
+      cxProfiles = await lookupCxProfilesByPhone(pool, fragment);
+    }
     return res.json({
       success: true,
       data: {
         inStore,
-        exited
+        exited,
+        cxProfiles
       }
     });
   } catch (err) {

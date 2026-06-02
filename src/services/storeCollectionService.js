@@ -52,7 +52,15 @@ function mapSummaryRow(row) {
     collected_today_card: Number(row.collected_today_card) || 0,
     collected_all_cash: Number(row.collected_all_cash) || 0,
     collected_all_upi: Number(row.collected_all_upi) || 0,
-    collected_all_card: Number(row.collected_all_card) || 0
+    collected_all_card: Number(row.collected_all_card) || 0,
+    membership_store_cash_balance: Number(row.membership_store_cash_balance) || 0,
+    membership_machine_upi_pending: Number(row.membership_machine_upi_pending) || 0,
+    membership_machine_card_pending: Number(row.membership_machine_card_pending) || 0,
+    membership_machine_total_pending: Number(row.membership_machine_total_pending) || 0,
+    membership_store_bank_balance: Number(row.membership_store_bank_balance) || 0,
+    membership_collected_today_cash: Number(row.membership_collected_today_cash) || 0,
+    membership_collected_today_upi: Number(row.membership_collected_today_upi) || 0,
+    membership_collected_today_card: Number(row.membership_collected_today_card) || 0
   };
 }
 

@@ -28,7 +28,7 @@ Every new POS order must be linked to a real `pos_customers` row. Walk-in is no 
 - No “Skip & continue” / walk-in bypass.
 - Register block label: **New customer** (not “Walk-in”).
 
-Full redesign spec: [pos-customer-picker-modal.md](pos-customer-picker-modal.md) — **single panel** (no tabs/steps): search + results + register form on one scrollable sheet.
+Full redesign spec: [pos-customer-picker-modal.md](pos-customer-picker-modal.md) — **search first**: register block appears only after **Create Cx** on a 10-digit mobile search with no Cx profile.
 
 ### Lens wizard — customer card
 

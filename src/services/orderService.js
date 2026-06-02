@@ -4,6 +4,7 @@ const { assertLabTransitionAllowed } = require('./labWorkflowAuth')
 const { resolveProductTypeRule } = require('../config/posProductTypeRule')
 const { resolvePosOrderDisplayStatus } = require('../config/posOrderDisplayCatalog')
 const { formatDateYmd, sqlWireDatetime, wallClockIso, wireDatetimeFromSql } = require('../lib/cosmosIst')
+const membershipSaleService = require('./membershipSaleService')
 
 const ORDERS_ENGINE_MODE_KEY = 'orders_engine_mode'
 const MONEY_EPS = 0.02
@@ -586,6 +587,11 @@ function validatePaymentAgainstSummary(orderRow, summary, body) {
     return { ok: false, message: 'Payment would exceed order total.' }
   }
 
+  if (kind === 'MEMBERSHIP') {
+    if (stage !== 'FULL') return { ok: false, message: 'Membership orders only accept FULL payment.' }
+    return { ok: true }
+  }
+
   if (kind === 'INSTANT') {
     if (stage !== 'FULL') return { ok: false, message: 'Instant orders only accept FULL payments.' }
     return { ok: true }
@@ -813,6 +819,21 @@ function mapOrderRowForApi(order, extras = {}) {
     created_at: wireDatetimeFromSql(order.created_at),
     rx_snapshot: parseJsonMaybe(order.rx_snapshot),
     inventory_committed: order.inventory_committed === true || order.inventory_committed === 1,
+    sold_membership_plan_key: order.sold_membership_plan_key
+      ? String(order.sold_membership_plan_key).trim()
+      : null,
+    sold_membership_amount:
+      order.sold_membership_amount != null ? roundMoney(Number(order.sold_membership_amount)) : null,
+    linked_membership_order_id:
+      order.linked_membership_order_id != null ? Number(order.linked_membership_order_id) : null,
+    linked_membership_sale_id:
+      order.linked_membership_sale_id != null ? Number(order.linked_membership_sale_id) : null,
+    membership_invoice_no:
+      extras.membership_invoice_no != null ? String(extras.membership_invoice_no).trim() || null : null,
+    membership_sale_id:
+      extras.membership_sale_id != null ? Number(extras.membership_sale_id) : null,
+    membership_order_no:
+      extras.membership_order_no != null ? String(extras.membership_order_no).trim() || null : null,
     invoice_no: extras.invoice_no != null ? String(extras.invoice_no).trim() || null : null
   }
 }
@@ -987,7 +1008,340 @@ async function finalizePaymentAfterInsert(pool, mode, storeId, orderId, body, em
  * Create order + first payment. Order is committed before payment attempt;
  * on payment failure the OPEN order is retained (Payment pending).
  */
+function shouldSplitMembershipCheckout(value) {
+  const lines = normalizeIncomingPosLinesWithPairs((value && value.lines) || [])
+  const pk = value && value.membership_sale && String(value.membership_sale.plan_key || '').trim()
+  const m = roundMoney(Number(value && value._membership_amount) || 0)
+  return lines.length > 0 && !!pk && m > MONEY_EPS
+}
+
+function isMembershipOnlyCheckout(value) {
+  const lines = normalizeIncomingPosLinesWithPairs((value && value.lines) || [])
+  const pk = value && value.membership_sale && String(value.membership_sale.plan_key || '').trim()
+  const m = roundMoney(Number(value && value._membership_amount) || 0)
+  return lines.length === 0 && !!pk && m > MONEY_EPS
+}
+
+async function linkMembershipSaleToProductInTransaction(transaction, productOrderId, membershipSaleId) {
+  await membershipSaleService.linkMembershipSaleToProductOrderInTransaction(
+    transaction,
+    productOrderId,
+    membershipSaleId
+  )
+}
+
+/**
+ * Split Pay Now: membership FULL first, remainder to product (ADVANCE on LAB/MIXED).
+ * @returns {{ ok: boolean, message?: string, memPay?: number, prodPay?: number, memStage?: string, prodStage?: string }}
+ */
+function allocateSplitCheckoutPayment(tenderedRaw, membershipAmount, productSummary, productOrderKind) {
+  const M = roundMoney(membershipAmount)
+  const tendered = roundMoney(tenderedRaw)
+  if (tendered + MONEY_EPS < M) {
+    return {
+      ok: false,
+      message:
+        'Collect at least ' +
+        M.toFixed(2) +
+        ' to cover membership; product advance is collected on top of that.'
+    }
+  }
+  const memPay = M
+  const prodPay = roundMoney(tendered - M)
+  const kind = String(productOrderKind || '').toUpperCase()
+  let prodStage = 'FULL'
+  if (kind === 'LAB' || kind === 'MIXED') {
+    const minAdv = roundMoney(Math.max(0, productSummary.advance_target - productSummary.paid_advance))
+    if (minAdv > MONEY_EPS && prodPay + MONEY_EPS < minAdv) {
+      const needTotal = roundMoney(M + minAdv)
+      return {
+        ok: false,
+        message:
+          'Minimum product advance is ' +
+          minAdv.toFixed(2) +
+          '. Collect at least ' +
+          needTotal.toFixed(2) +
+          ' total (membership ' +
+          M.toFixed(2) +
+          ' + advance ' +
+          minAdv.toFixed(2) +
+          ').'
+      }
+    }
+    if (prodPay + MONEY_EPS < productSummary.amount_remaining - MONEY_EPS) {
+      prodStage = 'ADVANCE'
+    }
+  }
+  return { ok: true, memPay, prodPay, memStage: 'FULL', prodStage }
+}
+
+async function linkMembershipOrdersInTransaction(transaction, mode, productOrderId, membershipOrderId) {
+  const t = tableNames(mode)
+  const r = new sql.Request(transaction)
+  r.input('pid', sql.Int, productOrderId)
+  r.input('mid', sql.Int, membershipOrderId)
+  await r.query(`
+    UPDATE ${t.orders}
+    SET linked_membership_order_id = @mid
+    WHERE order_id = @pid
+  `)
+}
+
+async function checkoutMembershipOnlyAndPay(pool, mode, storeId, employeeId, { createParams, paymentBody }) {
+  const value = createParams.value
+  const membershipAmount = roundMoney(Number(value._membership_amount) || 0)
+  const planKey = value.membership_sale && String(value.membership_sale.plan_key || '').trim()
+  const customerId = Number(value.customer_id)
+
+  let memOut
+  const createTxn = new sql.Transaction(pool)
+  await createTxn.begin()
+  try {
+    memOut = await membershipSaleService.createMembershipSaleInTransaction(createTxn, {
+      storeId,
+      customerId,
+      planKey,
+      amount: membershipAmount,
+      productOrderId: null,
+      createdBy: employeeId
+    })
+    await createTxn.commit()
+  } catch (e) {
+    await createTxn.rollback()
+    throw e
+  }
+
+  function paymentFailedError(message, statusCode) {
+    const err = new Error(message)
+    err.statusCode = statusCode || 422
+    err.code = 'PAYMENT_FAILED_ORDER_SAVED'
+    err.orderDraft = {
+      membership_sale_id: memOut.membership_sale_id,
+      membership_invoice_no: memOut.invoice_no,
+      membership_total_amount: membershipAmount,
+      total_amount: membershipAmount,
+      customer_id: customerId,
+      order_kind: 'MEMBERSHIP'
+    }
+    return err
+  }
+
+  const memCheck = membershipSaleService.validateMembershipPayment(paymentBody.amount, membershipAmount)
+  if (!memCheck.ok) {
+    throw paymentFailedError(memCheck.message, 422)
+  }
+
+  const payTxn = new sql.Transaction(pool)
+  await payTxn.begin()
+  try {
+    const { tendered, changeGiven } = preparePaymentTenderFields(paymentBody)
+    await membershipSaleService.insertMembershipPaymentInTransaction(
+      payTxn,
+      memOut.membership_sale_id,
+      employeeId,
+      { ...paymentBody, stage: 'FULL', amount: membershipAmount },
+      tendered,
+      changeGiven
+    )
+    await payTxn.commit()
+  } catch (e) {
+    try {
+      await payTxn.rollback()
+    } catch (_rollbackErr) {
+      /* ignore */
+    }
+    throw paymentFailedError(e.message || 'Payment failed.', e.statusCode || 422)
+  }
+
+  return {
+    order_id: null,
+    order_no: null,
+    order_kind: 'MEMBERSHIP',
+    subtotal_amount: membershipAmount,
+    discount_amount: 0,
+    gst_amount: 0,
+    total_amount: membershipAmount,
+    sub_orders: [],
+    payment_summary: {
+      total_amount: membershipAmount,
+      paid_total: membershipAmount,
+      amount_remaining: 0
+    },
+    invoice_no: null,
+    membership_sale_id: memOut.membership_sale_id,
+    membership_invoice_no: memOut.invoice_no,
+    membership_total_amount: membershipAmount
+  }
+}
+
+async function checkoutAndPayWithSplitMembership(pool, mode, storeId, employeeId, { createParams, paymentBody }) {
+  const value = createParams.value
+  const membershipAmount = roundMoney(Number(value._membership_amount) || 0)
+  const planKey = value.membership_sale && String(value.membership_sale.plan_key || '').trim()
+  const customerId = Number(value.customer_id)
+  const productCreateParams = { ...createParams, omitMembershipFromThisOrder: true }
+
+  let productOut
+  let memOut
+  const createTxn = new sql.Transaction(pool)
+  await createTxn.begin()
+  try {
+    productOut = await createOrderInTransaction(createTxn, productCreateParams)
+    memOut = await membershipSaleService.createMembershipSaleInTransaction(createTxn, {
+      storeId,
+      customerId,
+      planKey,
+      amount: membershipAmount,
+      productOrderId: productOut.order_id,
+      createdBy: employeeId
+    })
+    await linkMembershipSaleToProductInTransaction(createTxn, productOut.order_id, memOut.membership_sale_id)
+    await createTxn.commit()
+  } catch (e) {
+    await createTxn.rollback()
+    throw e
+  }
+
+  function buildSplitOrderDraft(bundle, fallbackOut) {
+    const ps = bundle && bundle.payment_summary ? bundle.payment_summary : null
+    const customerIdDraft =
+      (createParams.value && createParams.value.customer_id) ||
+      (bundle && bundle.order && bundle.order.customer_id) ||
+      null
+    const base = fallbackOut || {}
+    return {
+      order_id: base.order_id,
+      order_no: base.order_no,
+      order_kind: base.order_kind,
+      subtotal_amount: base.subtotal_amount,
+      discount_amount: base.discount_amount,
+      gst_amount: base.gst_amount,
+      total_amount: base.total_amount,
+      customer_id: customerIdDraft,
+      amount_remaining: ps != null ? ps.amount_remaining : base.total_amount,
+      payment_summary: ps,
+      membership_sale_id: memOut.membership_sale_id,
+      membership_invoice_no: memOut.invoice_no,
+      membership_order_id: memOut.membership_sale_id,
+      membership_order_no: memOut.invoice_no
+    }
+  }
+
+  function paymentFailedError(message, productBundle, statusCode) {
+    const err = new Error(message)
+    err.statusCode = statusCode || 422
+    err.code = 'PAYMENT_FAILED_ORDER_SAVED'
+    err.orderDraft = buildSplitOrderDraft(productBundle, productOut)
+    return err
+  }
+
+  const productBundle = await fetchOrderBundle(pool, productOut.order_id, storeId, mode)
+  if (!productBundle) {
+    throw paymentFailedError('Order not found after create.', productBundle, 500)
+  }
+
+  const alloc = allocateSplitCheckoutPayment(
+    paymentBody.amount,
+    membershipAmount,
+    productBundle.payment_summary,
+    productOut.order_kind
+  )
+  if (!alloc.ok) {
+    throw paymentFailedError(alloc.message, productBundle, 422)
+  }
+
+  const memPayBody = {
+    ...paymentBody,
+    stage: alloc.memStage,
+    amount: alloc.memPay
+  }
+  const prodPayBody = {
+    ...paymentBody,
+    order_id: productOut.order_id,
+    stage: alloc.prodStage,
+    amount: alloc.prodPay
+  }
+
+  const memCheck = membershipSaleService.validateMembershipPayment(memPayBody.amount, membershipAmount)
+  if (!memCheck.ok) {
+    throw paymentFailedError(memCheck.message, productBundle, 422)
+  }
+  const prodCheck = validatePaymentAgainstSummary(
+    productBundle.order,
+    productBundle.payment_summary,
+    prodPayBody
+  )
+  if (!prodCheck.ok) {
+    throw paymentFailedError(prodCheck.message, productBundle, 422)
+  }
+
+  const payTxn = new sql.Transaction(pool)
+  await payTxn.begin()
+  try {
+    const { tendered, changeGiven } = preparePaymentTenderFields(paymentBody)
+    await membershipSaleService.insertMembershipPaymentInTransaction(
+      payTxn,
+      memOut.membership_sale_id,
+      employeeId,
+      memPayBody,
+      null,
+      null
+    )
+    await insertPaymentRow(
+      payTxn,
+      mode,
+      productOut.order_id,
+      employeeId,
+      prodPayBody,
+      tendered,
+      changeGiven
+    )
+    await payTxn.commit()
+  } catch (e) {
+    try {
+      await payTxn.rollback()
+    } catch (_rollbackErr) {
+      /* ignore */
+    }
+    throw paymentFailedError(e.message || 'Payment failed.', productBundle, e.statusCode || 422)
+  }
+
+  const prodFin = await finalizePaymentAfterInsert(
+    pool,
+    mode,
+    storeId,
+    productOut.order_id,
+    prodPayBody,
+    employeeId
+  )
+
+  return {
+    order_id: productOut.order_id,
+    order_no: productOut.order_no,
+    order_kind: productOut.order_kind,
+    subtotal_amount: productOut.subtotal_amount,
+    discount_amount: productOut.discount_amount,
+    gst_amount: productOut.gst_amount,
+    total_amount: productOut.total_amount,
+    sub_orders: productOut.sub_orders,
+    payment_summary: prodFin.payment_summary,
+    invoice_no: prodFin.invoice_no,
+    membership_sale_id: memOut.membership_sale_id,
+    membership_invoice_no: memOut.invoice_no,
+    membership_order_id: memOut.membership_sale_id,
+    membership_order_no: memOut.invoice_no,
+    membership_total_amount: membershipAmount
+  }
+}
+
 async function checkoutAndPay(pool, mode, storeId, employeeId, { createParams, paymentBody }) {
+  if (isMembershipOnlyCheckout(createParams.value)) {
+    return checkoutMembershipOnlyAndPay(pool, mode, storeId, employeeId, { createParams, paymentBody })
+  }
+  if (shouldSplitMembershipCheckout(createParams.value)) {
+    return checkoutAndPayWithSplitMembership(pool, mode, storeId, employeeId, { createParams, paymentBody })
+  }
+
   let out
   const createTxn = new sql.Transaction(pool)
   await createTxn.begin()
@@ -1282,7 +1636,8 @@ async function createOrderInTransaction(transaction, {
   cfg,
   discountAmount = 0,
   appliedOfferId = null,
-  inventoryDeferred = false
+  inventoryDeferred = false,
+  omitMembershipFromThisOrder = false
 }) {
   const customerId = value && value.customer_id != null ? Number(value.customer_id) : null
   if (!Number.isFinite(customerId) || customerId < 1) {
@@ -1321,12 +1676,15 @@ async function createOrderInTransaction(transaction, {
   }
   productSubtotal = roundMoney(productSubtotal)
 
-  const membershipAmount = value._membership_amount != null
+  const membershipAmountRaw = value._membership_amount != null
     ? roundMoney(value._membership_amount)
     : 0
-  const soldMembershipPlanKey = value.membership_sale && value.membership_sale.plan_key
-    ? String(value.membership_sale.plan_key).trim()
-    : null
+  const omitMembership = !!omitMembershipFromThisOrder
+  const membershipAmount = omitMembership ? 0 : membershipAmountRaw
+  const soldMembershipPlanKey =
+    !omitMembership && value.membership_sale && value.membership_sale.plan_key
+      ? String(value.membership_sale.plan_key).trim()
+      : null
 
   const taxOut = computePosOrderTaxTotals({
     subtotal: productSubtotal,
@@ -3422,6 +3780,282 @@ async function fetchInvoiceDetailForApiCrossStore(pool, orderId, mode) {
   return fetchInvoiceDetailForApi(pool, orderId, storeId, mode)
 }
 
+/**
+ * Retroactive split: legacy combined product+membership on one pos_orders row → product + MEMBERSHIP orders, two invoices.
+ * @param {import('mssql').ConnectionPool} pool
+ * @param {number} productOrderId pos_orders.order_id
+ * @param {{ dryRun?: boolean }} [options]
+ */
+async function splitLegacyCombinedMembershipOrder(pool, productOrderId, options = {}) {
+  const dryRun = !!options.dryRun
+  const oid = Number(productOrderId)
+  if (!Number.isFinite(oid) || oid < 1) {
+    return { ok: false, skipped: true, reason: 'invalid_order_id' }
+  }
+
+  const head = await pool.request().input('oid', sql.Int, oid).query(`
+    SELECT o.*,
+      (SELECT COUNT(*) FROM dbo.pos_sub_orders so WHERE so.order_id = o.order_id) AS sub_count
+    FROM dbo.pos_orders o
+    WHERE o.order_id = @oid
+  `)
+  const order = head.recordset[0]
+  if (!order) return { ok: false, skipped: true, reason: 'order_not_found' }
+
+  const planKey = order.sold_membership_plan_key
+    ? String(order.sold_membership_plan_key).trim()
+    : ''
+  const M = roundMoney(Number(order.sold_membership_amount) || 0)
+  const subCount = Number(order.sub_count) || 0
+  const kind = String(order.order_kind || '').trim().toUpperCase()
+
+  if (!planKey || M <= MONEY_EPS) {
+    return { ok: false, skipped: true, reason: 'no_membership_on_order' }
+  }
+  if (kind === 'MEMBERSHIP') {
+    return { ok: false, skipped: true, reason: 'already_membership_only' }
+  }
+  if (order.linked_membership_order_id != null || order.linked_membership_sale_id != null) {
+    return { ok: false, skipped: true, reason: 'already_split' }
+  }
+  if (subCount < 1) {
+    return { ok: false, skipped: true, reason: 'no_product_lines' }
+  }
+
+  const payRs = await pool.request().input('oid', sql.Int, oid).query(`
+    SELECT payment_id, stage, method, amount, tendered, change_given, external_ref, created_by, created_at
+    FROM dbo.pos_payments
+    WHERE order_id = @oid
+    ORDER BY payment_id
+  `)
+  const payments = payRs.recordset || []
+  const paidTotal = roundMoney(
+    payments.reduce((s, p) => s + roundMoney(Number(p.amount) || 0), 0)
+  )
+  if (paidTotal + MONEY_EPS < M) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'insufficient_payments_for_membership',
+      paid_total: paidTotal,
+      membership_amount: M
+    }
+  }
+
+  const invRs = await pool.request().input('oid', sql.Int, oid).query(`
+    SELECT invoice_id, invoice_no, total_amount, gst_amount, taxable_amount
+    FROM dbo.pos_invoices WHERE order_id = @oid
+  `)
+  const productInvoice = invRs.recordset[0] || null
+
+  const oldSubtotal = roundMoney(Number(order.subtotal_amount) || 0)
+  const oldTotal = roundMoney(Number(order.total_amount) || 0)
+  const gstAmount = roundMoney(Number(order.gst_amount) || 0)
+  const newSubtotal = roundMoney(Math.max(0, oldSubtotal - M))
+  const newTotal = roundMoney(Math.max(0, oldTotal - M))
+  const newTaxable = roundMoney(Math.max(0, newTotal - gstAmount))
+
+  if (newTotal <= MONEY_EPS) {
+    return { ok: false, skipped: true, reason: 'product_total_invalid_after_split' }
+  }
+
+  const reductions = []
+  let remaining = M
+  const paySorted = [...payments].sort((a, b) => roundMoney(Number(b.amount) || 0) - roundMoney(Number(a.amount) || 0))
+  for (const p of paySorted) {
+    if (remaining <= MONEY_EPS) break
+    const amt = roundMoney(Number(p.amount) || 0)
+    const take = roundMoney(Math.min(remaining, amt))
+    if (take <= MONEY_EPS) continue
+    reductions.push({
+      payment_id: p.payment_id,
+      take,
+      newAmount: roundMoney(amt - take),
+      method: p.method,
+      stage: p.stage,
+      created_at: p.created_at,
+      created_by: p.created_by,
+      external_ref: p.external_ref
+    })
+    remaining = roundMoney(remaining - take)
+  }
+  if (remaining > MONEY_EPS) {
+    return { ok: false, skipped: true, reason: 'could_not_allocate_payment_split' }
+  }
+
+  const memPayTemplate = reductions[0] || payments[0] || {}
+  const plan = {
+    product_order_id: oid,
+    product_order_no: order.order_no,
+    membership_amount: M,
+    plan_key: planKey,
+    new_product_subtotal: newSubtotal,
+    new_product_total: newTotal,
+    new_product_taxable: newTaxable,
+    product_invoice_no: productInvoice ? productInvoice.invoice_no : null,
+    payment_reductions: reductions
+  }
+
+  if (dryRun) {
+    return { ok: true, dry_run: true, plan }
+  }
+
+  const tx = new sql.Transaction(pool)
+  await tx.begin()
+  try {
+    const memOut = await membershipSaleService.createMembershipSaleInTransaction(tx, {
+      storeId: order.store_id,
+      customerId: order.customer_id,
+      planKey,
+      amount: M,
+      productOrderId: oid,
+      createdBy: order.created_by_user_id,
+      createdAt: order.created_at
+    })
+    const memSaleId = memOut.membership_sale_id
+    const membershipInvoiceNo = memOut.invoice_no
+
+    const rProd = new sql.Request(tx)
+    rProd.input('oid', sql.Int, oid)
+    rProd.input('sid', sql.Int, memSaleId)
+    rProd.input('subtotal_amount', sql.Decimal(12, 2), newSubtotal)
+    rProd.input('total_amount', sql.Decimal(12, 2), newTotal)
+    await rProd.query(`
+      UPDATE dbo.pos_orders
+      SET linked_membership_sale_id = @sid,
+          subtotal_amount = @subtotal_amount,
+          total_amount = @total_amount,
+          sold_membership_plan_key = NULL,
+          sold_membership_amount = NULL
+      WHERE order_id = @oid
+    `)
+
+    for (const red of reductions) {
+      const rPay = new sql.Request(tx)
+      rPay.input('pid', sql.Int, red.payment_id)
+      rPay.input('amt', sql.Decimal(12, 2), red.newAmount)
+      await rPay.query(`UPDATE dbo.pos_payments SET amount = @amt WHERE payment_id = @pid`)
+    }
+
+    await membershipSaleService.insertMembershipPaymentInTransaction(
+      tx,
+      memSaleId,
+      memPayTemplate.created_by || order.created_by_user_id,
+      {
+        stage: 'FULL',
+        method: memPayTemplate.method || 'CASH',
+        amount: M,
+        external_ref: memPayTemplate.external_ref || null
+      },
+      null,
+      null
+    )
+
+    if (productInvoice) {
+      const rInv = new sql.Request(tx)
+      rInv.input('oid', sql.Int, oid)
+      rInv.input('total_amount', sql.Decimal(12, 2), newTotal)
+      rInv.input('taxable_amount', sql.Decimal(12, 2), newTaxable)
+      rInv.input('gst_amount', sql.Decimal(12, 2), gstAmount)
+      await rInv.query(`
+        UPDATE dbo.pos_invoices
+        SET total_amount = @total_amount,
+            taxable_amount = @taxable_amount,
+            gst_amount = @gst_amount
+        WHERE order_id = @oid
+      `)
+    }
+
+    await tx.commit()
+
+    const hasSaleCol = await pool.request().query(`
+      SELECT CASE WHEN COL_LENGTH('dbo.customer_memberships', 'pos_membership_sale_id') IS NULL THEN 0 ELSE 1 END AS ok
+    `)
+    if (Number((hasSaleCol.recordset[0] || {}).ok) === 1) {
+      await pool.request()
+        .input('memSid', sql.Int, memSaleId)
+        .input('prodOid', sql.Int, oid)
+        .query(`
+          UPDATE dbo.customer_memberships
+          SET pos_membership_sale_id = @memSid,
+              pos_order_id = NULL
+          WHERE pos_order_id = @prodOid
+        `)
+    } else {
+      await pool.request()
+        .input('prodOid', sql.Int, oid)
+        .query(`
+          UPDATE dbo.customer_memberships SET pos_order_id = NULL WHERE pos_order_id = @prodOid
+        `)
+    }
+
+    if (await tableExists(pool, 'oe_orders')) {
+      await pool.request()
+        .input('lid', sql.Int, oid)
+        .input('subtotal_amount', sql.Decimal(12, 2), newSubtotal)
+        .input('total_amount', sql.Decimal(12, 2), newTotal)
+        .query(`
+          UPDATE dbo.oe_orders
+          SET subtotal_amount = @subtotal_amount,
+              total_amount = @total_amount,
+              sold_membership_plan_key = NULL,
+              sold_membership_amount = NULL
+          WHERE legacy_pos_order_id = @lid
+        `)
+    }
+
+    return {
+      ok: true,
+      product_order_id: oid,
+      product_order_no: order.order_no,
+      membership_sale_id: memSaleId,
+      membership_invoice_no: membershipInvoiceNo,
+      product_invoice_no: productInvoice ? productInvoice.invoice_no : null,
+      membership_amount: M
+    }
+  } catch (e) {
+    await tx.rollback()
+    throw e
+  }
+}
+
+async function tableExists(pool, tableName) {
+  const r = await pool.request().input('t', sql.NVarChar(128), tableName).query(`
+    SELECT CASE WHEN OBJECT_ID(@t, N'U') IS NULL THEN 0 ELSE 1 END AS ok
+  `)
+  return Number((r.recordset[0] || {}).ok) === 1
+}
+
+/**
+ * List pos_orders eligible for legacy membership split.
+ * @param {import('mssql').ConnectionPool} pool
+ * @param {{ orderNo?: string, limit?: number }} [filters]
+ */
+async function listLegacyCombinedMembershipOrderIds(pool, filters = {}) {
+  const orderNo = filters.orderNo ? String(filters.orderNo).trim() : ''
+  const limit = Math.min(Math.max(Number(filters.limit) || 500, 1), 5000)
+  const req = pool.request().input('lim', sql.Int, limit)
+  let q = `
+    SELECT TOP (@lim) o.order_id, o.order_no, o.total_amount, o.sold_membership_amount
+    FROM dbo.pos_orders o
+    WHERE o.sold_membership_plan_key IS NOT NULL
+      AND LTRIM(RTRIM(o.sold_membership_plan_key)) <> N''
+      AND o.sold_membership_amount > 0
+      AND o.linked_membership_order_id IS NULL
+      AND o.linked_membership_sale_id IS NULL
+      AND UPPER(LTRIM(RTRIM(ISNULL(o.order_kind, N'')))) <> N'MEMBERSHIP'
+      AND EXISTS (SELECT 1 FROM dbo.pos_sub_orders so WHERE so.order_id = o.order_id)
+      AND ISNULL(o.status, N'') <> N'CANCELLED'
+  `
+  if (orderNo) {
+    req.input('order_no', sql.NVarChar(50), orderNo)
+    q += ' AND o.order_no = @order_no'
+  }
+  q += ' ORDER BY o.order_id'
+  const r = await req.query(q)
+  return r.recordset || []
+}
+
 module.exports = {
   getOrdersEngineMode,
   ORDERS_ENGINE_MODE_KEY,
@@ -3454,5 +4088,7 @@ module.exports = {
   fetchCxSummary,
   fetchCxRevenueByStore,
   fetchCxCustomerRollup,
-  markInstantSubOrderHandedOver
+  markInstantSubOrderHandedOver,
+  splitLegacyCombinedMembershipOrder,
+  listLegacyCombinedMembershipOrderIds
 }

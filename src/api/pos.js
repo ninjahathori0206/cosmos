@@ -22,8 +22,10 @@ const { resolveSkuFacts, computeOfferDiscountAmount } = require('../services/cus
 const {
   grantCustomerMembership,
   resolveMembershipSaleAmount,
-  membershipHasPosOrderIdColumn
+  membershipHasPosOrderIdColumn,
+  membershipHasPosMembershipSaleIdColumn
 } = require('../services/membershipGrantService')
+const membershipSaleService = require('../services/membershipSaleService')
 const { wallClockIso } = require('../lib/cosmosIst')
 const { parseIndiaMobileForSave } = require('../lib/indiaMobile')
 const posCustomerRegister = require('../services/posCustomerRegisterService')
@@ -888,6 +890,60 @@ router.post('/staff-login', apiKeyAuth, requireTabletSession, async (req, res, n
   }
 })
 
+// ── POST /api/pos/refresh-permissions — re-read role_permissions into staff JWT (after CU edits) ──
+router.post('/refresh-permissions', authJwt, requireModule('pos'), async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.pos_session) {
+      return res.status(403).json({ success: false, message: 'POS staff session required.' })
+    }
+    const roleKey = String(req.user.role || '').trim()
+    if (!roleKey) {
+      return res.status(400).json({ success: false, message: 'Role missing from session.' })
+    }
+
+    let permissions = []
+    try {
+      const permResult = await executeStoredProcedure('sp_POS_GetStaffPermissions', {
+        role_key: { type: sql.VarChar(100), value: roleKey }
+      })
+      permissions = (permResult.recordset || [])
+        .map((r) => String(r.permission_key || r.permission || '').toLowerCase())
+        .filter(Boolean)
+    } catch (permErr) {
+      console.warn('[pos/refresh-permissions] sp_POS_GetStaffPermissions failed:', permErr.message)
+    }
+
+    const u = req.user
+    const payload = {
+      pos_session: true,
+      session_id: u.session_id,
+      tablet_id: u.tablet_id,
+      user_id: u.user_id,
+      employee_id: u.employee_id,
+      name: u.name,
+      role: u.role,
+      store_id: u.store_id,
+      can_initiate_refund: u.can_initiate_refund,
+      can_view_reports: u.can_view_reports,
+      can_manage_staff: u.can_manage_staff,
+      permissions,
+      modules: u.modules && typeof u.modules === 'object' ? u.modules : { pos: true },
+      token_issued_at: nowUnixSec()
+    }
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, {
+      expiresIn: '8h'
+    })
+
+    return res.json({
+      success: true,
+      data: { token, permissions }
+    })
+  } catch (err) {
+    return next(err)
+  }
+})
+
 // ── POST /api/pos/session/complete ────────────────────────────────────────────
 router.post('/session/complete', authJwt, requireModule('pos'), async (req, res, next) => {
   try {
@@ -1349,19 +1405,27 @@ function prospectivePlanKeyFromOrder(value) {
 async function grantMembershipFromPosSale(pool, { orderValue, out, employeeId }) {
   const pk = prospectivePlanKeyFromOrder(orderValue)
   if (!pk) return null
+  const saleId =
+    out.membership_sale_id != null
+      ? Number(out.membership_sale_id)
+      : out.membership_order_id != null
+        ? Number(out.membership_order_id)
+        : null
+  const refLabel = out.membership_invoice_no || out.order_no || out.order_id || saleId
   try {
     return await grantCustomerMembership(pool, {
       customerId: orderValue.customer_id,
       planKey: pk,
       pricePaid: orderValue.membership_sale.price_paid,
-      posOrderId: out.order_id,
+      posMembershipSaleId: saleId,
+      posOrderId: saleId ? null : out.order_id,
       createdByUserId: employeeId != null ? Number(employeeId) : null,
       useTransaction: false
     })
   } catch (e) {
     const err = new Error(
-      'Payment was recorded but membership could not be activated. Contact support with order '
-        + (out.order_no || out.order_id) + '.'
+      'Payment was recorded but membership could not be activated. Contact support with invoice '
+        + refLabel + '.'
     )
     err.statusCode = 500
     throw err
@@ -1422,18 +1486,34 @@ async function grantMembershipFromOrderRowIfNeeded(pool, { orderId, customerId, 
  * Checkout grant: try request payload first, then persisted order row (idempotent).
  */
 async function ensureMembershipGrantAfterCheckout(pool, { orderValue, out, employeeId, mode }) {
+  const grantSaleId =
+    out.membership_sale_id != null
+      ? Number(out.membership_sale_id)
+      : out.membership_order_id != null
+        ? Number(out.membership_order_id)
+        : null
+  const grantOut = grantSaleId
+    ? { ...out, membership_sale_id: grantSaleId }
+    : { ...out, order_id: Number(out.order_id) }
   try {
-    const fromSale = await grantMembershipFromPosSale(pool, { orderValue, out, employeeId })
+    const fromSale = await grantMembershipFromPosSale(pool, {
+      orderValue,
+      out: grantOut,
+      employeeId
+    })
     if (fromSale) return fromSale
   } catch (_saleErr) {
-    /* order + payment already committed — fall back to order row */
+    /* payment already committed — fall back to order row when applicable */
   }
-  return grantMembershipFromOrderRowIfNeeded(pool, {
-    orderId: out.order_id,
-    customerId: orderValue.customer_id,
-    employeeId,
-    mode
-  })
+  if (!grantSaleId && out.order_id) {
+    return grantMembershipFromOrderRowIfNeeded(pool, {
+      orderId: Number(out.order_id),
+      customerId: orderValue.customer_id,
+      employeeId,
+      mode
+    })
+  }
+  return null
 }
 
 /**
@@ -1941,6 +2021,26 @@ router.get('/invoices', ...posInvoicesView, async (req, res, next) => {
   }
 })
 
+// ── GET /api/pos/membership-sales/:id — membership M-invoice detail ───────────
+router.get('/membership-sales/:id', ...posMembershipSell, async (req, res, next) => {
+  try {
+    const saleId = parseInt(req.params.id, 10)
+    if (!Number.isFinite(saleId) || saleId < 1) {
+      return res.status(400).json({ success: false, message: 'Invalid membership sale id.' })
+    }
+    const storeId = posJwtStoreIdOr400(req, res)
+    if (storeId == null) return
+    const pool = await getPool()
+    const data = await membershipSaleService.buildMembershipInvoiceDetailForApi(pool, saleId, storeId)
+    if (!data) {
+      return res.status(404).json({ success: false, message: 'Membership sale not found for this store.' })
+    }
+    return res.json({ success: true, data })
+  } catch (err) {
+    return next(err)
+  }
+})
+
 // ── GET /api/pos/invoices/:id — full detail for share image (store-scoped) ───
 router.get('/invoices/:id', ...posInvoicesView, async (req, res, next) => {
   try {
@@ -2186,28 +2286,35 @@ router.post('/checkout-and-pay', ...posCheckoutAndPay, async (req, res, next) =>
       employeeId,
       authorisedDiscountAmount
     })
-    await awardCashbackCoinsIfApplicable(pool, {
-      customerId: orderBody.customer_id || null,
-      orderId: out.order_id,
-      orderNo: out.order_no,
-      totalAmount: out.total_amount,
-      offerId: orderBody.applied_offer_id || null
-    })
+    if (out.order_id) {
+      await awardCashbackCoinsIfApplicable(pool, {
+        customerId: orderBody.customer_id || null,
+        orderId: out.order_id,
+        orderNo: out.order_no,
+        totalAmount: out.total_amount,
+        offerId: orderBody.applied_offer_id || null
+      })
+    }
 
     return res.json({
       success: true,
-      message: 'Order created and payment recorded.',
+      message: out.order_id ? 'Order created and payment recorded.' : 'Membership sale recorded.',
       data: {
-        order_id: out.order_id,
-        order_no: out.order_no,
+        order_id: out.order_id || null,
+        order_no: out.order_no || null,
         order_kind: out.order_kind,
         subtotal_amount: out.subtotal_amount,
         discount_amount: out.discount_amount,
         gst_amount: out.gst_amount,
         total_amount: out.total_amount,
-        sub_orders: out.sub_orders,
+        sub_orders: out.sub_orders || [],
         payment_summary: out.payment_summary,
         invoice_no: out.invoice_no || null,
+        membership_sale_id: out.membership_sale_id || out.membership_order_id || null,
+        membership_invoice_no: out.membership_invoice_no || null,
+        membership_order_id: out.membership_sale_id || out.membership_order_id || null,
+        membership_order_no: out.membership_invoice_no || out.membership_order_no || null,
+        membership_total_amount: out.membership_total_amount || null,
         orders_engine_mode: mode,
         created_by_user_id: employeeId != null ? Number(employeeId) : null,
         membership_id: membershipGrant ? membershipGrant.membership_id : null
