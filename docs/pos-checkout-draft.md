@@ -18,7 +18,7 @@ Post-success side effects (offer usage, coins, membership grant) run **only** af
 
 ## Display labels
 
-Rows such as **EW-ORD-1001** stay `status = OPEN` until paid or voided. The API exposes:
+Rows such as **EW-ORD-SRT03-00001** (store code + per-store 5-digit seq) stay `status = OPEN` until paid or voided. Legacy **EW-ORD-1001** numbers are migrated via `scripts/migrate_pos_order_numbers_per_store.js`. The API exposes:
 
 - `is_unpaid`, `amount_remaining`, `amount_paid`
 - `display_status_label` → **Payment pending** (when `OPEN` and underpaid)

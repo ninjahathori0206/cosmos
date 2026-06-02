@@ -7,7 +7,8 @@ const { formatDateYmd, sqlWireDatetime, wallClockIso, wireDatetimeFromSql } = re
 
 const ORDERS_ENGINE_MODE_KEY = 'orders_engine_mode'
 const MONEY_EPS = 0.02
-const ORDER_SEQ_KEY = 'pos_order_seq'
+const ORDER_SEQ_KEY_PREFIX = 'pos_order_seq:'
+const ORDER_NO_PREFIX = 'EW-ORD-'
 const INVOICE_SEQ_KEY = 'pos_invoice_seq'
 
 /** 0 is valid (no advance); only null/empty/NaN uses fallback. */
@@ -1082,13 +1083,30 @@ async function checkoutAndPay(pool, mode, storeId, employeeId, { createParams, p
   }
 }
 
+/** @param {string} storeCompact */
+function orderSeqSettingKey(storeCompact) {
+  const sc = String(storeCompact || 'STORE').trim().toUpperCase()
+  const key = ORDER_SEQ_KEY_PREFIX + sc
+  if (key.length <= 100) return key
+  return ORDER_SEQ_KEY_PREFIX + sc.slice(0, 100 - ORDER_SEQ_KEY_PREFIX.length)
+}
+
+/** @param {string} storeCompact @param {number} seq */
+function buildPosOrderNo(storeCompact, seq) {
+  const sc = String(storeCompact || 'STORE').trim().toUpperCase()
+  return `${ORDER_NO_PREFIX}${sc}-${String(seq).padStart(5, '0')}`
+}
+
 /**
- * Max numeric suffix already used on EW-ORD-* across POS / order-engine tables (0 if none).
- * Heals drift when app_settings.pos_order_seq falls behind existing rows.
+ * Max 5-digit suffix for EW-ORD-{storeCompact}-* on POS / order-engine tables (0 if none).
  * @param {import('mssql').Transaction} transaction
+ * @param {string} storeCompact
  */
-async function readMaxEwOrdNumericSuffix(transaction) {
+async function readMaxEwOrdSeqForStore(transaction, storeCompact) {
+  const sc = String(storeCompact || 'STORE').trim().toUpperCase()
+  const likePat = `${ORDER_NO_PREFIX}${sc}-%`
   const r0 = new sql.Request(transaction)
+  r0.input('pat', sql.NVarChar(80), likePat)
   const chk = await r0.query(`
     SELECT
       CASE WHEN OBJECT_ID(N'dbo.pos_orders', N'U') IS NOT NULL THEN 1 ELSE 0 END AS has_pos,
@@ -1098,16 +1116,17 @@ async function readMaxEwOrdNumericSuffix(transaction) {
   const parts = []
   if (row.has_pos) {
     parts.push(
-      `SELECT TRY_CAST(SUBSTRING(order_no, 8, 50) AS INT) AS n FROM dbo.pos_orders WHERE order_no LIKE N'EW-ORD-%'`
+      `SELECT TRY_CAST(RIGHT(order_no, 5) AS INT) AS n FROM dbo.pos_orders WHERE order_no LIKE @pat`
     )
   }
   if (row.has_oe) {
     parts.push(
-      `SELECT TRY_CAST(SUBSTRING(order_no, 8, 50) AS INT) AS n FROM dbo.oe_orders WHERE order_no LIKE N'EW-ORD-%'`
+      `SELECT TRY_CAST(RIGHT(order_no, 5) AS INT) AS n FROM dbo.oe_orders WHERE order_no LIKE @pat`
     )
   }
   if (!parts.length) return 0
   const r = new sql.Request(transaction)
+  r.input('pat', sql.NVarChar(80), likePat)
   const rs = await r.query(`SELECT MAX(n) AS mx FROM (${parts.join(' UNION ALL ')}) AS u`)
   const mx = (rs.recordset[0] || {}).mx
   const n = Number(mx)
@@ -1115,20 +1134,35 @@ async function readMaxEwOrdNumericSuffix(transaction) {
 }
 
 /**
- * Allocates the next EW-ORD numeric suffix under UPDLOCK and persists it to app_settings.
- * Ensures pos_order_seq row exists and never returns a suffix ≤ max(existing EW-ORD-*).
  * @param {import('mssql').Transaction} transaction
- * @returns {Promise<number>}
+ * @param {number} storeId
+ * @returns {Promise<string>}
  */
-async function allocateNextPosOrderSeq(transaction) {
-  const k = ORDER_SEQ_KEY
+async function fetchStoreCompactForOrder(transaction, storeId) {
+  const sid = Number(storeId)
+  if (!Number.isFinite(sid) || sid < 1) return 'STORE'
+  const r = new sql.Request(transaction)
+  r.input('sid', sql.Int, sid)
+  const rs = await r.query('SELECT store_code FROM dbo.stores WHERE store_id = @sid')
+  return compactStoreCodeForInvoice((rs.recordset[0] || {}).store_code)
+}
+
+/**
+ * Allocates next store-scoped order number: EW-ORD-{storeCompact}-{seq5}.
+ * @param {import('mssql').Transaction} transaction
+ * @param {number} storeId
+ * @returns {Promise<string>}
+ */
+async function allocateNextPosOrderNo(transaction, storeId) {
+  const storeCompact = await fetchStoreCompactForOrder(transaction, storeId)
+  const k = orderSeqSettingKey(storeCompact)
   const rEns = new sql.Request(transaction)
   rEns.input('k', sql.VarChar(100), k)
   await rEns.query(`
     IF NOT EXISTS (SELECT 1 FROM dbo.app_settings WITH (UPDLOCK, ROWLOCK) WHERE setting_key = @k)
     BEGIN
       INSERT INTO dbo.app_settings (setting_key, setting_value, setting_group, description)
-      VALUES (@k, N'1000', N'pos', N'Monotonic order sequence (integer string).');
+      VALUES (@k, N'0', N'pos', N'Per-store POS order sequence (integer string).');
     END
   `)
 
@@ -1138,9 +1172,9 @@ async function allocateNextPosOrderSeq(transaction) {
     'SELECT setting_value FROM dbo.app_settings WITH (UPDLOCK, ROWLOCK) WHERE setting_key = @k'
   )
   let seq = parseInt((seqLock.recordset[0] || {}).setting_value, 10)
-  if (!Number.isFinite(seq)) seq = 1000
+  if (!Number.isFinite(seq)) seq = 0
 
-  const maxUsed = await readMaxEwOrdNumericSuffix(transaction)
+  const maxUsed = await readMaxEwOrdSeqForStore(transaction, storeCompact)
   let nextSeq = seq + 1
   if (Number.isFinite(maxUsed) && maxUsed > 0 && nextSeq <= maxUsed) {
     nextSeq = maxUsed + 1
@@ -1159,7 +1193,7 @@ async function allocateNextPosOrderSeq(transaction) {
     throw err
   }
 
-  return nextSeq
+  return buildPosOrderNo(storeCompact, nextSeq)
 }
 
 /** Indian FY label for invoice numbers, e.g. May 2026 → "2627". */
@@ -1307,8 +1341,7 @@ async function createOrderInTransaction(transaction, {
   const totalAmount = roundMoney(taxOut.totalAmount + membershipAmount)
   const gstRateStored = taxOut.snapshotRate
 
-  const nextSeq = await allocateNextPosOrderSeq(transaction)
-  const orderNo = `EW-ORD-${nextSeq}`
+  const orderNo = await allocateNextPosOrderNo(transaction, storeId)
 
   const instantLines = linesNormalized.filter((l) => l.fulfillment === 'INSTANT')
   const labLines = linesNormalized.filter((l) => l.fulfillment === 'LAB')
@@ -2398,10 +2431,23 @@ function appendPosOrderQueueFilters(query, t, opts, paramPrefix = '') {
   const invDays = opts.invoicedSinceDays != null ? Number(opts.invoicedSinceDays) : null
   if (opts.invoicedQueue && invDays != null && invDays > 0) {
     invoicedDaysParam = `${pfx}invoiced_days`
+    // Recent queue = when the order was actually handed over / invoiced (status log), not
+    // pos_invoices.created_at alone — supports backdated invoice/order display dates.
     q += ` AND EXISTS (
       SELECT 1 FROM dbo.pos_invoices piq
       WHERE piq.order_id = o.order_id
-        AND piq.created_at >= DATEADD(DAY, -@${invoicedDaysParam}, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+    ) AND (
+      EXISTS (
+        SELECT 1 FROM ${t.order_status_log} lg_inv
+        WHERE lg_inv.order_id = o.order_id
+          AND lg_inv.to_status IN (N'INVOICED', N'HANDED_OVER')
+          AND lg_inv.created_at >= DATEADD(DAY, -@${invoicedDaysParam}, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+      )
+      OR EXISTS (
+        SELECT 1 FROM dbo.pos_invoices piq2
+        WHERE piq2.order_id = o.order_id
+          AND piq2.created_at >= DATEADD(DAY, -@${invoicedDaysParam}, DATEADD(MINUTE, 330, SYSUTCDATETIME()))
+      )
     ) `
   } else if (invDays != null && invDays > 0 && includes.includes('INVOICED')) {
     invoicedDaysParam = `${pfx}invoiced_days`

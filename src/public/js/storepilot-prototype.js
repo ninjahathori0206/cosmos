@@ -332,10 +332,7 @@ function loadStorePilotPage(id) {
       setTimeout(function () { window.openSpCreateRequestModal(); }, 0);
     }
   }
-  if (id === 'reports') {
-    initDayStoreReportDate();
-    loadReports();
-  }
+  if (id === 'reports') loadReports();
   if (id === 'lab-orders')         loadSpLabOrders();
   if (id === 'invoices')           loadSpInvoices();
   if (id === 'collections' && typeof window.loadStoreCollections === 'function') loadStoreCollections('storepilot');
@@ -2467,6 +2464,9 @@ window.prefillTransferSku = function (skuId, skuCode, description) {
 };
 
 // ── Day store report ───────────────────────────────────────────────────────────
+/** @type {object|null} Last successful day-store API payload for share-as-image */
+let _lastDayStoreReport = null;
+
 function spFmtRs(v) {
   return '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -2475,7 +2475,20 @@ function initDayStoreReportDate() {
   const dateEl = document.getElementById('day-store-report-date');
   if (!dateEl) return;
   const today = typeof cosmosIstToday === 'function' ? cosmosIstToday() : '';
-  if (today && !dateEl.value) dateEl.value = today;
+  if (today) dateEl.value = today;
+}
+
+function dayStoreReportIsEmpty(data) {
+  if (!data) return true;
+  const inv = data.invoiced || {};
+  const bk = data.booking || {};
+  const col = data.collection || {};
+  return (
+    !(Number(inv.bill_count) || 0) &&
+    !(Number(bk.order_count) || 0) &&
+    !(Number(col.total) || 0) &&
+    !(Number(data.memberships_sold) || 0)
+  );
 }
 
 function renderDayStoreReportBody(data) {
@@ -2488,9 +2501,13 @@ function renderDayStoreReportBody(data) {
     ? (typeof cosmosFmtDate === 'function' ? cosmosFmtDate(data.report_date) : data.report_date)
     : '';
   const storeLabel = data.store_name ? escHtml(data.store_name) : 'This store';
+  const emptyBanner = dayStoreReportIsEmpty(data)
+    ? '<div class="sp-day-report-empty-banner" role="status">No sales, collections, or memberships recorded for this date. Try another day if you expect activity (e.g. yesterday).</div>'
+    : '';
 
   body.innerHTML = `
-    <div style="font-size:12px;color:var(--text2);margin-bottom:14px">${storeLabel} · ${escHtml(dateLabel)}</div>
+    <div class="sp-day-report-meta">${storeLabel} · ${escHtml(dateLabel)}</div>
+    ${emptyBanner}
     <div class="sp-day-report-sections">
       <section class="sp-day-report-section">
         <div class="sp-day-report-section-title">Invoiced (today)</div>
@@ -2578,7 +2595,10 @@ window.generateDayStoreReport = async function () {
   try {
     const qs = new URLSearchParams({ date: reportDate });
     const res = await apiGet('/api/storepilot/reports/day-store?' + qs.toString());
-    renderDayStoreReportBody(res.data || {});
+    _lastDayStoreReport = res.data || {};
+    renderDayStoreReportBody(_lastDayStoreReport);
+    const shareBtn = document.getElementById('btn-share-day-store-report');
+    if (shareBtn) shareBtn.disabled = false;
     if (btn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
   } catch (err) {
     if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
@@ -2589,108 +2609,37 @@ window.generateDayStoreReport = async function () {
   }
 };
 
-// ── Reports ────────────────────────────────────────────────────────────────────
+window.shareDayStoreReport = async function () {
+  const btn = document.getElementById('btn-share-day-store-report');
+  if (!_lastDayStoreReport) {
+    if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Generate the report first, then share.');
+    return;
+  }
+  if (typeof window.cosmosBuildDayStoreReportCanvas !== 'function') {
+    if (typeof cosmosToastError === 'function') cosmosToastError('Report share module not loaded.');
+    return;
+  }
+  if (btn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+  try {
+    const canvas = window.cosmosBuildDayStoreReportCanvas(_lastDayStoreReport);
+    await window.cosmosShareDayStoreReportCanvas(
+      canvas,
+      _lastDayStoreReport.report_date,
+      _lastDayStoreReport.store_name
+    );
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+  } catch (err) {
+    if (btn && typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not share report.');
+  }
+};
+
+// ── Reports (Day store report only on this page) ─────────────────────────────
 function loadReports() {
-  const statsEl = document.getElementById('reports-stats');
-  const tableEl = document.getElementById('reports-transfer-table');
-  const monthEl = document.getElementById('reports-month-label');
-
-  const now = new Date();
-  if (monthEl) monthEl.textContent = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', month: 'long', year: 'numeric' });
-  if (statsEl && typeof cosmosSkeletonCards === 'function') cosmosSkeletonCards('reports-stats', 4);
-  else if (statsEl) statsEl.innerHTML = '';
-  if (tableEl && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('reports-transfer-table', 5);
-  else if (tableEl) tableEl.innerHTML = '';
-
-  const qs = new URLSearchParams({ top_n: 500 });
-  if (_storeId) qs.set('to_store_id', _storeId);
-
-  const reportSkuPromise = _storeId
-    ? apiGet('/api/stock-transfers/store-catalogue?' + new URLSearchParams({ store_id: _storeId }).toString())
-    : apiGet('/api/skus?status=LIVE');
-
-  Promise.allSettled([
-    apiGet('/api/stock-transfers/history?' + qs.toString()),
-    reportSkuPromise
-  ]).then(([trResult, skuResult]) => {
-    const allTransfers = trResult.status === 'fulfilled' ? (trResult.value.data || []) : [];
-    const storeOrCatSkus = skuResult.status === 'fulfilled' ? (skuResult.value.data || []) : [];
-
-    const istDateStr = typeof cosmosIstToday === 'function' ? cosmosIstToday() : '';
-    const [iy, im, id] = istDateStr.split('-').map(Number);
-    const monthStart = new Date(`${iy}-${String(im).padStart(2,'0')}-01T00:00:00+05:30`);
-    const weekStart  = new Date(new Date(`${iy}-${String(im).padStart(2,'0')}-${String(id).padStart(2,'0')}T00:00:00+05:30`) - 6 * 864e5);
-
-    const thisMonth = allTransfers.filter((r) => {
-      const d = new Date(r.created_at || r.transfer_date);
-      return !isNaN(d) && d >= monthStart;
-    });
-    const thisWeek = allTransfers.filter((r) => {
-      const d = new Date(r.created_at || r.transfer_date);
-      return !isNaN(d) && d >= weekStart;
-    });
-
-    const skuCount = storeOrCatSkus.length;
-    const skuLabel = 'Live SKUs in store';
-    const skuMeta = _storeId
-      ? 'Distinct SKUs with on-hand stock at this store'
-      : 'Network live catalogue (assign a store to see in-store count)';
-
-    if (statsEl) {
-      statsEl.innerHTML = `
-        <div class="sc" style="--sc-color:var(--acc)">
-          <div class="sl">Transfers this month</div>
-          <div class="sv" data-count="${thisMonth.length}">${thisMonth.length}</div>
-          <div class="sm">Inbound ${_storeId ? 'to this store' : 'network-wide'}</div>
-        </div>
-        <div class="sc" style="--sc-color:var(--gold)">
-          <div class="sl">Transfers this week</div>
-          <div class="sv" data-count="${thisWeek.length}">${thisWeek.length}</div>
-          <div class="sm">Last 7 days</div>
-        </div>
-        <div class="sc" style="--sc-color:var(--teal)">
-          <div class="sl">${skuLabel}</div>
-          <div class="sv" data-count="${skuCount}">${skuCount}</div>
-          <div class="sm">${skuMeta}</div>
-        </div>`;
-      if (typeof cosmosCountUp === 'function') {
-        statsEl.querySelectorAll('.sv[data-count]').forEach(function (el) {
-          cosmosCountUp(el, Number(el.getAttribute('data-count')) || 0);
-        });
-      }
-    }
-
-    if (tableEl) {
-      if (!thisMonth.length) {
-        tableEl.innerHTML = `<div class="empty-state"><div class="ei">📋</div><div class="et">No transfers this month${_storeId ? ' for this store' : ''}</div></div>`;
-      } else {
-        tableEl.innerHTML = `
-          <div class="tw">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th><th>SKU</th><th>Description</th>
-                  <th>From</th><th style="text-align:right">Qty</th><th>Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${thisMonth.map((r) => {
-                  const qty = Number(r.qty) || Number(r.total_qty) || 0;
-                  return `<tr>
-                    <td>${fmtDate(r.created_at || r.transfer_date)}</td>
-                    <td class="mono">${escHtml(r.sku_code || r.sku_id)}</td>
-                    <td>${escHtml(r.description || r.sku_description || '')}</td>
-                    <td style="color:var(--text3);font-size:12px">${escHtml(r.from_location || primaryWarehouseLabel())}</td>
-                    <td style="text-align:right"><span class="b b-blue">${qty}</span></td>
-                    <td style="font-size:12px;color:var(--text3)">${escHtml(r.notes || '')}</td>
-                  </tr>`;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>`;
-      }
-    }
-  });
+  initDayStoreReportDate();
+  if (_storeId && typeof window.generateDayStoreReport === 'function') {
+    window.generateDayStoreReport();
+  }
 }
 
 // ── Incoming transfer detail (My Requests shipments, bucket verify) ─────────

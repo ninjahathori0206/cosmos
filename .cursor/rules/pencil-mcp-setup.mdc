@@ -1,0 +1,45 @@
+---
+description: >-
+  Pencil MCP connectivity — which server to use, health check, and do not skip
+  Pencil silently when MCP is missing.
+globs: ["**/*.pen", "UIX/**", ".cursor/mcp.json", "openpencil-mcp-safe/**"]
+alwaysApply: true
+---
+
+# Pencil MCP setup (Cosmos)
+
+Full troubleshooting: **`docs/dev/pencil-mcp-setup.md`**.
+
+## Before UI design work
+
+1. Confirm Pencil MCP is in the session tool list. **`CallMcpTool` server IDs** (not the `mcp.json` key alone):
+   - **`user-pencil`** — OpenPencil file server (`mcp.json` entry is named `pencil`)
+   - **`user-highagency.pencildev-extension-pencil`** — Pencil extension live canvas
+2. If **neither** is available:
+   - Run **`npm run pencil:mcp-check`** and report the result to the user.
+   - Tell them to enable MCP in **Cursor → Settings → MCP**, **Reload Window**, then start a **new Agent chat**.
+   - **Do not** write *“Pencil MCP isn't available”* and jump to HTML/CSS in the same turn unless the user explicitly said **skip Pencil** / **code only**.
+3. Canonical design file: **`UIX/pencil-new.pen`** — `filePath` from [`scripts/_pencil_paths.mjs`](../../scripts/_pencil_paths.mjs) (`PENCIL_MCP_FILE_PATH`).
+
+## Which server to use
+
+| `CallMcpTool` server | When | `batch_design` shape |
+|----------------------|------|----------------------|
+| **`user-highagency.pencildev-extension-pencil`** | Pencil editor has `UIX/pencil-new.pen` open; `get_editor_state` first | `{ filePath, input }` |
+| **`user-pencil`** | File/bulk edits; editor closed OK | `{ filePath, operations, postProcess: true }` |
+
+Prefer **extension** for screenshots and live review; use **OpenPencil** for scripted bulk fills.
+
+Never edit `.pen` with Read/Write/grep.
+
+## Health check
+
+```bash
+npm run pencil:install   # if node_modules missing
+npm run pencil:mcp-check
+```
+
+## Waivers
+
+- User says **skip Pencil** / **code only** / **hotfix, no visual change** — document waiver, proceed in code.
+- **Plan mode** — no MCP edits; present plan only unless user switches to Agent.

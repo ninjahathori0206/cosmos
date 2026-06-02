@@ -13,6 +13,8 @@ Whenever there is a **change to how something looks, reads, or flows** on screen
 
 Personal skill (all projects): **`pencil-first-ui-ux`** in `~/.cursor/skills/pencil-first-ui-ux/SKILL.md`.
 
+**MCP must be connected** for Agent design work — see **`pencil-mcp-setup.mdc`** and **`docs/dev/pencil-mcp-setup.md`**. `CallMcpTool` servers: **`user-highagency.pencildev-extension-pencil`** (editor open) or **`user-pencil`** (file on disk). Run **`npm run pencil:mcp-check`** if tools are missing.
+
 **Component-level builds** (new or materially new UI surfaces): also follow **`component-build-md-pencil-then-db.mdc`** — companion **`.md` UI spec**, Pencil, **approval**, then app code and **only then** database/schema changes.
 
 ---
@@ -21,7 +23,7 @@ Personal skill (all projects): **`pencil-first-ui-ux`** in `~/.cursor/skills/pen
 
 - For non-trivial components, add or update a **Markdown UI spec** (e.g. `docs/ui/<feature>.md`) as described in **`component-build-md-pencil-then-db.mdc`**.
 - **Single design source:** **`UIX/pencil-new.pen`** (all modules: Store OS, Store Pilot, Foundry, Command Unit, Army HR). Open this file in Pencil before MCP edits. Optionally mirror to **`src/public/design/pencil-local/pencil-new.pen`** after approval if that copy is still used locally.
-- **Only** modify `.pen` files through the **Pencil MCP** (`batch_get`, `batch_design`, etc.) — do **not** edit `.pen` with Read/Write/grep.
+- **Only** modify `.pen` files through the **Pencil MCP** (`batch_get`, `batch_design`, etc.) — do **not** edit `.pen` with Read/Write/grep. If MCP is unavailable, run **`npm run pencil:mcp-check`** and ask the user to enable MCP (do not silently skip to code unless waived).
 - Follow **`.cursor/rules/pencil-mcp-no-notes.mdc`** — **never** add **`type: "note"`** documentation boxes on screens unless the user explicitly requests a note.
 - Match the affected **screen/frame** to the real app (see `.cursor/rules/pencil-pos-url-mapping.mdc` for path labels on frames).
 - In Pencil, mirror the **current design system**: blues/greens/surfaces consistent with existing frames, **legible type**, clear **primary vs secondary** actions, and **comfortable tap targets** — not wireframe placeholders unless the user asks for low-fi only.

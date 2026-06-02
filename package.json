@@ -91,6 +91,8 @@
     "migrate:58-purchase-colour-media-catalogue": "node scripts/run-migration-58-purchase-colour-media-catalogue.js",
     "deploy:pos-sql": "node scripts/deploy_pos_sql.js",
     "deploy:pos-sp": "node scripts/deploy-pos-sp-only.js",
+    "pencil:install": "npm install --prefix openpencil-mcp-safe",
+    "pencil:mcp-check": "node scripts/pencil-mcp-check.mjs",
     "publish:design-local": "node scripts/publish-design-local.js",
     "generate:favicon": "node scripts/generate-favicon.js",
     "merge:pen": "node scripts/merge-pen-into-primary.js",

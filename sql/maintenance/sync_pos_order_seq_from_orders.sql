@@ -1,34 +1,69 @@
--- Align app_settings.pos_order_seq with the highest EW-ORD-* suffix already stored.
--- Use when checkout fails: Violation of UNIQUE KEY ... UQ_pos_orders_order_no (duplicate EW-ORD-xxxx).
--- After deploy, new orders auto-heal via allocateNextPosOrderSeq(); this script fixes legacy drift in one shot.
+-- Sync per-store app_settings pos_order_seq:{STORE} from max EW-ORD-{store}-{seq5} suffix.
+-- Legacy global key pos_order_seq is obsolete after migration 86.
+-- Use when checkout fails: duplicate order_no on UQ_pos_orders_order_no.
 
-DECLARE @mx INT = 0;
-DECLARE @t INT;
-DECLARE @k VARCHAR(100) = N'pos_order_seq';
+DECLARE @store_code NVARCHAR(50) = NULL; -- optional: set e.g. N'EW-SRT03' to sync one store only
 
-IF OBJECT_ID(N'dbo.pos_orders', N'U') IS NOT NULL
+DECLARE @stores TABLE (store_id INT, store_compact NVARCHAR(40));
+INSERT INTO @stores (store_id, store_compact)
+SELECT s.store_id,
+       UPPER(LTRIM(RTRIM(REPLACE(REPLACE(ISNULL(s.store_code, N'STORE'), N'EW-', N''), N'-', N''))))
+FROM dbo.stores s
+WHERE @store_code IS NULL OR s.store_code = @store_code;
+
+DECLARE @sid INT;
+DECLARE @compact NVARCHAR(40);
+DECLARE @mx INT;
+DECLARE @k VARCHAR(100);
+DECLARE @pat NVARCHAR(80);
+
+DECLARE c CURSOR LOCAL FAST_FORWARD FOR
+  SELECT store_id, store_compact FROM @stores;
+
+OPEN c;
+FETCH NEXT FROM c INTO @sid, @compact;
+
+WHILE @@FETCH_STATUS = 0
 BEGIN
-  SELECT @t = MAX(TRY_CAST(SUBSTRING(order_no, 8, 50) AS INT))
-  FROM dbo.pos_orders
-  WHERE order_no LIKE N'EW-ORD-%';
-  IF @t IS NOT NULL AND @t > @mx SET @mx = @t;
+  SET @pat = N'EW-ORD-' + @compact + N'-%';
+  SET @mx = 0;
+
+  IF OBJECT_ID(N'dbo.pos_orders', N'U') IS NOT NULL
+  BEGIN
+    SELECT @mx = MAX(TRY_CAST(RIGHT(order_no, 5) AS INT))
+    FROM dbo.pos_orders
+    WHERE store_id = @sid AND order_no LIKE @pat;
+  END;
+
+  IF OBJECT_ID(N'dbo.oe_orders', N'U') IS NOT NULL
+  BEGIN
+    DECLARE @t INT;
+    SELECT @t = MAX(TRY_CAST(RIGHT(order_no, 5) AS INT))
+    FROM dbo.oe_orders o
+    INNER JOIN dbo.stores st ON st.store_id = o.store_id
+    WHERE o.store_id = @sid AND o.order_no LIKE @pat;
+    IF @t IS NOT NULL AND @t > ISNULL(@mx, 0) SET @mx = @t;
+  END;
+
+  SET @k = N'pos_order_seq:' + @compact;
+  IF ISNULL(@mx, 0) > 0
+  BEGIN
+    IF NOT EXISTS (SELECT 1 FROM dbo.app_settings WHERE setting_key = @k)
+      INSERT INTO dbo.app_settings (setting_key, setting_value, setting_group, description)
+      VALUES (@k, CAST(@mx AS VARCHAR(500)), N'pos', N'Per-store POS order sequence.');
+    ELSE
+      UPDATE dbo.app_settings
+      SET setting_value = CAST(@mx AS VARCHAR(500)),
+          updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
+      WHERE setting_key = @k;
+
+    PRINT N'Synced ' + @k + N' → ' + CAST(@mx AS NVARCHAR(20));
+  END;
+
+  FETCH NEXT FROM c INTO @sid, @compact;
 END;
 
-IF OBJECT_ID(N'dbo.oe_orders', N'U') IS NOT NULL
-BEGIN
-  SELECT @t = MAX(TRY_CAST(SUBSTRING(order_no, 8, 50) AS INT))
-  FROM dbo.oe_orders
-  WHERE order_no LIKE N'EW-ORD-%';
-  IF @t IS NOT NULL AND @t > @mx SET @mx = @t;
-END;
+CLOSE c;
+DEALLOCATE c;
 
-IF NOT EXISTS (SELECT 1 FROM dbo.app_settings WHERE setting_key = @k)
-  INSERT INTO dbo.app_settings (setting_key, setting_value, setting_group, description)
-  VALUES (@k, CAST(@mx AS VARCHAR(500)), N'pos', N'Monotonic order sequence (integer string).');
-ELSE
-  UPDATE dbo.app_settings
-  SET setting_value = CAST(@mx AS VARCHAR(500)),
-      updated_at = DATEADD(MINUTE, 330, SYSUTCDATETIME())
-  WHERE setting_key = @k;
-
-PRINT N'pos_order_seq synced to max EW-ORD numeric suffix: ' + CAST(@mx AS NVARCHAR(20));
+PRINT N'Done.';

@@ -27,6 +27,58 @@
 }
 
 /* Day store report — reports page */
+#day-store-report-card {
+  border-top: 3px solid var(--acc);
+  margin-bottom: 16px;
+}
+#day-store-report-card .ch {
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+.sp-day-report-head-copy {
+  flex: 1;
+  min-width: 200px;
+}
+.sp-day-report-sub {
+  font-size: 12px;
+  color: var(--text2);
+  margin: 4px 0 0;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.sp-day-report-body {
+  padding-top: 4px;
+}
+.sp-day-report-placeholder {
+  font-size: 13px;
+  color: var(--text3);
+}
+.sp-day-report-meta {
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 14px;
+}
+.sp-day-report-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.sp-day-report-date {
+  max-width: 160px;
+  min-height: 40px;
+}
+.sp-day-report-share-btn {
+  border-color: var(--acc);
+  color: var(--acc);
+  min-height: 40px;
+}
+.sp-day-report-share-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .sp-day-report-sections {
   display: flex;
   flex-direction: column;
@@ -65,6 +117,16 @@
 .sp-day-report-section--compact .sp-day-report-metric-value {
   font-size: 22px;
   color: var(--acc);
+}
+.sp-day-report-empty-banner {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--goldL);
+  border: 1px solid var(--gold);
+  color: var(--text1);
+  font-size: 13px;
+  line-height: 1.45;
 }
 @media print {
   #day-store-report-card {
