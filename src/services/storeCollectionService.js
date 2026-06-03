@@ -227,6 +227,7 @@ async function upsertBankAccount(storeId, body) {
   req.input('account_no', sql.NVarChar(50), body.account_no);
   req.input('ifsc', sql.NVarChar(20), body.ifsc || null);
   req.input('account_holder', sql.NVarChar(200), body.account_holder || null);
+  req.input('opening_balance', sql.Decimal(12, 2), body.opening_balance != null ? Number(body.opening_balance) : 0);
   req.input('existing_bank_account_id', sql.Int, body.bank_account_id || null);
   req.output('bank_account_id', sql.Int);
   await req.execute('sp_Treasury_UpsertBankAccount');

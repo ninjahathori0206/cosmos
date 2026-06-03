@@ -6,6 +6,7 @@
 <link rel="icon" href="/favicon.ico" type="image/png" sizes="32x32">
 <title>CX — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/fonts.css">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --navy:    #0F172A;
@@ -367,6 +368,7 @@
     margin-top: 2px;
     text-align: right;
   }
+  .cx-cust-card__pills { display: none; flex-wrap: wrap; align-items: center; gap: 8px; }
 
   @media (max-width: 1024px) {
     .main { margin-left: 0; }
@@ -467,6 +469,488 @@
 
   @media (max-width: 480px) {
     .gm-price-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ── Customer 360 ─────────────────────────────────────────── */
+  body.cx360-active .sidebar,
+  body.cx360-active #cx-sidebar-overlay { display: none !important; }
+  body.cx360-active .main { margin-left: 0; }
+  body.cx360-mobile.cx360-active .topbar { display: none; }
+  body.cx360-active #page-customer-360.page.active {
+    padding: 0;
+    min-height: calc(100vh - 54px);
+  }
+  body.cx360-mobile.cx360-active #page-customer-360.page.active {
+    min-height: 100vh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .cx360-desk { display: block; padding: 22px 26px 32px; }
+  .cx360-mob { display: none; flex-direction: column; min-height: 100vh; background: var(--bg); }
+
+  .cx360-bc {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 13px; color: var(--text2); margin-bottom: 18px;
+  }
+  .cx360-bc button {
+    background: none; border: none; color: var(--acc); cursor: pointer;
+    font-size: 13px; font-weight: 500; padding: 0; font-family: inherit;
+  }
+  .cx360-bc .cur { color: var(--text1); font-weight: 600; }
+
+  .cx360-header {
+    display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .cx360-av {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: linear-gradient(135deg, var(--acc), var(--acc2));
+    color: #fff; font-size: 18px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .cx360-header-meta { flex: 1; min-width: 200px; }
+  .cx360-name { font-size: 22px; font-weight: 700; color: var(--text1); line-height: 1.2; }
+  .cx360-sub { font-size: 13px; color: var(--text2); margin-top: 6px; line-height: 1.45; }
+  .cx360-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .cx360-chip {
+    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
+    background: var(--accL); color: var(--acc2);
+  }
+  .cx360-chip--green { background: var(--greenL); color: var(--green); }
+  .cx360-chip--gray { background: var(--bg2); color: var(--text2); }
+
+  .cx360-stats { margin-bottom: 20px; }
+  .cx360-stats .sc { border-top-color: var(--acc); }
+
+  .cx360-tabs {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px;
+    border-bottom: 1px solid var(--border); padding-bottom: 10px;
+  }
+  .cx360-tab {
+    padding: 8px 14px; border-radius: 8px; border: 1.5px solid transparent;
+    background: transparent; font-size: 13px; font-weight: 500; color: var(--text2);
+    cursor: pointer; font-family: inherit; transition: all .15s;
+  }
+  .cx360-tab:hover { color: var(--acc); background: var(--accL); }
+  .cx360-tab.active {
+    background: var(--acc); border-color: var(--acc); color: #fff;
+  }
+  .cx360-panel .card { margin-bottom: 0; }
+
+  .cx360-mob-nav {
+    display: flex; align-items: center; gap: 8px;
+    min-height: 52px; padding: 8px 12px;
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    background: var(--navy); color: #fff; flex-shrink: 0;
+  }
+  .cx360-back {
+    min-width: 44px; min-height: 44px; border: none; background: transparent;
+    color: #fff; font-size: 22px; cursor: pointer; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cx360-back:hover { background: rgba(255,255,255,0.08); }
+  .cx360-mob-title { flex: 1; text-align: center; min-width: 0; }
+  .cx360-mob-title strong {
+    display: block; font-size: 15px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .cx360-mob-title span { font-size: 11px; color: rgba(255,255,255,0.55); }
+
+  .cx360-mob-hero {
+    background: var(--card); padding: 16px 16px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cx360-mob-hero .cx360-av { width: 64px; height: 64px; font-size: 20px; }
+  .cx360-mob-metrics {
+    display: flex; flex-wrap: nowrap; gap: 10px; overflow-x: auto;
+    padding: 12px 14px; scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cx360-metric-chip {
+    flex: 0 0 min(78vw, 280px); scroll-snap-align: start;
+    background: var(--card); border: 1.5px solid var(--border);
+    border-radius: 14px; padding: 12px 14px;
+  }
+  .cx360-metric-chip .lbl {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--text2); margin-bottom: 4px;
+  }
+  .cx360-metric-chip .val {
+    font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 500;
+    color: var(--text1);
+  }
+
+  .cx360-seg {
+    display: flex; gap: 4px; margin: 0 14px 12px;
+    padding: 4px; background: var(--card); border: 1.5px solid var(--border);
+    border-radius: 12px;
+  }
+  .cx360-seg-btn {
+    flex: 1; min-height: 40px; border: none; border-radius: 9px;
+    background: transparent; font-size: 12px; font-weight: 600;
+    color: var(--text2); cursor: pointer; font-family: inherit;
+  }
+  .cx360-seg-btn.active { background: var(--acc); color: #fff; }
+
+  .cx360-mob-body { flex: 1; padding: 0 14px 100px; overflow-y: auto; }
+  .cx360-list-card {
+    background: var(--card); border: 1.5px solid var(--border);
+    border-radius: 16px; margin-bottom: 12px; overflow: hidden;
+  }
+  .cx360-list-card .sec {
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--text3);
+    padding: 12px 16px 6px;
+  }
+  .cx360-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 16px; border-top: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .cx360-row:first-of-type { border-top: none; }
+  .cx360-row-main { flex: 1; min-width: 0; }
+  .cx360-row-title { font-weight: 600; color: var(--text1); }
+  .cx360-row-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .cx360-row-chev { color: var(--text3); font-size: 18px; flex-shrink: 0; }
+
+  .cx360-visit-card {
+    background: var(--card); border: 1.5px solid var(--border);
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 10px;
+  }
+  .cx360-visit-top {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 10px; margin-bottom: 8px;
+  }
+  .cx360-visit-store { font-weight: 600; font-size: 14px; color: var(--text1); }
+  .cx360-visit-meta { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+  .cx360-mob-actions {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+    display: flex; gap: 10px; padding: 12px 14px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    background: color-mix(in srgb, var(--card) 94%, transparent);
+    border-top: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+  }
+  .cx360-mob-actions .btn { flex: 1; min-height: 44px; justify-content: center; }
+
+  .cx360-more-sheet {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(15, 23, 42, 0.45); align-items: flex-end;
+  }
+  .cx360-more-sheet.open { display: flex; }
+  .cx360-more-panel {
+    width: 100%; max-height: 70vh; overflow-y: auto;
+    background: var(--card); border-radius: 18px 18px 0 0;
+    padding: 16px 14px calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+  .cx360-more-panel h3 {
+    font-size: 15px; font-weight: 700; margin-bottom: 12px; color: var(--text1);
+  }
+  .cx360-more-item {
+    display: block; width: 100%; text-align: left;
+    padding: 14px 12px; border: none; border-bottom: 1px solid var(--border);
+    background: var(--card); font-size: 14px; font-weight: 500;
+    color: var(--text1); cursor: pointer; font-family: inherit;
+  }
+  .cx360-more-item:last-child { border-bottom: none; }
+
+  .cx360-kv { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; font-size: 13px; }
+  .cx360-kv dt { color: var(--text2); font-weight: 500; }
+  .cx360-kv dd { color: var(--text1); margin: 0; word-break: break-word; }
+
+  @media (max-width: 1024px) {
+    .cx360-desk { display: none !important; }
+    .cx360-mob { display: flex !important; }
+    body.cx360-active .topbar { display: none; }
+    body.cx360-active #page-customer-360.page.active { min-height: 100vh; }
+  }
+
+  /* ── CX mobile · Eyewoot Go universe (staff CX on phone) ─── */
+  @media (max-width: 1024px) {
+    body.cx-page-customers,
+    body.cx360-mobile.cx360-active {
+      --go-bg: #F7F5F2;
+      --go-bg2: #FFFFFF;
+      --go-bg3: #F0EDE8;
+      --go-border: #E2DDD6;
+      --go-plus: #5B4FE8;
+      --go-plus-bg: #EEEDFE;
+      --go-plus-border: #C8C4F8;
+      --go-text: #1A1714;
+      --go-text2: #6B6560;
+      --go-text3: #A09890;
+      --go-green: #1A8C5A;
+      --go-green-bg: #E8F7EF;
+      background: var(--go-bg);
+      font-family: 'DM Sans', 'Inter', sans-serif;
+      color: var(--go-text);
+    }
+    body.cx-page-customers .main,
+    body.cx360-mobile.cx360-active .main {
+      background: var(--go-bg);
+    }
+    body.cx-page-customers .topbar {
+      background: var(--go-bg2);
+      border-bottom: 1px solid var(--go-border);
+      height: 56px;
+    }
+    body.cx-page-customers .breadcrumb-prefix { display: none; }
+    body.cx-page-customers #cx-bc {
+      font-family: 'Syne', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--go-text);
+    }
+    body.cx-page-customers .menu-toggle {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--go-bg3);
+      border: none;
+    }
+    body.cx-page-customers #page-customers.page.active {
+      padding: 12px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+    }
+    body.cx-page-customers .cx-cust-search-card {
+      background: transparent;
+      border: none;
+      margin-bottom: 10px;
+      box-shadow: none;
+    }
+    body.cx-page-customers .cx-cust-search-card .ch {
+      border: none;
+      padding: 0;
+    }
+    body.cx-page-customers .cx-cust-search-form .fgrp label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--go-text2);
+    }
+    body.cx-page-customers .cx-cust-search-form input {
+      background: var(--go-bg3);
+      border-color: var(--go-border);
+      border-radius: 12px;
+      min-height: 44px;
+    }
+    body.cx-page-customers .cx-cust-search-form .btn.primary {
+      background: var(--go-plus);
+      border-color: var(--go-plus);
+      border-radius: 14px;
+      min-height: 48px;
+      font-weight: 500;
+    }
+    body.cx-page-customers .cx-cust-results-wrap::before {
+      content: 'Recent customers';
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--go-text3);
+      margin: 4px 0 10px;
+    }
+    body.cx-page-customers .cx-cust-card {
+      border: 1px solid var(--go-border);
+      border-radius: 16px;
+      background: var(--go-bg2);
+      padding: 0;
+      overflow: hidden;
+    }
+    body.cx-page-customers .cx-cust-card:hover,
+    body.cx-page-customers .cx-cust-card:focus-visible {
+      border-color: var(--go-plus-border);
+      background: var(--go-bg2);
+    }
+    body.cx-page-customers .cx-cust-card__head {
+      padding: 14px 16px;
+      margin-bottom: 0;
+    }
+    body.cx-page-customers .cx-cust-card__av {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--go-plus);
+      font-size: 14px;
+    }
+    body.cx-page-customers .cx-cust-card__chev {
+      color: var(--go-text3);
+      font-size: 18px;
+      opacity: 1;
+    }
+    body.cx-page-customers .cx-cust-card__pills {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding: 0 16px 10px;
+    }
+    body.cx-page-customers .cx-mem-badge {
+      background: var(--go-plus-bg);
+      color: var(--go-plus);
+      border: 1px solid var(--go-plus-border);
+      font-weight: 600;
+    }
+    body.cx-page-customers .cx-mem-type-chip {
+      background: var(--go-plus);
+      color: #fff;
+    }
+    body.cx-page-customers .cx-mem-expiry {
+      color: var(--go-green);
+      font-weight: 500;
+      display: inline;
+      margin-top: 0;
+      text-align: left;
+    }
+    body.cx-page-customers .cx-cust-card__row {
+      padding: 6px 16px;
+      border-top: none;
+      font-size: 12px;
+    }
+    body.cx-page-customers .cx-cust-card__row span:first-child {
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 12px;
+      color: var(--go-text3);
+      font-weight: 400;
+    }
+    body.cx-page-customers .cx-cust-card__row span:last-child {
+      font-weight: 500;
+      color: var(--go-text);
+    }
+    body.cx-page-customers .cx-cust-card__row--active-member { display: none; }
+    body.cx-page-customers .cx-cust-card__kv {
+      padding: 0 16px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* Customer 360 · Go shell */
+    body.cx360-mobile .cx360-mob {
+      background: var(--go-bg);
+    }
+    body.cx360-mobile .cx360-mob-nav {
+      background: var(--go-bg2);
+      border-bottom: 1px solid var(--go-border);
+      min-height: 56px;
+      padding-top: env(safe-area-inset-top, 0px);
+    }
+    body.cx360-mobile .cx360-back {
+      background: var(--go-bg3);
+      color: var(--go-text);
+      border-radius: 10px;
+      font-size: 20px;
+    }
+    body.cx360-mobile .cx360-mob-title strong {
+      font-family: 'Syne', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--go-text);
+    }
+    body.cx360-mobile .cx360-mob-title span {
+      color: var(--go-text2);
+      font-size: 12px;
+    }
+    body.cx360-mobile .cx360-mob-hero {
+      background: var(--go-bg2);
+      border-bottom: 1px solid var(--go-border);
+      margin: 0;
+    }
+    body.cx360-mobile .cx360-mob-hero .cx360-av {
+      background: var(--go-plus);
+      border-radius: 14px;
+    }
+    body.cx360-mobile .cx360-sub {
+      color: var(--go-text2);
+      font-size: 13px;
+    }
+    body.cx360-mobile .cx360-chip {
+      background: var(--go-plus-bg);
+      color: var(--go-plus);
+      border: 1px solid var(--go-plus-border);
+    }
+    body.cx360-mobile .cx360-chip--green {
+      background: var(--go-green-bg);
+      color: var(--go-green);
+      border: none;
+    }
+    body.cx360-mobile .cx360-mob-metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      overflow: visible;
+      padding: 12px 16px;
+    }
+    body.cx360-mobile .cx360-metric-chip {
+      flex: none;
+      width: auto;
+      scroll-snap-align: none;
+      border-radius: 14px;
+      border-color: var(--go-border);
+      background: var(--go-bg2);
+    }
+    body.cx360-mobile .cx360-metric-chip .lbl {
+      color: var(--go-text3);
+      letter-spacing: 1px;
+    }
+    body.cx360-mobile .cx360-metric-chip .val {
+      font-family: 'DM Mono', 'JetBrains Mono', monospace;
+      font-size: 20px;
+    }
+    body.cx360-mobile .cx360-seg {
+      margin: 0 16px 12px;
+      background: var(--go-bg3);
+      border: none;
+      border-radius: 12px;
+      padding: 4px;
+    }
+    body.cx360-mobile .cx360-seg-btn {
+      color: var(--go-text2);
+      font-weight: 600;
+    }
+    body.cx360-mobile .cx360-seg-btn.active {
+      background: var(--go-plus);
+      color: #fff;
+    }
+    body.cx360-mobile .cx360-mob-body {
+      padding: 0 16px 100px;
+    }
+    body.cx360-mobile .cx360-list-card,
+    body.cx360-mobile .cx360-visit-card,
+    body.cx360-mobile .cx360-mob-body .card {
+      border-radius: 16px;
+      border-color: var(--go-border);
+      background: var(--go-bg2);
+    }
+    body.cx360-mobile .cx360-list-card .sec {
+      color: var(--go-text3);
+    }
+    body.cx360-mobile .cx360-mob-actions {
+      background: color-mix(in srgb, var(--go-bg2) 94%, transparent);
+      border-top-color: var(--go-border);
+    }
+    body.cx360-mobile .cx360-mob-actions .btn.primary {
+      background: var(--go-plus);
+      border-color: var(--go-plus);
+      border-radius: 14px;
+    }
+    body.cx360-mobile .cx360-mob-actions .btn:not(.primary) {
+      background: var(--go-bg3);
+      border-color: var(--go-border);
+      border-radius: 14px;
+      color: var(--go-text);
+    }
+    body.cx360-mobile .cx360-more-panel {
+      border-radius: 18px 18px 0 0;
+    }
+    body.cx360-mobile .cx360-more-item {
+      font-family: 'DM Sans', sans-serif;
+    }
+  }
+  @media (min-width: 1025px) {
+    .cx360-mob-actions { display: none; }
+    .cx360-more-sheet { display: none !important; }
   }
 </style>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-cx-cust-cards">
@@ -621,6 +1105,74 @@
           </thead>
           <tbody id="cx-tbody-offers"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Customer 360 -->
+  <div class="page" id="page-customer-360" aria-label="Customer 360">
+    <div class="cx360-desk" id="cx360-desk">
+      <nav class="cx360-bc" aria-label="Breadcrumb">
+        <button type="button" id="cx360-back-desk">Customers</button>
+        <span aria-hidden="true">›</span>
+        <span class="cur" id="cx360-bc-name">Customer</span>
+      </nav>
+      <header class="cx360-header">
+        <div class="cx360-av" id="cx360-desk-av" aria-hidden="true">—</div>
+        <div class="cx360-header-meta">
+          <h1 class="cx360-name" id="cx360-desk-name">—</h1>
+          <div class="cx360-sub" id="cx360-desk-sub"></div>
+          <div class="cx360-chips" id="cx360-desk-chips"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="cx360-desk-actions"></div>
+      </header>
+      <div class="sg4 cx360-stats" id="cx360-desk-stats">
+        <div class="sc" style="--sc-color:var(--acc)"><div class="sl">Orders</div><div class="sv" id="cx360-stat-orders">0</div></div>
+        <div class="sc" style="--sc-color:var(--blue)"><div class="sl">Lifetime revenue</div><div class="sv" data-format="currency" id="cx360-stat-revenue">0</div></div>
+        <div class="sc" style="--sc-color:var(--green)"><div class="sl">Live coins</div><div class="sv" id="cx360-stat-coins">0</div></div>
+        <div class="sc" style="--sc-color:var(--gold)"><div class="sl">Pending coins</div><div class="sv" id="cx360-stat-pending">0</div></div>
+      </div>
+      <nav class="cx360-tabs" id="cx360-desk-tabs" role="tablist" aria-label="Customer sections"></nav>
+      <div class="cx360-panel" id="cx360-desk-panel" role="tabpanel"></div>
+    </div>
+
+    <div class="cx360-mob" id="cx360-mob">
+      <header class="cx360-mob-nav">
+        <button type="button" class="cx360-back" id="cx360-back-mob" aria-label="Back to customers">‹</button>
+        <div class="cx360-mob-title">
+          <strong id="cx360-mob-name">Customer</strong>
+          <span>Customer profile</span>
+        </div>
+        <div style="width:44px" aria-hidden="true"></div>
+      </header>
+      <div class="cx360-mob-hero">
+        <div style="display:flex;gap:14px;align-items:center">
+          <div class="cx360-av" id="cx360-mob-av">—</div>
+          <div style="flex:1;min-width:0">
+            <div class="cx360-sub" id="cx360-mob-sub"></div>
+            <div class="cx360-chips" id="cx360-mob-chips" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="cx360-mob-metrics" id="cx360-mob-metrics" aria-label="Key metrics"></div>
+      <div class="cx360-seg" id="cx360-mob-seg" role="tablist" aria-label="Primary sections">
+        <button type="button" class="cx360-seg-btn active" data-cx360-seg="summary">Summary</button>
+        <button type="button" class="cx360-seg-btn" data-cx360-seg="visits">Visits</button>
+        <button type="button" class="cx360-seg-btn" data-cx360-seg="orders">Orders</button>
+        <button type="button" class="cx360-seg-btn" data-cx360-seg="more">More</button>
+      </div>
+      <div class="cx360-mob-body" id="cx360-mob-body"></div>
+      <div class="cx360-mob-actions" id="cx360-mob-actions">
+        <button type="button" class="btn primary" id="cx360-btn-grant-mob" hidden>Grant membership</button>
+        <button type="button" class="btn" id="cx360-btn-coins-mob" hidden>Adjust coins</button>
+      </div>
+    </div>
+
+    <div class="cx360-more-sheet" id="cx360-more-sheet" role="dialog" aria-modal="true" aria-label="More sections">
+      <div class="cx360-more-panel" onclick="event.stopPropagation()">
+        <h3>More</h3>
+        <div id="cx360-more-list"></div>
+        <button type="button" class="btn" style="width:100%;margin-top:12px" id="cx360-more-close">Close</button>
       </div>
     </div>
   </div>
@@ -886,6 +1438,7 @@
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal"></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
 <script src="/js/cx-prototype.js?v=20260528-cx-membership-tier-link"></script>
+<script src="/js/cx-customer-360.js?v=20260603-cx-go-universe"></script>
 <script>
 /* ── CX: Offers page (view-only; writes via Command Unit) ───── */
 var _cxOffersLoaded = false;
@@ -1158,6 +1711,7 @@ async function saveEyeTest() {
     await cxApiFetch('POST', '/api/cx/customers/' + cid + '/eye-tests', body);
     closeEyeTestModal();
     cosmosToastSuccess('Eye test saved for ' + _etCustomerName + '.');
+    if (typeof window.cx360ReloadTab === 'function') window.cx360ReloadTab('prescriptions');
   } catch (e) {
     errEl.textContent = e.message; errEl.style.display = 'block';
   } finally {

@@ -485,7 +485,7 @@
       <div class="sc-ledger-card" style="--sc-accent:var(--green)">
         <div class="sc-ledger-label">Store Bank</div>
         <div class="sc-ledger-value">${scFmtRs(summary.store_bank_balance)}</div>
-        <div class="sc-ledger-sub">${summary.bank_account ? scEsc(summary.bank_account.bank_name) + ' ···' + scEsc(String(summary.bank_account.account_no || '').slice(-4)) : 'Bank account not set'}</div>
+        <div class="sc-ledger-sub">${summary.bank_account ? scEsc(summary.bank_account.bank_name) + ' ···' + scEsc(String(summary.bank_account.account_no || '').slice(-4)) + (summary.bank_account.opening_balance != null && Number(summary.bank_account.opening_balance) !== 0 ? ' · Opening ' + scFmtRs(summary.bank_account.opening_balance) : '') : 'Bank account not set'}</div>
       </div>
       <div class="sc-ledger-card" style="--sc-accent:var(--teal)">
         <div class="sc-ledger-label">Membership Cash</div>
@@ -787,6 +787,8 @@
     document.getElementById('sc-setup-account-no').value = bank.account_no || '';
     document.getElementById('sc-setup-ifsc').value = bank.ifsc || '';
     document.getElementById('sc-setup-holder').value = bank.account_holder || '';
+    const openBalEl = document.getElementById('sc-setup-opening-balance');
+    if (openBalEl) openBalEl.value = bank.opening_balance != null ? Number(bank.opening_balance).toFixed(2) : '0';
     const provSel = document.getElementById('sc-setup-provider');
     provSel.innerHTML = _scProviders.map((p) =>
       `<option value="${scEsc(p.key)}" ${machine.provider_key === p.key ? 'selected' : ''}>${scEsc(p.label)}</option>`
@@ -804,14 +806,30 @@
   window.scSubmitTreasurySetup = async function () {
     const btn = document.getElementById('sc-setup-submit');
     const errEl = document.getElementById('sc-setup-error');
+    const bankNameEl = document.getElementById('sc-setup-bank-name');
+    const accountNoEl = document.getElementById('sc-setup-account-no');
+    const openBalEl = document.getElementById('sc-setup-opening-balance');
+    const bankName = bankNameEl.value.trim();
+    const accountNo = accountNoEl.value.trim();
+    let openingBalance = Number(openBalEl && openBalEl.value !== '' ? openBalEl.value : 0);
+    if (!Number.isFinite(openingBalance)) openingBalance = 0;
+    if (!bankName) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(bankNameEl, 'Required');
+      return;
+    }
+    if (!accountNo) {
+      if (typeof cosmosFieldError === 'function') cosmosFieldError(accountNoEl, 'Required');
+      return;
+    }
     if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
     try {
       await scApiPost('/api/collections/bank-account', {
         store_id: _scStoreId,
-        bank_name: document.getElementById('sc-setup-bank-name').value.trim(),
-        account_no: document.getElementById('sc-setup-account-no').value.trim(),
+        bank_name: bankName,
+        account_no: accountNo,
         ifsc: document.getElementById('sc-setup-ifsc').value.trim() || null,
         account_holder: document.getElementById('sc-setup-holder').value.trim() || null,
+        opening_balance: openingBalance,
         bank_account_id: (_scSummary && _scSummary.bank_account && _scSummary.bank_account.bank_account_id) || null
       });
       await scApiPost('/api/collections/payment-machine', {

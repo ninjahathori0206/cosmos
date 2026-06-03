@@ -3,11 +3,13 @@
  * Single source for API message + client toast copy.
  */
 const POS_SCHEMA_MIGRATION_TOAST_MESSAGE =
-  'Database migration required: run sql/migrations/76_pos_orders_membership_sale.sql (and pos_checkout_inventory_drafts.sql if needed).'
+  'Database migration required: run sql/migrations/89_customer_frame_lens.sql (and 76_pos_orders_membership_sale.sql if needed).'
 
 const POS_SCHEMA_SQL_MARKERS = [
   'inventory_committed',
   'sold_membership',
+  'customer_frame_photo_url',
+  'customer_frame_note',
   'Invalid column name'
 ]
 

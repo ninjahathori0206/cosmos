@@ -1114,6 +1114,7 @@
       <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Bank account</div>
       <div class="fgrp"><label>Bank name</label><input type="text" id="sc-setup-bank-name"></div>
       <div class="fgrp"><label>Account number</label><input type="text" id="sc-setup-account-no"></div>
+      <div class="fgrp"><label>Account opening balance</label><input type="number" id="sc-setup-opening-balance" step="0.01" value="0"><div class="xs td3" style="margin-top:6px">Starting Store Bank balance (negative allowed) before deposits and settlements.</div></div>
       <div class="fg2">
         <div class="fgrp"><label>IFSC</label><input type="text" id="sc-setup-ifsc"></div>
         <div class="fgrp"><label>Account holder</label><input type="text" id="sc-setup-holder"></div>
@@ -1185,7 +1186,7 @@ document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e
 </script>
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal"></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
-<script src="/js/store-collections.js?v=20260527-phase2c"></script>
+<script src="/js/store-collections.js?v=20260602-opening-balance-neg"></script>
 <script src="/js/finance-prototype.js"></script>
 </body>
 </html>

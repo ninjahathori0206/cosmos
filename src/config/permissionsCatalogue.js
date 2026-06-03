@@ -146,10 +146,14 @@ const RAW_PERMISSION_GROUPS = [
     ['cx.dashboard.view', 'CX — Dashboard & KPI summary'],
     ['cx.orders.view', 'CX — Orders list / recent activity'],
     ['cx.customers.view', 'CX — Customer directory'],
+    ['cx.customers.edit', 'CX — Edit customer profile & lifestyle (360)'],
+    ['cx.coins.manual', 'CX — Manual coin adjustments'],
+    ['cx.audit.view', 'CX — Customer audit log tab'],
+    ['cx.admin', 'CX — Full Customer 360 admin (implies edit, coins, audit)'],
     ['cx.membership.manage', 'CX — Membership plans & grant / renew'],
     ['cx.eye_tests.create', 'CX — Record eye tests'],
     ['cx.offers.view', 'CX — View customer offers'],
-    ['cx.offers.manage', 'CX — Manage customer offers']
+    ['cx.offers.manage', 'CX — Manage customer offers & per-customer assignments']
   ]],
   ['Army (HR & Attendance)', [
     ['army.staff.view', 'Staff — View'],
@@ -197,7 +201,7 @@ function buildCatalogueGroups() {
 }
 
 /** Bump when adding keys — Command Unit fetches with this revision to avoid stale catalogue. */
-const PERMISSION_CATALOGUE_REVISION = '20260602-gatepass-phase1';
+const PERMISSION_CATALOGUE_REVISION = '20260603-army-employees-s5';
 
 const PERMISSION_CATALOGUE_GROUPS = buildCatalogueGroups();
 

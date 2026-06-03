@@ -96,8 +96,23 @@ const bankAccountSchema = Joi.object({
   account_no: Joi.string().max(50).required(),
   ifsc: Joi.string().max(20).allow('', null),
   account_holder: Joi.string().max(200).allow('', null),
+  opening_balance: Joi.number().default(0),
   bank_account_id: Joi.number().integer().positive().allow(null)
 });
+
+const joiValidateOpts = { convert: true, abortEarly: true };
+
+function normalizeBankAccountBody(body) {
+  const b = body && typeof body === 'object' ? { ...body } : {};
+  const raw = b.opening_balance;
+  if (raw == null || raw === '') {
+    b.opening_balance = 0;
+  } else {
+    const n = Number(raw);
+    b.opening_balance = Number.isFinite(n) ? n : 0;
+  }
+  return b;
+}
 
 const paymentMachineSchema = Joi.object({
   store_id: Joi.number().integer().positive().required(),
@@ -200,7 +215,7 @@ router.get('/payment-machine', ...spCollectionsView, async (req, res, next) => {
 
 router.post('/bank-account', ...financeCollectionsManage, async (req, res, next) => {
   try {
-    const { error, value } = bankAccountSchema.validate(req.body);
+    const { error, value } = bankAccountSchema.validate(normalizeBankAccountBody(req.body), joiValidateOpts);
     if (error) {
       return res.status(400).json({ success: false, message: error.details[0].message });
     }

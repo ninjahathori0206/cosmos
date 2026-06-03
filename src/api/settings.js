@@ -1485,4 +1485,97 @@ router.put('/pos-product-type-config', ...settingsManage, async (req, res, next)
   }
 });
 
+// ─── Loyalty engine (CX Customer 360 / Eyewoot Go coins) ─────────────────────
+const cxService = require('../services/cxService');
+const { clearLoyaltyEngineFlagCache } = require('../lib/loyaltyEngineFlag');
+
+const loyaltySettingsPutSchema = Joi.object({
+  earn_percent: Joi.number().min(0).max(100),
+  credit_delay_days: Joi.number().integer().min(0).max(365),
+  redemption_coins_per_rupee: Joi.number().integer().min(1),
+  max_redeem_percent_of_bill: Joi.number().min(0).max(100).allow(null),
+  loyalty_engine_v2: Joi.boolean()
+}).min(1);
+
+router.get('/loyalty', ...settingsView, async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const row = await cxService.getLoyaltySettings(pool);
+    const flagR = await pool.request().query(`
+      SELECT setting_value FROM dbo.app_settings WHERE setting_key = N'loyalty_engine_v2'
+    `);
+    const flagVal = flagR.recordset[0] ? String(flagR.recordset[0].setting_value || '').trim() : '0';
+    return res.json({
+      success: true,
+      data: {
+        settings: row,
+        loyalty_engine_v2: flagVal === '1' || flagVal.toLowerCase() === 'true'
+      }
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.put('/loyalty', ...settingsManage, async (req, res, next) => {
+  try {
+    const { error, value } = loyaltySettingsPutSchema.validate(req.body || {}, { abortEarly: false });
+    if (error) {
+      return res.status(400).json({ success: false, message: error.details.map((d) => d.message).join('; ') });
+    }
+    const pool = await getPool();
+    let settings = await cxService.getLoyaltySettings(pool);
+    if (
+      value.earn_percent != null ||
+      value.credit_delay_days != null ||
+      value.redemption_coins_per_rupee != null ||
+      value.max_redeem_percent_of_bill != null
+    ) {
+      settings = await cxService.updateLoyaltySettings(pool, {
+        earnPercent: value.earn_percent,
+        creditDelayDays: value.credit_delay_days,
+        redemptionCoinsPerRupee: value.redemption_coins_per_rupee,
+        maxRedeemPercentOfBill: value.max_redeem_percent_of_bill,
+        actorUserId: req.user?.user_id || null
+      });
+    }
+    if (value.loyalty_engine_v2 != null) {
+      await upsertAppSetting(pool, {
+        settingKey: 'loyalty_engine_v2',
+        settingValue: value.loyalty_engine_v2 ? '1' : '0',
+        settingGroup: 'loyalty',
+        description: '1 = loyalty_ledger engine; 0 = legacy pos_points_ledger'
+      });
+      if (value.loyalty_engine_v2) {
+        await upsertAppSetting(pool, {
+          settingKey: 'coin_redemption_rate',
+          settingValue: '__retired__',
+          settingGroup: 'loyalty',
+          description: 'RETIRED — use loyalty_settings.redemption_coins_per_rupee'
+        });
+        await upsertAppSetting(pool, {
+          settingKey: 'pos_points_maturity_days',
+          settingValue: '__retired__',
+          settingGroup: 'loyalty',
+          description: 'RETIRED — use loyalty_settings.credit_delay_days'
+        });
+      }
+      clearLoyaltyEngineFlagCache();
+    }
+    const flagR = await pool.request().query(`
+      SELECT setting_value FROM dbo.app_settings WHERE setting_key = N'loyalty_engine_v2'
+    `);
+    const flagVal = flagR.recordset[0] ? String(flagR.recordset[0].setting_value || '').trim() : '0';
+    return res.json({
+      success: true,
+      data: {
+        settings,
+        loyalty_engine_v2: flagVal === '1' || flagVal.toLowerCase() === 'true'
+      }
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 module.exports = router;

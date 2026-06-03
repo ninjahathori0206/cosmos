@@ -14,8 +14,13 @@ const {
 } = require('../services/membershipDependentService')
 const { isValidMembershipDependentRelationship } = require('../config/membershipDependentRelationshipsCatalog')
 const { sqlNow, wallClockIso } = require('../lib/cosmosIst')
+const cxService = require('../services/cxService')
 
 const router = express.Router()
+
+function parseCustomerId (req) {
+  return parseInt(req.params.id, 10)
+}
 
 /** GET /api/cx/dashboard — summary + revenue_by_store */
 router.get('/dashboard', authJwt, requireModule('cx'), requireCxPermission('cx.dashboard.view'), async (req, res, next) => {
@@ -564,5 +569,395 @@ router.patch('/offers/:id', authJwt, requireModule('cx'), requireCxPermission('c
 router.delete('/offers/:id', authJwt, requireModule('cx'), requireCxPermission('cx.offers.manage'), (req, res) => {
   return cxOffersMutateBlocked(res)
 })
+
+/* ══════════════════════════════════════════════════════════════
+   Customer 360 — read (new domains via cxService SPs)
+══════════════════════════════════════════════════════════════ */
+
+/** GET /api/cx/customers/:id/360 — header + coin summary */
+router.get(
+  '/customers/:id/360',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const header = await cxService.getCustomer360Header(pool, customerId)
+      if (!header) return res.status(404).json({ success: false, message: 'Customer not found.' })
+      const mode = await orderService.getOrdersEngineMode(pool)
+      const rollup = await orderService.fetchCxCustomerRollup(pool, mode, { customerId, limit: 1 })
+      const stats = rollup[0] || {}
+      return res.json({
+        success: true,
+        data: {
+          ...header,
+          order_count: stats.order_count != null ? stats.order_count : 0,
+          lifetime_revenue: stats.lifetime_revenue != null ? stats.lifetime_revenue : 0
+        }
+      })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+router.get(
+  '/customers/:id/profile',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const row = await cxService.getCustomerProfile(pool, customerId)
+      if (!row) return res.status(404).json({ success: false, message: 'Customer not found.' })
+      return res.json({ success: true, data: row })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+router.get(
+  '/customers/:id/lifestyle',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const row = await cxService.getCustomerLifestyle(pool, customerId)
+      return res.json({ success: true, data: row || null })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+router.get(
+  '/customers/:id/coins',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50))
+      const ledger = await cxService.getCustomerLoyaltyLedger(pool, customerId, limit)
+      const live = await cxService.getLiveCoinBalance(pool, customerId)
+      return res.json({ success: true, data: { live_balance: live, ledger } })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+router.get(
+  '/customers/:id/offers-assignments',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view', 'cx.offers.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const activeOnly = String(req.query.active_only || '1') !== '0'
+      const pool = await getPool()
+      const rows = await cxService.getCustomerOfferAssignments(pool, customerId, activeOnly)
+      return res.json({ success: true, data: rows })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+router.get(
+  '/customers/:id/audit',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.audit.view', 'cx.admin'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || '100'), 10) || 100))
+      const rows = await cxService.getCustomerAuditLog(pool, customerId, limit)
+      return res.json({ success: true, data: rows })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+router.get(
+  '/customers/:id/visits',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const hasTable = await pool.request().query(`
+        SELECT CASE WHEN OBJECT_ID('dbo.store_visitors', 'U') IS NULL THEN 0 ELSE 1 END AS ok
+      `)
+      if (!Number((hasTable.recordset[0] || {}).ok)) {
+        return res.json({ success: true, data: [] })
+      }
+      const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50))
+      const rows = await cxService.getCustomerVisits(pool, customerId, limit)
+      return res.json({ success: true, data: rows })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+router.get(
+  '/customers/:id/prescriptions',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '30'), 10) || 30))
+      const rows = await cxService.getCustomerEyeTests(pool, customerId, limit)
+      return res.json({ success: true, data: rows })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+router.get(
+  '/customers/:id/orders',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view', 'cx.orders.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const mode = await orderService.getOrdersEngineMode(pool)
+      const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50))
+      const orders = await orderService.fetchAllOrders(pool, mode, {
+        search: null,
+        statusFilter: String(req.query.status || '').trim() || null,
+        limit: 500,
+        excludeOrderStatuses: []
+      })
+      const filtered = orders.filter((o) => Number(o.customer_id) === customerId).slice(0, limit)
+      return res.json({ success: true, data: filtered })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+router.get(
+  '/customers/:id/invoices',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view', 'cx.orders.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50))
+      const r = await pool.request()
+        .input('cid', sql.Int, customerId)
+        .input('lim', sql.Int, limit)
+        .query(`
+          SELECT TOP (@lim)
+            pi.invoice_id, pi.order_id, pi.invoice_no,
+            pi.taxable_amount, pi.gst_amount, pi.total_amount, pi.created_at,
+            o.order_no, o.store_id, s.store_name
+          FROM dbo.pos_invoices pi
+          INNER JOIN dbo.pos_orders o ON o.order_id = pi.order_id
+          LEFT JOIN dbo.stores s ON s.store_id = o.store_id
+          WHERE o.customer_id = @cid
+          ORDER BY pi.created_at DESC, pi.invoice_id DESC
+        `)
+      return res.json({ success: true, data: r.recordset || [] })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+/* ══════════════════════════════════════════════════════════════
+   Customer 360 — writes (SP + audit)
+══════════════════════════════════════════════════════════════ */
+
+router.put(
+  '/customers/:id/profile',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.edit', 'cx.admin'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const { full_name, email, dob } = req.body || {}
+      const pool = await getPool()
+      const row = await cxService.updateCustomerProfile(pool, {
+        customerId,
+        fullName: full_name,
+        email,
+        dob: dob || null,
+        actorUserId: req.user?.user_id || null
+      })
+      return res.json({ success: true, data: row })
+    } catch (err) {
+      if (String(err.message || '').includes('not found')) {
+        return res.status(404).json({ success: false, message: err.message })
+      }
+      return next(err)
+    }
+  }
+)
+
+router.put(
+  '/customers/:id/lifestyle',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.edit', 'cx.admin'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const b = req.body || {}
+      const pool = await getPool()
+      const row = await cxService.upsertCustomerLifestyle(pool, {
+        customerId,
+        screenHrs: b.screen_hrs,
+        framePref: b.frame_pref,
+        budgetMin: b.budget_min,
+        budgetMax: b.budget_max,
+        notes: b.notes,
+        actorUserId: req.user?.user_id || null
+      })
+      return res.json({ success: true, data: row })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+router.post(
+  '/customers/:id/offers-assignments',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.offers.manage', 'cx.admin'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      const offerId = parseInt(String((req.body || {}).offer_id), 10)
+      if (!customerId || !offerId) {
+        return res.status(400).json({ success: false, message: 'customer id and offer_id required.' })
+      }
+      const pool = await getPool()
+      const row = await cxService.assignCustomerOffer(pool, {
+        customerId,
+        offerId,
+        notes: (req.body || {}).notes,
+        actorUserId: req.user?.user_id || null
+      })
+      return res.status(201).json({ success: true, data: row })
+    } catch (err) {
+      const msg = String(err.message || '')
+      if (msg.includes('already assigned') || msg.includes('inactive')) {
+        return res.status(400).json({ success: false, message: msg })
+      }
+      return next(err)
+    }
+  }
+)
+
+router.delete(
+  '/customers/:id/offers-assignments/:assignmentId',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.offers.manage', 'cx.admin'),
+  async (req, res, next) => {
+    try {
+      const assignmentId = parseInt(req.params.assignmentId, 10)
+      if (!assignmentId) return res.status(400).json({ success: false, message: 'Invalid assignment ID.' })
+      const pool = await getPool()
+      const row = await cxService.revokeCustomerOffer(pool, assignmentId, req.user?.user_id || null)
+      return res.json({ success: true, data: row })
+    } catch (err) {
+      if (String(err.message || '').includes('not found')) {
+        return res.status(404).json({ success: false, message: err.message })
+      }
+      return next(err)
+    }
+  }
+)
+
+router.post(
+  '/customers/:id/coins/manual',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.coins.manual', 'cx.admin'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      const coinsDelta = parseInt(String((req.body || {}).coins_delta), 10)
+      const reason = String((req.body || {}).reason || '').trim()
+      if (!customerId || !Number.isFinite(coinsDelta) || coinsDelta === 0) {
+        return res.status(400).json({ success: false, message: 'Valid customer id and non-zero coins_delta required.' })
+      }
+      if (!reason) return res.status(400).json({ success: false, message: 'reason is required.' })
+      const pool = await getPool()
+      const row = await cxService.manualLoyaltyAdjustment(pool, {
+        customerId,
+        coinsDelta,
+        reason,
+        actorUserId: req.user?.user_id || null
+      })
+      return res.status(201).json({ success: true, data: row })
+    } catch (err) {
+      const msg = String(err.message || '')
+      if (msg.includes('negative') || msg.includes('non-zero')) {
+        return res.status(400).json({ success: false, message: msg })
+      }
+      return next(err)
+    }
+  }
+)
+
+/** GET /api/cx/settings/loyalty — CX staff read loyalty settings */
+router.get(
+  '/settings/loyalty',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view', 'cx.admin'),
+  async (req, res, next) => {
+    try {
+      const pool = await getPool()
+      const row = await cxService.getLoyaltySettings(pool)
+      return res.json({ success: true, data: row })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
 
 module.exports = router

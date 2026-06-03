@@ -440,6 +440,16 @@ function validateOrderLinesAgainstConfig(cfg, value) {
         return { ok: false, message: 'Rx snapshot required for this order.' }
       }
     }
+    const ptKey = String(line.product_type || '').trim().toUpperCase()
+    if (ptKey === 'CUSTOMER_FRAME') {
+      const photo = String(line.customer_frame_photo_url || '').trim()
+      if (!photo) {
+        return { ok: false, message: 'Customer frame photo is required for customer-owned frame lines.' }
+      }
+      if (line.fulfillment !== 'LAB' || !line.lens_bundle || !line.lens_bundle.package_id) {
+        return { ok: false, message: 'Customer frame lines require a configured lens package.' }
+      }
+    }
     const needsUnit = lineRequiresUnitBarcode(cfg, line.product_type)
     if (needsUnit) {
       const unitId = line.unit_id != null ? Number(line.unit_id) : null
@@ -680,7 +690,8 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
     .input('oid', sql.Int, orderId)
     .query(`
       SELECT i.order_item_id, i.sub_order_id, i.sku_id, i.qty, i.unit_price, i.line_total,
-             i.product_type, i.fulfillment, i.line_key, i.lens_bundle
+             i.product_type, i.fulfillment, i.line_key, i.lens_bundle,
+             i.customer_frame_photo_url, i.customer_frame_note
       FROM ${t.order_items} i
       INNER JOIN ${t.sub_orders} s ON s.sub_order_id = i.sub_order_id
       WHERE s.order_id = @oid
@@ -731,7 +742,9 @@ async function fetchOrderBundle(pool, orderId, storeId, mode) {
         product_type: it.product_type,
         fulfillment: it.fulfillment,
         line_key: it.line_key,
-        lens_bundle: parseJsonMaybe(it.lens_bundle)
+        lens_bundle: parseJsonMaybe(it.lens_bundle),
+        customer_frame_photo_url: it.customer_frame_photo_url != null ? String(it.customer_frame_photo_url) : null,
+        customer_frame_note: it.customer_frame_note != null ? String(it.customer_frame_note) : null
       })
     }
   }
@@ -868,7 +881,8 @@ async function fetchOrderBundleTransaction(transaction, orderId, storeId, mode) 
 
   const items = await new sql.Request(transaction).input('oid', sql.Int, orderId).query(`
       SELECT i.order_item_id, i.sub_order_id, i.sku_id, i.qty, i.unit_price, i.line_total,
-             i.product_type, i.fulfillment, i.line_key, i.lens_bundle
+             i.product_type, i.fulfillment, i.line_key, i.lens_bundle,
+             i.customer_frame_photo_url, i.customer_frame_note
       FROM ${t.order_items} i
       INNER JOIN ${t.sub_orders} s ON s.sub_order_id = i.sub_order_id
       WHERE s.order_id = @oid
@@ -917,7 +931,9 @@ async function fetchOrderBundleTransaction(transaction, orderId, storeId, mode) 
         product_type: it.product_type,
         fulfillment: it.fulfillment,
         line_key: it.line_key,
-        lens_bundle: parseJsonMaybe(it.lens_bundle)
+        lens_bundle: parseJsonMaybe(it.lens_bundle),
+        customer_frame_photo_url: it.customer_frame_photo_url != null ? String(it.customer_frame_photo_url) : null,
+        customer_frame_note: it.customer_frame_note != null ? String(it.customer_frame_note) : null
       })
     }
   }
@@ -987,9 +1003,9 @@ async function finalizePaymentAfterInsert(pool, mode, storeId, orderId, body, em
   const payStageUpper = String(body.stage || '').trim().toUpperCase()
   if (fullyPaid && refreshed) {
     try {
-      invoiceNo = await finalizePaidOrderLedger(pool, mode, refreshed, payStageUpper, employeeId, {
-        invoice_preferences: body.invoice_preferences
-      })
+    invoiceNo = await finalizePaidOrderLedger(pool, mode, refreshed, payStageUpper, employeeId, {
+      invoice_preferences: body.invoice_preferences
+    })
     } catch (finErr) {
       if (finErr.statusCode === 400) {
         invoiceNo = null
@@ -1683,8 +1699,8 @@ async function createOrderInTransaction(transaction, {
   const membershipAmount = omitMembership ? 0 : membershipAmountRaw
   const soldMembershipPlanKey =
     !omitMembership && value.membership_sale && value.membership_sale.plan_key
-      ? String(value.membership_sale.plan_key).trim()
-      : null
+    ? String(value.membership_sale.plan_key).trim()
+    : null
 
   const taxOut = computePosOrderTaxTotals({
     subtotal: productSubtotal,
@@ -1868,11 +1884,17 @@ async function createOrderInTransaction(transaction, {
     rItem.input('fulfillment', sql.NVarChar(10), line.fulfillment)
     rItem.input('line_key', sql.NVarChar(300), line.line_key)
     rItem.input('lens_bundle', sql.NVarChar(sql.MAX), lensJson)
+    const cfPhoto = line.customer_frame_photo_url != null ? String(line.customer_frame_photo_url).trim() : null
+    const cfNote = line.customer_frame_note != null ? String(line.customer_frame_note).trim() : null
+    rItem.input('customer_frame_photo_url', sql.NVarChar(500), cfPhoto || null)
+    rItem.input('customer_frame_note', sql.NVarChar(250), cfNote || null)
     const itemIns = await rItem.query(`
       INSERT INTO ${t.order_items} (
-        sub_order_id, sku_id, qty, unit_price, line_total, product_type, fulfillment, line_key, lens_bundle
+        sub_order_id, sku_id, qty, unit_price, line_total, product_type, fulfillment, line_key, lens_bundle,
+        customer_frame_photo_url, customer_frame_note
       ) VALUES (
-        @sub_order_id, @sku_id, @qty, @unit_price, @line_total, @product_type, @fulfillment, @line_key, @lens_bundle
+        @sub_order_id, @sku_id, @qty, @unit_price, @line_total, @product_type, @fulfillment, @line_key, @lens_bundle,
+        @customer_frame_photo_url, @customer_frame_note
       );
       SELECT CAST(SCOPE_IDENTITY() AS INT) AS order_item_id;
     `)
@@ -2141,7 +2163,35 @@ async function insertPosInvoiceIfAbsent(pool, order, options = {}) {
     `)
   }
 
+  await maybeScheduleLoyaltyCreditOnInvoice(pool, order)
+
   return invoiceNo
+}
+
+/** Non-fatal: schedule PRD loyalty earn when loyalty_engine_v2 is on. */
+async function maybeScheduleLoyaltyCreditOnInvoice (pool, order) {
+  try {
+    const customerId = Number(order && order.customer_id)
+    if (!customerId) return
+    const { isLoyaltyEngineV2Enabled } = require('../lib/loyaltyEngineFlag')
+    if (!(await isLoyaltyEngineV2Enabled(pool))) return
+    const cxService = require('./cxService')
+    const invR = await pool.request().input('oid', sql.Int, order.order_id).query(`
+      SELECT invoice_id, total_amount
+      FROM dbo.pos_invoices WHERE order_id = @oid
+    `)
+    const inv = invR.recordset && invR.recordset[0]
+    if (!inv) return
+    await cxService.scheduleLoyaltyCredit(pool, {
+      purchaserCustomerId: customerId,
+      orderId: order.order_id,
+      invoiceId: inv.invoice_id,
+      invoiceTotal: inv.total_amount,
+      actorUserId: null
+    })
+  } catch (_err) {
+    /* non-fatal */
+  }
 }
 
 /**
@@ -3091,7 +3141,14 @@ async function fetchStoreOrders(pool, storeId, mode, {
            MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.lab_workflow_status ELSE NULL END) AS lab_workflow_status,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_received_confirmed, 0) AS INT) ELSE NULL END) AS lab_rcv_all,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_backorder_confirmed, 0) AS INT) ELSE NULL END) AS lab_bo_all,
-           MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.sub_order_id ELSE NULL END) AS sub_order_id
+           MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.sub_order_id ELSE NULL END) AS sub_order_id,
+           (SELECT TOP 1 i.customer_frame_photo_url
+            FROM ${t.order_items} i
+            INNER JOIN ${t.sub_orders} sx ON sx.sub_order_id = i.sub_order_id
+            WHERE sx.order_id = o.order_id
+              AND UPPER(LTRIM(RTRIM(i.product_type))) = N'CUSTOMER_FRAME'
+              AND NULLIF(LTRIM(RTRIM(i.customer_frame_photo_url)), N'') IS NOT NULL
+            ORDER BY i.order_item_id DESC) AS customer_frame_photo_url
     FROM ${t.orders} o
     LEFT JOIN dbo.pos_customers c ON o.customer_id = c.customer_id
     LEFT JOIN ${t.sub_orders} so ON so.order_id = o.order_id

@@ -1,4 +1,7 @@
 const express = require('express')
+const path    = require('path')
+const fs      = require('fs')
+const multer  = require('multer')
 const sql     = require('mssql')
 const jwt     = require('jsonwebtoken')
 const Joi     = require('joi')
@@ -10,6 +13,31 @@ const { requireTabletSession } = require('../middleware/requireTabletSession')
 const { requireModule, requirePermission, requireAnyModule, hasPermission, isSuperAdmin } = require('../middleware/authorize')
 const { writeAuditLog }     = require('../services/auditService')
 const { resolveProcurementMode, readSetting } = require('../services/procurementService')
+
+const CUSTOMER_FRAME_PRODUCT_TYPE = 'CUSTOMER_FRAME'
+
+const CUSTOMER_FRAME_UPLOAD_DIR = path.join(__dirname, '..', 'public', 'uploads', 'customer-frames')
+if (!fs.existsSync(CUSTOMER_FRAME_UPLOAD_DIR)) {
+  fs.mkdirSync(CUSTOMER_FRAME_UPLOAD_DIR, { recursive: true })
+}
+
+const customerFramePhotoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, CUSTOMER_FRAME_UPLOAD_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase()
+    cb(null, `cf-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`)
+  }
+})
+
+const customerFramePhotoUpload = multer({
+  storage: customerFramePhotoStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif']
+    if (ok.includes(path.extname(file.originalname).toLowerCase())) return cb(null, true)
+    cb(new Error('Only image files are allowed for customer frame photos.'))
+  }
+})
 const { nowUnixSec } = require('../services/jwtPolicyService')
 const orderService = require('../services/orderService')
 const { labCallerFromReq } = require('../services/labWorkflowAuth')
@@ -426,7 +454,9 @@ const posOrderLineItemSchema = Joi.object({
   /** Optional: groups frame+lens pairs on one bill (server defaults by line index). */
   pair_index: Joi.number().integer().min(1).optional(),
   /** Required when product type has requires_unit_barcode (7-digit unit scan). */
-  unit_id: Joi.number().integer().positive().optional()
+  unit_id: Joi.number().integer().positive().optional(),
+  customer_frame_photo_url: Joi.string().max(500).allow(null, '').optional(),
+  customer_frame_note: Joi.string().max(250).allow(null, '').optional()
 })
 
 const membershipSaleSchema = Joi.object({
@@ -1131,10 +1161,90 @@ router.get('/startup-config', ...posCatalogue, async (req, res, next) => {
   try {
     const result = await executeStoredProcedure('sp_POS_GetStartupConfig', {})
     const data = mapStartupConfig(result)
+    const pool = await getPool()
+    const skuRaw = await readSetting(pool, 'pos.customer_frame_sku_id')
+    const skuId = skuRaw != null && String(skuRaw).trim() !== '' ? parseInt(String(skuRaw).trim(), 10) : null
+    data.customer_frame_sku_id = Number.isFinite(skuId) && skuId > 0 ? skuId : null
     return res.json({ success: true, data })
   } catch (err) {
     return next(err)
   }
+})
+
+// ── GET /api/pos/customer-frame-product ───────────────────────────────────────
+router.get('/customer-frame-product', ...posCatalogue, async (req, res, next) => {
+  try {
+    const pool = await getPool()
+    const skuRaw = await readSetting(pool, 'pos.customer_frame_sku_id')
+    const skuId = skuRaw != null && String(skuRaw).trim() !== '' ? parseInt(String(skuRaw).trim(), 10) : null
+    if (!Number.isFinite(skuId) || skuId <= 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer frame product is not configured. Set pos.customer_frame_sku_id in app settings after creating a CUSTOMER_FRAME SKU in Foundry.'
+      })
+    }
+    const r = await pool.request()
+      .input('sku_id', sql.Int, skuId)
+      .input('pt', sql.NVarChar(50), CUSTOMER_FRAME_PRODUCT_TYPE)
+      .query(`
+        SELECT TOP 1
+          pm.product_id,
+          sk.sku_id,
+          sk.sku_code,
+          ISNULL(sk.barcode, '') AS barcode,
+          N'Customer frame' AS brand_name,
+          N'Lenses on customer frame' AS product_name,
+          N'' AS collection_name,
+          N'' AS model_number,
+          UPPER(LTRIM(RTRIM(pm.product_type))) AS product_type,
+          N'' AS frame_material,
+          N'' AS frame_width,
+          N'Customer frame' AS colour_name,
+          N'' AS colour_code,
+          ISNULL(sk.image_url, '') AS image_url,
+          ISNULL(sk.sale_price, 0) AS sale_price,
+          1 AS store_qty,
+          NULL AS reading_power
+        FROM dbo.skus sk
+        INNER JOIN dbo.product_master pm ON pm.product_id = sk.product_master_id
+        WHERE sk.sku_id = @sku_id
+          AND UPPER(LTRIM(RTRIM(pm.product_type))) = @pt
+          AND sk.status IN (N'LIVE', N'ACTIVE')
+      `)
+    const row = r.recordset && r.recordset[0]
+    if (!row) {
+      return res.status(404).json({
+        success: false,
+        message: 'Configured customer frame SKU was not found or is not type CUSTOMER_FRAME.'
+      })
+    }
+    const grouped = groupCatalogueRows([row])
+    const product = grouped[0] || null
+    if (!product || !product.colours.length) {
+      return res.status(404).json({ success: false, message: 'Customer frame product could not be loaded.' })
+    }
+    return res.json({ success: true, data: product })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── POST /api/pos/customer-frame-photo ────────────────────────────────────────
+router.post('/customer-frame-photo', ...posCatalogue, (req, res, next) => {
+  customerFramePhotoUpload.single('frame_photo')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, message: err.message || 'Upload failed.' })
+    }
+    try {
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: 'No photo file received.' })
+      }
+      const photoUrl = `/uploads/customer-frames/${req.file.filename}`
+      return res.json({ success: true, photo_url: photoUrl })
+    } catch (e) {
+      return next(e)
+    }
+  })
 })
 
 // ── GET /api/pos/unit-lookup?q=0010447 ────────────────────────────────────────
@@ -1330,6 +1440,8 @@ async function recordPosOfferUsage(pool, { value, out, storeId, employeeId, auth
 async function awardCashbackCoinsIfApplicable(pool, { customerId, orderId, orderNo, totalAmount, offerId }) {
   if (!customerId || !offerId || !totalAmount) return
   try {
+    const { isLoyaltyEngineV2Enabled } = require('../lib/loyaltyEngineFlag')
+    if (await isLoyaltyEngineV2Enabled(pool)) return
     const offerR = await pool.request()
       .input('offer_id', sql.Int, offerId)
       .query(`

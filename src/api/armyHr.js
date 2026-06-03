@@ -4,6 +4,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const Joi = require('joi');
+const multer = require('multer');
 const { requireModule, requirePermission } = require('../middleware/authorize');
 const { getArmyDepartmentMetaForApi, isAllowedArmyDepartmentKey } = require('../config/armyDepartmentsCatalog');
 const { getArmyEducationCatalog } = require('../config/armyEducationCatalog');
@@ -13,6 +14,15 @@ const { getArmyJobOpeningStatusCatalog, isAllowedArmyJobOpeningStatusKey } = req
 const { getArmyEmploymentTypeCatalog, isAllowedArmyEmploymentTypeKey } = require('../config/armyEmploymentTypeCatalog');
 const { getArmyInterviewerRoleCatalog } = require('../config/armyInterviewerRoleCatalog');
 const { getArmyInterviewModeCatalog } = require('../config/armyInterviewModeCatalog');
+const { getArmyInterviewStatusCatalog } = require('../config/armyInterviewStatusCatalog');
+const { getArmyInterviewRecommendationCatalog } = require('../config/armyInterviewRecommendationCatalog');
+const { getArmyRubricParameterCatalog } = require('../config/armyRubricParameterCatalog');
+const { getArmyEmployeeStatusCatalog } = require('../config/armyEmployeeStatusCatalog');
+const { getArmyEmployeeGenderCatalog } = require('../config/armyEmployeeGenderCatalog');
+const { getArmyBloodGroupCatalog } = require('../config/armyBloodGroupCatalog');
+const { getArmyBankAccountTypeCatalog } = require('../config/armyBankAccountTypeCatalog');
+const { getArmyEmployeeDocumentTypeCatalog } = require('../config/armyEmployeeDocumentTypeCatalog');
+const { getArmyEmployeeOnboardingItemCatalog } = require('../config/armyEmployeeOnboardingItemCatalog');
 const {
   listInterviewTemplatesAdmin,
   getInterviewTemplateById,
@@ -20,7 +30,12 @@ const {
   updateInterviewTemplate,
   setInterviewTemplateActive,
   duplicateInterviewTemplate,
-  isInterviewTablesReady
+  isInterviewTablesReady,
+  isInterviewRatingsReady,
+  listApplicationInterviews,
+  updateApplicationInterview,
+  saveApplicationInterviewRating,
+  getApplicationInterviewRating
 } = require('../services/armyInterviewRepository');
 const { isAllowedArmyApplicationStatusKey } = require('../config/armyApplicationStatusCatalog');
 const {
@@ -37,6 +52,19 @@ const {
   getHiringDashboardStats,
   isHiringTablesReady
 } = require('../services/armyHiringRepository');
+const {
+  isEmployeesTablesReady,
+  ensureEmployeeDocDir,
+  listEmployeesAdmin,
+  getEmployeeAdminById,
+  createEmployee,
+  updateEmployee,
+  setEmployeeStatus,
+  setOnboardingItem,
+  addEmployeeDocument,
+  verifyEmployeeDocument,
+  getEmployeeDashboardStats
+} = require('../services/armyEmployeeRepository');
 
 const router = express.Router();
 
@@ -51,6 +79,42 @@ const candidatesEdit = [requireModule('army'), requirePermission('army.hiring.ca
 
 const templatesView = [requireModule('army'), requirePermission('army.hiring.interview_templates.view')];
 const templatesEdit = [requireModule('army'), requirePermission('army.hiring.interview_templates.edit')];
+
+const staffView = [requireModule('army'), requirePermission('army.staff.view')];
+const staffCreate = [requireModule('army'), requirePermission('army.staff.create')];
+const staffEdit = [requireModule('army'), requirePermission('army.staff.edit')];
+
+const armyHrMetaView = [
+  requireModule('army'),
+  requirePermission(
+    'army.hiring.job_openings.view',
+    'army.hiring.candidates.view',
+    'army.staff.view'
+  )
+];
+
+const employeeDocUpload = multer({
+  storage: multer.diskStorage({
+    destination(req, file, cb) {
+      try {
+        const id = Number(req.params.id);
+        if (!id) return cb(new Error('Invalid employee id.'));
+        cb(null, ensureEmployeeDocDir(id));
+      } catch (err) {
+        cb(err);
+      }
+    },
+    filename(req, file, cb) {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.bin';
+      cb(null, Date.now() + '-' + Math.random().toString(36).slice(2, 8) + ext);
+    }
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
+    const ok = /\.(pdf|png|jpe?g|webp)$/i.test(file.originalname || '');
+    cb(ok ? null : new Error('Upload PDF, PNG, JPG, or WEBP only.'), ok);
+  }
+});
 
 const jobStatusSchema = Joi.object({
   status: Joi.string().trim().uppercase().required()
@@ -93,6 +157,58 @@ const templateActiveSchema = Joi.object({
   is_active: Joi.boolean().required()
 });
 
+const interviewScheduleSchema = Joi.object({
+  scheduled_at: Joi.string().trim().pattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/).allow(null).optional(),
+  location: Joi.string().trim().max(200).allow('', null).optional(),
+  status_key: Joi.string().trim().uppercase().valid('PENDING', 'SCHEDULED', 'COMPLETED', 'SKIPPED').optional(),
+  clear_schedule: Joi.boolean().optional(),
+  clear_location: Joi.boolean().optional()
+});
+
+const interviewRatingSchema = Joi.object({
+  scores: Joi.object().min(1).required(),
+  notes: Joi.string().trim().min(1).max(2000).required(),
+  recommendation_key: Joi.string().trim().uppercase().valid('PROCEED', 'HOLD', 'REJECT').required()
+});
+
+const employeeBodySchema = Joi.object({
+  full_name: Joi.string().trim().min(2).max(120).required(),
+  phone: Joi.string().trim().min(10).max(15).required(),
+  email: Joi.string().trim().email({ tlds: { allow: false } }).allow('', null).optional(),
+  dob: Joi.string().trim().pattern(/^\d{4}-\d{2}-\d{2}$/).allow('', null).optional(),
+  gender_key: Joi.string().trim().uppercase().allow('', null).optional(),
+  blood_group_key: Joi.string().trim().uppercase().allow('', null).optional(),
+  address_current: Joi.string().trim().max(500).allow('', null).optional(),
+  address_permanent: Joi.string().trim().max(500).allow('', null).optional(),
+  emergency_contact_name: Joi.string().trim().max(120).allow('', null).optional(),
+  emergency_contact_relation: Joi.string().trim().max(60).allow('', null).optional(),
+  emergency_contact_phone: Joi.string().trim().max(15).allow('', null).optional(),
+  aadhaar_number: Joi.string().trim().max(12).allow('', null).optional(),
+  pan_number: Joi.string().trim().max(10).allow('', null).optional(),
+  bank_name: Joi.string().trim().max(120).allow('', null).optional(),
+  bank_account_number: Joi.string().trim().max(30).allow('', null).optional(),
+  bank_ifsc: Joi.string().trim().max(11).allow('', null).optional(),
+  bank_account_type_key: Joi.string().trim().uppercase().allow('', null).optional(),
+  store_id: Joi.number().integer().positive().allow(null).optional(),
+  department_key: Joi.string().trim().uppercase().allow('', null).optional(),
+  job_title: Joi.string().trim().max(120).allow('', null).optional(),
+  status_key: Joi.string().trim().uppercase().optional(),
+  candidate_id: Joi.number().integer().positive().allow(null).optional(),
+  application_id: Joi.number().integer().positive().allow(null).optional()
+});
+
+const employeeStatusSchema = Joi.object({
+  status_key: Joi.string().trim().uppercase().required()
+});
+
+const onboardingItemSchema = Joi.object({
+  is_complete: Joi.boolean().required()
+});
+
+const documentVerifySchema = Joi.object({
+  is_verified: Joi.boolean().required()
+});
+
 function handleServiceError(err, res, next) {
   if (err.statusCode) {
     return res.status(err.statusCode).json({ success: false, message: err.message });
@@ -100,7 +216,7 @@ function handleServiceError(err, res, next) {
   return next(err);
 }
 
-router.get('/meta/statuses', ...hrView, async (req, res, next) => {
+router.get('/meta/statuses', ...armyHrMetaView, async (req, res, next) => {
   try {
     res.json({
       success: true,
@@ -115,6 +231,17 @@ router.get('/meta/statuses', ...hrView, async (req, res, next) => {
         interview_modes: getArmyInterviewModeCatalog(),
         interview_templates: await listInterviewTemplatesAdmin({ active_only: true }),
         interview_tables_ready: await isInterviewTablesReady(),
+        interview_ratings_ready: await isInterviewRatingsReady(),
+        interview_statuses: getArmyInterviewStatusCatalog(),
+        interview_recommendations: getArmyInterviewRecommendationCatalog(),
+        rubric_parameters: getArmyRubricParameterCatalog(),
+        employee_statuses: getArmyEmployeeStatusCatalog(),
+        employee_genders: getArmyEmployeeGenderCatalog(),
+        employee_blood_groups: getArmyBloodGroupCatalog(),
+        employee_bank_account_types: getArmyBankAccountTypeCatalog(),
+        employee_document_types: getArmyEmployeeDocumentTypeCatalog(),
+        employee_onboarding_items: getArmyEmployeeOnboardingItemCatalog(),
+        employees_tables_ready: await isEmployeesTablesReady(),
         stores: await listHiringStores(),
         db_ready: await isHiringTablesReady()
       }
@@ -316,7 +443,54 @@ router.get('/applications/:id', ...candidatesView, async (req, res, next) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ success: false, message: 'Invalid application id.' });
     const application = await getApplicationAdminById(id);
+    application.interviews = await listApplicationInterviews(id);
     return res.json({ success: true, data: application });
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.patch('/applications/:id/interviews/:interviewId', ...candidatesEdit, async (req, res, next) => {
+  try {
+    const appId = Number(req.params.id);
+    const interviewId = Number(req.params.interviewId);
+    if (!appId || !interviewId) {
+      return res.status(400).json({ success: false, message: 'Invalid application or interview id.' });
+    }
+    const { value, error } = interviewScheduleSchema.validate(req.body, { stripUnknown: true });
+    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    const interview = await updateApplicationInterview(appId, interviewId, value);
+    return res.json({ success: true, data: interview });
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.get('/applications/:id/interviews/:interviewId/rating', ...candidatesView, async (req, res, next) => {
+  try {
+    const appId = Number(req.params.id);
+    const interviewId = Number(req.params.interviewId);
+    if (!appId || !interviewId) {
+      return res.status(400).json({ success: false, message: 'Invalid application or interview id.' });
+    }
+    const rating = await getApplicationInterviewRating(appId, interviewId);
+    return res.json({ success: true, data: { rating } });
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.put('/applications/:id/interviews/:interviewId/rating', ...candidatesEdit, async (req, res, next) => {
+  try {
+    const appId = Number(req.params.id);
+    const interviewId = Number(req.params.interviewId);
+    if (!appId || !interviewId) {
+      return res.status(400).json({ success: false, message: 'Invalid application or interview id.' });
+    }
+    const { value, error } = interviewRatingSchema.validate(req.body, { stripUnknown: true });
+    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    const interview = await saveApplicationInterviewRating(appId, interviewId, value, req.user && req.user.user_id);
+    return res.json({ success: true, data: interview });
   } catch (err) {
     return handleServiceError(err, res, next);
   }
@@ -351,6 +525,128 @@ router.patch('/applications/:id/status', ...candidatesEdit, async (req, res, nex
 
     const application = await updateApplicationStatus(id, value.status_key);
     return res.json({ success: true, data: application });
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.get('/employees/stats', ...staffView, async (req, res, next) => {
+  try {
+    const stats = await getEmployeeDashboardStats();
+    return res.json({ success: true, data: stats });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/employees', ...staffView, async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const status_key = String(req.query.status || '').trim().toUpperCase();
+    const store_id = req.query.store_id ? Number(req.query.store_id) : undefined;
+    const employees = await listEmployeesAdmin({
+      q: q || undefined,
+      status_key: status_key || undefined,
+      store_id: store_id || undefined
+    });
+    return res.json({ success: true, data: { total: employees.length, employees } });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/employees/:id', ...staffView, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ success: false, message: 'Invalid employee id.' });
+    const employee = await getEmployeeAdminById(id, { includeSensitive: true });
+    return res.json({ success: true, data: employee });
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.post('/employees', ...staffCreate, async (req, res, next) => {
+  try {
+    const { value, error } = employeeBodySchema.validate(req.body, { stripUnknown: true });
+    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    const employee = await createEmployee(value, req.user && req.user.user_id);
+    return res.status(201).json({ success: true, data: employee });
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.put('/employees/:id', ...staffEdit, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ success: false, message: 'Invalid employee id.' });
+    const { value, error } = employeeBodySchema.validate(req.body, { stripUnknown: true });
+    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    const employee = await updateEmployee(id, value);
+    return res.json({ success: true, data: employee });
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.patch('/employees/:id/status', ...staffEdit, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ success: false, message: 'Invalid employee id.' });
+    const { value, error } = employeeStatusSchema.validate(req.body, { stripUnknown: true });
+    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    const employee = await setEmployeeStatus(id, value.status_key);
+    return res.json({ success: true, data: employee });
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.patch('/employees/:id/onboarding/:itemKey', ...staffEdit, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const itemKey = String(req.params.itemKey || '').trim().toUpperCase();
+    if (!id || !itemKey) return res.status(400).json({ success: false, message: 'Invalid request.' });
+    const { value, error } = onboardingItemSchema.validate(req.body, { stripUnknown: true });
+    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    const employee = await setOnboardingItem(id, itemKey, value.is_complete, req.user && req.user.user_id);
+    return res.json({ success: true, data: employee });
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.post('/employees/:id/documents', ...staffEdit, (req, res, next) => {
+  employeeDocUpload.single('document')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, message: err.message || 'Upload failed.' });
+    }
+    next();
+  });
+}, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ success: false, message: 'Invalid employee id.' });
+    if (!req.file) return res.status(400).json({ success: false, message: 'Document file required.' });
+    const docType = String(req.body.doc_type_key || '').trim().toUpperCase();
+    if (!docType) return res.status(400).json({ success: false, message: 'doc_type_key required.' });
+    const employee = await addEmployeeDocument(id, docType, req.file, req.user && req.user.user_id);
+    return res.status(201).json({ success: true, data: employee });
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.patch('/employees/:id/documents/:docId/verify', ...staffEdit, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const docId = Number(req.params.docId);
+    if (!id || !docId) return res.status(400).json({ success: false, message: 'Invalid request.' });
+    const { value, error } = documentVerifySchema.validate(req.body, { stripUnknown: true });
+    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    const employee = await verifyEmployeeDocument(id, docId, value.is_verified);
+    return res.json({ success: true, data: employee });
   } catch (err) {
     return handleServiceError(err, res, next);
   }

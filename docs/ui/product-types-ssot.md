@@ -30,6 +30,10 @@ Extra fields below standard lookup fields:
 - **Requires unit scan** — checkbox
 - **Lens wizard policy** — select NEVER | OPTIONAL | REQUIRED
 
+## Customer-owned frame (`CUSTOMER_FRAME`)
+
+Seeded by migration `89_customer_frame_lens.sql`: **LAB**, lens wizard **REQUIRED**, unit scan **off**. Store OS uses a virtual SKU (`pos.customer_frame_sku_id` in app settings). See [`pos-customer-frame-lens.md`](pos-customer-frame-lens.md).
+
 ## API
 - List (admin): `GET /api/foundry-lookups` (includes product types from `pos_product_type_config`)
 - Foundry forms: same endpoint; active types only when `?type=product_type`

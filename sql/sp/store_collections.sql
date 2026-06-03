@@ -88,6 +88,12 @@ SELECT
       AND NOT EXISTS (SELECT 1 FROM settled_dates s WHERE p.pay_date BETWEEN s.period_from AND s.period_to)
   ) AS unsettled_machine_to,
   ISNULL((
+    SELECT TOP 1 ISNULL(b.opening_balance, 0)
+    FROM dbo.store_bank_accounts b
+    WHERE b.store_id = @store_id AND b.is_active = 1 AND b.is_primary = 1
+    ORDER BY b.bank_account_id DESC
+  ), 0)
+  + ISNULL((
     SELECT SUM(net_amount) FROM dbo.store_treasury_transfers
     WHERE store_id = @store_id AND status = N''posted''
   ), 0) AS store_bank_balance,
@@ -430,6 +436,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Treasury_UpsertBankAccount
   @account_no               NVARCHAR(50),
   @ifsc                     NVARCHAR(20) = NULL,
   @account_holder           NVARCHAR(200) = NULL,
+  @opening_balance          DECIMAL(12,2) = 0,
   @existing_bank_account_id INT = NULL,
   @bank_account_id          INT OUTPUT
 AS
@@ -443,20 +450,24 @@ BEGIN
     RETURN;
   END;
 
+  IF @opening_balance IS NULL
+    SET @opening_balance = 0;
+
   UPDATE dbo.store_bank_accounts SET is_primary = 0, updated_at = @now WHERE store_id = @store_id;
 
   IF @existing_bank_account_id IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.store_bank_accounts WHERE bank_account_id = @existing_bank_account_id AND store_id = @store_id)
   BEGIN
     UPDATE dbo.store_bank_accounts
     SET bank_name = @bank_name, account_no = @account_no, ifsc = @ifsc, account_holder = @account_holder,
+        opening_balance = @opening_balance,
         is_primary = 1, is_active = 1, updated_at = @now
     WHERE bank_account_id = @existing_bank_account_id;
     SET @bank_account_id = @existing_bank_account_id;
   END
   ELSE
   BEGIN
-    INSERT INTO dbo.store_bank_accounts (store_id, bank_name, account_no, ifsc, account_holder, is_primary, is_active, created_at, updated_at)
-    VALUES (@store_id, @bank_name, @account_no, @ifsc, @account_holder, 1, 1, @now, @now);
+    INSERT INTO dbo.store_bank_accounts (store_id, bank_name, account_no, ifsc, account_holder, opening_balance, is_primary, is_active, created_at, updated_at)
+    VALUES (@store_id, @bank_name, @account_no, @ifsc, @account_holder, @opening_balance, 1, 1, @now, @now);
     SET @bank_account_id = SCOPE_IDENTITY();
   END;
 END;

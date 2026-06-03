@@ -71,6 +71,10 @@ Live visitor queue per store: staff check-in, search/select visitors via shared 
 - `POS_Prototype.html`, `src/public/js/pos.js`, `src/public/css/lenskart-pos.css`
 - `src/api/gatepass.js`, `sql/migrations/84_gatepass_phase1.sql`
 
-## Deferred (Phase 2+)
+## Roadmap (see `gatepass-roadmap.md`)
 
-- Public self check-in PWA, QR, CX link SP, GatePass module page, StorePilot embed, auto-expiry job
+| Phase | Status |
+|-------|--------|
+| 3 — SP Visitors page, assign staff, expiry job, CU VMS | Next |
+| 4 — SP sidebar widget, `cosmos-cx-search` embed | After 3 |
+| 5 — Self check-in via **Eyewoot Go** (not standalone PWA) | Last |

@@ -21,7 +21,7 @@
 <script src="/js/cosmos-bucket-scan.js?v=20260523-cart-bucket" defer></script>
 <script src="/js/pos-customer-family-name-copy.js" defer></script>
 <script src="/js/cosmos-cx-search.js?v=gatepass-cx-fallback-v5" defer></script>
-<script src="/js/pos.js?v=gatepass-cx-fallback-v5" defer></script>
+<script src="/js/pos.js?v=storeos-20260604-lens-cart-fix" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -508,6 +508,9 @@
       <div id="pos-ob-cart" class="pos-ob-cart" aria-live="polite"></div>
       <button id="btn-ob-add-more" class="pos-ob-add-more-btn" aria-label="Add more products" tabindex="0">
         + Add another product
+      </button>
+      <button id="btn-ob-customer-frame" type="button" class="pos-ob-add-more-btn pos-ob-customer-frame-btn" aria-label="Lenses on customer-owned frame" tabindex="0">
+        + Lenses on customer frame
       </button>
     </section>
 
@@ -1169,8 +1172,8 @@
           <input id="cust-picker-new-name" class="pos-search-input" type="text" autocomplete="name" aria-label="Cx full name" placeholder="Cx name">
           <label class="pos-field-label" for="cust-picker-new-phone">Mobile</label>
           <input id="cust-picker-new-phone" class="pos-search-input pos-cust-picker-phone-readonly" type="tel" inputmode="tel" autocomplete="tel" aria-label="Cx mobile" placeholder="10-digit mobile" readonly aria-readonly="true">
-          <label class="pos-field-label pos-cust-quick-reg-email-wrap" for="cust-picker-new-email" hidden>Email (optional)</label>
-          <input id="cust-picker-new-email" class="pos-search-input pos-cust-quick-reg-email-wrap" type="email" autocomplete="email" aria-label="Cx email" placeholder="name@example.com" hidden>
+          <span class="pos-field-label pos-cust-quick-reg-email-wrap" hidden>Email (optional)</span>
+          <input id="cust-picker-new-email" class="pos-search-input pos-cust-quick-reg-email-wrap" type="email" autocomplete="email" aria-label="Cx email (optional)" placeholder="name@example.com" hidden>
           <button type="button" id="cust-picker-btn-create" class="pos-cust-picker-create-btn" tabindex="0">Create Cx</button>
         </div>
       </section>

@@ -552,6 +552,11 @@ protectedApiRouter.get(
   ...storepilotReportsRouter.reportsViewMiddleware,
   storepilotReportsRouter.handleDayStoreReportGet
 );
+protectedApiRouter.get(
+  '/storepilot/reports/day-store/collections',
+  ...storepilotReportsRouter.reportsViewMiddleware,
+  storepilotReportsRouter.handleDayStoreCollectionLinesGet
+);
 protectedApiRouter.use('/storepilot/reports', storepilotReportsRouter);
 protectedApiRouter.use('/tablets', tabletsRouter);
 app.use('/api', protectedApiRouter);
@@ -572,5 +577,7 @@ app.listen(PORT, () => {
     // eslint-disable-next-line no-console
     console.warn('[store-types] cache warm failed:', err.message || err);
   });
+  const { startLoyaltyCron } = require('./src/services/loyaltyCron');
+  startLoyaltyCron();
 });
 

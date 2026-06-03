@@ -7,7 +7,7 @@
 <link rel="icon" href="/favicon.ico" type="image/png" sizes="32x32">
 <title>Army HR — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/fonts.css">
-<link rel="stylesheet" href="/css/army-prototype.css?v=20260602-interview-b1">
+<link rel="stylesheet" href="/css/army-prototype.css?v=20260603-employees-s5">
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css">
 <script src="/js/cosmos-ui-polish.js?v=20260602-ist-wire" defer></script>
 </head>
@@ -24,6 +24,8 @@
     <div class="nav-item" data-page="job-openings" tabindex="0" role="button" aria-label="Job openings"><span class="ic">📋</span> Job Openings</div>
     <div class="nav-item" data-page="interview-templates" tabindex="0" role="button" aria-label="Interview templates" id="nav-interview-templates" hidden><span class="ic">📅</span> Interview Templates</div>
     <div class="nav-item" data-page="pipeline" tabindex="0" role="button" aria-label="Candidate pipeline"><span class="ic">👥</span> Candidate Pipeline</div>
+    <div class="nav-group">People</div>
+    <div class="nav-item" data-page="employees" tabindex="0" role="button" aria-label="Employees" id="nav-employees" hidden><span class="ic">🧑‍💼</span> Employees</div>
     <div class="nav-group">Portal</div>
     <div class="nav-item" id="nav-careers-link" tabindex="0" role="link" aria-label="Public careers portal"><span class="ic">🌐</span> Careers Portal</div>
   </nav>
@@ -154,6 +156,49 @@
       </div>
     </div>
   </section>
+
+  <section class="page" id="page-employees" data-page="employees">
+    <div class="ph sp-page-title-row">
+      <div>
+        <div class="pt">Employees</div>
+        <div class="ps">Onboarding profiles, documents, and checklist progress.</div>
+      </div>
+      <div class="sp-page-tools">
+        <button type="button" class="btn primary" id="employees-new-btn" hidden>+ New employee</button>
+      </div>
+    </div>
+    <div class="sg3" id="employees-stats-grid" hidden>
+      <div class="sc"><div class="sl">Total employees</div><div class="sv" id="stat-emp-total">0</div></div>
+      <div class="sc"><div class="sl">Onboarding</div><div class="sv" id="stat-emp-onboarding">0</div></div>
+      <div class="sc"><div class="sl">Active</div><div class="sv" id="stat-emp-active">0</div></div>
+    </div>
+    <div class="card">
+      <div class="ch">
+        <div class="ct">All employees</div>
+        <div class="filters">
+          <select id="employees-filter-status" aria-label="Filter by status">
+            <option value="">All statuses</option>
+          </select>
+          <input type="search" id="employees-filter-q" placeholder="Search name, code, phone…" aria-label="Search employees">
+        </div>
+      </div>
+      <div class="cb tw">
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Store</th>
+              <th>Role</th>
+              <th>Onboarding</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="employees-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 </main>
 
 <div class="overlay" id="modal-job" role="dialog" aria-modal="true" aria-labelledby="modal-job-title">
@@ -261,6 +306,30 @@
   </div>
 </div>
 
+<div class="overlay" id="modal-employee" role="dialog" aria-modal="true" aria-labelledby="modal-employee-title">
+  <div class="modal modal-lg">
+    <div class="modal-h">
+      <h2 id="modal-employee-title">Employee</h2>
+      <button type="button" class="btn sm" id="modal-employee-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-b">
+      <div class="army-form-error" id="modal-employee-error" role="alert" hidden></div>
+      <div class="cand-tabs" role="tablist" id="employee-modal-tabs">
+        <button type="button" class="cand-tab active" data-emp-tab="personal" role="tab">Personal</button>
+        <button type="button" class="cand-tab" data-emp-tab="ids" role="tab">IDs &amp; Bank</button>
+        <button type="button" class="cand-tab" data-emp-tab="onboarding" role="tab">Onboarding</button>
+        <button type="button" class="cand-tab" data-emp-tab="documents" role="tab">Documents</button>
+      </div>
+      <div id="employee-modal-panel"></div>
+    </div>
+    <div class="modal-f">
+      <select id="employee-status-select" aria-label="Employee status" hidden></select>
+      <button type="button" class="btn" id="modal-employee-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="modal-employee-save">Save employee</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="modal-candidate" role="dialog" aria-modal="true" aria-labelledby="modal-candidate-title">
   <div class="modal modal-lg">
     <div class="modal-h">
@@ -277,6 +346,6 @@
 
 <script src="/js/cosmos-modules-catalog.js"></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
-<script src="/js/army-prototype.js?v=20260602-interview-b1"></script>
+<script src="/js/army-prototype.js?v=20260603-employees-s5"></script>
 </body>
 </html>

@@ -421,9 +421,13 @@ window.saveCxFamilyMember = async function () {
       window.cosmosToastSuccess('Buddy added.')
     }
     window.closeCxFamilyMemberModal()
-    window.closeCxCustomerDetail()
-    var el = document.querySelector('[data-cid="' + customerId + '"]')
-    if (el) await window.openCxCustomerDetail(el)
+    if (typeof window.cx360ReloadTab === 'function') {
+      window.cx360ReloadTab('membership')
+    } else {
+      window.closeCxCustomerDetail()
+      var el = document.querySelector('[data-cid="' + customerId + '"]')
+      if (el) await window.openCxCustomerDetail(el)
+    }
     if (btn && typeof window.cosmosBtnSuccess === 'function') window.cosmosBtnSuccess(btn)
   } catch (err) {
     if (btn && typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn)
@@ -448,8 +452,12 @@ async function cxRemoveFamilyMember(customerId, dependentId) {
     if (typeof window.cosmosToastSuccess === 'function') {
       window.cosmosToastSuccess('Buddy removed.')
     }
-    var el = document.querySelector('[data-cid="' + customerId + '"]')
-    if (el) await window.openCxCustomerDetail(el)
+    if (typeof window.cx360ReloadTab === 'function') {
+      window.cx360ReloadTab('membership')
+    } else {
+      var el = document.querySelector('[data-cid="' + customerId + '"]')
+      if (el) await window.openCxCustomerDetail(el)
+    }
   } catch (err) {
     if (typeof window.cosmosToastError === 'function') {
       window.cosmosToastError(err && err.message ? err.message : 'Could not remove.')
@@ -458,6 +466,12 @@ async function cxRemoveFamilyMember(customerId, dependentId) {
 }
 
 function cxOpenCustomerFromEl (el) {
+  var id = parseInt(el.getAttribute('data-cid'), 10)
+  if (!id) return
+  if (typeof window.cx360Open === 'function') {
+    window.cx360Open(id, 'summary')
+    return
+  }
   window.openCxCustomerDetail(el)
 }
 
@@ -503,6 +517,10 @@ function cxMembershipCardRowHtml (summary) {
       ? '<span class="cx-mem-expiry">exp. ' + escCx(summary.expiry) + '</span>'
       : ''
     return (
+      '<div class="cx-cust-card__pills">' +
+      '<span class="cx-mem-badge">✦ ' + badgeText + '</span>' +
+      expiryText +
+      '</div>' +
       '<div class="cx-cust-card__row cx-cust-card__row--active-member">' +
       '<span>Membership</span>' +
       '<span><span class="cx-mem-badge">' + badgeText + '</span>' + expiryText + '</span>' +
@@ -510,6 +528,7 @@ function cxMembershipCardRowHtml (summary) {
     )
   }
   return (
+    '<div class="cx-cust-card__pills"><span style="font-size:12px;color:var(--text3)">No active plan</span></div>' +
     '<div class="cx-cust-card__row"><span>Membership</span><span style="color:var(--text3);font-size:12px">No active plan</span></div>'
   )
 }
@@ -552,6 +571,7 @@ function cxRenderCustomerCard (r) {
     '<span class="cx-cust-card__chev" aria-hidden="true">\u203A</span>' +
     '</div>' +
     cxMembershipCardRowHtml(cxFormatMembershipSummary(r)) +
+    '<div class="cx-cust-card__kv">' +
     '<div class="cx-cust-card__row"><span>Home store</span><span>' +
     escCx(r.home_store_name || '\u2014') +
     '</span></div>' +
@@ -563,7 +583,7 @@ function cxRenderCustomerCard (r) {
     '</span></div>' +
     '<div class="cx-cust-card__row"><span>Last order</span><span>' +
     fmtCxDateOnly(r.last_order_at) +
-    '</span></div>' +
+    '</span></div></div>' +
     '</button>'
   )
 }
@@ -648,6 +668,7 @@ var CX_PAGE_PATHS = {
 
 function cxGetPageFromPath (pathname) {
   var normalized = String(pathname || '').replace(/\/+$/, '') || '/cx'
+  if (/^\/cx\/customers\/\d+/.test(normalized)) return 'customer360'
   var entries = Object.entries(CX_PAGE_PATHS)
   for (var i = 0; i < entries.length; i++) {
     if (entries[i][1] === normalized) return entries[i][0]
@@ -715,6 +736,11 @@ function cxRebuildStatCards () {
 
 window.cxNav = function (id, el, options) {
   var navOptions = options || {}
+  if (id !== 'customer360' && typeof window.cx360Teardown === 'function') {
+    window.cx360Teardown()
+  }
+  document.body.classList.remove('cx-page-dashboard', 'cx-page-customers', 'cx-page-offers', 'cx-page-customer360')
+  if (id && id !== 'customer360') document.body.classList.add('cx-page-' + id)
   document.querySelectorAll('.main .page').forEach(function (p) {
     p.classList.remove('active')
   })
@@ -738,6 +764,23 @@ window.cxNav = function (id, el, options) {
 
 function cxApplyRouteFromPath () {
   var pageId = cxGetPageFromPath(window.location.pathname)
+  if (pageId === 'customer360') {
+    if (!window.cosmosCxAllows(['cx.customers.view'])) {
+      if (typeof window.cosmosToastWarn === 'function') {
+        window.cosmosToastWarn('No permission to view customers (cx.customers.view).')
+      }
+      if (window.cosmosCxAllows(['cx.dashboard.view'])) {
+        window.history.replaceState({ module: 'cx', page: 'dashboard' }, '', '/cx/dashboard')
+        window.cxNav('dashboard', cxGetNavEl('dashboard'), { fromHistory: true })
+      }
+      return
+    }
+    if (typeof window.cx360ApplyRoute === 'function') {
+      window.cx360ApplyRoute({ fromHistory: true })
+    }
+    return
+  }
+  if (typeof window.cx360Teardown === 'function') window.cx360Teardown()
   function allowed (pid) {
     if (pid === 'dashboard') return window.cosmosCxAllows(['cx.dashboard.view'])
     if (pid === 'customers') return window.cosmosCxAllows(['cx.customers.view'])
@@ -1175,6 +1218,8 @@ window.saveGrantMembership = async function () {
     window.closeGrantMembershipModal()
     if (typeof window.cosmosToastSuccess === 'function') window.cosmosToastSuccess('Eyewoot Go membership saved.')
     if (typeof window.loadCxCustomersPage === 'function') await window.loadCxCustomersPage()
+    if (typeof window.cx360ReloadHeader === 'function') window.cx360ReloadHeader()
+    if (typeof window.cx360ReloadTab === 'function') window.cx360ReloadTab('membership')
   } catch (err) {
     if (typeof window.cosmosBtnDone === 'function') window.cosmosBtnDone(btn)
     errEl.textContent = err && err.message ? err.message : 'Save failed.'

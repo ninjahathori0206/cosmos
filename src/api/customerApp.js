@@ -12,6 +12,7 @@ const {
   listDependents,
   addDependent: addMembershipDependent
 } = require('../services/membershipDependentService');
+const { getCustomerCoinBalance, getCustomerCoinLedger } = require('../lib/customerLoyaltyBalance');
 
 const router = express.Router();
 router.use(authCustomerJwt);
@@ -91,7 +92,7 @@ router.get('/me', async (req, res, next) => {
     const pool = await getPool();
     const cid = req.customerId;
 
-    const [profileR, membershipR, loyaltyR] = await Promise.all([
+    const [profileR, membershipR] = await Promise.all([
       pool.request().input('cid', cid).query(`
         SELECT c.customer_id, c.full_name, c.phone, c.email, c.dob,
                c.lifestyle_prefs, c.home_store_id, c.created_at,
@@ -111,20 +112,14 @@ router.get('/me', async (req, res, next) => {
           AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
         ORDER BY m.expires_at DESC
       `),
-      pool.request().input('cid', cid).query(`
-        SELECT TOP 1 balance_after
-        FROM   dbo.pos_points_ledger
-        WHERE  customer_id = @cid
-        ORDER BY ledger_id DESC
-      `)
     ]);
 
     const profile = profileR.recordset[0];
     if (!profile) return res.status(404).json({ success: false, message: 'Customer not found.' });
 
     const membership = membershipR.recordset[0] || null;
-    const loyaltyRow = loyaltyR.recordset[0];
-    const balance = loyaltyRow ? Math.max(0, Number(loyaltyRow.balance_after) || 0) : 0;
+    const coinBal = await getCustomerCoinBalance(pool, cid);
+    const balance = coinBal.balance;
     const tier = await getTier(pool, balance);
 
     let prefs = null;
@@ -144,7 +139,13 @@ router.get('/me', async (req, res, next) => {
           : null,
         member_since:    profile.created_at,
         membership,
-        loyalty: { balance, tier: tier.tier_name, color_token: tier.color_token }
+        loyalty: {
+          balance,
+          tier: tier.tier_name,
+          color_token: tier.color_token,
+          coin_redemption_rate: coinBal.coin_redemption_rate,
+          rupee_value: coinBal.rupee_value
+        }
       }
     });
   } catch (err) {
@@ -415,32 +416,17 @@ router.get('/loyalty', async (req, res, next) => {
     const pool = await getPool();
     const cid = req.customerId;
 
-    const [balR, ledgerR, tiersR, rateR] = await Promise.all([
-      pool.request().input('cid', cid).query(`
-        SELECT TOP 1 balance_after AS balance
-        FROM   dbo.pos_points_ledger
-        WHERE  customer_id = @cid
-        ORDER BY ledger_id DESC
-      `),
-      pool.request().input('cid', cid).query(`
-        SELECT TOP 20 pl.ledger_id, pl.points_delta, pl.balance_after,
-               pl.reason, pl.created_at, pl.order_id, o.order_no
-        FROM   dbo.pos_points_ledger pl
-        LEFT JOIN dbo.pos_orders o ON o.order_id = pl.order_id
-        WHERE  pl.customer_id = @cid
-        ORDER BY pl.ledger_id DESC
-      `),
-      pool.request().query('SELECT * FROM dbo.loyalty_tiers ORDER BY display_order ASC'),
-      pool.request().query(`
-        SELECT setting_value FROM dbo.app_settings WHERE setting_key = N'coin_redemption_rate'
-      `)
+    const [coinBal, ledger, tiersR] = await Promise.all([
+      getCustomerCoinBalance(pool, cid),
+      getCustomerCoinLedger(pool, cid, 20),
+      pool.request().query('SELECT * FROM dbo.loyalty_tiers ORDER BY display_order ASC')
     ]);
 
-    const balance = (balR.recordset[0] && balR.recordset[0].balance) || 0;
+    const balance = coinBal.balance;
     const tiers   = tiersR.recordset;
     const tier    = await getTier(pool, balance);
-    const coinRedemptionRate = rateR.recordset[0] ? Number(rateR.recordset[0].setting_value) : 10;
-    const rupeeValue = coinRedemptionRate > 0 ? Math.floor(balance / coinRedemptionRate) : 0;
+    const coinRedemptionRate = coinBal.coin_redemption_rate;
+    const rupeeValue = coinBal.rupee_value;
 
     const nextTier = tiers.find(t => t.min_points > balance && t.tier_name !== tier.tier_name) || null;
     const ptsToNext = nextTier ? nextTier.min_points - balance : 0;
@@ -454,7 +440,7 @@ router.get('/loyalty', async (req, res, next) => {
         next_tier:   nextTier ? nextTier.tier_name : null,
         pts_to_next: Math.max(0, ptsToNext),
         tiers,
-        ledger: ledgerR.recordset,
+        ledger,
         coin_redemption_rate: coinRedemptionRate,
         rupee_value: rupeeValue
       }

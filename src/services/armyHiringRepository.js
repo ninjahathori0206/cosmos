@@ -879,6 +879,13 @@ async function updateApplicationStatus(applicationId, statusKey) {
     err.statusCode = 404;
     throw err;
   }
+
+  if (statusKey === 'NOT_SELECTED') {
+    // Phase 1 stub — wire WhatsApp/SMS provider in a later sprint
+    // eslint-disable-next-line no-console
+    console.info('[army-hiring] rejection notification queued for application', applicationId);
+  }
+
   return getApplicationAdminById(applicationId);
 }
 

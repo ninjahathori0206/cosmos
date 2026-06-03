@@ -505,11 +505,16 @@ window.loadSpLabOrders = async function () {
       }))
       const actionHtml = blocks.join('')
       const statusBadge = statusShown || spLabStatusLabel(r.lab_workflow_status)
+      const cfPhoto = r.customer_frame_photo_url ? String(r.customer_frame_photo_url).trim() : ''
+      const cfPhotoLink = cfPhoto
+        ? `<div style="margin-top:6px"><a href="${spEscapeHtml(cfPhoto)}" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--acc2)">View customer frame photo</a></div>`
+        : ''
       return `
         <tr>
           <td class="mono">
             <div>${r.order_no || ''}</div>
             <button type="button" onclick="window.cosmosTimelineOpen(${r.order_id},'${r.order_no || ''}')" style="background:none;border:none;color:var(--acc2);font-size:11px;cursor:pointer;padding:0;margin-top:2px;text-decoration:underline">📋 Timeline</button>
+            ${cfPhotoLink}
           </td>
           <td>${r.customer_name || 'Walk-in'}${r.customer_phone ? `<div class="muted" style="font-size:12px">${r.customer_phone}</div>` : ''}</td>
           <td><span class="badge blue">${statusBadge}</span></td>
@@ -2493,6 +2498,172 @@ function dayStoreReportIsEmpty(data) {
   );
 }
 
+function spDayStoreCollectionChannelHtml(title, channelKey, ch) {
+  const data = ch || {};
+  return `
+    <div class="sp-day-report-collection-channel" data-collection-channel="${channelKey}" tabindex="0" role="button" aria-label="${escHtml(title)} — long press for details">
+      <div class="sp-day-report-collection-channel-title">${escHtml(title)}</div>
+      <div class="sp-day-report-metrics sp-day-report-metrics--compact">
+        <div class="sp-day-report-metric">
+          <div class="sp-day-report-metric-label">Total</div>
+          <div class="sp-day-report-metric-value">${spFmtRs(data.total)}</div>
+        </div>
+        <div class="sp-day-report-metric">
+          <div class="sp-day-report-metric-label">Bank (UPI + card)</div>
+          <div class="sp-day-report-metric-value">${spFmtRs(data.bank)}</div>
+        </div>
+        <div class="sp-day-report-metric">
+          <div class="sp-day-report-metric-label">Cash</div>
+          <div class="sp-day-report-metric-value">${spFmtRs(data.cash)}</div>
+        </div>
+      </div>
+      <div class="sp-day-report-collection-hint">Long press for details</div>
+    </div>`;
+}
+
+function spBindLongPress(el, onLongPress) {
+  if (!el || typeof onLongPress !== 'function') return;
+  let timer = null;
+  function clearTimer() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  }
+  function startHold() {
+    clearTimer();
+    timer = setTimeout(function () {
+      timer = null;
+      if (typeof navigator.vibrate === 'function') navigator.vibrate(30);
+      onLongPress();
+    }, 500);
+  }
+  el.addEventListener('touchstart', startHold, { passive: true });
+  el.addEventListener('touchend', clearTimer);
+  el.addEventListener('touchmove', clearTimer);
+  el.addEventListener('touchcancel', clearTimer);
+  el.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    startHold();
+  });
+  el.addEventListener('mouseup', clearTimer);
+  el.addEventListener('mouseleave', clearTimer);
+  el.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onLongPress();
+    }
+  });
+}
+
+function spInitDayStoreCollectionLongPress(reportDate) {
+  document.querySelectorAll('.sp-day-report-collection-channel').forEach(function (el) {
+    const channel = el.getAttribute('data-collection-channel');
+    if (!channel) return;
+    spBindLongPress(el, function () {
+      openSpDayCollectionDetail(channel, reportDate);
+    });
+  });
+}
+
+function spFmtCollectionTime(value) {
+  if (!value) return '—';
+  if (typeof cosmosFmtDateTimeShort === 'function') return cosmosFmtDateTimeShort(value);
+  try {
+    return new Date(value).toLocaleString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch (_e) {
+    return String(value);
+  }
+}
+
+function closeSpDayCollectionDetail() {
+  const overlay = document.getElementById('overlay-sp-day-collection-detail');
+  if (overlay) {
+    overlay.classList.remove('open');
+    overlay.style.display = 'none';
+  }
+}
+
+window.closeSpDayCollectionDetail = closeSpDayCollectionDetail;
+
+window.spDayCollectionDetailBackdrop = function (event) {
+  if (event.target && event.target.id === 'overlay-sp-day-collection-detail') {
+    closeSpDayCollectionDetail();
+  }
+};
+
+window.openSpDayCollectionDetail = async function (channel, reportDate) {
+  const overlay = document.getElementById('overlay-sp-day-collection-detail');
+  const body = document.getElementById('sp-day-collection-detail-body');
+  const titleEl = document.getElementById('sp-day-collection-detail-title');
+  if (!overlay || !body) return;
+
+  const channelLabel = channel === 'handover' ? 'Collection from handover' : 'Collection from new order';
+  if (titleEl) titleEl.textContent = channelLabel;
+
+  overlay.style.display = 'flex';
+  requestAnimationFrame(function () { overlay.classList.add('open'); });
+  body.innerHTML = '<div id="sp-day-collection-detail-skeleton"></div>';
+  if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('sp-day-collection-detail-skeleton', 5);
+
+  const dateVal = reportDate || (_lastDayStoreReport && _lastDayStoreReport.report_date) || '';
+  if (!dateVal) {
+    body.innerHTML = '<div class="empty"><div class="empty-ic">📋</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No report date</div><div style="font-size:13px;color:var(--text2)">Generate the day store report first.</div></div>';
+    return;
+  }
+
+  try {
+    const qs = new URLSearchParams({ date: dateVal, channel: channel });
+    const res = await apiGet('/api/storepilot/reports/day-store/collections?' + qs.toString());
+    const lines = (res.data && res.data.lines) || [];
+    if (!lines.length) {
+      body.innerHTML = `
+        <div class="empty">
+          <div class="empty-ic">💳</div>
+          <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No payments in this bucket</div>
+          <div style="font-size:13px;color:var(--text2)">No ${escHtml(channelLabel.toLowerCase())} was recorded on this date.</div>
+        </div>`;
+      return;
+    }
+    body.innerHTML = `
+      <div class="sp-day-collection-detail-list">
+        ${lines.map(function (line) {
+          const name = line.customer_name || 'Walk-in';
+          const phone = line.customer_phone ? escHtml(line.customer_phone) : '';
+          const method = escHtml(line.method || '—');
+          const stage = escHtml(line.payment_stage || '—');
+          return `
+            <div class="sp-day-collection-detail-row">
+              <div class="sp-day-collection-detail-row-top">
+                <span class="sp-day-collection-detail-order">${escHtml(line.order_no || '—')}</span>
+                <span class="sp-day-collection-detail-amt">${spFmtRs(line.amount)}</span>
+              </div>
+              <div class="sp-day-collection-detail-name">${escHtml(name)}</div>
+              ${phone ? '<div class="sp-day-collection-detail-phone">' + phone + '</div>' : ''}
+              <div class="sp-day-collection-detail-meta">${method} · ${stage} · ${escHtml(spFmtCollectionTime(line.collected_at))}</div>
+            </div>`;
+        }).join('')}
+      </div>`;
+  } catch (err) {
+    body.innerHTML = `
+      <div class="empty">
+        <div class="empty-ic">⚠️</div>
+        <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">Could not load details</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:16px">${escHtml(err.message || 'Request failed')}</div>
+        <button type="button" class="btn primary sm" onclick="openSpDayCollectionDetail(${JSON.stringify(channel)}, ${JSON.stringify(dateVal)})">Try again</button>
+      </div>`;
+    if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Could not load collection details.');
+  }
+};
+
 function renderDayStoreReportBody(data) {
   const body = document.getElementById('day-store-report-body');
   if (!body || !data) return;
@@ -2562,6 +2733,10 @@ function renderDayStoreReportBody(data) {
             <div class="sp-day-report-metric-value">${spFmtRs(col.cash)}</div>
           </div>
         </div>
+        <div class="sp-day-report-collection-split">
+          ${spDayStoreCollectionChannelHtml('Collection from new order', 'new_order', col.new_order || {})}
+          ${spDayStoreCollectionChannelHtml('Collection from handover', 'handover', col.handover || {})}
+        </div>
       </section>
       <section class="sp-day-report-section">
         <div class="sp-day-report-section-title">Membership collection (today)</div>
@@ -2585,6 +2760,7 @@ function renderDayStoreReportBody(data) {
         </div>
       </section>
     </div>`;
+  spInitDayStoreCollectionLongPress(data.report_date);
 }
 
 window.generateDayStoreReport = async function () {

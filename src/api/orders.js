@@ -177,6 +177,19 @@ function canHandoverFromStore(req) {
   return ps.includes('storepilot.lab.manage') || ps.includes('pos.lab.workflow')
 }
 
+/** JWT user_id (preferred) or employee_id for order mutation checks. */
+function ordersActorUserId(req) {
+  const uid = req.user && req.user.user_id != null ? Number(req.user.user_id) : null
+  if (Number.isFinite(uid) && uid > 0) return uid
+  const eid = req.user && req.user.employee_id != null ? Number(req.user.employee_id) : null
+  return Number.isFinite(eid) && eid > 0 ? eid : null
+}
+
+/** Store handover / balance collection is a store operation — not limited to POS order creator. */
+function allowStoreLabHandoverBypass(req) {
+  return isSuperAdmin(req) || canHandoverFromStore(req)
+}
+
 function gateStorepilotLabMutations(req, res, next) {
   if (!hasModuleAccess(req, 'storepilot')) return next()
   const ps = jwtPermissionsLower(req)
@@ -588,15 +601,25 @@ router.post('/:id/handover', requireAnyModule(['storepilot', 'pos']), gateStorep
     if (value.amount != null) {
       // INSTANT settlement accepts FULL only in recordPayment validation; LAB/MIXED handover collects BALANCE here.
       const paymentStage = orderKind === 'INSTANT' ? 'FULL' : 'BALANCE'
-      const payResult = await orderService.recordPayment(pool, mode, req.user.store_id, employeeId, {
-        order_id: orderId,
-        stage: paymentStage,
-        method: value.method,
-        amount: value.amount,
-        tendered: value.tendered || null,
-        external_ref: value.external_ref || null,
-        invoice_preferences: value.invoice_preferences || null
-      })
+      const payResult = await orderService.recordPayment(
+        pool,
+        mode,
+        req.user.store_id,
+        employeeId,
+        {
+          order_id: orderId,
+          stage: paymentStage,
+          method: value.method,
+          amount: value.amount,
+          tendered: value.tendered || null,
+          external_ref: value.external_ref || null,
+          invoice_preferences: value.invoice_preferences || null
+        },
+        {
+          actorUserId: ordersActorUserId(req),
+          allowMutationBypass: allowStoreLabHandoverBypass(req)
+        }
+      )
       invoiceNo = payResult.invoice_no
       const updatedSummary = payResult.payment_summary
       const stillDue = Number(updatedSummary && updatedSummary.amount_remaining || 0)
@@ -633,7 +656,7 @@ router.post('/:id/handover', requireAnyModule(['storepilot', 'pos']), gateStorep
     }
     return res.json({ success: true, message: 'Order marked as delivered.', data: { invoice_no: invoiceNo } })
   } catch (err) {
-    if (err.statusCode === 400 || err.statusCode === 404) {
+    if (err.statusCode === 400 || err.statusCode === 404 || err.statusCode === 403) {
       return res.status(err.statusCode).json({ success: false, message: err.message })
     }
     return next(err)

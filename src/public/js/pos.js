@@ -103,18 +103,35 @@
     })
   }
 
+  function normalizeCartLabLineStatuses(cart) {
+    if (!Array.isArray(cart)) return
+    for (let i = 0; i < cart.length; i++) {
+      const l = cart[i]
+      if (!l || l.fulfillment !== 'LAB' || !l.lens_bundle) continue
+      const pid = Number(l.lens_bundle.package_id)
+      if (!Number.isFinite(pid) || pid <= 0) continue
+      if (l.lab_status === 'pending_power' || l.lab_status === 'incomplete') {
+        l.lab_status = 'complete'
+      }
+    }
+  }
+
   function loadSavedCart() {
     try {
       const raw = localStorage.getItem(POS_CART_KEY)
       if (!raw) return
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed)) {
-        if (parsed.length > 0) obCart = parsed
+        if (parsed.length > 0) {
+          obCart = parsed
+          normalizeCartLabLineStatuses(obCart)
+        }
         posCartMembershipSale = null
         return
       }
       if (parsed && typeof parsed === 'object') {
         obCart = Array.isArray(parsed.lines) ? parsed.lines : []
+        normalizeCartLabLineStatuses(obCart)
         if (parsed.membership && parsed.membership.plan_key) {
           const m = parsed.membership
           const pr = Number(m.price_paid != null ? m.price_paid : m.price) || 0
@@ -1609,7 +1626,8 @@
       if (!l) return false
       var f = String(l.fulfillment || '').toUpperCase()
       var st = l.lab_status
-      return f === 'LAB' && (!st || st === 'incomplete' || st === 'pending_power')
+      var needsLens = !st || st === 'incomplete' || (st === 'pending_power' && !l.lens_bundle)
+      return f === 'LAB' && needsLens
     })
     if (i >= 0) return obCart[i]
     return obCart.length ? obCart[0] : null
@@ -2740,6 +2758,16 @@
     return policy === 'OPTIONAL' || policy === 'REQUIRED'
   }
 
+  var CUSTOMER_FRAME_TYPE = 'CUSTOMER_FRAME'
+
+  function isCustomerFrameTypeKey(pt) {
+    return String(pt || '').trim().toUpperCase() === CUSTOMER_FRAME_TYPE
+  }
+
+  function isCustomerFrameLine(line) {
+    return Boolean(line && isCustomerFrameTypeKey(line.product_type))
+  }
+
   function lineRequiresUnitBarcode(lineOrType) {
     const pt = lineOrType && lineOrType.product_type != null
       ? lineOrType.product_type
@@ -2815,9 +2843,16 @@
     if (kind === 'LAB') obKindChip.classList.add('kind-lab')
   }
 
+  /** LAB line with lens package/add-ons chosen in wizard (power may still be "later"). */
+  function cartLineLensPackageConfigured(line) {
+    if (!line || line.fulfillment !== 'LAB' || !line.lens_bundle) return false
+    const pid = Number(line.lens_bundle.package_id)
+    return Number.isFinite(pid) && pid > 0
+  }
+
   function computeLineDisplayUnit(line) {
     let u = Number(line.frame_unit_price) || 0
-    if (line.fulfillment === 'LAB' && line.lens_bundle && line.lab_status === 'complete') {
+    if (cartLineLensPackageConfigured(line)) {
       const b = line.lens_bundle
       u += Number(b.package_price) || 0
       const ap = b.addon_prices || []
@@ -4672,7 +4707,149 @@
       patientName: patientName,
       rx: mergeLensWizardRx(line.rx)
     }
+    if (isCustomerFrameLine(line) && line.customer_frame_note) {
+      /* note restored via line on render */
+    }
     return true
+  }
+
+  async function fetchCustomerFrameProduct(session) {
+    if (!session || !session.token) return null
+    try {
+      return await apiGet('/api/pos/customer-frame-product', session.token)
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') {
+        cosmosToastError(err && err.message ? err.message : 'Customer frame product is not configured.')
+      }
+      return null
+    }
+  }
+
+  async function startCustomerFrameLensFlow(session) {
+    var product = await fetchCustomerFrameProduct(session)
+    if (!product || !product.colours || !product.colours.length) return
+    var colour = product.colours[0]
+    pendingOrderSelection = { colour: colour, product: product }
+    var newIdx = obCart.length
+    addToCart(pendingOrderSelection)
+    var skuId = colour.sku_id
+    var actualIdx = obCart.length > newIdx ? newIdx : obCart.findIndex(function (l) { return l.sku_id === skuId })
+    var idx = actualIdx >= 0 ? actualIdx : newIdx
+    var line = obCart[idx]
+    if (line) {
+      line.fulfillment = 'LAB'
+      line.lab_status = 'incomplete'
+      line.product_name = 'Lenses on customer frame'
+      line.brand_name = 'Customer frame'
+      line.colour_name = 'Customer frame'
+      saveCart()
+    }
+    lensWizardLineIdx = idx
+    lensWizardBackRoute = POS_ROUTES.ORDER
+    lensWizardOpenMode = 'new'
+    lensWizardWasEditing = false
+    resetLensWizardState()
+    navigate(POS_ROUTES.LENS)
+  }
+
+  function customerFrameNoteInputId() {
+    var idx = lensWizardLineIdx >= 0 ? lensWizardLineIdx : 0
+    return 'pos-lk-cf-note-input-' + idx
+  }
+
+  function customerFramePhotoBlockHtml(line) {
+    var url = line && line.customer_frame_photo_url ? String(line.customer_frame_photo_url).trim() : ''
+    var note = line && line.customer_frame_note ? String(line.customer_frame_note) : ''
+    var noteId = customerFrameNoteInputId()
+    var thumb = url
+      ? '<img class="pos-lk-cf-photo-thumb" src="' + escapeHtml(url) + '" alt="Customer frame photo">'
+      : '<div class="pos-lk-cf-photo-placeholder" aria-hidden="true">📷</div>'
+    return (
+      '<div class="pos-lk-cf-photo-block" id="pos-lk-cf-photo-block" role="region" aria-label="Customer frame photo">' +
+        '<div class="pos-lk-section-lbl">Customer&apos;s frame</div>' +
+        '<p class="pos-lk-cf-photo-hint">Photograph the physical frame the customer brought in. Required before completing lens setup.</p>' +
+        '<div class="pos-lk-cf-photo-row">' +
+          '<div class="pos-lk-cf-photo-preview" id="pos-lk-cf-photo-preview">' + thumb + '</div>' +
+          '<div class="pos-lk-cf-photo-actions">' +
+            '<input type="file" id="pos-lk-cf-photo-input" class="pos-visually-hidden" accept="image/*" capture="environment" aria-label="Customer frame photo file">' +
+            '<button type="button" class="pos-ob-mini-btn action-btn" id="pos-lk-cf-photo-take" aria-controls="pos-lk-cf-photo-input">Take photo</button>' +
+            '<button type="button" class="pos-lk-text-link" id="pos-lk-cf-photo-gallery" aria-controls="pos-lk-cf-photo-input">Choose from gallery</button>' +
+            (url ? '<button type="button" class="pos-lk-text-link" id="pos-lk-cf-photo-retake" aria-controls="pos-lk-cf-photo-input">Retake</button>' : '') +
+          '</div>' +
+        '</div>' +
+        '<label class="pos-lk-cf-note-lbl">' +
+          'Frame note <span class="pos-lk-cf-note-opt">(optional)</span>' +
+          '<input type="text" id="' + noteId + '" name="customer_frame_note" class="pos-search-input pos-lk-cf-note-input" maxlength="250" placeholder="Brand / model" value="' + escapeHtml(note) + '" autocomplete="off">' +
+        '</label>' +
+      '</div>'
+    )
+  }
+
+  function bindCustomerFramePhotoBlock(body) {
+    var line = resolveLensWizardCartLine()
+    if (!line || !isCustomerFrameLine(line)) return
+    var block = body.querySelector('#pos-lk-cf-photo-block')
+    if (!block) return
+    var fileInput = body.querySelector('#pos-lk-cf-photo-input')
+    var takeBtn = body.querySelector('#pos-lk-cf-photo-take')
+    var galleryBtn = body.querySelector('#pos-lk-cf-photo-gallery')
+    var retakeBtn = body.querySelector('#pos-lk-cf-photo-retake')
+    var noteInput = body.querySelector('#' + customerFrameNoteInputId())
+    if (noteInput) {
+      noteInput.addEventListener('input', function () {
+        line.customer_frame_note = String(noteInput.value || '').trim() || null
+        saveCart()
+      })
+    }
+    function openPicker(capture) {
+      if (!fileInput) return
+      if (capture) fileInput.setAttribute('capture', 'environment')
+      else fileInput.removeAttribute('capture')
+      fileInput.click()
+    }
+    if (takeBtn) takeBtn.addEventListener('click', function () { openPicker(true) })
+    if (galleryBtn) galleryBtn.addEventListener('click', function () { openPicker(false) })
+    if (retakeBtn) retakeBtn.addEventListener('click', function () { openPicker(true) })
+    if (fileInput) {
+      fileInput.addEventListener('change', function () {
+        void uploadCustomerFramePhoto(fileInput.files && fileInput.files[0], takeBtn)
+      })
+    }
+  }
+
+  async function uploadCustomerFramePhoto(file, btn) {
+    var line = resolveLensWizardCartLine()
+    if (!line || !isCustomerFrameLine(line)) return
+    if (!file) return
+    var session = getPosSession()
+    if (!session || !session.token) {
+      if (typeof cosmosToastError === 'function') cosmosToastError('Session expired.')
+      return
+    }
+    if (typeof cosmosBtnLoading === 'function' && btn) cosmosBtnLoading(btn)
+    try {
+      var fd = new FormData()
+      fd.append('frame_photo', file)
+      var res = await fetch('/api/pos/customer-frame-photo', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + session.token },
+        body: fd
+      })
+      var json = await res.json()
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || 'Upload failed')
+      }
+      line.customer_frame_photo_url = json.photo_url || null
+      saveCart()
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Frame photo saved')
+      renderLensStep()
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') {
+        cosmosToastError(err && err.message ? err.message : 'Could not upload frame photo.')
+      }
+    } finally {
+      if (typeof cosmosBtnDone === 'function' && btn) cosmosBtnDone(btn)
+    }
   }
 
   function openLensWizardForLine(idx, mode) {
@@ -5844,6 +6021,10 @@
 
     const html = []
     if (showProfile && patientHtml) html.push(patientHtml)
+    var cfLine = resolveLensWizardCartLine()
+    if (showProfile && cfLine && isCustomerFrameLine(cfLine)) {
+      html.push(customerFramePhotoBlockHtml(cfLine))
+    }
     if (showProfile) {
       var billNote =
         primaryBill && lensWizard.patientName && lensWizard.patientName !== primaryBill
@@ -5934,6 +6115,7 @@
 
     body.innerHTML = html.join('')
     if (showProfile) bindLensPatientChooser(body)
+    bindCustomerFramePhotoBlock(body)
 
     body.querySelectorAll('[data-pwm-key]').forEach(function (el) {
       el.addEventListener('click', function () {
@@ -6232,6 +6414,20 @@
     }
     const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
     try {
+      if (isCustomerFrameLine(line)) {
+        if (!String(line.customer_frame_photo_url || '').trim()) {
+          if (typeof cosmosToastWarn === 'function') {
+            cosmosToastWarn('Take a photo of the customer\'s frame before continuing.')
+          }
+          lensWizard.step = 2
+          renderLensStep()
+          return
+        }
+        var noteEl = document.getElementById(customerFrameNoteInputId())
+        if (noteEl) {
+          line.customer_frame_note = String(noteEl.value || '').trim() || null
+        }
+      }
       if (!isInstantFrame) {
         var patientNm = resolveLensPatientNameForSave()
         if (!patientNm) {
@@ -6286,7 +6482,7 @@
         } else {
           line.rx = null
         }
-        line.lab_status = lensWizard.powerMode === 'later' ? 'pending_power' : 'complete'
+        line.lab_status = 'complete'
         line.fulfillment = 'LAB'
       } else {
         line.lens_bundle = null
@@ -7500,6 +7696,12 @@
       if (line.pair_index != null && Number(line.pair_index) >= 1) {
         out.pair_index = Math.floor(Number(line.pair_index))
       }
+      if (isCustomerFrameLine(line)) {
+        var photoUrl = String(line.customer_frame_photo_url || '').trim()
+        if (photoUrl) out.customer_frame_photo_url = photoUrl
+        var cfNote = String(line.customer_frame_note || '').trim()
+        if (cfNote) out.customer_frame_note = cfNote
+      }
       return out
     })
   }
@@ -7750,10 +7952,13 @@
     const mrpListed = Number(line.mrp) > 0 ? Number(line.mrp) : frameUnit
     const lwp = rule ? String(rule.lens_wizard_policy || 'NEVER') : 'NEVER'
     const isDual = rule && rule.fulfillment_mode === 'DUAL' && lensWizardAllowed(line.product_type) && lwp !== 'REQUIRED'
+    const isCustFrame = isCustomerFrameLine(line)
 
     const brandName = String(line.brand_name || '').trim()
     const colourName = String(line.colour_name || '').trim()
-    const rawTitle = String(line.product_name || '').replace(/\s+-\s+/, ' · ')
+    const rawTitle = isCustFrame
+      ? 'Customer\'s frame'
+      : String(line.product_name || '').replace(/\s+-\s+/, ' · ')
     // Display in title-case so "BOLD · 3120" renders as "Bold · 3120"
     const productTitle = rawTitle.replace(/\b\w+/g, function(w) {
       return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
@@ -7768,12 +7973,31 @@
 
     // Colour chip inline with product name (Readers: colour · power)
     const powerName = String(line.reading_power || '').trim()
-    const colourChipLabel = [colourName, powerName].filter(Boolean).join(' · ')
+    const colourChipLabel = isCustFrame ? '' : [colourName, powerName].filter(Boolean).join(' · ')
     const colourChip = colourChipLabel
       ? '<span class="pos-lk-cart-colour-chip">' + escapeHtml(colourChipLabel) + '</span>'
       : ''
 
-    const typeTagLabel = formatCartProductTypeTag(line)
+    var cfPhotoRow = ''
+    if (isCustFrame && String(line.customer_frame_photo_url || '').trim()) {
+      cfPhotoRow =
+        '<div class="pos-lk-cart-cf-photo-row">' +
+          '<img class="pos-lk-cart-cf-photo-thumb" src="' + escapeHtml(String(line.customer_frame_photo_url)) + '" alt="Customer frame">' +
+          '<span class="pos-lk-cart-cf-photo-lbl">Frame photo attached</span>' +
+        '</div>'
+    } else if (isCustFrame && line.fulfillment === 'LAB' && !line.lens_bundle) {
+      cfPhotoRow =
+        '<div class="pos-lk-cart-lens-row pos-lk-cart-lens-row--pending">' +
+          '<span class="pos-lk-cart-lens-lbl">Frame photo · required in lens setup</span>' +
+          '<span class="pos-lk-cart-lens-price">—</span>' +
+        '</div>'
+    }
+    if (isCustFrame && String(line.customer_frame_note || '').trim()) {
+      cfPhotoRow +=
+        '<div class="pos-lk-cart-cf-note">' + escapeHtml(String(line.customer_frame_note).trim()) + '</div>'
+    }
+
+    const typeTagLabel = isCustFrame ? 'Customer frame' : formatCartProductTypeTag(line)
     const needUnit = lineRequiresUnitBarcode(line) && !(line.unit_id != null && Number(line.unit_id) > 0)
     const linkedUnit = lineRequiresUnitBarcode(line) && (line.unit_id != null && Number(line.unit_id) > 0)
     const kindRaw = String(line.product_type || '').trim().replace(/_/g, ' ')
@@ -7808,7 +8032,7 @@
 
     let lensDescHtml = ''
     let lensPackageHtml = ''
-    if (line.fulfillment === 'LAB' && line.lab_status === 'complete' && line.lens_bundle) {
+    if (cartLineLensPackageConfigured(line)) {
       const b = line.lens_bundle
       const lensP = Number(b.package_price) || 0
       let addonTotal = 0
@@ -7822,6 +8046,13 @@
       const lensLabelRaw = (parts.join(' · ') || 'Configured lens') + addonNote
       const lensLabel = lensLabelRaw.replace(/\s*[–—\-]\s*/g, ' · ')
       lensDescHtml = '<div class="pos-lk-cart-lens-desc">' + escapeHtml(lensLabel) + '</div>'
+      if (line.power_mode === 'later' || line.lab_status === 'pending_power') {
+        lensDescHtml +=
+          '<div class="pos-lk-cart-lens-row pos-lk-cart-lens-row--pending">' +
+          '<span class="pos-lk-cart-lens-lbl">Power · after payment</span>' +
+          '<span class="pos-lk-cart-lens-price">—</span>' +
+          '</div>'
+      }
       lensPackageHtml =
         '<div class="pos-lk-cart-lens-package-row">' +
         '<span class="pos-lk-cart-lens-package-lbl">Lens package</span>' +
@@ -7844,6 +8075,12 @@
         '<span class="pos-lk-cart-lens-lbl">Lens · add when customer wants prescription lenses</span>' +
         '<span class="pos-lk-cart-lens-price">—</span>' +
         '</div>'
+    } else if (isCustFrame && line.fulfillment === 'LAB' && !line.lens_bundle) {
+      lensDescHtml =
+        '<div class="pos-lk-cart-lens-row pos-lk-cart-lens-row--pending">' +
+        '<span class="pos-lk-cart-lens-lbl">Lens · pending setup</span>' +
+        '<span class="pos-lk-cart-lens-price">—</span>' +
+        '</div>'
     }
 
     const showFreeRibbon = lineTotal < 0.02
@@ -7859,8 +8096,9 @@
       !line.lens_bundle &&
       !cartLineInstantFrameOnlyDone(line) &&
       (
-        (line.fulfillment === 'LAB' && line.lab_status !== 'complete') ||
-        (isDual && line.fulfillment === 'INSTANT')
+        (line.fulfillment === 'LAB' && !cartLineLensPackageConfigured(line)) ||
+        (isDual && line.fulfillment === 'INSTANT') ||
+        (isCustFrame && line.fulfillment === 'LAB')
       )
     const showEditLenses =
       labWizardOk &&
@@ -7919,6 +8157,7 @@
             colourChip +
           '</div>' +
           tagsHtml +
+          cfPhotoRow +
           cartLinePatientLabelHtml(line) +
           unitInlineHtml +
           lensDescHtml +
@@ -8126,6 +8365,18 @@
   function bindOrderBuilderEvents() {
     btnObBack.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
     btnObAddMore.addEventListener('click', () => navigate(POS_ROUTES.CATALOGUE))
+
+    var btnObCustomerFrame = document.getElementById('btn-ob-customer-frame')
+    if (btnObCustomerFrame) {
+      btnObCustomerFrame.addEventListener('click', function () {
+        var session = getPosSession()
+        if (!session || !session.token) {
+          if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Sign in to continue.')
+          return
+        }
+        void startCustomerFrameLensFlow(session)
+      })
+    }
 
     obCart_el.addEventListener('click', obHandleCartClick)
     obCart_el.addEventListener('input', function (e) {
@@ -8432,7 +8683,7 @@
       return
     }
     for (let i = 0; i < obCart.length; i++) {
-      if (obCart[i].fulfillment === 'LAB' && obCart[i].lab_status !== 'complete') {
+      if (obCart[i].fulfillment === 'LAB' && !cartLineLensPackageConfigured(obCart[i])) {
         if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Finish lens configuration for all lab lines.')
         return
       }

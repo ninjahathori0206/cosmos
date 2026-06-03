@@ -128,6 +128,84 @@
   font-size: 13px;
   line-height: 1.45;
 }
+.sp-day-report-collection-split {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.sp-day-report-collection-channel {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.sp-day-report-collection-channel:active {
+  background: var(--accL);
+  border-color: var(--acc);
+}
+.sp-day-report-collection-channel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text1);
+  margin-bottom: 8px;
+}
+.sp-day-report-metrics--compact .sp-day-report-metric-value {
+  font-size: 18px;
+}
+.sp-day-report-collection-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text3);
+}
+.sp-day-collection-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sp-day-collection-detail-row {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.sp-day-collection-detail-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.sp-day-collection-detail-order {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--acc2);
+}
+.sp-day-collection-detail-amt {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text1);
+  font-variant-numeric: tabular-nums;
+}
+.sp-day-collection-detail-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text1);
+}
+.sp-day-collection-detail-phone {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 2px;
+}
+.sp-day-collection-detail-meta {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 6px;
+}
 @media print {
   #day-store-report-card {
     break-inside: avoid;

@@ -1,11 +1,14 @@
 /**
  * Day Store Report — share-as-image canvas (StorePilot).
  * Expects payload from GET /api/storepilot/reports/day-store (mapped in UI).
+ * Output: 1280×720 PNG (16:9).
  */
 (function () {
   'use strict'
 
-  const THEME = { grad0: '#1D6FD4', grad1: '#2B8CFF', accent: '#1D6FD4', text: '#0F172A', muted: '#5C6B7A', panel: '#F4F7FB' }
+  const THEME = { grad0: '#1D6FD4', grad1: '#2B8CFF', accent: '#1D6FD4', text: '#0F172A', muted: '#5C6B7A', panel: '#F4F7FB', bg: '#FFFFFF' }
+  const CANVAS_W = 1280
+  const CANVAS_H = 720
 
   function fmtRs(v) {
     const n = Number(v) || 0
@@ -18,33 +21,6 @@
     const p = String(ymd).slice(0, 10).split('-')
     if (p.length === 3) return p[2] + '/' + p[1] + '/' + p[0]
     return String(ymd)
-  }
-
-  function drawSection(ctx, y, title, metrics, x, w) {
-    const pad = 14
-    const rowH = 52
-    const rows = Math.ceil(metrics.length / 2)
-    const h = pad * 2 + 22 + rows * rowH
-    ctx.fillStyle = THEME.panel
-    roundRect(ctx, x, y, w, h, 10)
-    ctx.fill()
-    ctx.fillStyle = THEME.muted
-    ctx.font = 'bold 11px DM Sans, Inter, system-ui, sans-serif'
-    ctx.fillText(title, x + pad, y + pad + 11)
-    let my = y + pad + 28
-    for (let i = 0; i < metrics.length; i++) {
-      const col = i % 2
-      const row = Math.floor(i / 2)
-      const mx = x + pad + col * ((w - pad * 2) / 2)
-      const myRow = my + row * rowH
-      ctx.fillStyle = THEME.muted
-      ctx.font = '11px DM Sans, Inter, system-ui, sans-serif'
-      ctx.fillText(metrics[i].label, mx, myRow)
-      ctx.fillStyle = THEME.text
-      ctx.font = '600 17px JetBrains Mono, ui-monospace, monospace'
-      ctx.fillText(metrics[i].value, mx, myRow + 20)
-    }
-    return h + 10
   }
 
   function roundRect(ctx, x, y, w, h, r) {
@@ -62,70 +38,122 @@
     ctx.closePath()
   }
 
+  function drawSectionBox(ctx, x, y, w, h, title, metrics) {
+    const pad = 14
+    const rowH = 38
+    ctx.fillStyle = THEME.panel
+    roundRect(ctx, x, y, w, h, 12)
+    ctx.fill()
+    ctx.fillStyle = THEME.muted
+    ctx.font = 'bold 11px DM Sans, Inter, system-ui, sans-serif'
+    ctx.fillText(title, x + pad, y + pad + 10)
+    let my = y + pad + 26
+    for (let i = 0; i < metrics.length; i++) {
+      const col = i % 2
+      const row = Math.floor(i / 2)
+      const mx = x + pad + col * ((w - pad * 2) / 2)
+      const myRow = my + row * rowH
+      ctx.fillStyle = THEME.muted
+      ctx.font = '10px DM Sans, Inter, system-ui, sans-serif'
+      ctx.fillText(metrics[i].label, mx, myRow)
+      ctx.fillStyle = THEME.text
+      ctx.font = '600 15px JetBrains Mono, ui-monospace, monospace'
+      ctx.fillText(metrics[i].value, mx, myRow + 18)
+    }
+  }
+
   function buildDayStoreReportCanvas(data) {
     const d = data || {}
     const inv = d.invoiced || {}
     const bk = d.booking || {}
     const col = d.collection || {}
+    const colNew = col.new_order || {}
+    const colHand = col.handover || {}
     const mcol = d.membership_collection || {}
     const storeName = String(d.store_name || 'Store').trim()
     const dateLabel = fmtDateLabel(d.report_date)
-    const W = 400
-    const H = 820
+
     const canvas = document.createElement('canvas')
-    canvas.width = W
-    canvas.height = H
+    canvas.width = CANVAS_W
+    canvas.height = CANVAS_H
     const ctx = canvas.getContext('2d')
-    const grad = ctx.createLinearGradient(0, 0, 0, 88)
+
+    ctx.fillStyle = THEME.bg
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+
+    const hdrH = 72
+    const grad = ctx.createLinearGradient(0, 0, CANVAS_W, 0)
     grad.addColorStop(0, THEME.grad0)
     grad.addColorStop(1, THEME.grad1)
     ctx.fillStyle = grad
-    ctx.fillRect(0, 0, W, 88)
+    ctx.fillRect(0, 0, CANVAS_W, hdrH)
+
     ctx.fillStyle = '#FFFFFF'
-    ctx.font = 'bold 20px Syne, Inter, system-ui, sans-serif'
-    ctx.fillText('Day Store Report', 24, 40)
+    ctx.font = 'bold 26px Syne, Inter, system-ui, sans-serif'
+    ctx.fillText('Day Store Report', 32, 34)
+    ctx.font = '14px DM Sans, Inter, system-ui, sans-serif'
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'
+    ctx.fillText(storeName + ' · ' + dateLabel, 32, 56)
+    ctx.textAlign = 'right'
     ctx.font = '12px DM Sans, Inter, system-ui, sans-serif'
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'
-    ctx.fillText(storeName, 24, 62)
-    ctx.fillText(dateLabel, 24, 78)
+    ctx.fillText('IST daily snapshot', CANVAS_W - 32, 56)
+    ctx.textAlign = 'left'
 
-    let y = 100
-    const mx = 20
-    const innerW = W - mx * 2
-    ctx.fillStyle = THEME.muted
-    ctx.font = '12px DM Sans, Inter, system-ui, sans-serif'
-    ctx.fillText('IST daily snapshot', mx, y)
-    y += 22
+    const pad = 28
+    const gap = 16
+    const gridTop = hdrH + 20
+    const ftrH = 32
+    const gridH = CANVAS_H - gridTop - ftrH - 12
+    const gridW = CANVAS_W - pad * 2
+    const cols = 3
+    const rows = 2
+    const cellW = (gridW - gap * (cols - 1)) / cols
+    const cellH = (gridH - gap * (rows - 1)) / rows
 
-    y += drawSection(ctx, y, 'INVOICED (TODAY)', [
-      { label: 'Revenue (invoiced)', value: fmtRs(inv.revenue) },
-      { label: 'Number of bills', value: String(Number(inv.bill_count) || 0) },
-      { label: 'Avg invoice', value: fmtRs(inv.avg_invoice_amount) }
-    ], mx, innerW)
+    const sections = [
+      { title: 'INVOICED (TODAY)', metrics: [
+        { label: 'Revenue (invoiced)', value: fmtRs(inv.revenue) },
+        { label: 'Number of bills', value: String(Number(inv.bill_count) || 0) },
+        { label: 'Avg invoice', value: fmtRs(inv.avg_invoice_amount) }
+      ], col: 0, row: 0 },
+      { title: 'PRODUCT BOOKING (TODAY)', metrics: [
+        { label: "Today's product booking", value: fmtRs(bk.revenue) },
+        { label: 'Product orders booked', value: String(Number(bk.order_count) || 0) },
+        { label: 'Avg product booking', value: fmtRs(bk.avg_booking_amount) }
+      ], col: 1, row: 0 },
+      { title: 'COLLECTION — PRODUCTS', metrics: [
+        { label: 'Product collection', value: fmtRs(col.total) },
+        { label: 'Bank (UPI + card)', value: fmtRs(col.bank) },
+        { label: 'Cash', value: fmtRs(col.cash) }
+      ], col: 2, row: 0 },
+      { title: 'NEW ORDER COLLECTION', metrics: [
+        { label: 'From new orders', value: fmtRs(colNew.total) },
+        { label: 'Bank', value: fmtRs(colNew.bank) },
+        { label: 'Cash', value: fmtRs(colNew.cash) }
+      ], col: 0, row: 1 },
+      { title: 'HANDOVER COLLECTION', metrics: [
+        { label: 'From handover', value: fmtRs(colHand.total) },
+        { label: 'Bank', value: fmtRs(colHand.bank) },
+        { label: 'Cash', value: fmtRs(colHand.cash) }
+      ], col: 1, row: 1 },
+      { title: 'MEMBERSHIP COLLECTION', metrics: [
+        { label: 'Membership collected', value: fmtRs(mcol.total) },
+        { label: 'Bank (UPI + card)', value: fmtRs(mcol.bank) },
+        { label: 'Cash', value: fmtRs(mcol.cash) },
+        { label: 'Memberships sold', value: String(Number(d.memberships_sold) || 0) }
+      ], col: 2, row: 1 }
+    ]
 
-    y += drawSection(ctx, y, 'PRODUCT BOOKING (TODAY)', [
-      { label: "Today's product booking", value: fmtRs(bk.revenue) },
-      { label: 'Product orders booked', value: String(Number(bk.order_count) || 0) },
-      { label: 'Avg product booking', value: fmtRs(bk.avg_booking_amount) }
-    ], mx, innerW)
-
-    y += drawSection(ctx, y, 'COLLECTION — PRODUCTS', [
-      { label: 'Product collection', value: fmtRs(col.total) },
-      { label: 'Bank (UPI + card)', value: fmtRs(col.bank) },
-      { label: 'Cash', value: fmtRs(col.cash) }
-    ], mx, innerW)
-
-    y += drawSection(ctx, y, 'MEMBERSHIP COLLECTION', [
-      { label: 'Membership collected', value: fmtRs(mcol.total) },
-      { label: 'Bank (UPI + card)', value: fmtRs(mcol.bank) },
-      { label: 'Cash', value: fmtRs(mcol.cash) },
-      { label: 'Memberships sold', value: String(Number(d.memberships_sold) || 0) }
-    ], mx, innerW)
+    sections.forEach(function (sec) {
+      const x = pad + sec.col * (cellW + gap)
+      const y = gridTop + sec.row * (cellH + gap)
+      drawSectionBox(ctx, x, y, cellW, cellH, sec.title, sec.metrics)
+    })
 
     ctx.fillStyle = '#B0BCCC'
     ctx.font = '11px Inter, system-ui, sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('Powered by Cosmos ERP · StorePilot', W / 2, H - 20)
+    ctx.fillText('Powered by Cosmos ERP · StorePilot', CANVAS_W / 2, CANVAS_H - 14)
     ctx.textAlign = 'left'
     return canvas
   }
