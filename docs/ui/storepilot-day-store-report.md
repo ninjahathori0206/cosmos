@@ -12,7 +12,7 @@ Daily store snapshot for the signed-in store: invoiced sales, **product-only** b
 
 | Section | Source | Rules |
 |---------|--------|--------|
-| **Invoiced** | `pos_invoices` joined to orders | Sum/count invoice `total_amount` for the store on the report date |
+| **Invoiced** | `pos_invoices` joined to orders | **Invoice date (IST):** `CONVERT(DATE, pos_invoices.created_at)`. Sum/count `pi.total_amount`. Non-cancelled orders only. Matches StorePilot **Invoices** list (invoiced date + amount), not order booking date |
 | **Product booking** | `pos_orders` / `oe_orders` | Exclude `order_kind = 'MEMBERSHIP'`. For mixed carts, sum `total_amount - sold_membership_amount` per order |
 | **Collection — products** | `pos_payments` on product orders | Exclude `order_kind = 'MEMBERSHIP'`; bank = UPI + CARD, cash = CASH |
 | **Collection from new order** | Same payments | Payment `stage` in `ADVANCE`, `FULL` (POS checkout / advance) |
@@ -21,6 +21,8 @@ Daily store snapshot for the signed-in store: invoiced sales, **product-only** b
 | **Memberships sold** | `pos_membership_sales` + legacy product-row membership | Count of memberships sold that day |
 
 Membership-only checkouts and membership amounts on combined orders **do not** appear in product booking or product collection.
+
+**Reconciliation with Invoices (`/storepilot/invoices`):** Cards show **invoiced** date/time and `pi.total_amount`. When invoice date differs from order booking date, a **Booked {date}** sublabel appears on the card.
 
 ## Layout
 

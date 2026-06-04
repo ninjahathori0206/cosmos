@@ -132,6 +132,7 @@ const RAW_PERMISSION_GROUPS = [
     ['pos.promotions.view', 'POS — Active offers (cart sidebar)'],
     ['pos.customers.view', 'POS — Customer search'],
     ['pos.customers.create', 'POS — Register customer'],
+    ['pos.prescriptions.create', 'POS — Record eye test / prescription (Add Rx wizard)'],
     ['pos.orders.view', 'POS — Orders list & detail'],
     ['pos.orders.create', 'POS — Create order'],
     ['pos.orders.void_unpaid', 'POS — Void zero-payment unpaid bill'],

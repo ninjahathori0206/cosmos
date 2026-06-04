@@ -2,7 +2,7 @@
    Scope: /storeos/ — caches Store OS shell + shared static assets under allowed paths.
    Strategy: network-only for /api/*; network-first for /storeos navigations; cache-first for allowed static GET. */
 
-var CACHE_NAME = 'storeos-v16-cosmos-time';
+var CACHE_NAME = 'storeos-v30-cart-cx-minimal';
 
 var SHELL_URLS = [
   '/storeos/login',

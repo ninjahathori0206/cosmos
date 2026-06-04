@@ -147,13 +147,36 @@
     container.appendChild(warn);
   }
 
+  function appendBubbleCreateCx(container, digits, inst, cxProfiles) {
+    if (digits.length !== 10 || typeof inst.onCreateCx !== 'function') return;
+    if ((cxProfiles || []).length) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'sp-ci-bubble-row sp-ci-bubble-row--create';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sp-ci-bubble sp-ci-bubble--create-cx';
+    btn.innerHTML =
+      '<div class="sp-ci-bubble-av sp-ci-bubble-av--cx">+</div>' +
+      '<div class="sp-ci-bubble-name">Create Cx</div>' +
+      '<span class="sp-ci-bubble-tag sp-ci-bubble-tag--cx">New profile</span>';
+    btn.addEventListener('click', function () {
+      container.hidden = true;
+      inst.onCreateCx(digits);
+    });
+    wrap.appendChild(btn);
+    container.appendChild(wrap);
+  }
+
   function renderBubbleResults(container, inStore, exited, cxProfiles, fragment, inst) {
     container.innerHTML = '';
-    var hasAny = cxProfiles.length || inStore.length || exited.length;
-    if (!hasAny) { container.hidden = true; return; }
-    container.hidden = false;
-
     var digits = normalizeDigits(fragment);
+    var hasAny = cxProfiles.length || inStore.length || exited.length;
+    var showCreateCx = digits.length === 10 && !cxProfiles.length && typeof inst.onCreateCx === 'function';
+    if (!hasAny && !showCreateCx) {
+      container.hidden = true;
+      return;
+    }
+    container.hidden = false;
 
     if (digits.length === 10 && cxProfiles.length) {
       var lbl1 = document.createElement('div');
@@ -195,6 +218,10 @@
         row3.appendChild(buildBubble('ex', v.name, 'sp-ci-bubble-av--exit', 'Exited', 'sp-ci-bubble-tag--exit', function () { inst.handleSelect(v); }));
       });
       container.appendChild(row3);
+    }
+
+    if (showCreateCx) {
+      appendBubbleCreateCx(container, digits, inst, cxProfiles);
     }
   }
 
@@ -255,6 +282,56 @@
     }
     btn._visitor = visitor;
     return btn;
+  }
+
+  function renderDropdownCxOnly(dropdown, cxProfiles, fragment, inst) {
+    dropdown.innerHTML = '';
+    dropdown.hidden = false;
+    dropdown.setAttribute('role', 'listbox');
+
+    var digits = normalizeDigits(fragment);
+    var q = String(fragment || '').trim();
+
+    if (q.length < 2) {
+      var hint = document.createElement('div');
+      hint.className = 'cosmos-cx-search-empty';
+      hint.textContent = 'Type at least 2 characters to search Cx profiles. Use GatePass (bottom right) for today\u2019s visitors.';
+      dropdown.appendChild(hint);
+      return;
+    }
+
+    if (cxProfiles.length) {
+      var secCx = document.createElement('div');
+      secCx.className = 'cosmos-cx-search-section-label cosmos-cx-search-section-label--cx';
+      secCx.textContent = 'Cx profiles';
+      dropdown.appendChild(secCx);
+      cxProfiles.forEach(function (cx) {
+        dropdown.appendChild(buildCxRow(cx, fragment, inst));
+      });
+    } else {
+      var empty = document.createElement('div');
+      empty.className = 'cosmos-cx-search-empty';
+      empty.textContent = digits.length === 10
+        ? 'No Cx profile for this number.'
+        : 'No Cx profiles found.';
+      dropdown.appendChild(empty);
+    }
+
+    if (digits.length === 10 && !cxProfiles.length && typeof inst.onCreateCx === 'function') {
+      var createWrap = document.createElement('div');
+      createWrap.className = 'cosmos-cx-search-create-cx-row';
+      var createBtn = document.createElement('button');
+      createBtn.type = 'button';
+      createBtn.className = 'cosmos-cx-search-create-cx-btn';
+      createBtn.textContent = 'Create Cx';
+      createBtn.setAttribute('aria-label', 'Create new Cx profile for ' + digits);
+      createBtn.addEventListener('click', function () {
+        dropdown.hidden = true;
+        inst.onCreateCx(digits);
+      });
+      createWrap.appendChild(createBtn);
+      dropdown.appendChild(createWrap);
+    }
   }
 
   function renderDropdown(dropdown, inStore, exited, cxProfiles, fragment, inst) {
@@ -395,6 +472,7 @@
       onCreateCx: opts.onCreateCx,
       canSearchCx: opts.canSearchCx === true,
       checkinNewOnly: opts.checkinNewOnly === true,
+      queueMode: opts.queueMode === 'cx-only' ? 'cx-only' : 'full',
       debounceMs: opts.debounceMs || 150,
       _timer: null,
       destroy: function () {
@@ -409,6 +487,34 @@
       },
       fetchAndRender: function () {
         var fragment = normalizeDigits(inputEl.value);
+        var query = String(inputEl.value || '').trim();
+
+        if (inst.queueMode === 'cx-only') {
+          if (query.length < 2) {
+            renderDropdownCxOnly(dropdown, [], fragment, inst);
+            inputEl.setAttribute('aria-expanded', 'true');
+            return Promise.resolve();
+          }
+          if (!inst.bubbleResultsEl) showSkeleton(dropdown);
+          var cxOnlyUrl = '/api/pos/customer-search?q=' + encodeURIComponent(query);
+          if (!resolveCanSearchCx(inst) || !inst.apiGet) {
+            renderDropdownCxOnly(dropdown, [], fragment, inst);
+            inputEl.setAttribute('aria-expanded', 'true');
+            return Promise.resolve();
+          }
+          return inst.apiGet(cxOnlyUrl).then(function (cxRaw) {
+            var cxList = Array.isArray(cxRaw) ? cxRaw : (cxRaw && cxRaw.data) || [];
+            var profiles = fragment.length === 10 ? filterCxProfiles(cxList, fragment) : cxList;
+            renderDropdownCxOnly(dropdown, profiles, fragment, inst);
+            inputEl.setAttribute('aria-expanded', 'true');
+          }).catch(function (err) {
+            inst.close();
+            if (typeof window.cosmosToastError === 'function') {
+              window.cosmosToastError(err && err.message ? err.message : 'Search failed');
+            }
+          });
+        }
+
         if (!inst.checkinNewOnly && !inst.bubbleResultsEl) showSkeleton(dropdown);
         var url = '/api/gatepass/search?storeId=' + encodeURIComponent(inst.storeId)
           + '&phone=' + encodeURIComponent(fragment);
@@ -531,9 +637,20 @@
     inputEl.setAttribute('aria-autocomplete', 'list');
     inputEl.setAttribute('aria-expanded', 'false');
 
-    if (!inst.checkinNewOnly) {
+    if (!inst.checkinNewOnly && inst.queueMode !== 'cx-only') {
       inputEl.addEventListener('focus', function () {
         void inst.fetchAndRender();
+      });
+    }
+    if (inst.queueMode === 'cx-only') {
+      inputEl.addEventListener('focus', function () {
+        var q = String(inputEl.value || '').trim();
+        if (q.length < 2) {
+          renderDropdownCxOnly(dropdown, [], normalizeDigits(inputEl.value), inst);
+          inputEl.setAttribute('aria-expanded', 'true');
+        } else {
+          void inst.fetchAndRender();
+        }
       });
     }
     inputEl.addEventListener('input', function () {
@@ -543,6 +660,13 @@
           var frag = normalizeDigits(inputEl.value);
           if (frag.length === 10) void inst.fetchAndRender();
           else if (inst.bubbleResultsEl) inst.bubbleResultsEl.hidden = true;
+        } else if (inst.queueMode === 'cx-only') {
+          var q2 = String(inputEl.value || '').trim();
+          if (q2.length >= 2) void inst.fetchAndRender();
+          else {
+            renderDropdownCxOnly(dropdown, [], normalizeDigits(inputEl.value), inst);
+            inputEl.setAttribute('aria-expanded', 'true');
+          }
         } else {
           void inst.fetchAndRender();
         }
@@ -556,7 +680,7 @@
   }
 
   window.cosmosCxSearch = {
-    BUILD: 'gatepass-cx-checkin-new-only-v6',
+    BUILD: 'gatepass-cx-queue-cx-only-v1',
     init: function (opts) {
       return createInstance(opts || {});
     },

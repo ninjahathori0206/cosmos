@@ -8,6 +8,7 @@ Sell **prescription lens packages** when the customer brings their **own eyeglas
 
 - **Cart:** `+ Lenses on customer frame` (below line items) — adds virtual SKU and opens lens wizard.
 - Requires **`pos.customer_frame_sku_id`** in app settings (Foundry virtual product, type `CUSTOMER_FRAME`).
+- Virtual SKU **`sale_price` should be ₹0** — the bill is lens package + add-ons only; the customer-owned frame is not sold as inventory.
 
 ## Flow
 

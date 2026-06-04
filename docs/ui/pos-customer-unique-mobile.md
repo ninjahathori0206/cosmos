@@ -54,7 +54,7 @@ Distinct from **Eyewoot Plus buddies** (membership dependents) — those use `/m
 
 - Customer picker: primary row only (`customerSearchDisplayParts` / `buildCustomerSearchRowHtml` with `primaryOnly: true`).
 
-- Lens wizard: patient UI **Step 2 only** — chips for primary + on-file family names; **Shopping for** card shows selected patient. **Patient name** only on manual RX modal (`pos-lk-rx-patient-name`) when entering a new name on prescription.
+- Lens wizard: patient UI **Step 2 only** — unified block: **Who is this pair for?** chips (primary + on-file family names), **Change** for Cx account, optional **Bill / invoice** when ordering for family. **Patient name** on manual RX modal (`pos-lk-rx-patient-name`) when entering a new name on prescription (GatePass/CX flows).
 
 - Cart lab line: `.pos-lk-cart-patient-row` — **For · name** when patient ≠ primary.
 

@@ -3800,6 +3800,27 @@ function spInvFormatDateTime(v) {
   return String(v);
 }
 
+function spInvDisplayAmount(r) {
+  const n = r.invoice_total_amount != null ? r.invoice_total_amount : r.total_amount;
+  return fmtRupeesInv(n);
+}
+
+function spInvDisplayDateTime(r) {
+  if (r.invoiced_at) {
+    return 'Invoiced · ' + spInvFormatDateTime(r.invoiced_at);
+  }
+  return spInvFormatDateTime(r.created_at);
+}
+
+function spInvBookedSublabel(r) {
+  if (!r.invoiced_at || !r.created_at) return '';
+  const invDay = typeof window.cosmosIstDateYmd === 'function' ? window.cosmosIstDateYmd(r.invoiced_at) : '';
+  const ordDay = typeof window.cosmosIstDateYmd === 'function' ? window.cosmosIstDateYmd(r.created_at) : '';
+  if (!invDay || !ordDay || invDay === ordDay) return '';
+  const booked = typeof window.cosmosFmtDate === 'function' ? window.cosmosFmtDate(r.created_at) : ordDay;
+  return 'Booked ' + booked;
+}
+
 window.loadSpInvoices = async function (q) {
   const searchQ = q !== undefined ? q : (document.getElementById('sp-invoice-search') || {}).value || '';
   _spInvLastQ = searchQ.trim();
@@ -3823,8 +3844,9 @@ window.loadSpInvoices = async function (q) {
       const inv  = escHtml(r.invoice_no || r.order_no || '—');
       const cust = escHtml(r.customer_name || 'Customer');
       const ph   = escHtml(r.customer_phone || '');
-      const total = fmtRupeesInv(r.total_amount);
-      const dt   = spInvFormatDateTime(r.created_at);
+      const total = spInvDisplayAmount(r);
+      const dt   = spInvDisplayDateTime(r);
+      const booked = spInvBookedSublabel(r);
       const oid  = Number(r.order_id);
       html +=
         '<div class="sp-inv-card" role="article">' +
@@ -3834,6 +3856,7 @@ window.loadSpInvoices = async function (q) {
           '</div>' +
           '<div class="sp-inv-cust">' + cust + '</div>' +
           (ph ? '<div class="sp-inv-phone">' + ph + '</div>' : '') +
+          (booked ? '<div class="sp-inv-booked" style="font-size:11px;color:var(--text3);margin-top:2px">' + escHtml(booked) + '</div>' : '') +
           '<div class="sp-inv-card-bot">' +
             '<div class="sp-inv-total">' + total + '</div>' +
             '<button type="button" class="sp-inv-share" aria-label="Share invoice ' + inv + '"' +
@@ -3868,8 +3891,9 @@ function spInvoiceListToCsvRows(rows) {
   const headers = [
     'Invoice No',
     'Order No',
-    'Date',
-    'Time',
+    'Invoiced date',
+    'Invoiced time',
+    'Booked date',
     'Customer Name',
     'Customer Mobile',
     'Order Kind',
@@ -3881,19 +3905,22 @@ function spInvoiceListToCsvRows(rows) {
     'Balance Due'
   ];
   const data = (rows || []).map(function (r) {
-    const dt = spInvCsvDateParts(r.created_at);
+    const invDt = spInvCsvDateParts(r.invoiced_at || r.created_at);
+    const bookedDt = spInvCsvDateParts(r.created_at);
+    const totalAmt = r.invoice_total_amount != null ? r.invoice_total_amount : r.total_amount;
     return [
       r.invoice_no || '',
       r.order_no || '',
-      dt.date,
-      dt.time,
+      invDt.date,
+      invDt.time,
+      bookedDt.date,
       r.customer_name || '',
       r.customer_phone || '',
       r.order_kind || '',
       r.status || '',
       Number(r.subtotal_amount) || 0,
       Number(r.gst_amount) || 0,
-      Number(r.total_amount) || 0,
+      Number(totalAmt) || 0,
       Number(r.amount_paid) || 0,
       Number(r.amount_remaining) || 0
     ];

@@ -2714,142 +2714,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  // ─── MEMBERSHIP TIERS ────────────────────────────────────────────────────
-
-  let cachedTiers = [];
-
-  async function loadMembershipTiers() {
-    const container = document.querySelector('#page-membership .three-col');
-    if (!container) return;
-    container.innerHTML = '';
-    try {
-      const tiers = await apiGet('/api/settings/membership-tiers');
-      cachedTiers = tiers;
-      tiers.forEach((t) => {
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.dataset.tierId = t.membership_id;
-        card.innerHTML = `
-          <div style="padding:20px;background:linear-gradient(135deg,#F5F5F5,#E2E8F0);border-bottom:1px solid var(--border)">
-            <div style="font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--text2);margin-bottom:6px">${t.tier_name}</div>
-            <div style="font-family:'Syne',sans-serif;font-size:24px;font-weight:800">₹${Number(t.annual_fee).toFixed(0)} <span style="font-size:14px;font-weight:400;color:var(--text2)">/year</span></div>
-          </div>
-          <div class="card-body">
-            <div class="td-muted text-sm mb-4">${t.benefits || '—'}</div>
-            <div class="flex items-center gap-2 mb-4"><span class="text-xs td-muted">Promoter commission:</span><span class="badge badge-gold">₹${t.promoter_commission ? Number(t.promoter_commission).toFixed(0) : '0'} / sale</span></div>
-          </div>
-          <div style="padding:12px 20px;border-top:1px solid var(--border)">
-            <button class="topbar-btn tier-edit-btn w-full" style="justify-content:center;font-size:12px">Edit</button>
-          </div>
-        `;
-        container.appendChild(card);
-      });
-
-      // Placeholder for adding new tier
-      const placeholder = document.createElement('div');
-      placeholder.className = 'card';
-      placeholder.style.cssText = 'border:2px dashed var(--border);background:transparent;display:flex;align-items:center;justify-content:center;min-height:200px;cursor:pointer';
-      placeholder.innerHTML = '<div style="text-align:center;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">+</div><div style="font-size:13.5px;font-weight:500">Add Tier</div></div>';
-      placeholder.onclick = () => window.openModal && window.openModal('modal-new-membership');
-      container.appendChild(placeholder);
-
-      document.querySelectorAll('.tier-edit-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          const id = Number(e.target.closest('.card').dataset.tierId);
-          openEditTierModal(id);
-        });
-      });
-    } catch (err) {
-      const div = document.createElement('div');
-      div.className = 'td-muted text-sm';
-      div.textContent = 'Error: ' + err.message;
-      container.appendChild(div);
-    }
-  }
-
-  async function handleCreateTier() {
-    showError('new-tier-error', '');
-    setBtn('new-tier-save-btn', true);
-    try {
-      const body = {
-        tier_name: val('new-tier-name'),
-        annual_fee: Number(val('new-tier-fee')),
-        benefits: val('new-tier-benefits') || null,
-        loyalty_tier: val('new-tier-loyalty') || null,
-        promoter_commission: val('new-tier-commission') ? Number(val('new-tier-commission')) : null
-      };
-      if (!body.tier_name) throw new Error('Tier name is required.');
-      if (isNaN(body.annual_fee)) throw new Error('Annual fee is required.');
-      await apiPost('/api/settings/membership-tiers', body);
-      window.closeModal && window.closeModal('modal-new-membership');
-      ['new-tier-name','new-tier-fee','new-tier-benefits','new-tier-loyalty','new-tier-commission'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
-      await loadMembershipTiers();
-    } catch (err) {
-      showError('new-tier-error', err.message || 'Failed to create tier');
-    } finally {
-      setBtn('new-tier-save-btn', false);
-    }
-  }
-
-  function openEditTierModal(tierId) {
-    const t = cachedTiers.find((x) => x.membership_id === tierId);
-    if (!t) return;
-    const title = document.getElementById('edit-tier-title');
-    if (title) title.textContent = `Edit — ${t.tier_name}`;
-    document.getElementById('edit-tier-name').value = t.tier_name || '';
-    document.getElementById('edit-tier-fee').value = t.annual_fee || '';
-    document.getElementById('edit-tier-benefits').value = t.benefits || '';
-    document.getElementById('edit-tier-loyalty').value = t.loyalty_tier || '';
-    document.getElementById('edit-tier-commission').value = t.promoter_commission || '';
-    document.getElementById('edit-tier-status').value = t.is_active ? '1' : '0';
-    showError('edit-tier-error', '');
-    const modal = document.getElementById('modal-edit-membership');
-    if (modal) modal.dataset.tierId = String(tierId);
-    window.openModal && window.openModal('modal-edit-membership');
-  }
-
-  async function handleSaveTierChanges() {
-    const modal = document.getElementById('modal-edit-membership');
-    if (!modal) return;
-    const id = Number(modal.dataset.tierId);
-    if (!id) return;
-    showError('edit-tier-error', '');
-    setBtn('edit-tier-save-btn', true);
-    try {
-      const body = {
-        tier_name: val('edit-tier-name'),
-        annual_fee: Number(val('edit-tier-fee')),
-        benefits: val('edit-tier-benefits') || null,
-        loyalty_tier: val('edit-tier-loyalty') || null,
-        promoter_commission: val('edit-tier-commission') ? Number(val('edit-tier-commission')) : null,
-        is_active: val('edit-tier-status') === '1'
-      };
-      if (!body.tier_name) throw new Error('Tier name is required.');
-      await apiPut(`/api/settings/membership-tiers/${id}`, body);
-      window.closeModal && window.closeModal('modal-edit-membership');
-      await loadMembershipTiers();
-    } catch (err) {
-      showError('edit-tier-error', err.message || 'Failed to update tier');
-    } finally {
-      setBtn('edit-tier-save-btn', false);
-    }
-  }
-
-  async function handleDeactivateTier() {
-    const modal = document.getElementById('modal-edit-membership');
-    if (!modal) return;
-    const id = Number(modal.dataset.tierId);
-    if (!id || !window.confirm('Deactivate this membership tier?')) return;
-    showError('edit-tier-error', '');
-    try {
-      await apiDelete(`/api/settings/membership-tiers/${id}`);
-      window.closeModal && window.closeModal('modal-edit-membership');
-      await loadMembershipTiers();
-    } catch (err) {
-      showError('edit-tier-error', err.message || 'Failed to deactivate tier');
-    }
-  }
-
   // ─── MEMBERSHIP PLANS (capability-based engine) ──────────────────────────────
 
   let cachedMembershipPlans = [];
@@ -3954,11 +3818,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   bind('edit-gst-save-btn', handleSaveGst);
   bind('edit-gst-delete-btn', handleDeleteGst);
 
-  // Membership Tiers
-  bind('new-tier-save-btn', handleCreateTier);
-  bind('edit-tier-save-btn', handleSaveTierChanges);
-  bind('edit-tier-deactivate-btn', handleDeactivateTier);
-
   bind('cu-offer-save-btn', handleCuOfferSave);
   bindCuOfferPreviewListeners();
 
@@ -5034,7 +4893,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadRoles();
   loadHomeBrands();
   loadGstRates();
-  loadMembershipTiers();
   loadLeaveTypes();
   loadCuPosSettings();
   loadAuditLogs();

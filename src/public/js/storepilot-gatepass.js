@@ -695,7 +695,11 @@
           customerId: _spGpActiveVisitor.customer_id || null,
           visitorName: _spGpActiveVisitor.name || '',
           visitorPhone: _spGpActiveVisitor.phone || '',
-          customerName: _spGpActiveVisitor.cx_display_name || ''
+          customerName:
+            _spGpActiveVisitor.cx_display_name ||
+            _spGpActiveVisitor.display_name ||
+            _spGpActiveVisitor.full_name ||
+            ''
         };
         spGpCloseActionsSheet();
         window.openRxModal(snap);
@@ -718,6 +722,13 @@
     }
 
     // ── FAB wiring ─────────────────────────────────────────────────────────
+    if (typeof window.cosmosGpFabBindVerticalDrag === 'function') {
+      window.cosmosGpFabBindVerticalDrag({
+        rootId: 'sp-gp-fab-root',
+        handleId: 'sp-gp-fab',
+        storageKey: 'sp_gp_fab_bottom_px'
+      });
+    }
     var fab = document.getElementById('sp-gp-fab');
     if (fab) fab.addEventListener('click', function () {
       if (!_spGpFabOpen) {

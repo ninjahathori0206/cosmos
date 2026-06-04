@@ -966,4 +966,128 @@
       cosmosInitMobileShell()
     })
   }
+
+  /**
+   * Long-press the GatePass FAB handle, then drag vertically to reposition.
+   * Persists bottom offset in localStorage per storageKey.
+   */
+  window.cosmosGpFabBindVerticalDrag = function (opts) {
+    opts = opts || {}
+    var root =
+      opts.rootEl ||
+      (opts.rootId ? document.getElementById(opts.rootId) : null)
+    if (!root || root.dataset.cosmosGpFabDragBound === '1') return
+    root.dataset.cosmosGpFabDragBound = '1'
+
+    var handle =
+      opts.handleEl ||
+      (opts.handleId ? document.getElementById(opts.handleId) : root.querySelector('button'))
+    if (!handle) return
+
+    var storageKey = opts.storageKey || 'cosmos_gp_fab_bottom_px'
+    var defaultBottom = opts.defaultBottom != null ? Number(opts.defaultBottom) : 24
+    var longPressMs = opts.longPressMs != null ? Number(opts.longPressMs) : 450
+
+    function readBottom() {
+      var inline = parseInt(root.style.bottom, 10)
+      if (Number.isFinite(inline)) return inline
+      try {
+        var saved = parseInt(localStorage.getItem(storageKey), 10)
+        if (Number.isFinite(saved)) return saved
+      } catch (_) {}
+      return defaultBottom
+    }
+
+    function clampBottom(px) {
+      var h = handle.offsetHeight || 48
+      var min = defaultBottom
+      var max = Math.max(min, window.innerHeight - h - 16)
+      return Math.min(max, Math.max(min, px))
+    }
+
+    function applyBottom(px) {
+      root.style.bottom = clampBottom(px) + 'px'
+    }
+
+    applyBottom(readBottom())
+
+    var pressTimer = null
+    var dragActive = false
+    var didDrag = false
+    var startY = 0
+    var startBottom = defaultBottom
+
+    function clearPress() {
+      if (pressTimer) {
+        clearTimeout(pressTimer)
+        pressTimer = null
+      }
+    }
+
+    function endDrag() {
+      if (!dragActive) return
+      dragActive = false
+      root.classList.remove('cosmos-gp-fab--dragging')
+      handle.classList.remove('cosmos-gp-fab--dragging')
+      try {
+        localStorage.setItem(storageKey, String(parseInt(root.style.bottom, 10) || defaultBottom))
+      } catch (_) {}
+    }
+
+    handle.addEventListener(
+      'click',
+      function (e) {
+        if (handle._cosmosGpFabSuppressClick) {
+          e.preventDefault()
+          e.stopImmediatePropagation()
+        }
+      },
+      true
+    )
+
+    handle.addEventListener('pointerdown', function (e) {
+      if (e.button !== undefined && e.button !== 0) return
+      didDrag = false
+      dragActive = false
+      startY = e.clientY
+      startBottom = readBottom()
+      try {
+        handle.setPointerCapture(e.pointerId)
+      } catch (_) {}
+      clearPress()
+      pressTimer = setTimeout(function () {
+        dragActive = true
+        root.classList.add('cosmos-gp-fab--dragging')
+        handle.classList.add('cosmos-gp-fab--dragging')
+        if (typeof navigator.vibrate === 'function') navigator.vibrate(12)
+      }, longPressMs)
+    })
+
+    handle.addEventListener('pointermove', function (e) {
+      if (!dragActive) return
+      if (Math.abs(e.clientY - startY) > 3) didDrag = true
+      applyBottom(startBottom + (startY - e.clientY))
+    })
+
+    function onPointerEnd(e) {
+      clearPress()
+      endDrag()
+      try {
+        handle.releasePointerCapture(e.pointerId)
+      } catch (_) {}
+      if (didDrag) {
+        handle._cosmosGpFabSuppressClick = true
+        setTimeout(function () {
+          handle._cosmosGpFabSuppressClick = false
+        }, 400)
+      }
+    }
+
+    handle.addEventListener('pointerup', onPointerEnd)
+    handle.addEventListener('pointercancel', onPointerEnd)
+
+    window.addEventListener('resize', function () {
+      applyBottom(readBottom())
+    })
+  }
 })()

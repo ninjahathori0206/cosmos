@@ -515,10 +515,10 @@ textarea.sp-ci-field {
 
 /* ─── GatePass FAB (floating contacts widget) ──────────────────────────────── */
 .sp-gp-fab {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 1100;
+  position: relative;
+  bottom: auto;
+  right: auto;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -556,11 +556,12 @@ textarea.sp-ci-field {
 
 /* FAB panel card */
 .sp-gp-fab-panel {
-  position: fixed;
-  bottom: 80px;
-  right: 24px;
+  position: relative;
+  bottom: auto;
+  right: auto;
+  margin-bottom: 12px;
   width: min(340px, calc(100vw - 32px));
-  z-index: 1100;
+  z-index: 1;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 16px;

@@ -1023,34 +1023,105 @@ async function cx360RenderCoins () {
   )
 }
 
+function cx360OfferDiscountLabel (o) {
+  var t = String(o.discount_type || '').toUpperCase()
+  var v = o.discount_value
+  if (t === 'PCT') return v + '% off'
+  if (t === 'FLAT') return '₹' + v + ' off'
+  if (t === 'CASHBACK' && o.cashback_rate != null) return o.cashback_rate + '% cashback'
+  if (t === 'FREEBIE') return 'Free item'
+  if (t === 'BOGO_LOWEST_FREE') return 'BOGO — lowest free'
+  if (t === 'BUY_FRAME_GET_LENS_FREE') return 'Free lens with frame'
+  if (t === 'BUY_LENS_GET_FRAME_FREE') return 'Free frame with lens'
+  return t || 'Offer'
+}
+
+function cx360OfferCapabilityPill (cap) {
+  if (!cap) return '<span class="b b-gray">All customers</span>'
+  if (cap === 'has_plus_access') return '<span class="b b-gold">Plus</span>'
+  return '<span class="b b-gray">' + escCx(cap) + '</span>'
+}
+
+function cx360FmtOfferDate (wire) {
+  if (!wire) return '—'
+  if (typeof window.cosmosFmtDate === 'function') return window.cosmosFmtDate(wire)
+  return new Date(wire).toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  })
+}
+
 async function cx360RenderOffers () {
-  if (!window.cosmosCxAllows(['cx.customers.view', 'cx.offers.view'])) {
-    return cx360Empty('🎁', 'Offers not available', '')
+  if (!window.cosmosCxAllows(['cx.customers.view'])) {
+    return cx360Empty('🎁', 'Offers not available', 'You need permission to view customers.')
   }
-  var res = await cxApiFetch('GET', '/api/cx/customers/' + _cx360.customerId + '/offers-assignments?active_only=0')
-  var rows = res.data || []
-  if (!rows.length) {
-    return cx360Empty('🎁', 'No assigned offers', '')
+  var liveRes = await cxApiFetch('GET', '/api/cx/customers/' + _cx360.customerId + '/offers-live')
+  var live = liveRes.data || []
+  var assignHtml = ''
+  if (window.cosmosCxAllows(['cx.offers.view', 'cx.offers.manage'])) {
+    try {
+      var assignRes = await cxApiFetch(
+        'GET',
+        '/api/cx/customers/' + _cx360.customerId + '/offers-assignments?active_only=1'
+      )
+      var assigned = assignRes.data || []
+      if (assigned.length) {
+        assignHtml =
+          '<div class="card" style="margin-top:16px"><div class="ch"><div class="ct">Manual assignments</div></div>'
+          + '<div class="tw"><table><thead><tr><th>Offer</th><th>Assigned</th><th>Status</th></tr></thead><tbody>'
+          + assigned
+            .map(function (a) {
+              return (
+                '<tr><td>' +
+                escCx(a.title || a.offer_id) +
+                '</td><td>' +
+                escCx(fmtCxDateTime(a.assigned_at)) +
+                '</td><td><span class="b b-green">Active</span></td></tr>'
+              )
+            })
+            .join('') +
+          '</tbody></table></div></div>'
+      }
+    } catch (_) {}
   }
-  return (
-    '<div class="card"><div class="tw"><table><thead><tr><th>Offer</th><th>Assigned</th><th>Status</th></tr></thead><tbody>' +
-    rows
-      .map(function (a) {
+  if (!live.length) {
+    var emptySub =
+      'No active offers match this customer’s membership right now. Configure offers in Command Unit → Promotion.'
+    return (
+      cx360Empty('🎁', 'No live offers', emptySub) +
+      assignHtml
+    )
+  }
+  var liveTable =
+    '<div class="card"><div class="ch"><div class="ct">Live offers</div>'
+    + '<div class="td-muted text-xs" style="margin-top:4px">Same catalogue as Eyewoot Go — filtered by membership and validity.</div></div>'
+    + '<div class="tw"><table><thead><tr><th>Offer</th><th>Benefit</th><th>Eligibility</th><th>Valid until</th></tr></thead><tbody>'
+    + live
+      .map(function (o) {
+        var icon = o.icon_emoji ? '<span style="font-size:18px;margin-right:6px">' + escCx(o.icon_emoji) + '</span>' : ''
+        var desc = o.description
+          ? '<div class="td-muted text-xs" style="margin-top:2px">' + escCx(o.description) + '</div>'
+          : ''
         return (
-          '<tr class="tr-link"><td>' +
-          escCx(a.title || a.offer_id) +
+          '<tr><td><div class="fw-600">' +
+          icon +
+          escCx(o.title || 'Offer') +
+          '</div>' +
+          desc +
+          '</td><td class="fw-600">' +
+          escCx(cx360OfferDiscountLabel(o)) +
           '</td><td>' +
-          escCx(fmtCxDateTime(a.assigned_at)) +
+          cx360OfferCapabilityPill(o.required_capability) +
           '</td><td>' +
-          (a.is_active
-            ? '<span class="b b-green">Active</span>'
-            : '<span class="b b-gray">Inactive</span>') +
+          escCx(cx360FmtOfferDate(o.valid_to)) +
           '</td></tr>'
         )
       })
       .join('') +
     '</tbody></table></div></div>'
-  )
+  return liveTable + assignHtml
 }
 
 async function cx360RenderAudit () {

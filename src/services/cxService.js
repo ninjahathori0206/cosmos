@@ -63,6 +63,52 @@ async function getCustomerOfferAssignments (pool, customerId, activeOnly = true)
   return r.recordset || []
 }
 
+/**
+ * Active Eyewoot Go offers this customer can see now (membership capability filter).
+ * Same rules as GET /api/customer/offers and POS cart-offers.
+ */
+async function getCustomerLiveOffers (pool, customerId) {
+  const { resolveMembershipForCustomer } = require('./membershipDependentService')
+  const { wallClockIso } = require('../lib/cosmosIst')
+
+  const resolved = await resolveMembershipForCustomer(pool, customerId)
+  const memRow = resolved.capabilities || null
+  const now = wallClockIso()
+
+  const r = await pool.request().input('now', now).query(`
+    SELECT offer_id, title, description, icon_emoji, discount_type,
+           discount_value, valid_from, valid_to,
+           required_capability, cashback_rate, sort_order
+    FROM   dbo.customer_offers
+    WHERE  is_active = 1
+      AND  valid_from <= @now
+      AND  valid_to   >= @now
+    ORDER BY sort_order ASC, offer_id DESC
+  `)
+
+  const rows = (r.recordset || []).filter((o) => {
+    if (!o.required_capability) return true
+    if (!memRow) return false
+    return Boolean(memRow[o.required_capability])
+  })
+
+  return rows.map((row) => ({
+    offer_id: row.offer_id != null ? Number(row.offer_id) : null,
+    title: row.title,
+    description: row.description,
+    icon_emoji: row.icon_emoji,
+    discount_type: row.discount_type,
+    discount_value: row.discount_value != null ? Number(row.discount_value) : 0,
+    cashback_rate: row.cashback_rate != null ? Number(row.cashback_rate) : null,
+    required_capability: row.required_capability || null,
+    valid_from: row.valid_from,
+    valid_to: row.valid_to,
+    sort_order: row.sort_order != null ? Number(row.sort_order) : 0,
+    membership_source: resolved.source || 'none',
+    plan_key: resolved.plan_key || null
+  }))
+}
+
 async function getCustomerAuditLog (pool, customerId, limit = 100) {
   const r = await pool.request()
     .input('customer_id', sql.Int, customerId)
@@ -134,6 +180,7 @@ async function insertStaffEyeTest (pool, payload) {
     .input('visitor_id', sql.Int, visitorId)
     .input('family_name_id', sql.Int, familyNameId)
     .input('patient_name', sql.NVarChar(100), payload.patientName ?? null)
+    .input('patient_dob', sql.Date, payload.patientDob ?? null)
     .input('uid', sql.Int, payload.actorUserId ?? null)
     .input('sid', sql.Int, payload.storeId ?? null)
     .input('tested_at', sql.DateTime, payload.testedAt)
@@ -152,20 +199,46 @@ async function insertStaffEyeTest (pool, payload) {
     .input('notes', sql.NVarChar(500), payload.notes ?? null)
     .query(`
       INSERT INTO dbo.eye_tests
-        (customer_id, visitor_id, family_name_id, patient_name,
+        (customer_id, visitor_id, family_name_id, patient_name, patient_dob,
          tested_at, store_id, tested_by_user_id, source,
          re_sph, re_cyl, re_axis, re_add, re_va,
          le_sph, le_cyl, le_axis, le_add, le_va,
          pd, lens_type, notes)
       OUTPUT INSERTED.test_id
       VALUES
-        (@cid, @visitor_id, @family_name_id, @patient_name,
+        (@cid, @visitor_id, @family_name_id, @patient_name, @patient_dob,
          @tested_at, @sid, @uid, N'STAFF',
          @re_sph, @re_cyl, @re_axis, @re_add, @re_va,
          @le_sph, @le_cyl, @le_axis, @le_add, @le_va,
          @pd, @lens_type, @notes)
     `)
   return (r.recordset && r.recordset[0]) || null
+}
+
+function parsePatientDobYmd (value) {
+  if (value == null || value === '') return null
+  const s = String(value).trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
+  return s
+}
+
+async function upsertRxModalPatientDob (pool, opts) {
+  const customerId = opts && opts.customerId != null ? Number(opts.customerId) : null
+  const patientDob = parsePatientDobYmd(opts && opts.patientDob)
+  if (!customerId || !patientDob) return null
+  const syncPrimaryProfile = !!(opts && opts.syncPrimaryProfile)
+  if (syncPrimaryProfile) {
+    try {
+      await updateCustomerProfile(pool, {
+        customerId,
+        dob: patientDob,
+        actorUserId: opts.actorUserId ?? null
+      })
+    } catch (_) {
+      /* best-effort — Rx row still stores patient_dob */
+    }
+  }
+  return patientDob
 }
 
 async function updateCustomerProfile (pool, payload) {
@@ -303,12 +376,15 @@ module.exports = {
   getCustomerLoyaltyLedger,
   getLiveCoinBalance,
   getCustomerOfferAssignments,
+  getCustomerLiveOffers,
   getCustomerAuditLog,
   getCustomerVisits,
   getCustomerEyeTests,
   listCustomerFamilyNameRows,
   getVisitorRowForRx,
   insertStaffEyeTest,
+  parsePatientDobYmd,
+  upsertRxModalPatientDob,
   upsertRxModalLifestyle,
   updateCustomerProfile,
   upsertCustomerLifestyle,

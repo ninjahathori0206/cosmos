@@ -309,11 +309,11 @@
           const n = (posMembershipFamilyCache.dependents && posMembershipFamilyCache.dependents.length) || 0
           const max = posMembershipFamilyCache.max_dependents || 0
           if (role === 'primary' && max > 0) {
-            famBtn.textContent = 'Your Buddies (' + n + '/' + max + ')'
+            famBtn.textContent = 'Buddies (' + n + '/' + max + ')'
           } else if (role === 'dependent') {
             famBtn.textContent = 'Buddy plan'
           } else {
-            famBtn.textContent = 'Your Buddies'
+            famBtn.textContent = 'Buddies'
           }
         } else {
           famBtn.hidden = true
@@ -1727,7 +1727,28 @@
     return /^\d[\d\s\-+()]*$/.test(trimmed) && trimmed.replace(/\D/g, '').length >= 3
   }
 
-  function hideQuickCxRegistration() {
+  var POS_CUST_PICKER_TITLE_DEFAULT = 'Select Cx'
+  var POS_CUST_PICKER_SUB_DEFAULT = 'Search by phone or name.'
+  var POS_CUST_PICKER_TITLE_VISITOR = 'Create Cx'
+  var POS_CUST_PICKER_SUB_VISITOR = 'From visitor queue — confirm name.'
+
+  function setCustomerPickerVisitorCreateMode(on) {
+    var overlay = document.getElementById('overlay-pos-customer-picker')
+    var titleEl = document.getElementById('pos-cust-picker-title')
+    var subEl = overlay ? overlay.querySelector('.pos-lens-newcust-sub') : null
+    if (!overlay) return
+    overlay.classList.toggle('pos-cust-picker--visitor-create', !!on)
+    if (titleEl) {
+      titleEl.textContent = on ? POS_CUST_PICKER_TITLE_VISITOR : POS_CUST_PICKER_TITLE_DEFAULT
+    }
+    if (subEl) {
+      subEl.textContent = on ? POS_CUST_PICKER_SUB_VISITOR : POS_CUST_PICKER_SUB_DEFAULT
+    }
+    if (on) syncCustomerPickerBannerAndActions()
+  }
+
+  function hideQuickCxRegistration(hideOpts) {
+    hideOpts = hideOpts || {}
     var section = document.getElementById('cust-picker-quick-reg')
     var divider = document.getElementById('cust-picker-quick-reg-divider')
     var nameEl = document.getElementById('cust-picker-new-name')
@@ -1752,12 +1773,14 @@
       emailEl.value = ''
       if (typeof cosmosFieldClear === 'function') cosmosFieldClear(emailEl)
     }
+    if (!hideOpts.keepVisitorCreateMode) setCustomerPickerVisitorCreateMode(false)
   }
 
-  function openQuickCxRegistration(prefillPhone) {
+  function openQuickCxRegistration(prefillPhone, prefillName, opts) {
+    opts = opts || {}
     var overlay = document.getElementById('overlay-pos-customer-picker')
     var pickerOpen = overlay && overlay.classList.contains('open')
-    if (!pickerOpen) openPosCustomerPickerModal()
+    if (!pickerOpen) openPosCustomerPickerModal({ visitorCreate: !!opts.fromVisitor })
     var scrollEl = document.getElementById('pos-cust-picker-scroll')
     var section = document.getElementById('cust-picker-quick-reg')
     var divider = document.getElementById('cust-picker-quick-reg-divider')
@@ -1775,7 +1798,7 @@
       if (typeof cosmosFieldClear === 'function') cosmosFieldClear(phoneEl)
     }
     if (nameEl) {
-      nameEl.value = ''
+      nameEl.value = prefillName != null ? String(prefillName).trim() : ''
       if (typeof cosmosFieldClear === 'function') cosmosFieldClear(nameEl)
     }
     if (section) section.classList.add('pos-cust-quick-reg--highlight')
@@ -1788,6 +1811,7 @@
     window.setTimeout(function () {
       if (section) section.classList.remove('pos-cust-quick-reg--highlight')
     }, 2200)
+    if (opts.fromVisitor) setCustomerPickerVisitorCreateMode(true)
   }
 
   /** Validates POS customer-create phone; returns 10-digit mobile or error message. */
@@ -1901,6 +1925,9 @@
       family_names: posRowFamilyNames(row),
       pendingPatientName: opts.pendingPatientName || null
     })
+    posGatepassSelectedVisitor = null
+    var gpSel = document.getElementById('pos-gp-selection')
+    if (gpSel) gpSel.remove()
     if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Cx selected')
   }
 
@@ -2019,6 +2046,9 @@
   function clearPosCustomerSelection() {
     posSelectedCustomerId = null
     posSelectedCustomerSnapshot = null
+    posGatepassSelectedVisitor = null
+    var gpSelEl = document.getElementById('pos-gp-selection')
+    if (gpSelEl) gpSelEl.remove()
     posPendingLensPatientName = null
     lensWizard.customerName = null
     posCartOffers = []
@@ -2218,6 +2248,29 @@
     })
   }
 
+  function setCartCxActionsMode(mode) {
+    const actions = document.getElementById('pos-lk-cart-customer-actions')
+    const actionBtn = document.getElementById('btn-cart-customer-action')
+    const clearBtn = document.getElementById('btn-cart-cx-clear')
+    const famBtn = document.getElementById('btn-cart-family-members')
+    if (actions) {
+      actions.classList.toggle('pos-lk-cart-customer-actions--minimal', mode === 'minimal')
+      actions.classList.toggle('pos-lk-cart-customer-actions--cta', mode === 'cta')
+    }
+    if (mode === 'minimal') {
+      if (actionBtn) actionBtn.hidden = false
+      if (clearBtn) clearBtn.hidden = false
+    } else if (mode === 'cta') {
+      if (actionBtn) actionBtn.hidden = false
+      if (clearBtn) clearBtn.hidden = true
+      if (famBtn) famBtn.hidden = true
+    } else {
+      if (actionBtn) actionBtn.hidden = true
+      if (clearBtn) clearBtn.hidden = true
+      if (famBtn) famBtn.hidden = true
+    }
+  }
+
   function renderCartCustomerRef() {
     const body = document.getElementById('pos-lk-cart-customer-body')
     const card = document.getElementById('pos-lk-cart-customer-card')
@@ -2226,29 +2279,65 @@
     if (!body) return
     const snap = posSelectedCustomerSnapshot
     const linked = !!(snap && posSelectedCustomerId)
+    const visitor = posGatepassSelectedVisitor
+    const visitorPending = !linked && visitor && String(visitor.name || visitor.phone || '').trim()
     if (card) {
       card.classList.toggle('pos-lk-cart-customer-card--linked', linked)
-      card.classList.toggle('pos-lk-cart-customer-card--empty', !linked)
-      if (linked) card.classList.remove('pos-lk-cart-cust--required')
+      card.classList.toggle('pos-lk-cart-customer-card--visitor', !!visitorPending)
+      card.classList.toggle('pos-lk-cart-customer-card--empty', !linked && !visitorPending)
+      if (linked || visitorPending) card.classList.remove('pos-lk-cart-cust--required')
     }
     if (linked) {
-      const phoneRow = snap.phone
-        ? '<div class="pos-lk-cart-cust-row">' + escapeHtml(snap.phone) + '</div>'
-        : ''
+      const metaParts = []
+      if (snap.phone) metaParts.push(escapeHtml(String(snap.phone)))
+      metaParts.push('ID ' + escapeHtml(String(snap.customer_id)))
       const coinRow = snap.coins != null && Number(snap.coins) > 0
-        ? '<div class="pos-lk-cart-cust-coins" title="Cashback Coins balance">◈ ' + Number(snap.coins).toLocaleString('en-IN') + ' Coins' + (snap.rupee_value > 0 ? ' · ≈ ₹' + snap.rupee_value : '') + '</div>'
+        ? '<div class="pos-lk-cart-cust-coins" title="Cashback Coins balance">◈ ' + Number(snap.coins).toLocaleString('en-IN') + (snap.rupee_value > 0 ? ' · ≈ ₹' + snap.rupee_value : '') + '</div>'
         : ''
       body.innerHTML =
         '<div class="pos-lk-cart-cust-name">' + escapeHtml(posCustomerPrimaryName(snap)) + '</div>' +
-        phoneRow +
-        coinRow +
-        '<div class="pos-lk-cart-cust-meta">Cx ID · ' + escapeHtml(String(snap.customer_id)) + '</div>'
+        '<div class="pos-lk-cart-cust-meta">' + metaParts.join(' · ') + '</div>' +
+        coinRow
       if (actionBtn) {
-        actionBtn.textContent = 'Change Cx'
+        actionBtn.textContent = 'Change'
         actionBtn.classList.remove('pos-lk-cart-customer-btn--primary')
         actionBtn.setAttribute('aria-label', 'Change Cx')
       }
-      if (clearBtn) clearBtn.hidden = false
+      if (clearBtn) {
+        clearBtn.textContent = 'Clear'
+        clearBtn.setAttribute('aria-label', 'Clear Cx from bill')
+      }
+      setCartCxActionsMode('minimal')
+      return
+    }
+    if (visitorPending) {
+      const vName = String(visitor.name || 'Visitor').trim()
+      const vPhone = visitor.phone ? '<div class="pos-lk-cart-cust-row">' + escapeHtml(String(visitor.phone)) + '</div>' : ''
+      const showCreateCx = !visitor.has_customer && !visitor.customer_id
+      const createBtn = showCreateCx
+        ? '<button type="button" class="pos-lk-cart-cust-create-cx" id="btn-cart-visitor-create-cx">Create Cx</button>'
+        : ''
+      body.innerHTML =
+        '<div class="pos-lk-cart-cust-name-row">' +
+        '<span class="pos-lk-cart-cust-name">' + escapeHtml(vName) + '</span>' +
+        createBtn +
+        '</div>' +
+        vPhone +
+        '<div class="pos-lk-cart-cust-meta">Select or create Cx for this visitor</div>'
+      const createEl = document.getElementById('btn-cart-visitor-create-cx')
+      if (createEl) {
+        createEl.addEventListener('click', function (e) {
+          e.preventDefault()
+          e.stopPropagation()
+          posGatepassCreateCxFromSelectedVisitor()
+        })
+      }
+      if (actionBtn) {
+        actionBtn.textContent = 'Select Cx'
+        actionBtn.classList.add('pos-lk-cart-customer-btn--primary')
+        actionBtn.setAttribute('aria-label', 'Select Cx')
+      }
+      setCartCxActionsMode('minimal')
       return
     }
     body.innerHTML =
@@ -2259,7 +2348,7 @@
       actionBtn.classList.add('pos-lk-cart-customer-btn--primary')
       actionBtn.setAttribute('aria-label', 'Select Cx')
     }
-    if (clearBtn) clearBtn.hidden = true
+    setCartCxActionsMode('cta')
   }
 
   /**
@@ -4909,16 +4998,40 @@
     }
   }
 
-  function lensPatientChooserHtml() {
+  function lensCxProfileBillNoteHtml() {
+    var primary = posCustomerPrimaryName(posSelectedCustomerSnapshot)
+    var patient = lensWizard.patientName || primary
+    if (primary && patient && patient !== primary) {
+      return '<span class="pos-lk-customer-bill-note" id="pos-lk-customer-bill-note">Bill / invoice: ' + escapeHtml(primary) + '</span>'
+    }
+    return ''
+  }
+
+  function lensCxCustDropdownHtml() {
+    return '<div class="pos-lk-cust-dropdown" id="pos-lk-cust-dropdown" style="display:none">' +
+      '<div class="pos-search-input-wrap cosmos-cx-search-wrap">' +
+        '<input id="pos-lk-cust-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Search by phone or name" aria-label="Search Cx">' +
+        '<button type="button" id="pos-lk-cust-btn" class="pos-search-btn">Search</button>' +
+      '</div>' +
+      '<div class="pos-lk-cust-dropdown-hint">Search Cx profiles here (2+ characters). Use <strong>GatePass</strong> (bottom right) for today\u2019s visitors.</div>' +
+    '</div>'
+  }
+
+  function lensCxProfileBlockHtml() {
     if (!posSelectedCustomerId || !posSelectedCustomerSnapshot) return ''
     var snap = posSelectedCustomerSnapshot
     var primary = posCustomerPrimaryName(snap)
     var familyNames = posSnapFamilyNames(snap)
     if (!primary && !familyNames.length) return ''
     var selected = lensWizard.patientName || primary
-    var parts = ['<div class="pos-lens-patient-block" role="group" aria-label="Who is this pair for?">']
-    parts.push('<div class="pos-lens-patient-label">Who is this pair for?</div>')
-    parts.push('<div class="pos-lens-patient-chips">')
+    var parts = [
+      '<div class="pos-lens-patient-block pos-lens-cx-profile-block" id="pos-lk-customer-card" role="group" aria-label="Who is this pair for?">',
+      '<div class="pos-lens-cx-profile-head">',
+      '<div class="pos-lens-patient-label">Who is this pair for?</div>',
+      '<button type="button" class="pos-lk-text-link" id="pos-lk-customer-change">Change</button>',
+      '</div>',
+      '<div class="pos-lens-patient-chips">'
+    ]
     function attrPatient(name) {
       return String(name || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')
     }
@@ -4934,7 +5047,10 @@
           escapeHtml(familyName) + '</button>'
       )
     })
-    parts.push('</div></div>')
+    parts.push('</div>')
+    var billNote = lensCxProfileBillNoteHtml()
+    if (billNote) parts.push(billNote)
+    parts.push('</div>')
     return parts.join('')
   }
 
@@ -4948,29 +5064,102 @@
         if (line) line.patient_name = name
         var rxNameEl = document.getElementById('pos-lk-rx-patient-name')
         if (rxNameEl) rxNameEl.value = name
+        var savedRxOv = document.getElementById('overlay-pos-lens-saved-rx')
+        if (savedRxOv && savedRxOv.classList.contains('open')) {
+          syncLensSavedRxModalSubtitle()
+          renderLensSavedRxModalContent()
+        }
         renderLensStep()
       })
     })
+  }
+
+  function lensSelectedPatientLabel () {
+    return (
+      String(lensWizard.patientName || '').trim() ||
+      posCustomerPrimaryName(posSelectedCustomerSnapshot) ||
+      ''
+    )
+  }
+
+  function lensFilteredSavedRxList () {
+    var all = lensWizard.savedRxList || []
+    var patient = lensSelectedPatientLabel()
+    if (!patient) return all
+    var primary = posCustomerPrimaryName(posSelectedCustomerSnapshot) || ''
+    var isPrimary = namesEqualLoose(patient, primary)
+    return all.filter(function (row) {
+      var fn = String(row.family_name || '').trim()
+      var pn = String(row.patient_name || '').trim()
+      var hasFamilyId = row.family_name_id != null && Number(row.family_name_id) > 0
+      if (isPrimary) {
+        if (hasFamilyId || fn) return false
+        if (!pn || namesEqualLoose(pn, primary)) return true
+        return false
+      }
+      if (namesEqualLoose(fn, patient)) return true
+      if (namesEqualLoose(pn, patient)) return true
+      if (hasFamilyId && fn && namesEqualLoose(fn, patient)) return true
+      return false
+    })
+  }
+
+  function syncLensSavedRxModalSubtitle () {
+    var sub = document.getElementById('pos-lens-saved-rx-sub')
+    if (!sub) return
+    var patient = lensSelectedPatientLabel()
+    if (patient) {
+      sub.textContent = 'Select a saved prescription for ' + patient + '.'
+    } else {
+      sub.textContent = 'Select a prescription for this lab order.'
+    }
   }
 
   function syncCustomerPickerBannerAndActions() {
     var banner = document.getElementById('cust-picker-banner')
     var clearBtn = document.getElementById('cust-picker-btn-clear')
     if (banner) {
-      banner.classList.remove('pos-cust-picker-banner--required', 'pos-cust-picker-banner--selected')
+      banner.classList.remove('pos-cust-picker-banner--required', 'pos-cust-picker-banner--selected', 'pos-cust-picker-banner--visitor')
       if (posSelectedCustomerSnapshot) {
         var ph = posSelectedCustomerSnapshot.phone ? ' · ' + posSelectedCustomerSnapshot.phone : ''
-        banner.textContent = 'Selected: ' + posCustomerPrimaryName(posSelectedCustomerSnapshot) + ph
+        banner.textContent = 'Selected Cx: ' + posCustomerPrimaryName(posSelectedCustomerSnapshot) + ph
         banner.classList.add('pos-cust-picker-banner--selected')
       } else if (posSelectedCustomerId) {
         banner.textContent = 'Selected Cx id: ' + posSelectedCustomerId
         banner.classList.add('pos-cust-picker-banner--selected')
+      } else if (posGatepassSelectedVisitor) {
+        var v = posGatepassSelectedVisitor
+        var vPh = v.phone ? ' · ' + v.phone : ''
+        var overlay = document.getElementById('overlay-pos-customer-picker')
+        var visitorCreateMode =
+          overlay && overlay.classList.contains('pos-cust-picker--visitor-create')
+        var showCreate = !visitorCreateMode && !v.has_customer && !v.customer_id
+        banner.classList.add('pos-cust-picker-banner--visitor')
+        banner.innerHTML =
+          '<span class="pos-cust-picker-banner-text">Selected visitor: ' +
+          escapeHtml(String(v.name || 'Visitor').trim()) + escapeHtml(vPh) + '</span>' +
+          (showCreate
+            ? '<button type="button" class="pos-cust-picker-banner-create-cx" id="cust-picker-banner-create-cx">Create Cx</button>'
+            : '')
+        var bannerCreate = document.getElementById('cust-picker-banner-create-cx')
+        if (bannerCreate) {
+          bannerCreate.addEventListener('click', function (e) {
+            e.preventDefault()
+            e.stopPropagation()
+            posGatepassCreateCxFromSelectedVisitor()
+          })
+        }
       } else {
         banner.textContent = 'Cx required before payment.'
         banner.classList.add('pos-cust-picker-banner--required')
       }
     }
-    if (clearBtn) clearBtn.hidden = !(posSelectedCustomerId && posSelectedCustomerId > 0)
+    if (clearBtn) {
+      clearBtn.hidden = !(
+        (posSelectedCustomerId && posSelectedCustomerId > 0) ||
+        (posGatepassSelectedVisitor && String(posGatepassSelectedVisitor.name || posGatepassSelectedVisitor.phone || '').trim())
+      )
+    }
   }
 
   function customerPickerInitials(name) {
@@ -4983,6 +5172,7 @@
   function closePosCustomerPickerModal() {
     var overlay = document.getElementById('overlay-pos-customer-picker')
     if (!overlay || !overlay.classList.contains('open')) return
+    hideQuickCxRegistration()
     overlay.classList.remove('open')
     posLkUnlockModalScroll()
     if (posCxSearchInstance && typeof posCxSearchInstance.close === 'function') {
@@ -4996,7 +5186,43 @@
   var posGatepassPollTimer = null
   var posGatepassActiveVisitor = null
   var posGatepassPurposeOptions = null
+  /** FAB / GatePass selection — not cart Cx until Select for cart or Create Cx. */
+  var posGatepassSelectedVisitor = null
   var posGpFabOpen = false
+  var posGpInactivityTimer = null
+  var posGpInactivityBound = false
+  var POS_GP_INACTIVITY_MS = 3000
+
+  function posGpClearInactivityTimer() {
+    if (posGpInactivityTimer) {
+      window.clearTimeout(posGpInactivityTimer)
+      posGpInactivityTimer = null
+    }
+  }
+
+  function posGpResetInactivityTimer() {
+    posGpClearInactivityTimer()
+    if (!posGpFabOpen) return
+    posGpInactivityTimer = window.setTimeout(function () {
+      posGpInactivityTimer = null
+      if (posGpFabOpen) posGpFabClose()
+    }, POS_GP_INACTIVITY_MS)
+  }
+
+  function posGpEnsureInactivityListeners() {
+    if (posGpInactivityBound) return
+    var root = document.getElementById('pos-gp-fab-root')
+    if (!root) return
+    posGpInactivityBound = true
+    function onGpActivity() {
+      if (posGpFabOpen) posGpResetInactivityTimer()
+    }
+    ;['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'wheel', 'focusin', 'click'].forEach(
+      function (ev) {
+        root.addEventListener(ev, onGpActivity, { passive: true })
+      }
+    )
+  }
 
   function posGatepassHasPerm(key) {
     var perms = posJwtPermissions().map(function (p) { return String(p).toLowerCase() })
@@ -5038,10 +5264,132 @@
     return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase()
   }
 
+  function posGatepassNormalizeVisitor(v) {
+    if (!v) return null
+    return {
+      visitor_id: v.visitor_id != null ? v.visitor_id : null,
+      name: v.name || '',
+      phone: v.phone || '',
+      customer_id: v.customer_id != null ? v.customer_id : null,
+      has_customer: !!(v.has_customer || v.customer_id),
+      purpose: v.purpose || null,
+      status: v.status || null,
+      customer_data: v.customer_data || null,
+      source: v.source || (v.visitor_id ? 'visitor' : null)
+    }
+  }
+
+  function posGatepassClearSelectedVisitor() {
+    posGatepassSelectedVisitor = null
+    var el = document.getElementById('pos-gp-selection')
+    if (el) el.remove()
+    renderCartCustomerRef()
+    syncCustomerPickerBannerAndActions()
+  }
+
+  function posGatepassSelectVisitor(v) {
+    posGatepassSelectedVisitor = posGatepassNormalizeVisitor(v)
+    posGatepassSetUiSelection(posGatepassSelectedVisitor)
+    renderCartCustomerRef()
+    syncCustomerPickerBannerAndActions()
+    var root = document.getElementById('pos-gp-fab-root')
+    if (root && posGpFabOpen) {
+      posGpRenderContacts(root._posLastInStore || [], root._posLastExited || [])
+    }
+  }
+
+  /** Apply FAB/search visitor to cart Cx column — no navigation, no action sheet. */
+  function posGatepassApplyVisitorToCartInPlace(v) {
+    posGatepassSelectVisitor(v)
+    var norm = posGatepassSelectedVisitor
+    if (!norm) return
+    var ctx = {
+      source: 'visitor',
+      visitor_id: norm.visitor_id,
+      name: norm.name,
+      phone: norm.phone,
+      customer_id: norm.customer_id,
+      has_customer: !!(norm.has_customer || norm.customer_id),
+      customer_data: null
+    }
+
+    function finishPending() {
+      posSelectedCustomerId = null
+      posSelectedCustomerSnapshot = null
+      posPendingLensPatientName = null
+      lensWizard.customerName = null
+      saveCart()
+      renderCartCustomerRef()
+      syncCustomerPickerBannerAndActions()
+      if (posIsLensCxProfileStep()) refreshLensCustomerFromGatepass()
+      if (typeof cosmosToastInfo === 'function') {
+        cosmosToastInfo('Visitor on cart — select or create Cx')
+      }
+    }
+
+    function finishLinked() {
+      renderCartCustomerRef()
+      syncCustomerPickerBannerAndActions()
+      if (posIsLensCxProfileStep()) refreshLensCustomerFromGatepass()
+    }
+
+    if (ctx.has_customer && ctx.customer_id && ctx.phone) {
+      void posGatepassApiGet('/api/pos/customer-search?q=' + encodeURIComponent(ctx.phone))
+        .then(function (rows) {
+          var list = Array.isArray(rows) ? rows : (rows && rows.data) || []
+          ctx.customer_data = list[0] || null
+          if (ctx.customer_data && posGatepassLinkCtxFromCentralCx(ctx)) {
+            finishLinked()
+            return
+          }
+          finishPending()
+        })
+        .catch(function () {
+          finishPending()
+        })
+      return
+    }
+    finishPending()
+  }
+
+  function posIsLensCxProfileStep() {
+    var path = normalizePosPath(window.location.pathname.replace(/\/+$/, '') || '')
+    if (path !== POS_ROUTES.LENS) return false
+    return lensWizard.step === 2 && lensWizard.subPhase !== 'addons'
+  }
+
+  function posGatepassBubbleSelectForCart(v) {
+    posGatepassApplyVisitorToCartInPlace(v)
+    if (posIsLensCxProfileStep()) {
+      refreshLensCustomerFromGatepass()
+      posGpFabClose()
+    }
+  }
+
+  function posGatepassCreateCxFromSelectedVisitor() {
+    var v = posGatepassSelectedVisitor
+    if (!v) return
+    var phone = window.cosmosCxSearch && window.cosmosCxSearch.normalizeDigits
+      ? window.cosmosCxSearch.normalizeDigits(v.phone)
+      : String(v.phone || '').replace(/\D/g, '').slice(-10)
+    if (phone.length !== 10) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Enter a valid 10-digit mobile for this visitor.')
+      return
+    }
+    openQuickCxRegistration(phone, String(v.name || '').trim(), { fromVisitor: true })
+  }
+
   function posGpBuildBubble(v, isExited) {
     var item = document.createElement('button')
     item.type = 'button'
-    item.className = 'pos-gp-contact-item' + (isExited ? ' pos-gp-contact-item--exited' : '')
+    var selected =
+      posGatepassSelectedVisitor &&
+      posGatepassSelectedVisitor.visitor_id != null &&
+      Number(posGatepassSelectedVisitor.visitor_id) === Number(v.visitor_id)
+    item.className =
+      'pos-gp-contact-item' +
+      (isExited ? ' pos-gp-contact-item--exited' : '') +
+      (selected ? ' pos-gp-contact-item--selected' : '')
     item.setAttribute('role', 'listitem')
     var avatarCls = isExited
       ? 'pos-gp-contact-avatar--exited'
@@ -5053,8 +5401,7 @@
       + '<div class="pos-gp-contact-name">' + escapeHtml(firstName) + '</div>'
       + '<div class="pos-gp-contact-status">' + escapeHtml(statusLabel) + '</div>'
     item.addEventListener('click', function () {
-      posGpFabClose()
-      openGatepassActionsSheet(v)
+      posGatepassBubbleSelectForCart(v)
     })
     return item
   }
@@ -5063,6 +5410,9 @@
     var container = document.getElementById('pos-gp-contacts-container')
     if (!container) return
     container.innerHTML = ''
+    if (posGatepassSelectedVisitor) {
+      posGatepassSetUiSelection(posGatepassSelectedVisitor)
+    }
 
     if (inStore.length) {
       var lbl1 = document.createElement('div')
@@ -5104,6 +5454,8 @@
     panel.hidden = false
     posGpFabOpen = true
     if (fab) fab.setAttribute('aria-expanded', 'true')
+    posGpEnsureInactivityListeners()
+    posGpResetInactivityTimer()
     setTimeout(function () {
       document.addEventListener('click', _posGpOutsideClick, { capture: true, once: true })
       document.addEventListener('keydown', _posGpEscKey)
@@ -5116,6 +5468,7 @@
     if (!panel) return
     panel.hidden = true
     posGpFabOpen = false
+    posGpClearInactivityTimer()
     if (fab) fab.setAttribute('aria-expanded', 'false')
     document.removeEventListener('click', _posGpOutsideClick, { capture: true })
     document.removeEventListener('keydown', _posGpEscKey)
@@ -5145,9 +5498,7 @@
   function posGatepassSyncUi() {
     var canView = posGatepassHasPerm('gatepass.view')
     var canCheckin = posGatepassHasPerm('gatepass.checkin')
-    var navBtn = document.getElementById('btn-gatepass-checkin-nav')
     var fabRoot = document.getElementById('pos-gp-fab-root')
-    if (navBtn) navBtn.hidden = !canCheckin
     if (fabRoot) fabRoot.hidden = !canView
     var fabCheckin = document.getElementById('pos-gp-fab-checkin')
     if (fabCheckin) fabCheckin.hidden = !canCheckin
@@ -5277,18 +5628,111 @@
       }
       if (visitor && visitor.visitor_id && visitor.status === 'waiting' && posGatepassHasPerm('gatepass.action')) {
         return posGatepassApiPatch('/api/gatepass/visitor/' + visitor.visitor_id + '/status', { status: 'in_service' })
-          .catch(function () { /* non-blocking */ })
+          .then(function () { return visitor })
+          .catch(function () { return visitor })
       }
-    }).then(function () {
+      return visitor
+    }).then(function (visitor) {
       void posGatepassRefreshWidget()
+      return visitor
     }).catch(function (err) {
       if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Check-in failed')
     })
   }
 
+  function posGatepassSurfaceIsGatepass(surface) {
+    return surface === 'checkin' || surface === 'gatepass'
+  }
+
+  function posGatepassSelectionLabel(ctx) {
+    if (!ctx) return ''
+    if (ctx.customer_data) {
+      return String(ctx.customer_data.full_name || ctx.customer_data.display_name || ctx.name || '').trim()
+    }
+    return String(ctx.name || ctx.phone || '').trim()
+  }
+
+  function posGatepassApplyCheckinForm(ctx) {
+    if (!ctx) return
+    var phoneEl = document.getElementById('gatepass-checkin-phone')
+    var nameEl = document.getElementById('gatepass-checkin-name')
+    var phone = ctx.phone || (ctx.customer_data && ctx.customer_data.phone) || ''
+    var name =
+      (ctx.customer_data && (ctx.customer_data.full_name || ctx.customer_data.display_name)) ||
+      ctx.name ||
+      ''
+    if (phoneEl && phone) phoneEl.value = phone
+    if (nameEl && String(name).trim()) nameEl.value = String(name).trim()
+  }
+
+  function posGatepassSetUiSelection(ctx) {
+    var panel = document.getElementById('pos-gp-fab-panel')
+    var container = document.getElementById('pos-gp-contacts-container')
+    if (!panel || !container) return
+    var label = posGatepassSelectionLabel(ctx)
+    if (!label) return
+    var el = document.getElementById('pos-gp-selection')
+    if (!el) {
+      el = document.createElement('div')
+      el.id = 'pos-gp-selection'
+      el.className = 'pos-gp-selection'
+      el.setAttribute('role', 'status')
+      el.setAttribute('aria-live', 'polite')
+      container.parentNode.insertBefore(el, container)
+    }
+    var sub = ctx.visitor_id ? 'Visitor in queue' : (ctx.has_customer ? 'Cx profile' : 'Ready to check in')
+    var phoneLine = ctx.phone
+      ? '<span class="pos-gp-selection-phone">' + escapeHtml(String(ctx.phone)) + '</span>'
+      : ''
+    var actionsHtml =
+      '<div class="pos-gp-selection-actions">' +
+      '<button type="button" class="pos-gp-selection-btn" data-gp-action="clear">Clear</button>' +
+      '</div>'
+    el.innerHTML =
+      '<span class="pos-gp-selection-lbl">Selected · ' + escapeHtml(sub) + '</span>' +
+      '<span class="pos-gp-selection-name">' + escapeHtml(label) + '</span>' +
+      phoneLine +
+      actionsHtml
+    var clearBtn = el.querySelector('[data-gp-action="clear"]')
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function (e) {
+        e.stopPropagation()
+        posGatepassClearSelectedVisitor()
+        var root = document.getElementById('pos-gp-fab-root')
+        if (root && posGpFabOpen) {
+          posGpRenderContacts(root._posLastInStore || [], root._posLastExited || [])
+        }
+      })
+    }
+  }
+
+  function posGatepassFinishGatepassSelect(ctx, surface) {
+    if (posCxSearchInstance && typeof posCxSearchInstance.close === 'function') {
+      posCxSearchInstance.close()
+    }
+    if (ctx) {
+      posGatepassSelectVisitor(ctx)
+      if (surface === 'checkin') {
+        posGatepassApplyCheckinForm(ctx)
+        if (typeof cosmosToastInfo === 'function') {
+          cosmosToastInfo(
+            ctx.visitor_id
+              ? 'Visitor selected'
+              : (ctx.has_customer
+                ? 'Cx selected — complete check-in when ready'
+                : 'Details filled in check-in')
+          )
+        }
+      } else if (ctx.visitor_id && typeof cosmosToastSuccess === 'function') {
+        cosmosToastSuccess('Visitor selected')
+      }
+    }
+    void posGatepassRefreshWidget()
+  }
+
   function posAfterCxSearchLinked(surface) {
     if (surface === 'lens') {
-      refreshLensCustomerBanner()
+      refreshLensCustomerFromGatepass()
       var dd = document.getElementById('pos-lk-cust-dropdown')
       if (dd) dd.style.display = 'none'
       if (posLensCxSearchInstance && typeof posLensCxSearchInstance.close === 'function') {
@@ -5297,25 +5741,61 @@
       maybeRefreshCartSidebar()
       return
     }
+    if (posGatepassSurfaceIsGatepass(surface)) return
     closePosCustomerPickerModal()
     leaveCustomerScreenToCart()
   }
 
   function posGatepassHandleVisitorSelect(ctx, surface) {
     surface = surface || 'picker'
-    if (ctx.source === 'cx' && ctx.customer_data) {
-      posGatepassLinkCtxFromCentralCx(ctx)
-      if (surface === 'picker') syncCustomerPickerBannerAndActions()
-      void posGatepassCheckInFromCxCtx(ctx).then(function () {
-        posAfterCxSearchLinked(surface)
-      })
+    var gpOnly = posGatepassSurfaceIsGatepass(surface)
+    var forCart = surface === 'cart'
+    var forPicker = surface === 'picker'
+
+    if (forPicker && ctx.source === 'visitor') {
+      posGatepassSelectVisitor(ctx)
+      closePosCustomerPickerModal()
+      if (posCxSearchInstance && typeof posCxSearchInstance.close === 'function') {
+        posCxSearchInstance.close()
+      }
       return
     }
-    if (posGatepassLinkCtxFromCentralCx(ctx)) {
-      if (surface === 'picker') syncCustomerPickerBannerAndActions()
+
+    if (forCart || (forPicker && ctx.source === 'cx' && ctx.customer_data)) {
+      if (ctx.source === 'cx' && ctx.customer_data) {
+        posGatepassClearSelectedVisitor()
+        posGatepassLinkCtxFromCentralCx(ctx)
+        if (forPicker) syncCustomerPickerBannerAndActions()
+        posAfterCxSearchLinked(forPicker ? 'picker' : 'cart')
+        return
+      }
+      posGatepassSelectVisitor(ctx)
+      if (posGatepassLinkCtxFromCentralCx(ctx)) {
+        posAfterCxSearchLinked('cart')
+        return
+      }
+      leaveCustomerScreenToCart()
+      return
+    }
+
+    if (ctx.source === 'cx' && ctx.customer_data) {
+      if (gpOnly) {
+        posGatepassApplyCheckinForm(ctx)
+        posGatepassFinishGatepassSelect(ctx, surface)
+        return
+      }
+      posGatepassClearSelectedVisitor()
+      posGatepassLinkCtxFromCentralCx(ctx)
+      if (forPicker) syncCustomerPickerBannerAndActions()
       posAfterCxSearchLinked(surface)
       return
     }
+
+    if (gpOnly && ctx.visitor_id) {
+      posGatepassFinishGatepassSelect(ctx, surface)
+      return
+    }
+
     var digits = window.cosmosCxSearch && window.cosmosCxSearch.normalizeDigits
       ? window.cosmosCxSearch.normalizeDigits(ctx.phone)
       : String(ctx.phone || '').replace(/\D/g, '').slice(-10)
@@ -5334,16 +5814,38 @@
           ctx.has_customer = true
           ctx.customer_data = hit
           ctx.customer_id = hit.customer_id
-          if (posGatepassLinkCtxFromCentralCx(ctx)) {
-            if (surface === 'picker') syncCustomerPickerBannerAndActions()
-            posAfterCxSearchLinked(surface)
+          if (gpOnly) {
+            posGatepassApplyCheckinForm(ctx)
+            posGatepassFinishGatepassSelect(ctx, surface)
+            return
+          }
+          if (forPicker) {
+            posGatepassClearSelectedVisitor()
+            posGatepassLinkCtxFromCentralCx(ctx)
+            syncCustomerPickerBannerAndActions()
+            posAfterCxSearchLinked('picker')
             return
           }
         }
+        if (gpOnly) {
+          posGatepassApplyCheckinForm(ctx)
+          posGatepassFinishGatepassSelect(ctx, surface)
+          return
+        }
         posGatepassOpenQuickCxFromVisitor(ctx, surface)
       }).catch(function () {
+        if (gpOnly) {
+          posGatepassApplyCheckinForm(ctx)
+          posGatepassFinishGatepassSelect(ctx, surface)
+          return
+        }
         posGatepassOpenQuickCxFromVisitor(ctx, surface)
       })
+      return
+    }
+    if (gpOnly) {
+      posGatepassApplyCheckinForm(ctx)
+      posGatepassFinishGatepassSelect(ctx, surface)
       return
     }
     posGatepassOpenQuickCxFromVisitor(ctx, surface)
@@ -5355,9 +5857,14 @@
       ? window.cosmosCxSearch.normalizeDigits(ctx.phone)
       : ctx.phone
     if (surface === 'lens') {
-      openLensNewCustomerModal(phone)
-      var lensNameEl = document.getElementById('pos-lens-new-cust-name')
-      if (lensNameEl && ctx.name) lensNameEl.value = ctx.name
+      var norm = posGatepassNormalizeVisitor(ctx)
+      if (norm) posGatepassApplyVisitorToCartInPlace(norm)
+      refreshLensCustomerFromGatepass()
+      return
+    }
+    if (posGatepassSurfaceIsGatepass(surface)) {
+      posGatepassApplyCheckinForm(ctx)
+      posGatepassFinishGatepassSelect(ctx, surface)
       return
     }
     hideQuickCxRegistration()
@@ -5381,6 +5888,7 @@
       inputEl: inputEl,
       storeId: storeId,
       bubbleResultsEl: bubbleResultsEl || null,
+      queueMode: handlers.queueMode || 'full',
       apiGet: function (path) { return posGatepassApiGet(path) },
       apiPatch: function (path, payload) { return posGatepassApiPatch(path, payload) },
       canSearchCx: function () { return posGatepassCanSearchCx() },
@@ -5400,7 +5908,7 @@
           openGatepassCheckInModal(phone, '')
         },
         onCreateCx: function (phone) {
-          openQuickCxRegistration(phone)
+          openQuickCxRegistration(phone, '')
         }
       })
       if (posCxSearchInstance && inputEl && inputEl.value.trim()) {
@@ -5412,9 +5920,10 @@
   function posLensInitCxSearch() {
     var inputEl = document.getElementById('pos-lk-cust-input')
     posLensCxSearchInstance = posCreateCxSearchInstance(inputEl, posLensCxSearchInstance, {
+      queueMode: 'cx-only',
       onSelect: function (ctx) { posGatepassHandleVisitorSelect(ctx, 'lens') },
-      onCheckInNew: function (phone) {
-        openGatepassCheckInModal(phone, '')
+      onCreateCx: function (phone) {
+        openQuickCxRegistration(phone, '')
       }
     })
     return posLensCxSearchInstance
@@ -5567,31 +6076,11 @@
 
   function posGatepassActionSelectForCart() {
     if (!posGatepassActiveVisitor) return
-    var v = posGatepassActiveVisitor
     closeGatepassActionsSheet()
-    var ctx = {
-      visitor_id: v.visitor_id,
-      name: v.name,
-      phone: v.phone,
-      customer_id: v.customer_id,
-      has_customer: !!(v.has_customer || v.customer_id),
-      customer_data: null
-    }
-    if (ctx.has_customer && ctx.customer_id) {
-      void posGatepassApiGet('/api/pos/customer-search?q=' + encodeURIComponent(ctx.phone)).then(function (rows) {
-        var list = Array.isArray(rows) ? rows : []
-        ctx.customer_data = list[0] || null
-        posGatepassHandleVisitorSelect(ctx)
-      }).catch(function () {
-        posGatepassHandleVisitorSelect(ctx)
-      })
-      return
-    }
-    posGatepassHandleVisitorSelect(ctx)
+    posGatepassApplyVisitorToCartInPlace(posGatepassActiveVisitor)
   }
 
   function bindGatepassModule() {
-    var navBtn = document.getElementById('btn-gatepass-checkin-nav')
     var submitBtn = document.getElementById('gatepass-checkin-submit')
     var cancelBtn = document.getElementById('gatepass-checkin-cancel')
     var dismissBtn = document.getElementById('gatepass-checkin-dismiss')
@@ -5602,7 +6091,6 @@
     var actInSvc = document.getElementById('gatepass-action-in-service')
     var actClose = document.getElementById('gatepass-action-close')
 
-    if (navBtn) navBtn.addEventListener('click', function () { openGatepassCheckInModal('', '') })
     if (submitBtn) submitBtn.addEventListener('click', function () { void submitGatepassCheckIn(submitBtn) })
     if (cancelBtn) cancelBtn.addEventListener('click', closeGatepassCheckInModal)
     if (dismissBtn) dismissBtn.addEventListener('click', closeGatepassCheckInModal)
@@ -5633,11 +6121,22 @@
           var nm = document.getElementById('gatepass-checkin-name')
           if (nm) nm.focus()
         },
-        onCreateCx: function () {}
+        onCreateCx: function (phone) {
+          var nm = document.getElementById('gatepass-checkin-name')
+          openQuickCxRegistration(phone, nm ? nm.value.trim() : '')
+        }
       }, bubbleResultsEl)
     }
 
     // ── FAB wiring ──────────────────────────────────────────────────────────
+    posGpEnsureInactivityListeners()
+    if (typeof window.cosmosGpFabBindVerticalDrag === 'function') {
+      window.cosmosGpFabBindVerticalDrag({
+        rootId: 'pos-gp-fab-root',
+        handleId: 'pos-gp-fab',
+        storageKey: 'pos_gp_fab_bottom_px'
+      })
+    }
     var fab = document.getElementById('pos-gp-fab')
     if (fab) fab.addEventListener('click', function () { posGpFabToggle() })
 
@@ -5654,17 +6153,21 @@
     if (fabShowAll) fabShowAll.addEventListener('click', function () { posGpFabClose() })
   }
 
-  function openPosCustomerPickerModal() {
+  function openPosCustomerPickerModal(opts) {
+    opts = opts || {}
     closeLensRxManualModal()
+    closeLensSavedRxModal()
     closeLensNewCustomerModal()
     var overlay = document.getElementById('overlay-pos-customer-picker')
     if (!overlay) return
+    if (!opts.visitorCreate) setCustomerPickerVisitorCreateMode(false)
     syncCustomerPickerBannerAndActions()
     var pickSearch = document.getElementById('cust-picker-search-input')
     var pickResults = document.getElementById('cust-picker-results')
     if (pickSearch) pickSearch.value = ''
     if (pickResults) pickResults.innerHTML = ''
-    hideQuickCxRegistration()
+    hideQuickCxRegistration({ keepVisitorCreateMode: !!opts.visitorCreate })
+    if (opts.visitorCreate) setCustomerPickerVisitorCreateMode(true)
     var wasOpen = overlay.classList.contains('open')
     overlay.classList.add('open')
     if (!wasOpen) posLkLockModalScroll()
@@ -5931,7 +6434,7 @@
     if (!body || !lensCatalogData) return
     if (lensWizard.step === 0) renderLensStep0PowerType(body)
     else if (lensWizard.step === 1) renderLensStep1LensSelection(body)
-    else if (lensWizard.step === 2) renderLensStep2AddPower(body, lensPatientChooserHtml())
+    else if (lensWizard.step === 2) renderLensStep2AddPower(body, lensCxProfileBlockHtml())
     body.classList.toggle('pos-lens-body--step1-split', lensWizard.step === 1)
     const lensStep2AddonsScroll =
       lensWizard.step === 2 &&
@@ -5940,6 +6443,16 @@
       (lensWizard.pkg.addons || []).length > 0
     body.classList.toggle('pos-lens-body--step2-compact', lensWizard.step === 2 && !lensStep2AddonsScroll)
     refreshCheckout5Nav()
+    if (
+      lensWizard.step === 2 &&
+      lensWizard.subPhase !== 'addons' &&
+      posSelectedCustomerId &&
+      posSelectedCustomerId > 0 &&
+      !lensWizard.savedRxLoaded &&
+      !lensWizard.savedRxLoading
+    ) {
+      void loadLensSavedRxList(false)
+    }
   }
 
   // ── Lens step 0 — Dynamic wizard_entries from /api/pos/lens-catalog ─────────
@@ -6143,21 +6656,138 @@
   }
 
   // ── Lens step 2 — Pencil 04-add-power: customer card + 4 power options ───
-  function refreshLensCustomerBanner() {
-    const customerName = lensWizard.customerName || (posSelectedCustomerId ? 'Selected Cx #' + posSelectedCustomerId : 'No Cx selected')
-    const nameEl = document.getElementById('pos-lk-customer-name')
-    const av = document.querySelector('#pos-lk-customer-card .pos-lk-customer-avatar')
-    if (nameEl) nameEl.textContent = customerName
-    if (av) av.textContent = (customerName || 'W').trim().charAt(0).toUpperCase()
-  }
-
-  function renderLensStep2AddPower(body, patientHtml) {
+  function getLensCustomerCardDisplay() {
+    const linked = !!(posSelectedCustomerId && posSelectedCustomerSnapshot)
+    const visitor = posGatepassSelectedVisitor
+    const visitorPending = !linked && visitor && String(visitor.name || visitor.phone || '').trim()
+    if (visitorPending) {
+      const vName = String(visitor.name || 'Visitor').trim()
+      const showCreateCx = !visitor.has_customer && !visitor.customer_id
+      return {
+        visitorPending: true,
+        name: vName,
+        initial: vName.charAt(0).toUpperCase(),
+        billNote: '',
+        createBtnHtml: showCreateCx
+          ? '<button type="button" class="pos-lk-customer-create-cx" id="btn-lens-visitor-create-cx">Create Cx</button>'
+          : '',
+        visitorSubHtml: '<span class="pos-lk-customer-visitor-sub">Select or create Cx for this visitor</span>',
+        cardClass: 'pos-lk-customer-card--visitor'
+      }
+    }
     const customerName =
       lensWizard.patientName ||
       lensWizard.customerName ||
-      (posSelectedCustomerId ? 'Selected Cx #' + posSelectedCustomerId : 'No Cx selected')
+      (posSelectedCustomerId ? posCustomerPrimaryName(posSelectedCustomerSnapshot) || ('Selected Cx #' + posSelectedCustomerId) : 'No Cx selected')
     const primaryBill = posCustomerPrimaryName(posSelectedCustomerSnapshot)
-    const initial = customerName ? customerName.trim().charAt(0).toUpperCase() : '?'
+    const billNote =
+      primaryBill && lensWizard.patientName && lensWizard.patientName !== primaryBill
+        ? '<span class="pos-lk-customer-bill-note">Bill / invoice: ' + escapeHtml(primaryBill) + '</span>'
+        : ''
+    return {
+      visitorPending: false,
+      name: customerName,
+      initial: customerName ? customerName.trim().charAt(0).toUpperCase() : '?',
+      billNote: billNote,
+      createBtnHtml: '',
+      visitorSubHtml: '',
+      cardClass: linked ? 'pos-lk-customer-card--linked' : ''
+    }
+  }
+
+  function bindLensVisitorCreateCxBtn(root) {
+    if (!root) return
+    const createEl = root.querySelector('#btn-lens-visitor-create-cx')
+    if (createEl) {
+      createEl.addEventListener('click', function (e) {
+        e.preventDefault()
+        e.stopPropagation()
+        posGatepassCreateCxFromSelectedVisitor()
+      })
+    }
+  }
+
+  function refreshLensCxProfileBlock(card) {
+    if (!card || !card.classList.contains('pos-lens-cx-profile-block')) return false
+    var newHtml = lensCxProfileBlockHtml()
+    if (!newHtml) return true
+    var parent = card.parentNode
+    if (parent) {
+      var tmp = document.createElement('div')
+      tmp.innerHTML = newHtml
+      var newCard = tmp.firstElementChild
+      if (newCard) {
+        parent.replaceChild(newCard, card)
+        bindLensPatientChooser(newCard)
+        var change = newCard.querySelector('#pos-lk-customer-change')
+        var dd = document.getElementById('pos-lk-cust-dropdown')
+        if (change && dd) {
+          change.addEventListener('click', function () {
+            var show = dd.style.display === 'none'
+            dd.style.display = show ? 'flex' : 'none'
+            if (show) {
+              var inst = posLensInitCxSearch()
+              var inp = document.getElementById('pos-lk-cust-input')
+              if (inst && inp) {
+                if (inp.value.trim()) void inst.fetchAndRender()
+                else inp.focus()
+              }
+            }
+          })
+        }
+      }
+    }
+    return true
+  }
+
+  function refreshLensCustomerFromGatepass() {
+    const card = document.getElementById('pos-lk-customer-card')
+    if (!card) {
+      refreshLensCustomerBanner()
+      return
+    }
+    const display = getLensCustomerCardDisplay()
+    if (refreshLensCxProfileBlock(card)) return
+    const av = card.querySelector('.pos-lk-customer-avatar')
+    const meta = card.querySelector('.pos-lk-customer-meta')
+    card.classList.remove('pos-lk-customer-card--visitor', 'pos-lk-customer-card--linked')
+    if (display.cardClass) card.classList.add(display.cardClass)
+    if (av) av.textContent = display.initial
+    if (meta) {
+      if (display.visitorPending) {
+        meta.innerHTML =
+          '<span class="pos-lk-customer-lbl">Shopping for</span>' +
+          '<span class="pos-lk-customer-name-row">' +
+          '<span class="pos-lk-customer-name" id="pos-lk-customer-name">' + escapeHtml(display.name) + '</span>' +
+          display.createBtnHtml +
+          '</span>' +
+          display.visitorSubHtml
+      } else {
+        meta.innerHTML =
+          '<span class="pos-lk-customer-lbl">Shopping for</span>' +
+          '<span class="pos-lk-customer-name" id="pos-lk-customer-name">' + escapeHtml(display.name) + '</span>' +
+          display.billNote
+      }
+    }
+    bindLensVisitorCreateCxBtn(card)
+  }
+
+  function refreshLensCustomerBanner() {
+    const display = getLensCustomerCardDisplay()
+    const card = document.getElementById('pos-lk-customer-card')
+    if (card && refreshLensCxProfileBlock(card)) return
+    const nameEl = document.getElementById('pos-lk-customer-name')
+    const av = document.querySelector('#pos-lk-customer-card .pos-lk-customer-avatar')
+    if (card && display.visitorPending) {
+      refreshLensCustomerFromGatepass()
+      return
+    }
+    if (nameEl) nameEl.textContent = display.name
+    if (av) av.textContent = display.initial
+  }
+
+  function renderLensStep2AddPower(body, profileBlockHtml) {
+    const cardDisplay = getLensCustomerCardDisplay()
     const isInstantFrame = lensWizard.powerType === 'frame_only' || lensWizard.powerType === 'frame_sunglasses'
     const hasPkgAddons = !isInstantFrame && lensWizard.pkg && (lensWizard.pkg.addons || []).length
     const showAddonsOnly = Boolean(hasPkgAddons && lensWizard.subPhase === 'addons')
@@ -6167,35 +6797,33 @@
     }
 
     const html = []
-    if (showProfile && patientHtml) html.push(patientHtml)
+    if (showProfile && profileBlockHtml) {
+      html.push(profileBlockHtml)
+      html.push(lensCxCustDropdownHtml())
+    }
     var cfLine = resolveLensWizardCartLine()
     if (showProfile && cfLine && isCustomerFrameLine(cfLine)) {
       html.push(customerFramePhotoBlockHtml(cfLine))
     }
-    if (showProfile) {
-      var billNote =
-        primaryBill && lensWizard.patientName && lensWizard.patientName !== primaryBill
-          ? '<span class="pos-lk-customer-bill-note">Bill / invoice: ' + escapeHtml(primaryBill) + '</span>'
-          : ''
-      html.push('<div class="pos-lk-customer-card" id="pos-lk-customer-card">' +
+    if (showProfile && !profileBlockHtml) {
+      var metaInner = cardDisplay.visitorPending
+        ? '<span class="pos-lk-customer-lbl">Shopping for</span>' +
+          '<span class="pos-lk-customer-name-row">' +
+          '<span class="pos-lk-customer-name" id="pos-lk-customer-name">' + escapeHtml(cardDisplay.name) + '</span>' +
+          cardDisplay.createBtnHtml +
+          '</span>' +
+          cardDisplay.visitorSubHtml
+        : '<span class="pos-lk-customer-lbl">Shopping for</span>' +
+          '<span class="pos-lk-customer-name" id="pos-lk-customer-name">' + escapeHtml(cardDisplay.name) + '</span>' +
+          cardDisplay.billNote
+      html.push('<div class="pos-lk-customer-card' + (cardDisplay.cardClass ? ' ' + cardDisplay.cardClass : '') + '" id="pos-lk-customer-card">' +
         '<div class="pos-lk-customer-left">' +
-          '<div class="pos-lk-customer-avatar">' + escapeHtml(initial) + '</div>' +
-          '<div class="pos-lk-customer-meta">' +
-            '<span class="pos-lk-customer-lbl">Shopping for</span>' +
-            '<span class="pos-lk-customer-name" id="pos-lk-customer-name">' + escapeHtml(customerName) + '</span>' +
-            billNote +
-          '</div>' +
+          '<div class="pos-lk-customer-avatar">' + escapeHtml(cardDisplay.initial) + '</div>' +
+          '<div class="pos-lk-customer-meta">' + metaInner + '</div>' +
         '</div>' +
         '<button type="button" class="pos-lk-text-link" id="pos-lk-customer-change">Change</button>' +
       '</div>')
-
-      html.push('<div class="pos-lk-cust-dropdown" id="pos-lk-cust-dropdown" style="display:none">' +
-        '<div class="pos-search-input-wrap cosmos-cx-search-wrap">' +
-          '<input id="pos-lk-cust-input" class="pos-search-input" type="search" autocomplete="off" placeholder="Search by phone or name" aria-label="Search Cx">' +
-          '<button type="button" id="pos-lk-cust-btn" class="pos-search-btn">Search</button>' +
-        '</div>' +
-        '<div style="font-size:12px;color:var(--text2);margin-top:4px">Search by phone or name (at least 2–3 digits or the start of a name). A Cx is required before payment.</div>' +
-      '</div>')
+      html.push(lensCxCustDropdownHtml())
     }
 
     if (showAddonsOnly && hasPkgAddons) {
@@ -6245,66 +6873,31 @@
         html.push('<div class="pos-lk-section-lbl">I know my power</div>')
         html.push('<div class="pos-lk-know-power-region" role="group" aria-label="Power source options">')
         html.push(buildPowerCard('saved',   '🔖', '#2563EB', 'Saved Power',           lensSavedRxSubtitle()))
-        if (lensWizard.powerMode === 'saved') {
-          html.push(renderSavedRxPickerHtml())
-        }
-        html.push(buildPowerCard('manual',  '✎',  '#7C3AED', 'Enter Power Manually',  'SPH / CYL / AXIS'))
-        if (lensWizard.powerMode === 'manual') {
-          html.push(
-            '<div class="pos-lk-rx-manual-cta" id="pos-lk-rx-manual-cta">' +
-              '<button type="button" class="pos-lk-text-link" id="pos-lk-open-rx-modal">' +
-                (lensWizardHasManualRxValues() ? 'Edit prescription values' : 'Enter prescription values') +
-              '</button>' +
-            '</div>'
-          )
-        }
         html.push(buildPowerCard('upload',  '⬆',  '#D97706', 'Upload Prescription',   'JPG / PDF · max 5 MB'))
         html.push('</div>')
       }
     }
 
     body.innerHTML = html.join('')
-    if (showProfile) bindLensPatientChooser(body)
-    bindCustomerFramePhotoBlock(body)
-
-    if (lensWizard.powerMode === 'saved' && lensWizard.savedRxLoading) {
-      var pickerSk = document.getElementById('pos-lk-saved-rx-picker')
-      if (pickerSk && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pos-lk-saved-rx-picker', 3)
+    if (showProfile) {
+      bindLensPatientChooser(body)
+      bindLensVisitorCreateCxBtn(body)
     }
+    bindCustomerFramePhotoBlock(body)
 
     body.querySelectorAll('[data-pwm-key]').forEach(function (el) {
       el.addEventListener('click', function () {
         const key = el.getAttribute('data-pwm-key')
-        if (key !== 'manual') closeLensRxManualModal()
+        closeLensRxManualModal()
         if (key === 'saved') {
-          lensWizard.powerMode = 'saved'
-          if (!lensWizard.savedRxLoaded && !lensWizard.savedRxLoading) {
-            void loadLensSavedRxList()
-          } else {
-            renderLensStep()
-          }
+          openLensSavedRxModal()
           return
         }
+        if (key !== 'saved') closeLensSavedRxModal()
         lensWizard.powerMode = key
-        if (key === 'manual') openLensRxManualModal()
         renderLensStep()
       })
     })
-
-    body.querySelectorAll('.pos-lk-saved-rx-use').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation()
-        var tid = parseInt(btn.getAttribute('data-saved-rx-id'), 10)
-        if (!tid) return
-        var row = (lensWizard.savedRxList || []).find(function (r) {
-          return Number(r.test_id) === tid
-        })
-        applySavedRxToLensWizard(row)
-      })
-    })
-
-    const openRxBtn = document.getElementById('pos-lk-open-rx-modal')
-    if (openRxBtn) openRxBtn.addEventListener('click', function () { openLensRxManualModal() })
 
     const change = document.getElementById('pos-lk-customer-change')
     const dd = document.getElementById('pos-lk-cust-dropdown')
@@ -6363,12 +6956,20 @@
     }
     if (lensWizard.savedRxLoading) return 'Loading saved prescriptions…'
     if (lensWizard.savedRxLoadError) return lensWizard.savedRxLoadError
-    var n = (lensWizard.savedRxList || []).length
-    if (lensWizard.savedRxLoaded && n === 0) return 'No saved prescriptions for this Cx'
-    if (n > 0) {
-      return n + ' saved prescription' + (n === 1 ? '' : 's') + ' for this Cx'
+    var allN = (lensWizard.savedRxList || []).length
+    var n = lensFilteredSavedRxList().length
+    var patient = lensSelectedPatientLabel()
+    if (lensWizard.savedRxLoaded && allN === 0) return 'No saved prescriptions for this Cx'
+    if (lensWizard.savedRxLoaded && allN > 0 && n === 0) {
+      return patient
+        ? 'No saved prescriptions for ' + patient
+        : 'No saved prescriptions for this patient'
     }
-    return 'Tap to load saved prescriptions'
+    if (n > 0) {
+      return n + ' saved prescription' + (n === 1 ? '' : 's') +
+        (patient ? ' for ' + patient : ' for this Cx')
+    }
+    return 'Tap to choose from saved prescriptions'
   }
 
   function formatSavedRxEyeLine (sph, cyl, axis, add) {
@@ -6378,54 +6979,139 @@
     return parts.length ? parts.map(String).join(' / ') : '—'
   }
 
-  function renderSavedRxPickerHtml () {
-    if (lensWizard.powerMode !== 'saved') return ''
-    if (!posSelectedCustomerId || posSelectedCustomerId <= 0) {
-      return (
-        '<div class="pos-lk-saved-rx-picker">' +
-        '<p class="pos-lk-saved-rx-hint">Link a customer on this order to load saved Rx.</p></div>'
-      )
+  function savedRxRowHtml (row) {
+    var label = row.patient_name || row.family_name || 'Prescription'
+    var dateStr = ''
+    if (row.tested_at && typeof cosmosFmtDate === 'function') {
+      dateStr = cosmosFmtDate(row.tested_at)
+    } else if (row.tested_at) {
+      dateStr = String(row.tested_at).slice(0, 10)
     }
-    if (lensWizard.savedRxLoading) {
-      return '<div class="pos-lk-saved-rx-picker" id="pos-lk-saved-rx-picker"></div>'
-    }
-    var rows = lensWizard.savedRxList || []
-    if (!rows.length) {
-      return (
-        '<div class="pos-lk-saved-rx-picker">' +
-        '<p class="pos-lk-saved-rx-hint">' +
-        escapeHtml(lensWizard.savedRxLoadError || 'No saved prescriptions yet.') +
-        '</p></div>'
-      )
-    }
-    var items = rows.map(function (row) {
-      var label = row.patient_name || row.family_name || 'Prescription'
-      var dateStr = ''
-      if (row.tested_at && typeof cosmosFmtDate === 'function') {
-        dateStr = cosmosFmtDate(row.tested_at)
-      } else if (row.tested_at) {
-        dateStr = String(row.tested_at).slice(0, 10)
-      }
-      var reLine = formatSavedRxEyeLine(row.re_sph, row.re_cyl, row.re_axis, row.re_add)
-      var leLine = formatSavedRxEyeLine(row.le_sph, row.le_cyl, row.le_axis, row.le_add)
-      return (
-        '<div class="pos-lk-saved-rx-item">' +
-        '<div class="pos-lk-saved-rx-item-head">' +
-        '<span class="pos-lk-saved-rx-chip">' + escapeHtml(dateStr || '—') + '</span>' +
-        '<span class="pos-lk-saved-rx-name">' + escapeHtml(label) + '</span>' +
-        '</div>' +
-        '<div class="pos-lk-saved-rx-lines">RE: ' + escapeHtml(reLine) + ' · LE: ' + escapeHtml(leLine) +
-        (row.pd ? ' · PD ' + escapeHtml(String(row.pd)) : '') +
-        '</div>' +
-        '<button type="button" class="btn sm primary pos-lk-saved-rx-use" data-saved-rx-id="' +
-        escapeHtml(String(row.test_id)) + '">Use this</button>' +
-        '</div>'
-      )
-    }).join('')
-    return '<div class="pos-lk-saved-rx-picker">' + items + '</div>'
+    var reLine = formatSavedRxEyeLine(row.re_sph, row.re_cyl, row.re_axis, row.re_add)
+    var leLine = formatSavedRxEyeLine(row.le_sph, row.le_cyl, row.le_axis, row.le_add)
+    return (
+      '<div class="pos-lk-saved-rx-item tr-link" role="listitem" tabindex="0" data-saved-rx-id="' +
+      escapeHtml(String(row.test_id)) + '" aria-label="Use prescription for ' + escapeHtml(label) + '">' +
+      '<div class="pos-lk-saved-rx-item-head">' +
+      '<span class="pos-lk-saved-rx-chip">' + escapeHtml(dateStr || '—') + '</span>' +
+      '<span class="pos-lk-saved-rx-name">' + escapeHtml(label) + '</span>' +
+      '</div>' +
+      '<div class="pos-lk-saved-rx-lines">RE: ' + escapeHtml(reLine) + ' · LE: ' + escapeHtml(leLine) +
+      (row.pd ? ' · PD ' + escapeHtml(String(row.pd)) : '') +
+      '</div>' +
+      '<button type="button" class="btn sm primary pos-lk-saved-rx-use" data-saved-rx-id="' +
+      escapeHtml(String(row.test_id)) + '">Use for this order</button>' +
+      '</div>'
+    )
   }
 
-  function applySavedRxToLensWizard (row) {
+  function bindSavedRxModalRows (root) {
+    if (!root) return
+    function useRow(tid) {
+      if (!tid) return
+      var row = (lensWizard.savedRxList || []).find(function (r) {
+        return Number(r.test_id) === tid
+      })
+      applySavedRxToLensWizard(row)
+    }
+    root.querySelectorAll('.pos-lk-saved-rx-use').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault()
+        e.stopPropagation()
+        useRow(parseInt(btn.getAttribute('data-saved-rx-id'), 10))
+      })
+    })
+    root.querySelectorAll('.pos-lk-saved-rx-item[data-saved-rx-id]').forEach(function (item) {
+      item.addEventListener('click', function (e) {
+        if (e.target.closest('.pos-lk-saved-rx-use')) return
+        useRow(parseInt(item.getAttribute('data-saved-rx-id'), 10))
+      })
+      item.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          useRow(parseInt(item.getAttribute('data-saved-rx-id'), 10))
+        }
+      })
+    })
+  }
+
+  function renderLensSavedRxModalContent () {
+    var list = document.getElementById('pos-lens-saved-rx-list')
+    if (!list) return
+    if (lensWizard.savedRxLoading) {
+      if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pos-lens-saved-rx-list', 4)
+      return
+    }
+    if (lensWizard.savedRxLoadError) {
+      list.innerHTML =
+        '<div class="pos-lens-saved-rx-empty">' +
+        '<div class="pos-lens-saved-rx-empty-title">Could not load prescriptions</div>' +
+        '<div class="pos-lens-saved-rx-empty-sub">' + escapeHtml(lensWizard.savedRxLoadError) + '</div>' +
+        '</div>'
+      return
+    }
+    var rows = lensFilteredSavedRxList()
+    var patient = lensSelectedPatientLabel()
+    if (!rows.length) {
+      var emptySub = patient
+        ? 'No saved prescriptions for ' + patient + '. Record an eye test in GatePass or CX 360, or upload a prescription.'
+        : 'Record an eye test in GatePass or CX 360, or upload a prescription.'
+      list.innerHTML =
+        '<div class="pos-lens-saved-rx-empty">' +
+        '<div class="pos-lens-saved-rx-empty-title">No saved prescriptions</div>' +
+        '<div class="pos-lens-saved-rx-empty-sub">' + escapeHtml(emptySub) + '</div>' +
+        '</div>'
+      return
+    }
+    list.innerHTML = rows.map(savedRxRowHtml).join('')
+    bindSavedRxModalRows(list)
+  }
+
+  function openLensSavedRxModal (opts) {
+    opts = opts || {}
+    if (!posSelectedCustomerId || posSelectedCustomerId <= 0) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('Link a Cx customer first.')
+      return
+    }
+    closePosCustomerPickerModal()
+    if (!opts.fromRxWizard) {
+      closeLensRxManualModal()
+      closeLensNewCustomerModal()
+      if (typeof window.closeRxModal === 'function') window.closeRxModal()
+      lensWizard.powerMode = 'saved'
+    } else {
+      lensWizard._savedRxFromRxWizard = true
+    }
+    var overlay = document.getElementById('overlay-pos-lens-saved-rx')
+    var list = document.getElementById('pos-lens-saved-rx-list')
+    if (!overlay || !list) return
+    syncLensSavedRxModalSubtitle()
+    var wasOpen = overlay.classList.contains('open')
+    overlay.classList.add('open')
+    if (!wasOpen) posLkLockModalScroll()
+    if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pos-lens-saved-rx-list', 4)
+    renderLensStep()
+    if (!lensWizard.savedRxLoaded || lensWizard.savedRxLoading) {
+      void loadLensSavedRxList(true)
+    } else {
+      renderLensSavedRxModalContent()
+    }
+  }
+
+  function closeLensSavedRxModal () {
+    var overlay = document.getElementById('overlay-pos-lens-saved-rx')
+    if (!overlay || !overlay.classList.contains('open')) return
+    overlay.classList.remove('open')
+    var list = document.getElementById('pos-lens-saved-rx-list')
+    if (list) list.innerHTML = ''
+    if (lensWizard._savedRxFromRxWizard) lensWizard._savedRxFromRxWizard = false
+    var rxOv = document.getElementById('modal-add-rx')
+    if (rxOv && rxOv.classList.contains('open')) return
+    posLkUnlockModalScroll()
+  }
+
+  function applySavedRxToLensWizard (row, opts) {
+    opts = opts || {}
     if (!row) return
     lensWizard.rx = lensWizard.rx || {
       od: { sph: '', cyl: '', axis: '', plano: false },
@@ -6443,26 +7129,36 @@
     if (row.le_add != null) lensWizard.rx.os.add = String(row.le_add)
     lensWizard.rx.pd = row.pd != null ? String(row.pd) : ''
     lensWizard.savedTestId = row.test_id
+    lensWizard.rx.eye_test_id = row.test_id
     lensWizard.powerMode = 'manual'
+    closeLensSavedRxModal()
+    if (opts.fromRxWizard || lensWizard._savedRxFromRxWizard) {
+      if (typeof window.closeRxModal === 'function') window.closeRxModal()
+      lensWizard._savedRxFromRxWizard = false
+    }
     if (typeof cosmosToastSuccess === 'function') {
       cosmosToastSuccess('Saved prescription applied.')
     }
     renderLensStep()
   }
 
-  async function loadLensSavedRxList () {
+  window.openLensSavedRxModal = openLensSavedRxModal
+
+  async function loadLensSavedRxList (force) {
     if (!posSelectedCustomerId || posSelectedCustomerId <= 0) {
       lensWizard.savedRxList = []
       lensWizard.savedRxLoaded = true
       lensWizard.savedRxLoadError = null
-      if (typeof cosmosToastWarn === 'function') {
-        cosmosToastWarn('Link a Cx customer first.')
-      }
-      renderLensStep()
       return
     }
+    if (lensWizard.savedRxLoading) return
+    if (lensWizard.savedRxLoaded && !force) return
     lensWizard.savedRxLoading = true
     lensWizard.savedRxLoadError = null
+    var modalOpen = document.getElementById('overlay-pos-lens-saved-rx')
+    if (modalOpen && modalOpen.classList.contains('open')) {
+      renderLensSavedRxModalContent()
+    }
     renderLensStep()
     try {
       var session = getPosSession()
@@ -6470,7 +7166,7 @@
         '/api/pos/customers/' + encodeURIComponent(String(posSelectedCustomerId)) + '/prescriptions/for-pos',
         session && session.token
       )
-      lensWizard.savedRxList = (res && res.data) || []
+      lensWizard.savedRxList = Array.isArray(res) ? res : []
       lensWizard.savedRxLoaded = true
     } catch (err) {
       lensWizard.savedRxList = []
@@ -6479,6 +7175,10 @@
       if (typeof cosmosToastError === 'function') cosmosToastError(lensWizard.savedRxLoadError)
     } finally {
       lensWizard.savedRxLoading = false
+      modalOpen = document.getElementById('overlay-pos-lens-saved-rx')
+      if (modalOpen && modalOpen.classList.contains('open')) {
+        renderLensSavedRxModalContent()
+      }
       renderLensStep()
     }
   }
@@ -6586,6 +7286,7 @@
   function openLensRxManualModal() {
     closePosCustomerPickerModal()
     closeLensNewCustomerModal()
+    closeLensSavedRxModal()
     var overlay = document.getElementById('overlay-pos-lens-rx-manual')
     var slot = document.getElementById('pos-lens-rx-manual-body')
     if (!overlay || !slot) return
@@ -6613,7 +7314,9 @@
   function closeAllPosLensOverlays() {
     closePosCustomerPickerModal()
     closeLensRxManualModal()
+    closeLensSavedRxModal()
     closeLensNewCustomerModal()
+    if (typeof window.closeRxModal === 'function') window.closeRxModal()
     closeGatepassCheckInModal()
     closeGatepassActionsSheet()
   }
@@ -6779,6 +7482,9 @@
         if (lensWizard.powerMode === 'manual') {
           line.rx = JSON.parse(JSON.stringify(lensWizard.rx))
           line.rx.patient_name = patientNm
+          if (lensWizard.savedTestId) {
+            line.rx.eye_test_id = lensWizard.savedTestId
+          }
         } else if (patientNm) {
           line.rx = { patient_name: patientNm }
         } else {
@@ -8212,6 +8918,21 @@
     '<svg class="pos-lk-unit-svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M10 13a5 5 0 007.5.5l1.5-1.5a5 5 0 00-7.07-7.07L11 6M14 11a5 5 0 00-7.5-.5l-1.5 1.5a5 5 0 007.07 7.07L13 18"/></svg>'
   var POS_CART_UNIT_SVG_BARCODE =
     '<svg class="pos-lk-unit-svg pos-lk-unit-svg--pill" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 5h1.5v14H4V5zm3 3H8v8H7V8zm2.5-2H11v14H9.5V6zM13 9h1.5v6H13V9zm2.5-4H17v14h-1.5V5zm3 2H20v10h-1.5V7z"/></svg>'
+  var POS_CART_LENS_CTA_SVG_CHEVRON =
+    '<svg class="pos-lk-cart-cta-svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 6l6 6-6 6"/></svg>'
+
+  function cartLensCtaBtnHtml(action, idx, labelText, extraClass) {
+    var cls =
+      'pos-ob-mini-btn action-btn pos-lk-cart-config-btn' +
+      (extraClass ? ' ' + extraClass : '')
+    return (
+      '<button type="button" class="' + cls + '" data-action="' + action + '" data-idx="' + idx + '" ' +
+      'aria-label="' + escapeHtml(labelText) + '">' +
+      '<span class="pos-lk-cart-cta-label">' + escapeHtml(labelText) + '</span>' +
+      POS_CART_LENS_CTA_SVG_CHEVRON +
+      '</button>'
+    )
+  }
 
   function syncCartBindUnitSubmitDisabled() {
     if (!obCart_el) return
@@ -8245,6 +8966,56 @@
     )
   }
 
+  function cartLineLabPowerStatusHtml(line) {
+    var pm = String(line.power_mode || '').trim()
+    if (pm === 'later' || line.lab_status === 'pending_power') {
+      return '<div class="pos-lk-cart-lab-breakdown-status">Prescription after payment</div>'
+    }
+    if (pm === 'saved') {
+      var rx = line.rx
+      var extra = ''
+      if (rx) {
+        var reLine = formatSavedRxEyeLine(rx.od && rx.od.sph, rx.od && rx.od.cyl, rx.od && rx.od.axis, null)
+        var leLine = formatSavedRxEyeLine(rx.os && rx.os.sph, rx.os && rx.os.cyl, rx.os && rx.os.axis, null)
+        if (reLine !== '—' || leLine !== '—') {
+          extra = '<div class="pos-lk-cart-lab-breakdown-rx">RE: ' + escapeHtml(reLine) + ' · LE: ' + escapeHtml(leLine) + '</div>'
+        }
+      }
+      return '<div class="pos-lk-cart-lab-breakdown-status">Saved prescription on file</div>' + extra
+    }
+    if (pm === 'upload') {
+      return '<div class="pos-lk-cart-lab-breakdown-status">Prescription upload on file</div>'
+    }
+    return ''
+  }
+
+  function cartLineLabBreakdownHtml(line) {
+    if (!cartLineLensPackageConfigured(line)) return ''
+    var b = line.lens_bundle
+    var lensP = Number(b.package_price) || 0
+    var addonTotal = 0
+    var aps = b.addon_prices || []
+    for (var ai = 0; ai < aps.length; ai++) addonTotal += Number(aps[ai]) || 0
+    var lensUnitTotal = lensP + addonTotal
+    var pkgName = String(b.package_name || '').trim()
+    var catName = String(b.category_name || '').trim()
+    var addonNote = addonTotal > 0.005 ? ' + add-ons' : ''
+    var parts = [pkgName, catName].filter(function (s, i, a) { return s && a.indexOf(s) === i })
+    var lensLabelRaw = (parts.join(' · ') || 'Configured lens') + addonNote
+    var lensLabel = lensLabelRaw.replace(/\s*[–—\-]\s*/g, ' · ')
+    var statusHtml = cartLineLabPowerStatusHtml(line)
+    return (
+      '<div class="pos-lk-cart-lab-breakdown" role="group" aria-label="Lens configuration">' +
+        '<div class="pos-lk-cart-lab-breakdown-spec">' + escapeHtml(lensLabel) + '</div>' +
+        statusHtml +
+        '<div class="pos-lk-cart-lab-breakdown-row">' +
+          '<span>Lens</span>' +
+          '<span class="pos-lk-cart-lab-breakdown-price">' + formatRupees(lensUnitTotal) + '</span>' +
+        '</div>' +
+      '</div>'
+    )
+  }
+
   function cartLineRetailCardHtml(line, idx) {
     const rule = getTypeRule(line.product_type)
     const du = computeLineDisplayUnit(line)
@@ -8269,9 +9040,11 @@
     const frameStrike = (mrpListed > frameUnit + 0.005)
       ? ('<span class="pos-lk-cart-strike">' + formatRupees(mrpListed) + '</span> ')
       : ''
-    const framePriceHtml = frameStrike
-      ? (frameStrike + '<span class="pos-lk-cart-price-now">' + formatRupees(frameUnit) + '</span>')
-      : formatRupees(frameUnit)
+    const framePriceHtml = isCustFrame && frameUnit < 0.02
+      ? '<span class="pos-lk-cart-frame-price-val pos-lk-cart-frame-price-val--na" title="Customer-owned frame — no store frame charge">—</span>'
+      : frameStrike
+        ? (frameStrike + '<span class="pos-lk-cart-price-now">' + formatRupees(frameUnit) + '</span>')
+        : formatRupees(frameUnit)
 
     // Colour chip inline with product name (Readers: colour · power)
     const powerName = String(line.reading_power || '').trim()
@@ -8332,35 +9105,10 @@
       tagsHtml += '</div>'
     }
 
+    var labBreakdownHtml = cartLineLabBreakdownHtml(line)
     let lensDescHtml = ''
-    let lensPackageHtml = ''
-    if (cartLineLensPackageConfigured(line)) {
-      const b = line.lens_bundle
-      const lensP = Number(b.package_price) || 0
-      let addonTotal = 0
-      const aps = b.addon_prices || []
-      for (let ai = 0; ai < aps.length; ai++) addonTotal += Number(aps[ai]) || 0
-      const lensUnitTotal = lensP + addonTotal
-      const pkgName = String(b.package_name || '').trim()
-      const catName = String(b.category_name || '').trim()
-      const addonNote = addonTotal > 0.005 ? ' + add-ons' : ''
-      const parts = [pkgName, catName].filter(function (s, i, a) { return s && a.indexOf(s) === i })
-      const lensLabelRaw = (parts.join(' · ') || 'Configured lens') + addonNote
-      const lensLabel = lensLabelRaw.replace(/\s*[–—\-]\s*/g, ' · ')
-      lensDescHtml = '<div class="pos-lk-cart-lens-desc">' + escapeHtml(lensLabel) + '</div>'
-      if (line.power_mode === 'later' || line.lab_status === 'pending_power') {
-        lensDescHtml +=
-          '<div class="pos-lk-cart-lens-row pos-lk-cart-lens-row--pending">' +
-          '<span class="pos-lk-cart-lens-lbl">Power · after payment</span>' +
-          '<span class="pos-lk-cart-lens-price">—</span>' +
-          '</div>'
-      }
-      lensPackageHtml =
-        '<div class="pos-lk-cart-lens-package-row">' +
-        '<span class="pos-lk-cart-lens-package-lbl">Lens package</span>' +
-        '<span class="pos-lk-cart-lens-package-val">' + formatRupees(lensUnitTotal) + '</span>' +
-        '</div>'
-    } else if (line.fulfillment === 'LAB') {
+    if (!labBreakdownHtml) {
+    if (line.fulfillment === 'LAB') {
       lensDescHtml =
         '<div class="pos-lk-cart-lens-row pos-lk-cart-lens-row--pending">' +
         '<span class="pos-lk-cart-lens-lbl">Lens · pending setup</span>' +
@@ -8384,11 +9132,15 @@
         '<span class="pos-lk-cart-lens-price">—</span>' +
         '</div>'
     }
+    }
 
-    const showFreeRibbon = lineTotal < 0.02
+    const lensPendingCustFrame = isCustFrame && !cartLineLensPackageConfigured(line)
+    const showFreeRibbon = !isCustFrame && lineTotal < 0.02
     const totalValHtml = showFreeRibbon
       ? '<span class="pos-lk-cart-free-val">Free</span>'
-      : formatRupees(lineTotal)
+      : lensPendingCustFrame && lineTotal < 0.02
+        ? '—'
+        : formatRupees(lineTotal)
     const ribbon = showFreeRibbon ? '<div class="pos-lk-cart-ribbon" aria-hidden="true">FREE</div>' : ''
 
     // Lens wizard CTA — Select (pending) or Edit (configured lab line)
@@ -8407,20 +9159,20 @@
       line.fulfillment === 'LAB' &&
       line.lens_bundle
     const selectLensesLabel =
-      isDual && line.fulfillment === 'INSTANT' ? 'Add lenses →' : 'Select lenses →'
+      isDual && line.fulfillment === 'INSTANT' ? 'Add lenses' : 'Select lenses'
     const configureBtn = showSelectLenses
-      ? '<button type="button" class="pos-ob-mini-btn action-btn pos-lk-cart-config-btn" data-action="configure-lens" data-idx="' + idx + '">' + selectLensesLabel + '</button>'
+      ? cartLensCtaBtnHtml('configure-lens', idx, selectLensesLabel, '')
       : ''
     const editLensBtn = showEditLenses
-      ? '<button type="button" class="pos-ob-mini-btn action-btn pos-lk-cart-config-btn pos-lk-cart-edit-btn" data-action="edit-lens" data-idx="' + idx + '">Edit lenses & power →</button>'
+      ? cartLensCtaBtnHtml('edit-lens', idx, 'Edit lenses & power', 'pos-lk-cart-edit-btn pos-lk-cart-edit-link')
       : ''
 
-    const rxFoot = (line.fulfillment === 'LAB' && (line.lab_status === 'pending_power' || line.power_mode === 'later'))
-      ? '<div class="pos-lk-cart-rx-foot"><span class="pos-lk-cart-rx-foot-ic" aria-hidden="true">✓</span> Upload prescription after payment.</div>'
-      : ''
+    const rxFoot = ''
 
+    const footerMetaClass =
+      'pos-lk-cart-v2-meta' + (showEditLenses ? ' pos-lk-cart-v2-meta--edit-link' : '')
     const footerMeta = (configureBtn || editLensBtn)
-      ? '<div class="pos-lk-cart-v2-meta">' + configureBtn + editLensBtn + '</div>'
+      ? '<div class="' + footerMetaClass + '">' + configureBtn + editLensBtn + '</div>'
       : ''
 
     let unitInlineHtml = ''
@@ -8462,12 +9214,10 @@
           cfPhotoRow +
           cartLinePatientLabelHtml(line) +
           unitInlineHtml +
+          labBreakdownHtml +
           lensDescHtml +
-          lensPackageHtml +
-          // Divider
-          '<div class="pos-lk-cart-rule-dash" aria-hidden="true"></div>' +
-          // Bottom: [−] [↻]  ·  Total ₹X
-          '<div class="pos-lk-cart-total-row">' +
+          (labBreakdownHtml ? '' : '<div class="pos-lk-cart-rule-dash" aria-hidden="true"></div>') +
+          '<div class="pos-lk-cart-total-row' + (labBreakdownHtml ? ' pos-lk-cart-total-row--after-lab' : '') + '">' +
             '<div class="pos-lk-cart-qty-wrap">' +
               '<button type="button" class="pos-lk-cart-qty-btn' + (line.qty <= 1 ? ' pos-lk-cart-qty-btn--remove' : '') + '" data-action="' + (line.qty <= 1 ? 'remove' : 'dec') + '" data-idx="' + idx + '" aria-label="' + (line.qty <= 1 ? 'Remove item' : 'Decrease quantity') + '">−</button>' +
               (line.qty > 1 ? '<span class="pos-lk-cart-qty-num">' + line.qty + '</span>' : '') +
@@ -10450,6 +11200,10 @@
     var phoneIn = document.getElementById('pos-lens-new-cust-phone')
     var rxOverlay = document.getElementById('overlay-pos-lens-rx-manual')
     var rxBackdrop = document.getElementById('pos-lens-rx-manual-backdrop')
+    var savedRxOverlay = document.getElementById('overlay-pos-lens-saved-rx')
+    var savedRxBackdrop = document.getElementById('pos-lens-saved-rx-backdrop')
+    var savedRxDismiss = document.getElementById('pos-lens-saved-rx-dismiss')
+    var savedRxCancel = document.getElementById('btn-pos-lens-saved-rx-cancel')
     var rxDismiss = document.getElementById('pos-lens-rx-manual-dismiss')
     var rxCancel = document.getElementById('btn-pos-lens-rx-manual-cancel')
     var rxDone = document.getElementById('btn-pos-lens-rx-manual-done')
@@ -10499,6 +11253,9 @@
     rxBackdrop && rxBackdrop.addEventListener('click', closeLensRxManualModal)
     rxDismiss && rxDismiss.addEventListener('click', closeLensRxManualModal)
     rxCancel && rxCancel.addEventListener('click', closeLensRxManualModal)
+    savedRxBackdrop && savedRxBackdrop.addEventListener('click', closeLensSavedRxModal)
+    savedRxDismiss && savedRxDismiss.addEventListener('click', closeLensSavedRxModal)
+    savedRxCancel && savedRxCancel.addEventListener('click', closeLensSavedRxModal)
     rxDone && rxDone.addEventListener('click', function () {
       syncLensPatientNameFromInputs()
       closeLensRxManualModal()
@@ -10525,6 +11282,11 @@
       if (rxOverlay && rxOverlay.classList.contains('open')) {
         ev.preventDefault()
         closeLensRxManualModal()
+        return
+      }
+      if (savedRxOverlay && savedRxOverlay.classList.contains('open')) {
+        ev.preventDefault()
+        closeLensSavedRxModal()
         return
       }
       if (overlay && overlay.classList.contains('open')) {

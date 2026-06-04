@@ -1851,27 +1851,31 @@ async function createOrderInTransaction(transaction, {
       }
     }
 
-    const rStock = new sql.Request(transaction)
-    rStock.input('sku_id', sql.Int, line.sku_id)
-    rStock.input('store_id', sql.Int, storeId)
-    rStock.input('qty', sql.Int, line.qty)
-    const stockRes = await rStock.query(`
-      SELECT balance_id, qty FROM dbo.stock_balances
-      WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id
-    `)
-    const sb = stockRes.recordset[0]
-    if (!sb || sb.qty < line.qty) {
-      const err = new Error(`Insufficient stock for SKU ${line.sku_id} at this store.`)
-      err.statusCode = 400
-      throw err
-    }
-    if (!inventoryDeferred) {
-      await rStock.query(`
-        UPDATE dbo.stock_balances
-        SET qty = qty - @qty,
-            last_updated = DATEADD(MINUTE,330,SYSUTCDATETIME())
-        WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id AND qty >= @qty
+    const ptUpper = String(line.product_type || '').trim().toUpperCase()
+    const isCustomerFrameLine = ptUpper === 'CUSTOMER_FRAME'
+    if (!isCustomerFrameLine) {
+      const rStock = new sql.Request(transaction)
+      rStock.input('sku_id', sql.Int, line.sku_id)
+      rStock.input('store_id', sql.Int, storeId)
+      rStock.input('qty', sql.Int, line.qty)
+      const stockRes = await rStock.query(`
+        SELECT balance_id, qty FROM dbo.stock_balances
+        WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id
       `)
+      const sb = stockRes.recordset[0]
+      if (!sb || sb.qty < line.qty) {
+        const err = new Error(`Insufficient stock for SKU ${line.sku_id} at this store.`)
+        err.statusCode = 400
+        throw err
+      }
+      if (!inventoryDeferred) {
+        await rStock.query(`
+          UPDATE dbo.stock_balances
+          SET qty = qty - @qty,
+              last_updated = DATEADD(MINUTE,330,SYSUTCDATETIME())
+          WHERE sku_id = @sku_id AND location_type = N'STORE' AND location_id = @store_id AND qty >= @qty
+        `)
+      }
     }
 
     const rItem = new sql.Request(transaction)
@@ -1999,7 +2003,7 @@ async function commitInventoryForPaidOrder(pool, mode, storeId, orderId) {
     const items = await new sql.Request(trx)
       .input('oid', sql.Int, orderId)
       .query(`
-        SELECT i.sku_id, i.qty
+        SELECT i.sku_id, i.qty, i.product_type
         FROM ${t.order_items} i
         INNER JOIN ${t.sub_orders} s ON s.sub_order_id = i.sub_order_id
         WHERE s.order_id = @oid
@@ -2007,7 +2011,9 @@ async function commitInventoryForPaidOrder(pool, mode, storeId, orderId) {
     for (const row of items.recordset || []) {
       const skuId = Number(row.sku_id)
       const qty = Number(row.qty) || 0
+      const ptKey = String(row.product_type || '').trim().toUpperCase()
       if (!Number.isFinite(skuId) || skuId <= 0 || qty <= 0) continue
+      if (ptKey === 'CUSTOMER_FRAME') continue
       const rStock = new sql.Request(trx)
       rStock.input('sku_id', sql.Int, skuId)
       rStock.input('store_id', sql.Int, storeId)
@@ -3138,6 +3144,8 @@ async function fetchStoreOrders(pool, storeId, mode, {
            c.full_name as customer_name, c.phone as customer_phone,
            ISNULL(pay_agg.paid_total, 0) AS paid_total,
            (SELECT TOP 1 pi.invoice_no FROM dbo.pos_invoices pi WHERE pi.order_id = o.order_id ORDER BY pi.invoice_no) AS invoice_no,
+           (SELECT TOP 1 ${sqlWireDatetime('pi.created_at')} FROM dbo.pos_invoices pi WHERE pi.order_id = o.order_id ORDER BY pi.invoice_no) AS invoiced_at,
+           (SELECT TOP 1 pi.total_amount FROM dbo.pos_invoices pi WHERE pi.order_id = o.order_id ORDER BY pi.invoice_no) AS invoice_total_amount,
            MAX(CASE WHEN so.fulfillment = 'LAB' THEN so.lab_workflow_status ELSE NULL END) AS lab_workflow_status,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_received_confirmed, 0) AS INT) ELSE NULL END) AS lab_rcv_all,
            MIN(CASE WHEN so.fulfillment = N'LAB' THEN CAST(ISNULL(so.lab_backorder_confirmed, 0) AS INT) ELSE NULL END) AS lab_bo_all,
@@ -3328,7 +3336,9 @@ async function fetchStoreOrders(pool, storeId, mode, {
       created_at: wireDatetimeFromSql(row.created_at),
       customer_name: row.customer_name || 'Walk-in Customer',
       customer_phone: row.customer_phone || '',
-      invoice_no: row.invoice_no ? String(row.invoice_no).trim() : null
+      invoice_no: row.invoice_no ? String(row.invoice_no).trim() : null,
+      invoiced_at: row.invoiced_at ? wireDatetimeFromSql(row.invoiced_at) : null,
+      invoice_total_amount: row.invoice_total_amount != null ? Number(row.invoice_total_amount) : null
     }
   })
 }
@@ -3674,27 +3684,9 @@ async function fetchCxRevenueByStore(pool, mode, { limit = 30 } = {}) {
  * All registered POS customers with lifetime order stats (LEFT JOIN orders).
  * @param {import('mssql').ConnectionPool} pool
  */
-async function membershipPlansHasTierIdColumn(pool) {
-  const r = await pool.request().query(`
-    SELECT COL_LENGTH('dbo.membership_plans', 'tier_id') AS col_len
-  `)
-  const len = r.recordset && r.recordset[0] && r.recordset[0].col_len
-  return len != null && Number(len) > 0
-}
-
 async function fetchCxCustomerRollup(pool, mode, { search, limit = 100, customerId = null } = {}) {
   const t = tableNames(mode)
   const lim = Math.min(500, Math.max(1, Number(limit) || 100))
-  const linkTiers = await membershipPlansHasTierIdColumn(pool)
-  const tierNameExpr = linkTiers
-    ? 'ISNULL(mt.tier_name, p.display_name)'
-    : 'p.display_name'
-  const typeExpr = linkTiers
-    ? "NULLIF(LTRIM(RTRIM(ISNULL(mt.loyalty_tier, N''))), N'')"
-    : 'NULL'
-  const tierJoin = linkTiers
-    ? 'LEFT JOIN dbo.membership_tiers mt ON mt.membership_id = p.tier_id'
-    : ''
   let query = `
     SELECT c.customer_id,
            c.full_name,
@@ -3717,12 +3709,11 @@ async function fetchCxCustomerRollup(pool, mode, { search, limit = 100, customer
       SELECT TOP 1
         m.plan_key,
         p.display_name AS plan_display_name,
-        ${tierNameExpr} AS membership_tier_name,
-        ${typeExpr} AS membership_type,
+        p.display_name AS membership_tier_name,
+        p.plan_key AS membership_type,
         m.expires_at AS membership_expires_at
       FROM dbo.customer_memberships m
       INNER JOIN dbo.membership_plans p ON p.plan_key = m.plan_key AND p.is_active = 1
-      ${tierJoin}
       WHERE m.customer_id = c.customer_id
         AND m.is_active = 1
         AND m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())

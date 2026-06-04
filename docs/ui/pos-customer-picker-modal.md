@@ -12,7 +12,8 @@
 | Frame name | State |
 |------------|--------|
 | `Store OS Customer picker · /pos/order` | Default — search only |
-| `Store OS Customer picker · Create Cx · /pos/order` | Create Cx revealed — read-only mobile + name + **Create Cx** |
+| `Store OS Customer picker · Create Cx · /pos/order` | Create Cx revealed — read-only mobile + name + **Create Cx** (after 10-digit search, no profile) |
+| `Store OS Customer picker · Visitor Create Cx · /pos/order` | Focused create from GatePass visitor — no Find Cx, no banner **Create Cx** |
 
 ## Layout — default
 
@@ -21,6 +22,18 @@
 - **Banner (top):** Amber when required; green when Cx selected
 - **Find Cx:** Search icon + phone input; `cosmos-cx-search` dropdown (visitors + Cx profiles)
 - **Footer:** **Cancel** + **Continue to cart** (disabled until selection)
+
+## Layout — Visitor Create Cx (focused)
+
+Opened from cart or picker **Create Cx** when a GatePass visitor is already selected (no central Cx):
+
+- **Header:** **Create Cx**, subtitle *From visitor queue — confirm name.*
+- **Banner:** Visitor name · phone (text only; **Clear Cx** retained)
+- **Find Cx:** Hidden
+- **Form:** Full name (editable), mobile (read-only), single primary **Create Cx**
+- On success: Cx linked to cart; modal closes
+
+**Select Cx** with a pending visitor still uses the default search-first layout (banner may show **Create Cx** shortcut).
 
 ## Layout — Create Cx revealed
 
@@ -43,7 +56,8 @@ When no central Cx profile matches:
 | State | Banner | Continue |
 |-------|--------|----------|
 | No selection | *Cx required before payment.* (amber) | Disabled |
-| Row selected / created | *Selected: Name · phone* (green) | Enabled |
+| Visitor selected (GatePass, no Cx) | *Selected visitor: Name · phone* + **Create Cx** (blue) | Stays on cart — no auto-link |
+| Cx row selected / created | *Selected Cx: Name · phone* (green) | Cart Cx linked |
 
 ## Accessibility
 

@@ -1,7 +1,7 @@
 /*
   Seed default Eyewoot Go membership_plans (idempotent).
   CX grant modal and customer_memberships FK require rows in membership_plans.
-  Command Unit membership_tiers are synced at runtime by the API when this table is empty.
+  Manage plans via Command Unit Membership Plans (/api/settings/membership-plans).
 */
 USE [CosmosERP];
 GO

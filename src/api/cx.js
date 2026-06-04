@@ -83,27 +83,6 @@ router.get('/orders', authJwt, requireModule('cx'), requireCxPermission('cx.orde
    STAFF: Eyewoot Go — membership plans + grant membership
 ══════════════════════════════════════════════════════════════ */
 
-function derivePlanKeyFromTier (row) {
-  const loyalty = String(row.loyalty_tier || '').trim()
-  if (loyalty) {
-    return loyalty.toUpperCase().replace(/[^A-Z0-9_]/g, '_').slice(0, 50)
-  }
-  const slug = String(row.tier_name || 'PLAN')
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_|_$/g, '')
-  return (slug || 'PLAN').slice(0, 50)
-}
-
-async function membershipPlansHasTierIdColumn (pool) {
-  const r = await pool.request().query(`
-    SELECT COL_LENGTH('dbo.membership_plans', 'tier_id') AS col_len
-  `)
-  const len = r.recordset && r.recordset[0] && r.recordset[0].col_len
-  return len != null && Number(len) > 0
-}
-
 async function membershipHasPosOrderIdColumn (pool) {
   const r = await pool.request().query(`
     SELECT COL_LENGTH('dbo.customer_memberships', 'pos_order_id') AS col_len
@@ -112,9 +91,8 @@ async function membershipHasPosOrderIdColumn (pool) {
   return len != null && Number(len) > 0
 }
 
-/** Active membership row for CX detail — schema-aware (tier link, pos_order_id, orders engine). */
+/** Active membership row for CX detail — schema-aware (pos_order_id, orders engine). */
 async function fetchActiveMembershipForCx (pool, customerId, mode) {
-  const linkTiers = await membershipPlansHasTierIdColumn(pool)
   const hasPosOrderLink = await membershipHasPosOrderIdColumn(pool)
   const ordersTable = mode === 'shared' ? 'dbo.oe_orders' : 'dbo.pos_orders'
   const posOrderSelect = hasPosOrderLink ? 'm.pos_order_id,' : 'CAST(NULL AS INT) AS pos_order_id,'
@@ -122,16 +100,6 @@ async function fetchActiveMembershipForCx (pool, customerId, mode) {
     ? `LEFT JOIN ${ordersTable} o ON o.order_id = m.pos_order_id`
     : ''
   const orderNoSelect = hasPosOrderLink ? 'o.order_no AS linked_order_no' : 'CAST(NULL AS NVARCHAR(50)) AS linked_order_no'
-  const tierSelect = linkTiers
-    ? `p.tier_id,
-            t.tier_name,
-            t.loyalty_tier AS membership_type,
-            t.benefits AS tier_benefits`
-    : `NULL AS tier_id,
-            p.display_name AS tier_name,
-            NULL AS membership_type,
-            NULL AS tier_benefits`
-  const tierJoin = linkTiers ? 'LEFT JOIN dbo.membership_tiers t ON t.membership_id = p.tier_id' : ''
 
   const memR = await pool.request().input('cid', customerId).query(`
     SELECT TOP 1
@@ -143,11 +111,12 @@ async function fetchActiveMembershipForCx (pool, customerId, mode) {
       m.is_active,
       ${posOrderSelect}
       p.display_name AS plan_display_name,
-      ${tierSelect},
+      p.display_name AS tier_name,
+      p.plan_key AS membership_type,
+      CAST(NULL AS NVARCHAR(500)) AS tier_benefits,
       ${orderNoSelect}
     FROM   dbo.customer_memberships m
     JOIN   dbo.membership_plans p ON p.plan_key = m.plan_key
-    ${tierJoin}
     ${orderJoin}
     WHERE  m.customer_id = @cid AND m.is_active = 1
       AND  m.expires_at > DATEADD(MINUTE, 330, SYSUTCDATETIME())
@@ -156,102 +125,23 @@ async function fetchActiveMembershipForCx (pool, customerId, mode) {
   return memR.recordset[0] || null
 }
 
-/** Mirror Command Unit membership_tiers into membership_plans so CX grant can use CU-configured tiers. */
-async function ensureMembershipPlansFromTiers (pool) {
-  let tiers = []
-  try {
-    const tiersR = await pool.request().query(`
-      SELECT membership_id, tier_name, annual_fee, loyalty_tier
-      FROM   dbo.membership_tiers
-      WHERE  is_active = 1
-    `)
-    tiers = tiersR.recordset || []
-  } catch (err) {
-    if (String(err.message || '').includes('Invalid object name')) return
-    throw err
-  }
-  if (!tiers.length) return
-
-  const linkTiers = await membershipPlansHasTierIdColumn(pool)
-  const nowSql = sqlNow()
-  for (const t of tiers) {
-    const planKey = derivePlanKeyFromTier(t)
-    const displayName = String(t.tier_name || planKey).trim().slice(0, 100)
-    const price = Number(t.annual_fee)
-    const safePrice = Number.isFinite(price) && price >= 0 ? price : 0
-    const req = pool
-      .request()
-      .input('pk', sql.NVarChar(50), planKey)
-      .input('dn', sql.NVarChar(100), displayName)
-      .input('pr', sql.Decimal(10, 2), safePrice)
-    if (linkTiers) {
-      await req.input('tid', sql.Int, t.membership_id).query(`
-        MERGE dbo.membership_plans AS tgt
-        USING (SELECT @pk AS plan_key) AS src
-        ON tgt.plan_key = src.plan_key
-        WHEN MATCHED THEN
-          UPDATE SET
-            display_name = @dn,
-            price = @pr,
-            is_active = 1,
-            tier_id = @tid
-        WHEN NOT MATCHED BY TARGET THEN
-          INSERT (plan_key, display_name, price, validity_days, max_dependents, is_active, created_at, tier_id)
-          VALUES (@pk, @dn, @pr, 365, 5, 1, ${nowSql}, @tid);
-      `)
-    } else {
-      await req.query(`
-        MERGE dbo.membership_plans AS tgt
-        USING (SELECT @pk AS plan_key) AS src
-        ON tgt.plan_key = src.plan_key
-        WHEN MATCHED THEN
-          UPDATE SET display_name = @dn, price = @pr, is_active = 1
-        WHEN NOT MATCHED BY TARGET THEN
-          INSERT (plan_key, display_name, price, validity_days, max_dependents, is_active, created_at)
-          VALUES (@pk, @dn, @pr, 365, 5, 1, ${nowSql});
-      `)
-    }
-  }
-}
-
 async function fetchActiveMembershipPlans (pool) {
-  const linkTiers = await membershipPlansHasTierIdColumn(pool)
-  const r = linkTiers
-    ? await pool.request().query(`
-        SELECT
-          p.plan_id,
-          p.plan_key,
-          p.display_name,
-          p.price,
-          p.validity_days,
-          p.max_dependents,
-          p.is_active,
-          p.tier_id,
-          t.tier_name,
-          t.loyalty_tier AS membership_type,
-          t.annual_fee AS tier_annual_fee
-        FROM   dbo.membership_plans p
-        LEFT JOIN dbo.membership_tiers t ON t.membership_id = p.tier_id
-        WHERE  p.is_active = 1
-        ORDER BY ISNULL(t.tier_name, p.display_name) ASC, p.plan_key ASC
-      `)
-    : await pool.request().query(`
-        SELECT
-          p.plan_id,
-          p.plan_key,
-          p.display_name,
-          p.price,
-          p.validity_days,
-          p.max_dependents,
-          p.is_active,
-          NULL AS tier_id,
-          p.display_name AS tier_name,
-          NULL AS membership_type,
-          NULL AS tier_annual_fee
-        FROM   dbo.membership_plans p
-        WHERE  p.is_active = 1
-        ORDER BY p.display_name ASC, p.plan_key ASC
-      `)
+  const r = await pool.request().query(`
+    SELECT
+      p.plan_id,
+      p.plan_key,
+      p.display_name,
+      p.price,
+      p.validity_days,
+      p.max_dependents,
+      p.is_active,
+      p.display_name AS tier_name,
+      p.plan_key AS membership_type,
+      NULL AS tier_annual_fee
+    FROM   dbo.membership_plans p
+    WHERE  p.is_active = 1
+    ORDER BY p.display_name ASC, p.plan_key ASC
+  `)
   return r.recordset || []
 }
 
@@ -260,7 +150,6 @@ async function handleCxMembershipPlans (_req, res, next) {
     const pool = await getPool()
     let plans = []
     try {
-      await ensureMembershipPlansFromTiers(pool)
       plans = await fetchActiveMembershipPlans(pool)
     } catch (err) {
       const msg = String(err.message || '')
@@ -285,7 +174,7 @@ const cxPlansMiddleware = [
   requireCxPermission('cx.membership.manage', 'cx.customers.view')
 ]
 
-/** GET /api/cx/plans — Eyewoot Go plan catalogue (syncs from membership_tiers when empty) */
+/** GET /api/cx/plans — Eyewoot Go plan catalogue (membership_plans only) */
 router.get('/plans', ...cxPlansMiddleware, handleCxMembershipPlans)
 
 /** GET /api/cx/membership-plans — alias */
@@ -489,6 +378,7 @@ function mapEyeTestInsertPayload (body, defaults) {
     visitorId: defaults.visitorId ?? null,
     familyNameId: b.family_name_id != null ? parseInt(String(b.family_name_id), 10) : null,
     patientName: b.patient_name != null ? String(b.patient_name).trim() || null : defaults.patientName ?? null,
+    patientDob: cxService.parsePatientDobYmd(b.patient_dob),
     testedAt: b.tested_at || defaults.testedAt || wallClockIso(),
     storeId: b.store_id != null ? parseInt(String(b.store_id), 10) : defaults.storeId ?? null,
     actorUserId: defaults.actorUserId ?? null,
@@ -545,7 +435,20 @@ router.post('/customers/:id/eye-tests', authJwt, requireModule('cx'), requireCxP
       actorUserId: req.user && req.user.user_id != null ? Number(req.user.user_id) : null
     })
     const row = await cxService.insertStaffEyeTest(pool, payload)
-    const lif = req.body && req.body.lifestyle
+    const body = req.body || {}
+    if (body.patient_dob) {
+      try {
+        await cxService.upsertRxModalPatientDob(pool, {
+          customerId,
+          patientDob: body.patient_dob,
+          syncPrimaryProfile: !body.family_name_id,
+          actorUserId: req.user && req.user.user_id != null ? Number(req.user.user_id) : null
+        })
+      } catch (_) {
+        /* best-effort */
+      }
+    }
+    const lif = body.lifestyle
     if (customerId && lif && typeof lif === 'object') {
       try {
         await cxService.upsertRxModalLifestyle(
@@ -715,6 +618,25 @@ router.get(
       const activeOnly = String(req.query.active_only || '1') !== '0'
       const pool = await getPool()
       const rows = await cxService.getCustomerOfferAssignments(pool, customerId, activeOnly)
+      return res.json({ success: true, data: rows })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+/** GET /api/cx/customers/:id/offers-live — active catalogue offers visible to this customer (Eyewoot Go parity) */
+router.get(
+  '/customers/:id/offers-live',
+  authJwt,
+  requireModule('cx'),
+  requireCxPermission('cx.customers.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const rows = await cxService.getCustomerLiveOffers(pool, customerId)
       return res.json({ success: true, data: rows })
     } catch (err) {
       return next(err)

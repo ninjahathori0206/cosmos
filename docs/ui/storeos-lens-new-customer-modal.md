@@ -29,9 +29,19 @@ When staff search CRM and there are **no matches**, open a modal to **create a c
 - Primary: Create and link (`cosmosBtnLoading` / `cosmosBtnDone` / toast on errors)
 - Close: X, Cancel, backdrop click (and Escape optional)
 
+## Saved Power (lens Cx step)
+
+See **[lens-saved-power.md](lens-saved-power.md)** — modal picker over `GET /api/pos/customers/:id/prescriptions/for-pos`; links `eye_test_id` on the lab line. Not the same as this “customer not found” create modal.
+
+## GatePass on lens Cx step
+
+- **Visitor queue:** use the **GatePass FAB** only — lens **Change** search does not list in-store / exited visitors (`queueMode: 'cx-only'`).
+- **Create Cx from search:** 10-digit phone with no Cx profile → **Create Cx** row in dropdown → [`openQuickCxRegistration`](../../src/public/js/pos.js) (same as cart quick path).
+- **Visitor without Cx from FAB:** cart visitor-pending + inline **Create Cx** on the lens visitor **Shopping for** card — not this modal.
+
 ## Pencil mapping
 
-(To be aligned with `pencil-new.pen`: lens flow “customer / add-power” frames when those frames carry this interaction.)
+- `Store OS Lens wizard · Cx step · GatePass FAB · /pos/order/lens` — FAB + Cx-only search + visitor-pending card.
 
 ## Data / backend
 

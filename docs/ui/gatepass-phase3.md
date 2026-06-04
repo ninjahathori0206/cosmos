@@ -19,6 +19,7 @@ Run the visitor queue outside POS: assign staff, auto-expire stale visits, confi
 
 - Filters: status (`waiting`, `in_service`, all active), optional phone/name search  
 - Table: name, phone, purpose badge, wait time, assigned staff, status, linked Cx dot  
+- **ASSIGNED** auto-fills with the staff user who performed check-in (`assigned_user_id` = `checkin_by_user_id`); manual re-assign still via **Assign to me**  
 - Row actions: Select (if POS handoff later), Assign to me, In service, Complete, No-show  
 - Primary: **+ Check In** → same fields as POS check-in modal  
 - Empty: headline + subtext + Check In CTA  

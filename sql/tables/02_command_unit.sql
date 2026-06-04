@@ -19,7 +19,10 @@ BEGIN
   );
 END;
 
+-- DEPRECATED: membership_tiers removed by migration 96_drop_membership_tiers.sql.
+-- Use dbo.membership_plans (Command Unit Membership Plans) instead.
 IF OBJECT_ID('dbo.membership_tiers', 'U') IS NULL
+  AND 1 = 0  /* table no longer created on greenfield; kept block for history only */
 BEGIN
   CREATE TABLE dbo.membership_tiers (
     membership_id   INT IDENTITY(1,1) PRIMARY KEY,

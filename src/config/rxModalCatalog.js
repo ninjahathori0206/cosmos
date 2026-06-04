@@ -46,13 +46,85 @@ const RX_WIZARD_STEPS = [
   { key: 'eyetest', label: 'Eye test', icon: '👁' }
 ]
 
+/** Lens type quick-select (eye_tests.lens_type). */
+const RX_LENS_TYPE_OPTIONS = [
+  { key: 'sv', label: 'Single vision (SV)', value: 'Single vision' },
+  { key: 'progressive', label: 'Progressive', value: 'Progressive' },
+  { key: 'bifocal', label: 'Bifocal', value: 'Bifocal' },
+  { key: 'office', label: 'Computer / office', value: 'Computer / office' },
+  { key: 'reading', label: 'Reading', value: 'Reading' },
+  { key: 'plano', label: 'Plano / zero power', value: 'Plano' }
+]
+
+function rxFmtSphLabel (v, key) {
+  if (v === 0) return '+0.00'
+  if (v > 0) return '+' + key
+  return key
+}
+
+function rxFmtAddLabel (v, key) {
+  if (v === 0) return '+0.00'
+  return '+' + key
+}
+
+function rxFmtPdLabel (_v, key) {
+  return key + ' mm'
+}
+
+function rxBuildDecimalOptions (min, max, step, decimals, formatLabel) {
+  const out = []
+  const steps = Math.round((max - min) / step)
+  for (let i = 0; i <= steps; i++) {
+    const raw = min + i * step
+    const v = Math.round(raw * Math.pow(10, decimals)) / Math.pow(10, decimals)
+    const key = v.toFixed(decimals)
+    out.push({
+      key,
+      label: formatLabel ? formatLabel(v, key) : key,
+      value: key
+    })
+  }
+  return out
+}
+
+function rxFmtCylLabel (v, key) {
+  if (v === 0) return '0.00'
+  if (v > 0) return '+' + key
+  return key
+}
+
+function rxBuildCylOptions () {
+  return rxBuildDecimalOptions(-6, 6, 0.25, 2, rxFmtCylLabel)
+}
+
+function rxBuildAxisOptions () {
+  const out = []
+  for (let a = 0; a <= 180; a += 5) {
+    const key = String(a)
+    out.push({ key, label: a + '°', value: key })
+  }
+  return out
+}
+
+const RX_PRESCRIPTION_SPH_OPTIONS = rxBuildDecimalOptions(-20, 20, 0.25, 2, rxFmtSphLabel)
+const RX_PRESCRIPTION_CYL_OPTIONS = rxBuildCylOptions()
+const RX_PRESCRIPTION_AXIS_OPTIONS = rxBuildAxisOptions()
+const RX_PRESCRIPTION_ADD_OPTIONS = rxBuildDecimalOptions(0, 4, 0.25, 2, rxFmtAddLabel)
+const RX_PD_OPTIONS = rxBuildDecimalOptions(48, 72, 0.5, 1, rxFmtPdLabel)
+
 function getRxModalCatalog () {
   return {
     screen_time_options: RX_SCREEN_TIME_OPTIONS,
     working_condition_options: RX_WORKING_CONDITION_OPTIONS,
     family_eye_history_options: RX_FAMILY_EYE_HISTORY_OPTIONS,
     vision_acuity_options: RX_VISION_ACUITY_OPTIONS,
-    wizard_steps: RX_WIZARD_STEPS
+    wizard_steps: RX_WIZARD_STEPS,
+    prescription_sph_options: RX_PRESCRIPTION_SPH_OPTIONS,
+    prescription_cyl_options: RX_PRESCRIPTION_CYL_OPTIONS,
+    prescription_axis_options: RX_PRESCRIPTION_AXIS_OPTIONS,
+    prescription_add_options: RX_PRESCRIPTION_ADD_OPTIONS,
+    pd_options: RX_PD_OPTIONS,
+    lens_type_options: RX_LENS_TYPE_OPTIONS
   }
 }
 
@@ -62,5 +134,11 @@ module.exports = {
   RX_FAMILY_EYE_HISTORY_OPTIONS,
   RX_VISION_ACUITY_OPTIONS,
   RX_WIZARD_STEPS,
+  RX_LENS_TYPE_OPTIONS,
+  RX_PRESCRIPTION_SPH_OPTIONS,
+  RX_PRESCRIPTION_CYL_OPTIONS,
+  RX_PRESCRIPTION_AXIS_OPTIONS,
+  RX_PRESCRIPTION_ADD_OPTIONS,
+  RX_PD_OPTIONS,
   getRxModalCatalog
 }

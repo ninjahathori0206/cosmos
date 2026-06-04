@@ -447,6 +447,7 @@ const rxBodySchema = Joi.object({
   store_id: Joi.number().integer().positive().optional(),
   family_name_id: Joi.number().integer().positive().optional().allow(null),
   patient_name: Joi.string().max(100).optional().allow('', null),
+  patient_dob: Joi.string().trim().pattern(/^\d{4}-\d{2}-\d{2}$/).optional().allow('', null),
   re_sph: Joi.number().optional().allow(null),
   re_cyl: Joi.number().optional().allow(null),
   re_axis: Joi.number().integer().optional().allow(null),
@@ -515,6 +516,7 @@ router.post('/visitor/:id/rx', ...gatepassAction, async (req, res, next) => {
       visitorId,
       familyNameId: value.family_name_id,
       patientName: value.patient_name || visitor.name || null,
+      patientDob: cxService.parsePatientDobYmd(value.patient_dob),
       testedAt: value.tested_at || wallClockIso(),
       storeId: value.store_id || visitor.store_id || jwtStoreId,
       actorUserId: actorUserId(req),
@@ -532,6 +534,18 @@ router.post('/visitor/:id/rx', ...gatepassAction, async (req, res, next) => {
       lensType: value.lens_type || null,
       notes: value.notes || null
     });
+    if (value.patient_dob) {
+      try {
+        await cxService.upsertRxModalPatientDob(pool, {
+          customerId,
+          patientDob: value.patient_dob,
+          syncPrimaryProfile: !value.family_name_id,
+          actorUserId: actorUserId(req)
+        });
+      } catch (_) {
+        /* best-effort */
+      }
+    }
     if (customerId && value.lifestyle) {
       try {
         await cxService.upsertRxModalLifestyle(pool, customerId, value.lifestyle, actorUserId(req));

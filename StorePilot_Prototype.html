@@ -399,12 +399,12 @@
     .hint { display:none !important; }
   }
 </style>
-<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-shipments-fix">
+<link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260604-gp-fab-drag">
 <link rel="stylesheet" href="/css/cosmos-time-monitor.css?v=cosmos-time-v1">
 <link rel="stylesheet" href="/css/cosmos-cx-search.css?v=gatepass-phase4">
-<link rel="stylesheet" href="/css/storepilot-theme.css?v=gatepass-ci-v2">
-<link rel="stylesheet" href="/css/rx-modal.css?v=20260604-rx-v3">
-<script src="/js/cosmos-ui-polish.js?v=20260602-ist-wire" defer></script>
+<link rel="stylesheet" href="/css/storepilot-theme.css?v=20260604-gp-fab-drag">
+<link rel="stylesheet" href="/css/rx-modal.css?v=20260604-rx-footer-btn">
+<script src="/js/cosmos-ui-polish.js?v=20260604-gp-fab-drag" defer></script>
 <script src="/js/cosmos-time-monitor.js?v=cosmos-time-v1" defer></script>
 <script src="/js/cosmos-cx-search.js?v=gatepass-checkin-new-only-v6" defer></script>
 <script src="/js/cosmos-invoice-share-canvas.js?v=20260528-inv-rich" defer></script>
@@ -1069,24 +1069,23 @@
       <button type="button" class="cx-mclose" id="rx-modal-close-btn" aria-label="Close">✕</button>
     </div>
     <div class="cx-mb" style="padding:0;display:flex;flex-direction:column;min-height:0">
-      <nav id="rx-modal-stepnav" class="rx-stepnav" role="tablist" aria-label="Rx steps"></nav>
+      <nav id="rx-modal-stepnav" class="rx-segnav" role="tablist" aria-label="Rx steps"></nav>
       <div id="rx-modal-pane" class="rx-wizard-scroll"></div>
       <div id="rx-modal-error" style="color:var(--red);font-size:12px;display:none;padding:0 18px"></div>
-      <footer class="rx-wizard-foot">
-        <button type="button" class="btn" id="rx-modal-back-btn" hidden>← Back</button>
-        <div style="display:flex;gap:8px;margin-left:auto">
-          <button type="button" class="btn" id="rx-modal-cancel-btn">Cancel</button>
-          <button type="button" class="btn primary" id="rx-modal-next-btn">Next: Lifestyle →</button>
-          <button type="button" class="btn primary" id="rx-modal-save-btn" hidden>Save Rx</button>
+      <footer class="rx-wizard-foot rx-wizard-foot--save-only">
+        <div class="rx-wizard-foot-inner">
+          <p id="rx-modal-pending-hint" class="rx-pending-hint" hidden></p>
+          <button type="button" class="btn primary rx-next-foot-btn" id="rx-modal-next-btn" hidden>Next →</button>
+          <button type="button" class="btn primary rx-save-foot-btn" id="rx-modal-save-btn" disabled>Save Rx</button>
         </div>
       </footer>
     </div>
   </div>
 </div>
 
-<script src="/js/rx-modal.js?v=20260604-rx-v3" defer></script>
-<script src="/js/storepilot-gatepass.js?v=gatepass-checkin-dedupe-v6" defer></script>
-<script src="/js/storepilot-prototype.js?v=20260602-store-reports-nav" defer></script>
+<script src="/js/rx-modal.js?v=20260604-rx-footer-btn" defer></script>
+<script src="/js/storepilot-gatepass.js?v=20260604-gp-fab-drag" defer></script>
+<script src="/js/storepilot-prototype.js?v=20260604-invoiced-date-v2" defer></script>
 
 <div id="sp-gp-fab-root" hidden>
   <button type="button" id="sp-gp-fab" class="sp-gp-fab" aria-label="GatePass" aria-expanded="false">

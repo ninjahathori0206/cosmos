@@ -32,10 +32,11 @@ Live visitor queue per store: staff check-in, search/select visitors via shared 
 
 - Focus with 0 digits → dropdown opens, both visitor sections unfiltered
 - Typing → live filter, 150ms debounce, digit highlight
-- **10 digits**, no visitor match, Cx exists → Section 3 shows `pos_customers` row(s); select → **link cart + staff check-in** (`POST /api/gatepass/checkin`, then `in_service` if permitted)
-- **10 digits**, no visitor match, no Cx → **Check in as new visitor** → opens check-in panel
-- Select in-store visitor + linked customer → load CX from `customer-search`, attach to bill, set `in_service`
-- Select in-store visitor, phone not in central Cx → Quick Cx registration entry point
+- **10 digits**, no visitor match, Cx exists → Cx profile bubble; select → fills check-in form (no cart navigation)
+- **10 digits**, no visitor match, no Cx → **Create Cx** bubble in check-in search → quick registration (read-only mobile, editable name)
+- **FAB panel:** tap visitor bubble → **apply to cart** immediately (link Cx if on file, else cart shows visitor + **Select Cx** + **Create Cx**); highlight + Selected strip + **Clear**; **no** visitor action sheet
+- **Create Cx** (cart or picker banner) opens the **Visitor Create Cx** focused picker sheet — not the full **Find Cx** search UI
+- Does **not** navigate to `/storeos/order` on bubble tap — updates cart Cx column in place
 - Escape / click outside → close, retain input value
 
 ### Loading / error
@@ -51,11 +52,24 @@ Live visitor queue per store: staff check-in, search/select visitors via shared 
 - Duplicate active visitor → show existing card, no second row
 - Same-day return → reopen row (`waiting`, new `checkin_at`)
 
+## Lens wizard — Cx step (FAB-first)
+
+**Route:** `/storeos/lens-config` (Add Lens Details) · checkout stage **Cx** (`lensWizard.step === 2`, profile sub-phase).
+
+| Surface | Role |
+|---------|------|
+| **GatePass FAB** (bottom right) | Today’s visitors — tap bubble applies visitor to **cart Cx**; lens step shows visitor **Shopping for** card (linked Cx uses unified **Who is this pair for?** chips instead) |
+| **Change → search** (`#pos-lk-cust-input`) | **Cx profiles only** (`cosmos-cx-search` `queueMode: 'cx-only'`) — no IN STORE / EXITED sections |
+| **+ Check In** on FAB | New visitor check-in (not in lens search dropdown) |
+
+Visitor without central Cx: same as cart — visitor pending + **Create Cx** (focused picker); not the lens “Customer not found” modal.
+
 ## Live visitor widget (sidebar)
 
 - Embedded below nav in `#pos-sidebar`
 - Poll `GET /api/gatepass/queue/:storeId` every 30s
-- Row tap → action sheet: **Select**, **Mark In-Service**, **Close Visit**
+- FAB: tap bubble → apply visitor to cart Cx column; **+ Check In** in footer; **Clear** on Selected strip
+- FAB panel auto-closes after **3 seconds** of no pointer/keyboard/scroll activity on the widget
 - Empty: headline + subtext + **Check In** action
 - Gated: `gatepass.view` / `gatepass.action`
 

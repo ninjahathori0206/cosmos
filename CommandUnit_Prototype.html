@@ -58,9 +58,6 @@
       <span class="icon">💳</span> POS Settings
     </div>
 
-    <div class="nav-item" onclick="showPage('membership', this)">
-      <span class="icon">🌟</span> Membership Tiers
-    </div>
     <div class="nav-item" onclick="showPage('membership-plans', this)">
       <span class="icon">🃏</span> Membership Plans
     </div>
@@ -693,46 +690,6 @@
       <p id="cu-pos-settings-storeos-hint" style="font-size:12px;color:var(--text2);margin-top:10px;line-height:1.45;max-width:620px">
         Store OS tablets pick up GST and composition changes when they next open the cart, return to this browser tab, or reload — no separate POS “GST” screen on checkout.
       </p>
-    </div>
-  </div>
-
-  <!-- ═══ PAGE: MEMBERSHIP ═══ -->
-  <div class="page" id="page-membership">
-    <div class="page-header flex items-center">
-      <div>
-        <div class="page-title">Membership Tiers</div>
-        <div class="page-subtitle"></div>
-      </div>
-      <button class="topbar-btn primary ml-auto" onclick="openModal('modal-new-membership')">+ Add Tier</button>
-    </div>
-    <div class="three-col">
-      <div class="card">
-        <div style="padding:20px;background:linear-gradient(135deg,#F5F5F5,#E2E8F0);border-bottom:1px solid var(--border)">
-          <div style="font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--text2);margin-bottom:6px">🥈 Silver</div>
-          <div style="font-family:'Inter',sans-serif;font-size:24px;font-weight:800">₹499 <span style="font-size:14px;font-weight:400;color:var(--text2)">/year</span></div>
-        </div>
-        <div class="card-body">
-          <div class="td-muted text-sm mb-4">10% discount on frames · Priority appointments · Free lens cleaning kit</div>
-          <div class="flex items-center gap-2 mb-4"><span class="text-xs td-muted">Promoter commission:</span><span class="badge badge-gold">₹50 / sale</span></div>
-          <div class="flex items-center gap-2"><span class="text-xs td-muted">Loyalty tier upgrade:</span><span class="badge badge-blue">→ Silver tier</span></div>
-        </div>
-        <div style="padding:12px 20px;border-top:1px solid var(--border)"><button class="topbar-btn w-full" style="justify-content:center;font-size:12px">Edit</button></div>
-      </div>
-      <div class="card">
-        <div style="padding:20px;background:linear-gradient(135deg,#FDF2DC,#FDE68A);border-bottom:1px solid var(--border)">
-          <div style="font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#92400E;margin-bottom:6px">🥇 Gold</div>
-          <div style="font-family:'Inter',sans-serif;font-size:24px;font-weight:800">₹999 <span style="font-size:14px;font-weight:400;color:#92400E">/year</span></div>
-        </div>
-        <div class="card-body">
-          <div class="td-muted text-sm mb-4">20% discount on frames · Premium lens upgrade · Free annual eye test · Priority support</div>
-          <div class="flex items-center gap-2 mb-4"><span class="text-xs td-muted">Promoter commission:</span><span class="badge badge-gold">₹100 / sale</span></div>
-          <div class="flex items-center gap-2"><span class="text-xs td-muted">Loyalty tier upgrade:</span><span class="badge badge-gold">→ Gold tier</span></div>
-        </div>
-        <div style="padding:12px 20px;border-top:1px solid var(--border)"><button class="topbar-btn w-full" style="justify-content:center;font-size:12px">Edit</button></div>
-      </div>
-      <div class="card" style="border:2px dashed var(--border);background:transparent;display:flex;align-items:center;justify-content:center;min-height:200px;cursor:pointer" onclick="openModal('modal-new-membership')">
-        <div style="text-align:center;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">+</div><div style="font-size:13.5px;font-weight:500">Add Tier</div></div>
-      </div>
     </div>
   </div>
 
@@ -1703,61 +1660,6 @@
   </div>
 </div>
 
-<!-- New Membership -->
-<div class="modal-overlay" id="modal-new-membership">
-  <div class="modal" style="width:500px">
-    <div class="modal-header">
-      <div class="modal-title">Add Membership Tier</div>
-      <div class="modal-close" onclick="closeModal('modal-new-membership')">×</div>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group"><label>Tier Name <span class="label-req">*</span></label><input id="new-tier-name" type="text" placeholder="e.g. Eyewoot Platinum"></div>
-        <div class="form-group"><label>Annual Fee (₹) <span class="label-req">*</span></label><input id="new-tier-fee" type="number" placeholder="e.g. 1499"></div>
-        <div class="form-group span2"><label>Benefits</label><textarea id="new-tier-benefits" placeholder="List key benefits for customers..."></textarea></div>
-        <div class="form-group"><label>Loyalty Tier</label><input id="new-tier-loyalty" type="text" placeholder="e.g. Gold"></div>
-        <div class="form-group"><label>Promoter Commission (₹)</label><input id="new-tier-commission" type="number" placeholder="e.g. 150"></div>
-      </div>
-      <div id="new-tier-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="topbar-btn" onclick="closeModal('modal-new-membership')">Cancel</button>
-      <button class="topbar-btn primary" id="new-tier-save-btn">Create Tier</button>
-    </div>
-  </div>
-</div>
-
-<!-- Edit Membership Tier -->
-<div class="modal-overlay" id="modal-edit-membership">
-  <div class="modal" style="width:500px">
-    <div class="modal-header">
-      <div><div class="modal-title" id="edit-tier-title">Edit Membership Tier</div></div>
-      <div class="modal-close" onclick="closeModal('modal-edit-membership')">×</div>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group"><label>Tier Name <span class="label-req">*</span></label><input id="edit-tier-name" type="text"></div>
-        <div class="form-group"><label>Annual Fee (₹) <span class="label-req">*</span></label><input id="edit-tier-fee" type="number"></div>
-        <div class="form-group span2"><label>Benefits</label><textarea id="edit-tier-benefits"></textarea></div>
-        <div class="form-group"><label>Loyalty Tier</label><input id="edit-tier-loyalty" type="text"></div>
-        <div class="form-group"><label>Promoter Commission (₹)</label><input id="edit-tier-commission" type="number"></div>
-        <div class="form-group"><label>Status</label>
-          <select id="edit-tier-status">
-            <option value="1">Active</option>
-            <option value="0">Inactive</option>
-          </select>
-        </div>
-      </div>
-      <div id="edit-tier-error" style="color:#b91c1c;font-size:12px;margin-top:8px;min-height:16px"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="topbar-btn" onclick="closeModal('modal-edit-membership')">Cancel</button>
-      <button class="topbar-btn" style="border-color:#DC2626;color:#DC2626" id="edit-tier-deactivate-btn">Deactivate</button>
-      <button class="topbar-btn primary" id="edit-tier-save-btn">Save Changes</button>
-    </div>
-  </div>
-</div>
-
 <!-- New Store Type -->
 <div class="modal-overlay" id="modal-cu-new-store-type">
   <div class="modal" style="width:560px">
@@ -2336,7 +2238,7 @@ function showPage(id, el, _opts) {
     dashboard: 'Dashboard', stores: 'Store Management', users: 'User Management',
     roles: 'Roles & Permissions', modules: 'Module Access Control',
     homebrands: 'Home Brand Management', locations: 'Location Type Config',
-    settings: 'System Settings', 'pos-settings': 'POS Settings', membership: 'Membership Tiers',
+    settings: 'System Settings', 'pos-settings': 'POS Settings',
     'membership-plans': 'Membership Plans',
     promotion: 'Configure Offer',
     leavetypes: 'Leave Types', 'store-types': 'Store Types', 'cx-settings': 'CX Settings', 'foundry-settings': 'Foundry Settings',

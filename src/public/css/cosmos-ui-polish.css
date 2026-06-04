@@ -2828,3 +2828,29 @@ body.cosmos-pwa-update-open {
     padding: 0;
   }
 }
+
+/* GatePass FAB — long-press vertical reposition */
+#pos-gp-fab-root,
+#sp-gp-fab-root,
+#cx-gp-fab-root {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1100;
+  align-items: flex-end;
+  touch-action: none;
+}
+#pos-gp-fab-root:not([hidden]),
+#sp-gp-fab-root:not([hidden]),
+#cx-gp-fab-root:not([hidden]) {
+  display: flex;
+  flex-direction: column-reverse;
+}
+.cosmos-gp-fab--dragging {
+  cursor: grabbing !important;
+  touch-action: none;
+  user-select: none;
+}
+.cosmos-gp-fab--dragging:hover {
+  transform: none !important;
+}

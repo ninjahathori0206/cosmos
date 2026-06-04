@@ -62,7 +62,7 @@ Profile, Lifestyle, Prescriptions, Invoices, Membership, Coins, Offers, Audit â€
 | Invoices | `GET .../invoices` | `cx.customers.view` |
 | Membership | existing `GET .../membership` + grant/buddy actions | `cx.membership.manage` |
 | Coins | `GET .../coins`; manual adjust `POST .../coins/manual` | view / `cx.coins.manual` |
-| Offers | `GET .../offers-assignments`; assign/revoke | `cx.offers.manage` |
+| Offers | `GET .../offers-live` (Eyewoot Go parity); optional `GET .../offers-assignments` | view: `cx.customers.view`; assign: `cx.offers.manage` |
 | Audit | `GET .../audit` | `cx.audit.view` or `cx.admin` |
 
 ### Visits tab (GatePass history)

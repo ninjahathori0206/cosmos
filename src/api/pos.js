@@ -104,6 +104,11 @@ const posCatalogue = [authJwt, requireModule('pos'), requirePermission('pos.cata
 const posPromotions = [authJwt, requireModule('pos'), requirePermission('pos.promotions.view')]
 const posCustomersView = [authJwt, requireModule('pos'), requirePermission('pos.customers.view')]
 const posCustomersCreate = [authJwt, requireModule('pos'), requirePermission('pos.customers.create')]
+const posPrescriptionsCreate = [
+  authJwt,
+  requireModule('pos'),
+  requirePermission('pos.prescriptions.create', 'cx.eye_tests.create')
+]
 const posOrdersView = [authJwt, requireModule('pos'), requirePermission('pos.orders.view')]
 const posOrdersCreate = [authJwt, requireModule('pos'), requirePermission('pos.orders.create')]
 const posOrdersVoidUnpaid = [authJwt, requireModule('pos'), requirePermission('pos.orders.void_unpaid', 'pos.orders.create')]
@@ -1778,6 +1783,149 @@ router.get('/membership-plans', ...posMembershipSell, async (req, res, next) => 
   }
 })
 
+const posRxBodySchema = Joi.object({
+  tested_at: Joi.string().optional(),
+  store_id: Joi.number().integer().positive().optional(),
+  visitor_id: Joi.number().integer().positive().optional().allow(null),
+  family_name_id: Joi.number().integer().positive().optional().allow(null),
+  patient_name: Joi.string().max(100).optional().allow('', null),
+  patient_dob: Joi.string().trim().pattern(/^\d{4}-\d{2}-\d{2}$/).optional().allow('', null),
+  re_sph: Joi.number().optional().allow(null),
+  re_cyl: Joi.number().optional().allow(null),
+  re_axis: Joi.number().integer().optional().allow(null),
+  re_add: Joi.number().optional().allow(null),
+  re_va: Joi.string().max(10).optional().allow('', null),
+  le_sph: Joi.number().optional().allow(null),
+  le_cyl: Joi.number().optional().allow(null),
+  le_axis: Joi.number().integer().optional().allow(null),
+  le_add: Joi.number().optional().allow(null),
+  le_va: Joi.string().max(10).optional().allow('', null),
+  pd: Joi.number().optional().allow(null),
+  lens_type: Joi.string().max(50).optional().allow('', null),
+  notes: Joi.string().max(500).optional().allow('', null),
+  lifestyle: Joi.object({
+    screen_hrs: Joi.string().max(50).optional().allow('', null),
+    working_conditions: Joi.array().items(Joi.string().max(80)).optional(),
+    diabetes: Joi.boolean().optional(),
+    hypertension: Joi.boolean().optional(),
+    eye_surgery: Joi.boolean().optional(),
+    family_eye_history: Joi.string().max(200).optional().allow('', null),
+    has_spectacles: Joi.boolean().optional()
+  }).optional()
+})
+
+function mapEyeTestInsertPayload (body, defaults) {
+  const b = body || {}
+  return {
+    customerId: defaults.customerId,
+    visitorId: defaults.visitorId ?? null,
+    familyNameId: b.family_name_id != null ? parseInt(String(b.family_name_id), 10) : null,
+    patientName: b.patient_name != null ? String(b.patient_name).trim() || null : defaults.patientName ?? null,
+    patientDob: cxService.parsePatientDobYmd(b.patient_dob),
+    testedAt: b.tested_at || defaults.testedAt || wallClockIso(),
+    storeId: b.store_id != null ? parseInt(String(b.store_id), 10) : defaults.storeId ?? null,
+    actorUserId: defaults.actorUserId ?? null,
+    reSph: b.re_sph ?? null,
+    reCyl: b.re_cyl ?? null,
+    reAxis: b.re_axis ?? null,
+    reAdd: b.re_add ?? null,
+    reVa: b.re_va ?? null,
+    leSph: b.le_sph ?? null,
+    leCyl: b.le_cyl ?? null,
+    leAxis: b.le_axis ?? null,
+    leAdd: b.le_add ?? null,
+    leVa: b.le_va ?? null,
+    pd: b.pd ?? null,
+    lensType: b.lens_type ?? null,
+    notes: b.notes ?? null
+  }
+}
+
+// ── POST /api/pos/customers/:customerId/eye-tests ─────────────────────────────
+router.post('/customers/:customerId/eye-tests', ...posPrescriptionsCreate, async (req, res, next) => {
+  try {
+    const customerId = parseInt(req.params.customerId, 10)
+    if (!customerId) {
+      return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+    }
+    const { error, value } = posRxBodySchema.validate(req.body || {})
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.details.map((d) => d.message).join('; ')
+      })
+    }
+    const hasRx =
+      value.re_sph != null ||
+      value.le_sph != null ||
+      value.re_cyl != null ||
+      value.le_cyl != null
+    if (!hasRx) {
+      return res.status(400).json({
+        success: false,
+        message: 'Enter at least one eye SPH value.'
+      })
+    }
+    const pool = await getPool()
+    const payload = mapEyeTestInsertPayload(value, {
+      customerId,
+      visitorId: value.visitor_id != null ? parseInt(String(value.visitor_id), 10) : null,
+      storeId: req.user && req.user.store_id != null ? Number(req.user.store_id) : null,
+      actorUserId: req.user && req.user.user_id != null ? Number(req.user.user_id) : null
+    })
+    const row = await cxService.insertStaffEyeTest(pool, payload)
+    if (value.patient_dob) {
+      try {
+        await cxService.upsertRxModalPatientDob(pool, {
+          customerId,
+          patientDob: value.patient_dob,
+          syncPrimaryProfile: !value.family_name_id,
+          actorUserId: req.user && req.user.user_id != null ? Number(req.user.user_id) : null
+        })
+      } catch (_) {
+        /* best-effort */
+      }
+    }
+    if (customerId && value.lifestyle && typeof value.lifestyle === 'object') {
+      try {
+        await cxService.upsertRxModalLifestyle(
+          pool,
+          customerId,
+          value.lifestyle,
+          req.user && req.user.user_id != null ? Number(req.user.user_id) : null
+        )
+      } catch (_) {
+        /* Rx saved; lifestyle best-effort */
+      }
+    }
+    return res.status(201).json({
+      success: true,
+      data: {
+        test_id: row && row.test_id,
+        tested_at: row && row.tested_at,
+        patient_name: row && (row.patient_name || row.family_name),
+        family_name_id: row && row.family_name_id,
+        re_sph: row && row.re_sph,
+        re_cyl: row && row.re_cyl,
+        re_axis: row && row.re_axis,
+        re_add: row && row.re_add,
+        le_sph: row && row.le_sph,
+        le_cyl: row && row.le_cyl,
+        le_axis: row && row.le_axis,
+        le_add: row && row.le_add,
+        pd: row && row.pd,
+        lens_type: row && row.lens_type
+      }
+    })
+  } catch (err) {
+    const msg = String(err.message || '')
+    if (msg.includes('required') || msg.includes('family_name')) {
+      return res.status(400).json({ success: false, message: msg })
+    }
+    return next(err)
+  }
+})
+
 // ── GET /api/pos/customers/:customerId/prescriptions/for-pos ───────────────────
 router.get('/customers/:customerId/prescriptions/for-pos', ...posCustomersView, async (req, res, next) => {
   try {
@@ -1791,6 +1939,35 @@ router.get('/customers/:customerId/prescriptions/for-pos', ...posCustomersView, 
     return res.json({
       success: true,
       data: rows.map(mapEyeTestForPos).filter(Boolean)
+    })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── GET /api/pos/customers/:customerId/profile-brief — dob for Rx patient step ─
+router.get('/customers/:customerId/profile-brief', ...posCustomersView, async (req, res, next) => {
+  try {
+    const customerId = parseInt(req.params.customerId, 10)
+    if (!customerId) {
+      return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+    }
+    const pool = await getPool()
+    const r = await pool.request().input('cid', customerId).query(`
+      SELECT customer_id, dob
+      FROM dbo.pos_customers
+      WHERE customer_id = @cid
+    `)
+    const row = (r.recordset && r.recordset[0]) || null
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Customer not found.' })
+    }
+    return res.json({
+      success: true,
+      data: {
+        customer_id: row.customer_id,
+        dob: row.dob ? String(row.dob).slice(0, 10) : null
+      }
     })
   } catch (err) {
     return next(err)

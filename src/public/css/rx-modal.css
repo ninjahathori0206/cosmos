@@ -1,4 +1,57 @@
-/* Add Rx — 3-step wizard (GatePass + CX) */
+/* Add Rx — 3-step wizard (GatePass + CX + Store OS) */
+
+/* Minimal modal chrome (CX inline styles duplicated for POS) */
+#modal-add-rx {
+  z-index: 1500;
+  padding: 0;
+  align-items: stretch;
+}
+#modal-add-rx.open,
+#modal-add-rx[style*='flex'] {
+  display: flex !important;
+}
+#modal-add-rx .cx-modal {
+  background: var(--card);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+  width: 100%;
+  max-width: 480px;
+  max-height: 92vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+#modal-add-rx .cx-mh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#modal-add-rx .cx-mt {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text1);
+}
+#modal-add-rx .cx-mclose {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+#modal-add-rx .cx-mclose:hover {
+  background: var(--bg);
+  color: var(--text1);
+}
+#modal-add-rx .btn {
+  font-family: inherit;
+}
+
 .rx-wizard-modal {
   max-width: none;
   width: 100%;
@@ -19,38 +72,96 @@
   padding: 0;
 }
 
-.rx-stepnav {
-  display: flex;
-  gap: 6px;
-  padding: 12px 16px 0;
-  border-bottom: 1px solid var(--border);
+.rx-pos-use-saved-wrap {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.rx-pos-use-saved-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--acc2);
+  cursor: pointer;
+}
+.rx-pos-use-saved-sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text3);
 }
 
-.rx-stepnav-item {
+.rx-segnav {
+  display: flex;
+  gap: 4px;
+  margin: 0 12px;
+  padding: 6px;
+  background: var(--bg);
+  border-radius: 14px;
+  flex-shrink: 0;
+}
+
+.rx-segnav-item {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 10px 8px;
+  gap: 5px;
+  min-height: 40px;
+  padding: 8px 6px;
   border: none;
-  border-radius: 10px 10px 0 0;
+  border-radius: 10px;
   background: transparent;
-  color: var(--text3);
+  color: var(--text2);
   font-size: 12px;
   font-weight: 600;
-  cursor: default;
+  cursor: pointer;
   font-family: inherit;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
 }
 
-.rx-stepnav-item.is-active {
+.rx-segnav-item.is-active {
   background: var(--card);
   color: var(--acc2);
-  box-shadow: 0 -1px 0 var(--border) inset;
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1);
 }
 
-.rx-stepnav-item.is-done {
-  color: var(--text2);
+.rx-segnav-item.is-done {
+  color: var(--green, #059669);
+}
+
+.rx-segnav-item.is-done .rx-segnav-mark {
+  color: var(--green, #059669);
+}
+
+.rx-segnav-item.is-pending {
+  color: var(--text3);
+}
+
+.rx-segnav-item.is-pending .rx-segnav-mark {
+  color: var(--gold, #d97706);
+  font-size: 10px;
+}
+
+.rx-segnav-mark {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.rx-segnav-lbl {
+  white-space: nowrap;
 }
 
 .rx-wizard-scroll {
@@ -70,6 +181,54 @@
   padding: 12px 18px 16px;
   border-top: 1px solid var(--border);
   background: var(--card);
+  flex-shrink: 0;
+}
+
+.rx-wizard-foot--save-only {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+}
+
+.rx-wizard-foot-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.rx-pending-hint {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+  text-align: center;
+}
+
+.rx-pending-hint[hidden] {
+  display: none !important;
+}
+
+/* [hidden] loses to prototype .btn { display:inline-flex } — force hide inactive footer CTA */
+#modal-add-rx .rx-next-foot-btn[hidden],
+#modal-add-rx .rx-save-foot-btn[hidden] {
+  display: none !important;
+}
+
+.rx-next-foot-btn,
+.rx-save-foot-btn {
+  width: 100%;
+  min-height: 52px;
+  font-weight: 700;
+}
+
+.rx-next-foot-btn:disabled,
+.rx-next-foot-btn.is-locked,
+.rx-save-foot-btn:disabled,
+.rx-save-foot-btn.is-locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .rx-profile-card {
@@ -84,6 +243,10 @@
 
 .rx-profile-card strong {
   color: var(--text1);
+}
+
+.rx-lifestyle-chip-group .rx-pill-row {
+  margin-top: 2px;
 }
 
 .rx-pill-row {
@@ -183,6 +346,46 @@
   color: var(--text2);
 }
 
+/* ── Form fields (Patient step) ───────────────────────────────────── */
+#modal-add-rx .fgrp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#modal-add-rx .fgrp > label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text1);
+}
+
+#modal-add-rx .inp,
+#modal-add-rx .rx-who-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text1);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#modal-add-rx .inp:focus,
+#modal-add-rx .rx-who-input:focus {
+  outline: none;
+  border-color: var(--acc2);
+  box-shadow: 0 0 0 3px var(--accL);
+}
+
+#modal-add-rx .inp[readonly] {
+  background: var(--card);
+  color: var(--text2);
+}
+
 /* ── Family / patient picker ─────────────────────────────────────── */
 .rx-who-scroller {
   display: flex;
@@ -252,21 +455,71 @@
 }
 
 .rx-who-new-row {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1.5px solid var(--acc2);
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px var(--accL);
+}
+
+.rx-who-new-row.is-open {
+  display: flex;
+}
+
+.rx-who-new-lbl {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  margin: 0;
+}
+
+.rx-who-new-actions {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 10px 14px;
-  background: var(--accL);
-  border: 1px solid var(--border);
-  border-radius: 12px;
 }
 
-.rx-who-new-row .inp {
+.rx-who-add-submit {
   flex: 1;
+  min-height: 40px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--acc2);
+  color: var(--card);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
 }
 
-.rx-who-new-row .btn {
-  flex-shrink: 0;
+.rx-who-add-submit:hover {
+  background: var(--acc);
+}
+
+.rx-who-add-cancel {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text2);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.rx-who-add-cancel:hover {
+  border-color: var(--acc2);
+  color: var(--text1);
+  background: var(--card);
 }
 
 /* ── Toggle fix — label wraps input so slider click works ─────────── */
@@ -281,30 +534,28 @@
   flex: 1;
 }
 
-/* ── Step 3: full-screen eye test — hides outer shell (step 3 renders its own header/footer) ── */
-#modal-add-rx.rx-modal--eyetest-full {
-  padding: 0;
-  align-items: stretch;
-}
+/* ── Step 3: eye test — content pane only, shell stays consistent with Step 1-2 ── */
 
-#modal-add-rx.rx-modal--eyetest-full .cx-mh,
-#modal-add-rx.rx-modal--eyetest-full .rx-stepnav,
-#modal-add-rx.rx-modal--eyetest-full .rx-wizard-foot {
-  display: none !important;
-}
-
-#modal-add-rx.rx-modal--eyetest-full .rx-et-scroll-host {
+/* Content pane gets the gray iOS background; all other shell (header/segnav/footer) is unchanged */
+.rx-et-scroll-host {
   flex: 1;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   padding: 0;
-  background: var(--bg, #f4f6f8);
+  background: #f2f2f7;
 }
 
-body.cx-page-go #modal-add-rx.rx-modal--eyetest-full .rx-et-scroll-host {
-  background: #f7f5f2;
+/* Footer safe-area padding on Step 3 */
+#modal-add-rx.rx-modal--eyetest-full .rx-wizard-foot {
+  padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+#modal-add-rx.rx-modal--eyetest-full .rx-pending-hint {
+  font-size: 12px;
+  font-weight: 600;
+  color: #5c6b7a;
 }
 
 .rx-et-shell {
@@ -359,24 +610,24 @@ body.cx-page-go #modal-add-rx.rx-modal--eyetest-full .rx-et-scroll-host {
 }
 
 .rx-et-patient-chip {
-  margin: 12px 16px 0;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: var(--accL);
-  border: 1px solid var(--border);
+  margin: 10px 16px 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #e8f4ff;
+  border: none;
   font-size: 13px;
   font-weight: 600;
-  color: var(--acc2);
+  color: #1d6fd4;
   flex-shrink: 0;
 }
 
 .rx-et-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 16px 24px;
+  padding: 12px 16px 8px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
 }
 
 @media (min-width: 768px) {
@@ -390,10 +641,10 @@ body.cx-page-go #modal-add-rx.rx-modal--eyetest-full .rx-et-scroll-host {
 .rx-et-section {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--text3);
-  margin: 0 0 10px;
+  color: #5c6b7a;
+  margin: 0 0 8px;
 }
 
 .rx-et-va-block {
@@ -402,10 +653,14 @@ body.cx-page-go #modal-add-rx.rx-modal--eyetest-full .rx-et-scroll-host {
   gap: 8px;
 }
 
+.rx-et-va-block--le {
+  margin-top: 0;
+}
+
 .rx-et-va-label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text2);
+  color: #5c6b7a;
 }
 
 .rx-et-va-chips {
@@ -419,34 +674,39 @@ body.cx-page-go #modal-add-rx.rx-modal--eyetest-full .rx-et-scroll-host {
 
 .rx-et-va-chip {
   flex-shrink: 0;
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text2);
-  font-size: 14px;
-  font-weight: 700;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: #f2f2f7;
+  color: #5c6b7a;
+  font-size: 12px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   font-family: inherit;
-  transition: border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .rx-et-va-chip:hover {
-  border-color: var(--acc2);
+  background: #ffffff;
+  color: #1d6fd4;
 }
 
 .rx-et-va-chip.is-on {
-  border-color: var(--acc2);
-  background: var(--accL);
-  color: var(--acc2);
-  box-shadow: 0 0 0 2px var(--accL);
+  border-color: transparent;
+  background: #ffffff;
+  color: #1d6fd4;
+  font-weight: 700;
+  box-shadow: none;
 }
 
 body.cx-page-go .rx-et-va-chip.is-on {
-  border-color: var(--go-plus, #5b4fe8);
-  background: rgba(91, 79, 232, 0.12);
+  border-color: transparent;
+  background: #ffffff;
   color: var(--go-plus, #5b4fe8);
+  box-shadow: none;
 }
 
 .rx-et-eye-grid {
@@ -455,86 +715,90 @@ body.cx-page-go .rx-et-va-chip.is-on {
   gap: 14px;
 }
 
-@media (min-width: 768px) {
-  .rx-et-eye-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-  }
-}
-
 .rx-et-eye-card {
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: #ffffff;
+  border: 1px solid #d8e4f0;
   border-radius: 14px;
   padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .rx-et-eye-title {
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.06em;
-  color: var(--text2);
+  color: #5c6b7a;
   margin: 0;
 }
 
-.rx-et-power-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-@media (max-width: 400px) {
-  .rx-et-power-row {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-.rx-et-power-cell {
+/* Prescribed power combo — Pencil white field (div, not button) */
+.rx-et-power-combo,
+.rx-et-meta-picker {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.rx-et-power-lbl {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: var(--text3);
-}
-
-.rx-et-power-input {
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
   min-height: 48px;
   box-sizing: border-box;
-  border: 1px solid var(--border);
+  border: 1px solid #d8e4f0;
   border-radius: 10px;
-  background: var(--bg);
-  padding: 10px 8px;
-  font-size: 16px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text1);
-  text-align: center;
+  background: #ffffff;
+  padding: 12px 14px;
   font-family: inherit;
+  cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.rx-et-power-input::placeholder {
-  color: var(--text3);
-  font-weight: 500;
+.rx-et-power-combo-val {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #8b9cae;
+  text-align: left;
+  line-height: 1.35;
+  flex: 1;
+  min-width: 0;
 }
 
-.rx-et-power-input:focus {
+.rx-et-meta-picker {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #8b9cae;
+  text-align: left;
+  line-height: 1.35;
+  flex: 1;
+  min-width: 0;
+}
+
+.rx-et-power-combo-chev {
+  flex-shrink: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #8b9cae;
+  line-height: 1;
+}
+
+.rx-et-power-combo.has-value .rx-et-power-combo-val,
+.rx-et-meta-picker.has-value {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.rx-et-power-combo:hover,
+.rx-et-power-combo:focus-visible,
+.rx-et-meta-picker:hover,
+.rx-et-meta-picker:focus-visible {
   outline: none;
   border-color: var(--acc2);
   box-shadow: 0 0 0 3px var(--accL);
-  background: var(--card);
 }
 
-.rx-et-power-input.rx-field-err {
+.rx-et-power-combo.rx-field-err,
+.rx-et-meta-picker.rx-field-err {
   border-color: var(--red);
   box-shadow: 0 0 0 3px var(--redL);
 }
@@ -563,7 +827,7 @@ body.cx-page-go .rx-et-va-chip.is-on {
 .rx-et-meta-field label {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text2);
+  color: #5c6b7a;
 }
 
 .rx-et-meta-input {
@@ -616,4 +880,364 @@ body.cx-page-go .rx-et-va-chip.is-on {
   .et-grid-4 {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ── Prescription power bottom sheet (tap-to-pick, no keyboard) ─────────── */
+.rx-power-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 12060;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.rx-power-sheet.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.rx-power-sheet-panel {
+  width: 100%;
+  max-width: 400px;
+  max-height: min(70vh, 480px);
+  background: var(--card);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 32px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.2s ease;
+}
+
+.rx-power-sheet.open .rx-power-sheet-panel {
+  transform: translateY(0);
+}
+
+.rx-power-sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--border);
+  margin: 10px auto 4px;
+  flex-shrink: 0;
+}
+
+.rx-power-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 8px;
+  flex-shrink: 0;
+}
+
+.rx-power-sheet-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+
+.rx-power-sheet-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text2);
+  font-size: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.rx-power-sheet-close:hover {
+  background: var(--accL);
+  color: var(--acc2);
+}
+
+.rx-power-drum-wrap {
+  padding: 0 0 calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+.rx-power-drum-wrap[hidden],
+.rx-power-sheet-list[hidden] {
+  display: none !important;
+}
+
+.rx-power-drum-shell {
+  position: relative;
+  margin: 0 12px 16px;
+  height: 220px;
+}
+
+.rx-power-wheel-labels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 12px 8px;
+  padding: 0 4px;
+}
+
+.rx-power-wheel-labels span {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5c6b7a;
+}
+
+.rx-drum-cols.rx-power-wheel-cols {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.rx-power-wheel-cols .rx-drum-col {
+  min-width: 0;
+}
+
+.rx-power-wheel-cols .rx-drum-item {
+  font-size: 15px;
+  padding: 0 2px;
+}
+
+.rx-power-drum-submit {
+  width: calc(100% - 32px);
+  margin: 0 16px 0;
+  min-height: 52px;
+  border-radius: 12px;
+  font-weight: 700;
+}
+
+.rx-power-sheet-list {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rx-power-sheet-opt {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text1);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.rx-power-sheet-opt:hover {
+  background: var(--accL);
+}
+
+.rx-power-sheet-opt.is-on {
+  background: var(--accL);
+  border-color: var(--acc2);
+  color: var(--acc2);
+}
+
+/* ── Patient birthday drum picker + age chip ───────────────────────────── */
+.rx-birthday-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.rx-birthday-btn {
+  flex: 1;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  padding: 12px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text3);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.rx-birthday-btn.has-value {
+  color: var(--text1);
+  background: var(--card);
+}
+
+.rx-birthday-btn:hover,
+.rx-birthday-btn:focus-visible {
+  outline: none;
+  border-color: var(--acc2);
+  box-shadow: 0 0 0 3px var(--accL);
+  background: var(--card);
+}
+
+.rx-age-chip {
+  flex-shrink: 0;
+  min-width: 72px;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--accL);
+  color: var(--acc2);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.rx-birthday-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 12060;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.rx-birthday-sheet.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.rx-birthday-sheet-panel {
+  width: 100%;
+  max-width: 400px;
+  background: var(--card);
+  border-radius: 16px 16px 0 0;
+  padding: 0 0 calc(16px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -8px 32px rgba(15, 23, 42, 0.12);
+  transform: translateY(100%);
+  transition: transform 0.2s ease;
+}
+
+.rx-birthday-sheet.open .rx-birthday-sheet-panel {
+  transform: translateY(0);
+}
+
+.rx-birthday-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 8px;
+}
+
+.rx-birthday-sheet-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+
+.rx-birthday-sheet-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text2);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.rx-drum-shell {
+  position: relative;
+  margin: 0 12px 16px;
+  height: 220px;
+}
+
+.rx-drum-highlight {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 44px;
+  margin-top: -22px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.rx-drum-cols {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 0.8fr;
+  gap: 4px;
+  height: 100%;
+}
+
+.rx-drum-col {
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+}
+
+.rx-drum-col::-webkit-scrollbar {
+  display: none;
+}
+
+.rx-drum-pad {
+  height: 88px;
+  flex-shrink: 0;
+}
+
+.rx-drum-item {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  scroll-snap-align: center;
+  font-size: 18px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text3);
+  opacity: 0.35;
+  transition: opacity 0.12s, font-weight 0.12s, color 0.12s;
+}
+
+.rx-drum-item.is-center {
+  opacity: 1;
+  font-weight: 700;
+  color: var(--text1);
+}
+
+.rx-birthday-submit {
+  margin: 0 16px;
+  width: calc(100% - 32px);
+  min-height: 52px;
+  border-radius: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
