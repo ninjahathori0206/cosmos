@@ -149,7 +149,7 @@ const SP_MENU_PERM_MAP = {
   'store-catalogue': ['storepilot.catalogue.view', 'foundry.catalogue.view'],
   'transfers-create': ['storepilot.transfers.create', 'foundry.transfers.create'],
   'transfers-history': ['storepilot.transfers.view', 'foundry.transfers.view'],
-  reports: ['storepilot.reports.view'],
+  reports: ['storepilot.reports.view', 'storepilot.dashboard.view'],
   invoices: ['storepilot.invoices.view'],
   collections: ['storepilot.collections.view'],
   visitors: ['gatepass.view']
@@ -844,6 +844,17 @@ function hasAnyPermission(list) {
   return list.some((perm) => _spPermissions.includes(perm));
 }
 
+function spIsSuperAdminUser() {
+  try {
+    const stored = sessionStorage.getItem('cosmos_user');
+    if (!stored) return false;
+    const u = JSON.parse(stored);
+    return String(u.role || '').toLowerCase() === 'super_admin';
+  } catch (_) {
+    return false;
+  }
+}
+
 function spJwtHasGranularLab() {
   return _spPermissions.some((p) => String(p).toLowerCase().startsWith('storepilot.lab.'))
 }
@@ -886,7 +897,8 @@ function spPendingInstantSubs(row) {
 }
 
 function canAccessSpView(id) {
-  if (id === 'lab-orders') return canAccessSpLabOrdersMenu()
+  if (spIsSuperAdminUser()) return true;
+  if (id === 'lab-orders') return canAccessSpLabOrdersMenu();
   const perms = SP_MENU_PERM_MAP[id] || [];
   return hasAnyPermission(perms);
 }

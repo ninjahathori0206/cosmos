@@ -473,6 +473,10 @@
       <span class="sp-more-item-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2h7l4 4v12H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M12 2v4h4"/><line x1="7" y1="10" x2="13" y2="10"/><line x1="7" y1="13" x2="13" y2="13"/><line x1="7" y1="16" x2="11" y2="16"/></svg></span>
       <span class="sp-more-item-label">Invoices</span>
     </button>
+    <button class="sp-more-item" data-storepilot-menu="reports" data-storepilot-permission="storepilot.reports.view" onclick="spNav('reports',this);spCloseMoreSheet()" tabindex="0">
+      <span class="sp-more-item-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="17" x2="17" y2="17"/><rect x="4" y="11" width="3" height="6" rx="0.5"/><rect x="9" y="8" width="3" height="9" rx="0.5"/><rect x="14" y="5" width="3" height="12" rx="0.5"/></svg></span>
+      <span class="sp-more-item-label">Store Reports</span>
+    </button>
   </nav>
   <div class="sp-more-user-row">
     <div class="sp-topnav-av" id="sp-more-av">—</div>
@@ -1082,7 +1086,7 @@
 
 <script src="/js/rx-modal.js?v=20260604-rx-v3" defer></script>
 <script src="/js/storepilot-gatepass.js?v=gatepass-checkin-dedupe-v6" defer></script>
-<script src="/js/storepilot-prototype.js?v=gatepass-fab" defer></script>
+<script src="/js/storepilot-prototype.js?v=20260602-store-reports-nav" defer></script>
 
 <div id="sp-gp-fab-root" hidden>
   <button type="button" id="sp-gp-fab" class="sp-gp-fab" aria-label="GatePass" aria-expanded="false">

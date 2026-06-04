@@ -47,6 +47,7 @@
     "migrate:80-pos-customer-aliases": "node scripts/run-migration-80-pos-customer-aliases.js",
     "migrate:81-pos-customer-family-names": "node scripts/run-migration-81-pos-customer-family-names.js",
     "migrate:82-storepilot-day-store-report": "node scripts/run-migration-82-storepilot-day-store-report.js",
+    "migrate:83-storepilot-reports-view": "node scripts/run-migration-83-storepilot-reports-view.js",
     "migrate:87-pos-linked-membership": "node scripts/run-migration-87-pos-linked-membership.js",
     "migrate:88-pos-membership-sales": "node scripts/run-migration-88-pos-membership-sales.js",
     "migrate:89-store-bank-opening-balance": "node scripts/run-migration-89-store-bank-opening-balance.js",
