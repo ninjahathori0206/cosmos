@@ -1,17 +1,27 @@
 /* ─── Store Pilot — Store Manager module ─────────────────────────────────────── */
 
-// ── Mobile sidebar toggle ──────────────────────────────────────────────────────
-function openSidebar() {
-  document.querySelector('.sidebar').classList.add('open');
-  document.getElementById('sp-sidebar-overlay').classList.add('open');
-  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll();
-  else document.body.style.overflow = 'hidden';
+// ── More sheet (mobile slide-up for secondary nav items) ──────────────────────
+function spOpenMoreSheet() {
+  const backdrop = document.getElementById('sp-more-backdrop');
+  const sheet = document.getElementById('sp-more-sheet');
+  if (backdrop) backdrop.classList.add('open');
+  if (sheet) sheet.classList.add('open');
+  const moreBtn = document.querySelector('.sp-btab-more, .sp-tab-more');
+  if (moreBtn) moreBtn.setAttribute('aria-expanded', 'true');
 }
-function closeSidebar() {
-  document.querySelector('.sidebar').classList.remove('open');
-  document.getElementById('sp-sidebar-overlay').classList.remove('open');
-  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll();
-  else document.body.style.overflow = '';
+function spCloseMoreSheet() {
+  const backdrop = document.getElementById('sp-more-backdrop');
+  const sheet = document.getElementById('sp-more-sheet');
+  if (backdrop) backdrop.classList.remove('open');
+  if (sheet) sheet.classList.remove('open');
+  document.querySelectorAll('.sp-btab-more, .sp-tab-more').forEach(function(b) {
+    b.setAttribute('aria-expanded', 'false');
+  });
+}
+function spToggleMoreSheet() {
+  const sheet = document.getElementById('sp-more-sheet');
+  if (sheet && sheet.classList.contains('open')) spCloseMoreSheet();
+  else spOpenMoreSheet();
 }
 
 function getToken() {
@@ -141,7 +151,8 @@ const SP_MENU_PERM_MAP = {
   'transfers-history': ['storepilot.transfers.view', 'foundry.transfers.view'],
   reports: ['storepilot.reports.view'],
   invoices: ['storepilot.invoices.view'],
-  collections: ['storepilot.collections.view']
+  collections: ['storepilot.collections.view'],
+  visitors: ['gatepass.view']
 };
 
 // ── Breadcrumb map ─────────────────────────────────────────────────────────────
@@ -154,7 +165,8 @@ const spBcMap = {
   reports:                'Store Reports',
   'lab-orders':           'Lab Orders',
   invoices:               'Invoices',
-  collections:            'Collection Book'
+  collections:            'Collection Book',
+  visitors:               'GatePass'
 };
 
 const spBcShortMap = {
@@ -166,7 +178,8 @@ const spBcShortMap = {
   reports:                'Store Reports',
   'lab-orders':           'Lab Orders',
   invoices:               'Invoices',
-  collections:            'Collection Book'
+  collections:            'Collection Book',
+  visitors:               'Visitors'
 };
 
 function spIsMobileChrome() {
@@ -201,7 +214,8 @@ const SP_PAGE_PATHS = {
   reports: '/storepilot/reports',
   'lab-orders': '/storepilot/lab-orders',
   invoices: '/storepilot/invoices',
-  collections: '/storepilot/collections'
+  collections: '/storepilot/collections',
+  visitors: '/storepilot/visitors'
 };
 
 let _spOpenCreateRequestOnLoad = false;
@@ -236,9 +250,8 @@ function spPrimeTransfersHistoryPage() {
   document.querySelectorAll('.main .page').forEach((p) => p.classList.remove('active'));
   const page = document.getElementById('page-transfers-history');
   if (page) page.classList.add('active');
-  document.querySelectorAll('.sidebar-nav .nav-item').forEach((n) => n.classList.remove('active'));
-  const navEl = getStorepilotNavEl('transfers-history');
-  if (navEl) navEl.classList.add('active');
+  document.querySelectorAll('.sp-tab[data-storepilot-menu], .sp-btab[data-storepilot-menu], .sp-more-item[data-storepilot-menu]').forEach((n) => n.classList.remove('active'));
+  document.querySelectorAll('[data-storepilot-menu="transfers-history"]').forEach((n) => n.classList.add('active'));
   document.body.setAttribute('data-sp-page', 'transfers-history');
   spSetBreadcrumb('transfers-history');
   spSyncTopbarMeta('transfers-history');
@@ -272,7 +285,13 @@ function spSyncCreateRequestBtn() {
 }
 
 function getStorepilotNavEl(id) {
-  return document.querySelector(`.sidebar-nav .nav-item[onclick*="spNav('${id}'"]`) || null;
+  // Prefer desktop top-nav tab; fall back to bottom tab bar
+  return (
+    document.querySelector(`.sp-topnav-tabs .sp-tab[data-storepilot-menu="${id}"]`) ||
+    document.querySelector(`.sp-bottom-tabs .sp-btab[data-storepilot-menu="${id}"]`) ||
+    document.querySelector(`.sp-more-nav .sp-more-item[data-storepilot-menu="${id}"]`) ||
+    null
+  );
 }
 
 // ── Navigation ─────────────────────────────────────────────────────────────────
@@ -290,10 +309,12 @@ window.spNav = function (id, el, options) {
     return;
   }
   document.querySelectorAll('.main .page').forEach((p) => p.classList.remove('active'));
-  document.querySelectorAll('.sidebar-nav .nav-item').forEach((n) => n.classList.remove('active'));
+  // Clear active from all nav surfaces (desktop tabs, bottom tabs, more sheet items)
+  document.querySelectorAll('.sp-tab[data-storepilot-menu], .sp-btab[data-storepilot-menu], .sp-more-item[data-storepilot-menu]').forEach((n) => n.classList.remove('active'));
   const page = document.getElementById('page-' + id);
   if (page) page.classList.add('active');
-  if (el) el.classList.add('active');
+  // Activate matching tab on ALL nav surfaces simultaneously
+  document.querySelectorAll(`[data-storepilot-menu="${id}"]`).forEach((n) => n.classList.add('active'));
   document.body.setAttribute('data-sp-page', id);
   spSetBreadcrumb(id);
   spSyncTopbarMeta(id);
@@ -301,7 +322,7 @@ window.spNav = function (id, el, options) {
   if (!navOptions.fromHistory && window.location.pathname !== nextPath) {
     window.history.pushState({ module: 'storepilot', page: id }, '', nextPath);
   }
-  closeSidebar();
+  spCloseMoreSheet();
   loadStorePilotPage(id);
   if (window.cosmosResetAppScroll) window.cosmosResetAppScroll();
 };
@@ -335,6 +356,7 @@ function loadStorePilotPage(id) {
   if (id === 'reports') loadReports();
   if (id === 'lab-orders')         loadSpLabOrders();
   if (id === 'invoices')           loadSpInvoices();
+  if (id === 'visitors' && typeof window.spLoadVisitorsPage === 'function') window.spLoadVisitorsPage();
   if (id === 'collections' && typeof window.loadStoreCollections === 'function') loadStoreCollections('storepilot');
 }
 
@@ -464,8 +486,7 @@ window.loadSpLabOrders = async function () {
           <td colspan="6">
             <div class="empty">
               <div class="empty-ic">🧪</div>
-              <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No lab orders in this status</div>
-              <div style="font-size:13px;color:var(--text2)">Try the <strong>All</strong> tab to see lab orders still at HQ, or another status. You can also search by order number.</div>
+              <div style="font-size:15px;font-weight:600;color:var(--text1)">No lab orders in this status</div>
             </div>
           </td>
         </tr>
@@ -585,9 +606,10 @@ window.openSpQcNoteModal = function (orderId, subOrderId, toStatus) {
 
   const isPartial = toStatus === 'STORE_QC_PARTIAL'
   titleEl.textContent = isPartial ? 'QC Partial — Describe Defect' : 'QC Fail — Reason Required'
-  descEl.textContent  = isPartial
-    ? 'Order has a minor defect but will be handed over to the customer. Note is mandatory and will be saved on the order.'
-    : 'Order failed QC and will be sent back to Foundry for remake. Clearly describe the defect.'
+  if (descEl) {
+    descEl.textContent = ''
+    descEl.hidden = true
+  }
   input.value = ''
   errEl.style.display = 'none'
   overlay.classList.add('open')
@@ -870,27 +892,19 @@ function canAccessSpView(id) {
 }
 
 function applyStorepilotPermissionNav() {
-  const nav = document.querySelector('.sidebar-nav');
-  if (!nav) return [];
-
   const visibleMenuIds = [];
-  nav.querySelectorAll('.nav-item[data-storepilot-menu]').forEach((item) => {
+  const seen = new Set();
+
+  // Apply visibility across all nav surfaces: top tabs, bottom tabs, more sheet
+  document.querySelectorAll('[data-storepilot-menu]').forEach((item) => {
     const menuId = item.getAttribute('data-storepilot-menu');
     if (!menuId) return;
     const allowed = canAccessSpView(menuId);
     item.style.display = allowed ? '' : 'none';
-    if (allowed && menuId) visibleMenuIds.push(menuId);
-  });
-
-  nav.querySelectorAll('.nav-group').forEach((group) => {
-    const items = [];
-    let sibling = group.nextElementSibling;
-    while (sibling && sibling.classList.contains('nav-item')) {
-      if (sibling.hasAttribute('data-storepilot-menu')) items.push(sibling);
-      sibling = sibling.nextElementSibling;
+    if (allowed && !seen.has(menuId)) {
+      seen.add(menuId);
+      visibleMenuIds.push(menuId);
     }
-    const hasVisible = items.some((el) => el.style.display !== 'none');
-    group.style.display = hasVisible ? '' : 'none';
   });
 
   return visibleMenuIds;
@@ -898,8 +912,8 @@ function applyStorepilotPermissionNav() {
 
 function renderNoAccessState(reasonKey) {
   const main = document.querySelector('.main');
-  const topbar = document.querySelector('.topbar');
-  if (topbar) topbar.style.display = 'none';
+  const topnav = document.querySelector('.sp-topnav');
+  if (topnav) topnav.style.display = 'none';
   document.querySelectorAll('.main .page').forEach((p) => p.classList.remove('active'));
   if (!main) return;
   let box = document.getElementById('sp-no-access');
@@ -912,7 +926,7 @@ function renderNoAccessState(reasonKey) {
   const msg = reasonKey === 'menu_access_denied'
     ? 'You do not have permission for this menu.'
     : 'You do not have any StorePilot menu permissions.';
-  box.innerHTML = `<div class="card"><div class="cb"><div style="font-weight:700;color:var(--text1);margin-bottom:6px">No access</div><div style="color:var(--text2)">${msg} Please contact administrator.</div></div></div>`;
+  box.innerHTML = `<div class="card"><div class="cb"><div style="font-weight:700;color:var(--text1);margin-bottom:6px">No access</div><div style="color:var(--text2)">${msg}</div></div></div>`;
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
@@ -1002,8 +1016,12 @@ function loadUser() {
     const av = document.getElementById('sp-user-av');
     const nm = document.getElementById('sp-user-name');
     const rl = document.getElementById('sp-user-role');
+    const moreAv = document.getElementById('sp-more-av');
+    const moreNm = document.getElementById('sp-more-name');
     if (av) av.textContent = initials;
     if (nm) nm.textContent = name;
+    if (moreAv) moreAv.textContent = initials;
+    if (moreNm) moreNm.textContent = name;
     if (rl) rl.textContent = ROLE_LABELS[u.role] || u.role || 'Store Pilot';
     _spPermissions = Array.isArray(u.permissions) ? u.permissions.map((x) => String(x).toLowerCase()) : [];
     _storeId   = u.store_id   || null;
@@ -1012,6 +1030,7 @@ function loadUser() {
     if (typeof window.initCosmosModuleSwitchFooter === 'function') {
       window.initCosmosModuleSwitchFooter(u);
     }
+    if (typeof window.spGpInitGatepass === 'function') window.spGpInitGatepass();
     const visibleMenuIds = applyStorepilotPermissionNav();
     if (!visibleMenuIds.length) {
       _spNoAccess = true;
@@ -1023,12 +1042,11 @@ function loadUser() {
       window.spNav(routeMenuId, getStorepilotNavEl(routeMenuId), { fromHistory: true });
       return;
     }
-    const activeItem = document.querySelector('.sidebar-nav .nav-item.active[data-storepilot-menu]');
+    const activeItem = document.querySelector('.sp-tab.active[data-storepilot-menu], .sp-btab.active[data-storepilot-menu]');
     const activeMenuId = activeItem ? activeItem.getAttribute('data-storepilot-menu') : null;
     if (!activeMenuId || !visibleMenuIds.includes(activeMenuId)) {
       const firstId = visibleMenuIds[0];
-      const firstEl = document.querySelector(`.sidebar-nav .nav-item[data-storepilot-menu="${firstId}"]`);
-      if (firstId) window.spNav(firstId, firstEl || null);
+      if (firstId) window.spNav(firstId, null);
     }
   } catch (_) {}
 }
@@ -1122,8 +1140,8 @@ window.onFStockSearch = function (q) {
   if (!q.trim()) {
     const r = document.getElementById('fstock-results');
     const d = document.getElementById('fstock-detail-wrap');
-    if (r) r.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Type a SKU code or product name to search across all locations</div></div>`;
-    if (d) d.innerHTML = `<div class="empty-state" style="padding-top:60px"><div class="ei">📦</div><div class="et">Select a SKU to see network distribution</div></div>`;
+    if (r) r.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">No results</div></div>`;
+    if (d) d.innerHTML = `<div class="empty-state" style="padding-top:60px"><div class="ei">📦</div><div class="et">—</div></div>`;
     return;
   }
   _fStockDebounce = setTimeout(() => doFStockSearch(q.trim()), 350);
@@ -1968,8 +1986,7 @@ window.loadSpDirectInboundTransfers = async function () {
 
   if (requestOnlyFilter) {
     wrap.innerHTML = '<div class="empty-state" style="padding:24px 20px"><div class="empty-ic">🚚</div>' +
-      '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No inbound shipments in this filter</div>' +
-      '<div style="font-size:13px;color:var(--text2)">Switch to <strong>All</strong> or <strong>Dispatched</strong> to see inbound shipment documents.</div></div>';
+      '<div style="font-size:15px;font-weight:600;color:var(--text1)">No inbound shipments</div></div>';
     return;
   }
 
@@ -1978,8 +1995,7 @@ window.loadSpDirectInboundTransfers = async function () {
 
     if (!rows.length) {
       wrap.innerHTML = '<div class="empty-state" style="padding:28px 20px"><div class="empty-ic">📦</div>' +
-        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No inbound shipments</div>' +
-        '<div style="font-size:13px;color:var(--text2)">When HQ dispatches stock to your store, shipment documents appear here. Tap to <strong>Accept</strong>, then <strong>Stock</strong>.</div></div>';
+        '<div style="font-size:15px;font-weight:600;color:var(--text1)">No inbound shipments</div></div>';
       return;
     }
 
@@ -2053,7 +2069,7 @@ async function loadTransferHistoryRequests() {
       const createBtn = canSpCreateTransferRequest()
         ? '<button type="button" class="btn primary" onclick="openSpCreateRequestModal()">+ Create Request</button>'
         : '';
-      wrap.innerHTML = `<div class="empty-state"><div class="ei">📬</div><div class="et" style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No transfer requests</div><div class="es" style="font-size:13px;color:var(--text2);margin-bottom:16px">Use <strong>Create Request</strong> to submit a goods request to HQ.</div>${createBtn}</div>`;
+      wrap.innerHTML = `<div class="empty-state"><div class="ei">📬</div><div class="et" style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:16px">No transfer requests</div>${createBtn}</div>`;
       return;
     }
 
@@ -2155,12 +2171,6 @@ window.expandSpTrRequest = async function (requestId) {
     ]) : '';
 
     let actionHtml = '';
-    if (req.status === 'PARTIALLY_DISPATCHED' || (req.status === 'DISPATCHED' && qtySum.remainingToShip > 0)) {
-      actionHtml = `<p style="margin-top:14px;font-size:13px;color:var(--text2)">HQ is still shipping the rest of this request. Stock each arrival from <strong>Shipments</strong> below.</p>`;
-    }
-    if (partialStock) {
-      actionHtml += `<p style="margin-top:10px;font-size:13px;color:var(--text2)">Partially stocked vs approved quantity. Open a shipment below to stock more, or request the remainder.</p>`;
-    }
     if (remainderLines.length) {
       const remPcs = remainderLines.reduce((s, x) => s + x.qty, 0);
       actionHtml += `<div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">` +
@@ -2306,7 +2316,7 @@ window.onTransferSearch = function (q) {
   const trimmed = String(q || '').trim();
   if (!trimmed) {
     if (resultsEl) {
-      resultsEl.innerHTML = '<div class="sp-cr-empty-hint"><div class="empty-ic">🔍</div><div class="sp-cr-empty-title">Search SKU catalogue</div><div class="sp-cr-empty-sub">Brand, SKU code, or 7-digit unit code — not where the unit is stocked.</div></div>';
+      resultsEl.innerHTML = '<div class="sp-cr-empty-hint"><div class="sp-cr-empty-title">No results</div></div>';
     }
     spSyncCreateRequestResultsChrome(0, '');
     return;
@@ -2333,10 +2343,7 @@ async function doTransferSearch(q) {
     if (seq !== _tcSearchSeq) return;
     const rows = fetched.rows || [];
     if (!rows.length) {
-      const unitHint = spIsLikelyUnitCode(q) && spPaddedUnitCode(q)
-        ? `unit code <strong>${escHtml(spPaddedUnitCode(q))}</strong>`
-        : `"${escHtml(q)}"`;
-      resultsEl.innerHTML = `<div class="sp-cr-empty-hint"><div class="empty-ic">📦</div><div class="sp-cr-empty-title">No SKU found</div><div class="sp-cr-empty-sub">No matching SKU for ${unitHint}. Try SKU code, brand, or a valid 7-digit unit code.</div></div>`;
+      resultsEl.innerHTML = '<div class="sp-cr-empty-hint"><div class="sp-cr-empty-title">No SKU found</div></div>';
       spSyncCreateRequestResultsChrome(0, q);
       return;
     }
@@ -2389,7 +2396,7 @@ function renderTransferCart() {
   if (countEl) countEl.textContent = _transferCart.length + ' item' + (_transferCart.length !== 1 ? 's' : '');
 
   if (!_transferCart.length) {
-    cartEl.innerHTML = '<div class="sp-cr-empty-cart"><div class="empty-ic">🛒</div><div class="sp-cr-empty-title">Cart is empty</div><div class="sp-cr-empty-sub">Add items from search results above.</div></div>';
+    cartEl.innerHTML = '<div class="sp-cr-empty-cart"><div class="sp-cr-empty-title">Cart is empty</div></div>';
     return;
   }
 
@@ -2444,7 +2451,7 @@ window.submitTransfer = async function () {
     renderTransferCart();
     const si = document.getElementById('tc-search');   if (si) si.value = '';
     const ri = document.getElementById('tc-results');
-    if (ri) ri.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><div class="et">Search SKU by code, brand, or unit barcode</div></div>`;
+    if (ri) ri.innerHTML = '<div class="empty-state"><div class="et">No results</div></div>';
     const ni = document.getElementById('tc-notes');     if (ni) ni.value = '';
 
     if (submitBtn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(submitBtn);
@@ -2517,7 +2524,6 @@ function spDayStoreCollectionChannelHtml(title, channelKey, ch) {
           <div class="sp-day-report-metric-value">${spFmtRs(data.cash)}</div>
         </div>
       </div>
-      <div class="sp-day-report-collection-hint">Long press for details</div>
     </div>`;
 }
 
@@ -2616,7 +2622,7 @@ window.openSpDayCollectionDetail = async function (channel, reportDate) {
 
   const dateVal = reportDate || (_lastDayStoreReport && _lastDayStoreReport.report_date) || '';
   if (!dateVal) {
-    body.innerHTML = '<div class="empty"><div class="empty-ic">📋</div><div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No report date</div><div style="font-size:13px;color:var(--text2)">Generate the day store report first.</div></div>';
+    body.innerHTML = '<div class="empty"><div class="empty-ic">📋</div><div style="font-size:15px;font-weight:600;color:var(--text1)">No report date</div></div>';
     return;
   }
 
@@ -2628,8 +2634,7 @@ window.openSpDayCollectionDetail = async function (channel, reportDate) {
       body.innerHTML = `
         <div class="empty">
           <div class="empty-ic">💳</div>
-          <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No payments in this bucket</div>
-          <div style="font-size:13px;color:var(--text2)">No ${escHtml(channelLabel.toLowerCase())} was recorded on this date.</div>
+          <div style="font-size:15px;font-weight:600;color:var(--text1)">No payments in this bucket</div>
         </div>`;
       return;
     }
@@ -2676,7 +2681,7 @@ function renderDayStoreReportBody(data) {
     : '';
   const storeLabel = data.store_name ? escHtml(data.store_name) : 'This store';
   const emptyBanner = dayStoreReportIsEmpty(data)
-    ? '<div class="sp-day-report-empty-banner" role="status">No sales, collections, or memberships recorded for this date. Try another day if you expect activity (e.g. yesterday).</div>'
+    ? '<div class="sp-day-report-empty-banner" role="status">No data for this date</div>'
     : '';
 
   body.innerHTML = `
@@ -3291,12 +3296,7 @@ window.expandIncTransfer = async function (docId) {
   if (typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('sp-inc-detail-body', 4);
   else bodyEl.innerHTML = '';
 
-  const overlayEl = document.getElementById('sp-sidebar-overlay');
-  const sidebarEl = document.querySelector('.sidebar');
-  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'));
-  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'));
-  const isBodyLocked = document.body.style.overflow === 'hidden';
-  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar();
+  spCloseMoreSheet();
 
   try {
     const data = await apiGet(`/api/stock-transfer-docs/${docId}`);
@@ -3314,7 +3314,6 @@ window.expandIncTransfer = async function (docId) {
       _incQrVerificationByDoc[docId] = spFreshIncVerification();
     }
     const lineIds = lines.map((l) => l.line_id);
-    const hasUnitLines = spIncDocHasUnitScanLines(lines);
     spIncRenderDetailToolbar(doc, lines, lineIds);
 
     const lineRows = lines.map((l) => {
@@ -3379,11 +3378,6 @@ window.expandIncTransfer = async function (docId) {
         </div>
         <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text2)">Line items</div>
         <div>${lineRows}</div>
-        ${isAccepted ? `
-          <p style="margin-top:14px;font-size:12px;color:var(--text3)">${hasUnitLines
-            ? 'Scan units with Open bucket (or Scan more units after a partial save). Stock verified units anytime; remaining units stay on this transfer until fully received.'
-            : 'No unit list on this document — contact HQ to re-dispatch with unit scans.'}</p>
-        ` : ''}
       </div>`;
 
   } catch (err) {
@@ -3399,13 +3393,7 @@ window.closeIncDetail = function () {
     window.cosmosCloseExtendedDetail('sp-inc-detail', 'sp-inc-detail-backdrop');
   }
 
-  // Clear any accidental sidebar overlay/body lock state.
-  const overlayEl = document.getElementById('sp-sidebar-overlay')
-  const sidebarEl = document.querySelector('.sidebar')
-  const isSidebarOpen = !!(sidebarEl && sidebarEl.classList.contains('open'))
-  const isOverlayOpen = !!(overlayEl && overlayEl.classList.contains('open'))
-  const isBodyLocked = document.body.style.overflow === 'hidden'
-  if (isSidebarOpen || isOverlayOpen || isBodyLocked) closeSidebar()
+  spCloseMoreSheet();
 };
 
 window.incAccept = async function (docId) {
@@ -3812,14 +3800,10 @@ window.loadSpInvoices = async function (q) {
     const rows = Array.isArray(res.data) ? res.data : [];
     _spInvRows = rows;
     if (!rows.length) {
-      const msg = _spInvLastQ
-        ? 'No invoices matching \u201C' + escHtml(_spInvLastQ) + '\u201D.'
-        : 'No invoices in the last 7 days.';
       container.innerHTML =
         '<div class="empty" style="padding:40px 20px;text-align:center">' +
         '<div class="empty-ic">🧾</div>' +
-        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">No invoices found</div>' +
-        '<div style="font-size:13px;color:var(--text2)">' + msg + '</div></div>';
+        '<div style="font-size:15px;font-weight:600;color:var(--text1)">No invoices found</div></div>';
       return;
     }
     let html = '<div class="sp-inv-grid">';

@@ -5,8 +5,8 @@
 | Phase | Scope | Module / surface |
 |-------|--------|------------------|
 | **1** ✅ | Store OS: check-in, `cosmos-cx-search`, sidebar widget, Cx link (85) | `POS_Prototype.html` |
-| **3** ▶ | Operations: full queue board, assign staff, auto-expiry, CU VMS settings | Store Pilot + Command Unit + jobs |
-| **4** | Embed: SP widget, `cosmos-cx-search` on SP flows; POS polish | Store Pilot |
+| **3** ✅ | Operations: full queue board, assign staff, auto-expiry, CU VMS settings, SP sidebar widget | Store Pilot + Command Unit + jobs |
+| **4** ✅ | Embed: `cosmos-cx-search` on SP phone fields; sidebar widget polish | Store Pilot |
 | **5** (last) | **Self check-in** via existing **Eyewoot Go** (`/go`, customer app) — not a new public PWA | Eyewoot Go |
 
 **Deferred from old “Phase 2”:** standalone `/checkin` PWA and CU QR generator → replaced by **Eyewoot Go** in Phase 5.

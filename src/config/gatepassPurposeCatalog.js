@@ -1,20 +1,28 @@
 'use strict';
 
 /**
- * GatePass visit purpose keys — single source for UI badges and API validation.
+ * GatePass visit purpose — static fallbacks + async DB catalog via gatepassPurposeCatalogService.
  * @typedef {{ key: string, label: string, badgeVariant: string }} GatepassPurposeDef
  */
 
-/** @type {GatepassPurposeDef[]} */
-const GATEPASS_PURPOSE_CATALOG = [
-  { key: 'order', label: 'Buying frames', badgeVariant: 'blue' },
-  { key: 'eye_test', label: 'Eye test', badgeVariant: 'purple' },
-  { key: 'handover', label: 'Collecting order', badgeVariant: 'amber' },
-  { key: 'general', label: 'General', badgeVariant: 'gray' }
-];
+const {
+  FALLBACK_SEED,
+  getGatepassPurposeCatalogForApi,
+  getGatepassPurposeMeta: getMetaAsync,
+  isValidGatepassPurpose: isValidAsync,
+  getCatalogRows
+} = require('../services/gatepassPurposeCatalogService');
+
+/** @type {GatepassPurposeDef[]} — legacy sync export for tests/scripts */
+const GATEPASS_PURPOSE_CATALOG = FALLBACK_SEED.map((r) => ({
+  key: r.key,
+  label: r.label,
+  badgeVariant: r.badgeVariant
+}));
 
 const GATEPASS_PURPOSE_KEYS = GATEPASS_PURPOSE_CATALOG.map((p) => p.key);
 
+/** @deprecated sync — use getGatepassPurposeCatalogAsync; returns fallback only */
 function getGatepassPurposeCatalog() {
   return GATEPASS_PURPOSE_CATALOG.slice();
 }
@@ -23,14 +31,20 @@ function getGatepassPurposeKeys() {
   return GATEPASS_PURPOSE_KEYS.slice();
 }
 
+/** @deprecated sync — returns fallback meta only */
 function getGatepassPurposeMeta(key) {
   const k = String(key || '').trim().toLowerCase();
   return GATEPASS_PURPOSE_CATALOG.find((p) => p.key === k) || null;
 }
 
+/** @deprecated sync — validates against fallback keys only */
 function isValidGatepassPurpose(key) {
   if (key == null || String(key).trim() === '') return true;
   return GATEPASS_PURPOSE_KEYS.includes(String(key).trim().toLowerCase());
+}
+
+async function getGatepassPurposeCatalogAsync(opts) {
+  return getGatepassPurposeCatalogForApi(opts);
 }
 
 module.exports = {
@@ -39,5 +53,9 @@ module.exports = {
   getGatepassPurposeCatalog,
   getGatepassPurposeKeys,
   getGatepassPurposeMeta,
-  isValidGatepassPurpose
+  isValidGatepassPurpose,
+  getGatepassPurposeCatalogAsync,
+  getGatepassPurposeMetaAsync: getMetaAsync,
+  isValidGatepassPurposeAsync: isValidAsync,
+  getCatalogRows
 };

@@ -180,6 +180,10 @@ BEGIN
   SELECT TOP (@limit)
     et.test_id,
     et.customer_id,
+    et.visitor_id,
+    et.family_name_id,
+    fn.family_name,
+    et.patient_name,
     et.tested_at,
     et.store_id,
     st.store_name,
@@ -188,7 +192,12 @@ BEGIN
     et.pd, et.lens_type, et.source, et.notes, et.created_at
   FROM dbo.eye_tests et
   LEFT JOIN dbo.stores st ON st.store_id = et.store_id
+  LEFT JOIN dbo.pos_customer_family_names fn ON fn.family_name_id = et.family_name_id
   WHERE et.customer_id = @customer_id
+     OR et.visitor_id IN (
+          SELECT visitor_id FROM dbo.store_visitors
+          WHERE customer_id = @customer_id
+        )
   ORDER BY et.tested_at DESC, et.test_id DESC;
 END;
 GO

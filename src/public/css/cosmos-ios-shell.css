@@ -1,0 +1,441 @@
+/* Cosmos — shared iOS-style app shell (top nav + mobile bottom tabs) */
+
+/* ── TOP NAV ─────────────────────────────────────────────────────────────────── */
+.cosmos-topnav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: #FFFFFF;
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.18);
+  display: flex;
+  align-items: center;
+  height: 60px;
+  padding: 0 20px;
+  gap: 0;
+}
+
+.cosmos-topnav-brand {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: 20px;
+}
+
+.cosmos-topnav-wordmark {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  color: #000;
+  text-transform: uppercase;
+}
+
+.cosmos-topnav-tabs {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  height: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.cosmos-topnav-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.cosmos-tab {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 14px;
+  height: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  color: #8E8E93;
+  border-bottom: 2.5px solid transparent;
+  transition: color 0.15s;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cosmos-tab:hover {
+  color: #3A3A3C;
+}
+
+.cosmos-tab.active {
+  color: #007AFF;
+  border-bottom-color: #007AFF;
+}
+
+.cosmos-tab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cosmos-tab-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.cosmos-tab-label {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.cosmos-topnav-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: 16px;
+}
+
+.cosmos-topnav-av {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #007AFF, #5AC8FA);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  font-family: 'Inter', sans-serif;
+}
+
+body.cosmos-shell-cx .cosmos-topnav-av {
+  background: linear-gradient(135deg, var(--acc), var(--acc2));
+}
+
+.cosmos-topnav-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #000;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cosmos-topnav-signout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 8px;
+  color: #8E8E93;
+  transition: color 0.15s, background 0.15s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.cosmos-topnav-signout:hover {
+  background: #F2F2F7;
+  color: #FF3B30;
+}
+
+.cosmos-topnav-signout svg {
+  width: 16px;
+  height: 16px;
+}
+
+.cosmos-topnav-mobile-title {
+  display: none;
+  flex: 1;
+  font-family: 'Inter', sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: #000;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Module accent overrides */
+body.cosmos-shell-cx .cosmos-tab.active,
+body.cosmos-shell-cx .cosmos-btab.active {
+  color: var(--acc2);
+  border-bottom-color: var(--acc2);
+}
+
+body.cosmos-shell-cx .cosmos-btab.active {
+  border-bottom: none;
+}
+
+body.cosmos-shell-storepilot .cosmos-tab.active,
+body.cosmos-shell-storepilot .cosmos-btab.active {
+  color: #007AFF;
+  border-bottom-color: #007AFF;
+}
+
+body.cosmos-shell-storepilot .cosmos-btab.active {
+  border-bottom: none;
+}
+
+/* ── BOTTOM TAB BAR (mobile) ───────────────────────────────────────────────── */
+.cosmos-bottom-tabs {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(49px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: rgba(249, 249, 249, 0.94);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-top: 0.5px solid rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  align-items: center;
+  justify-content: space-around;
+}
+
+.cosmos-btab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex: 1;
+  height: 49px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  color: #8E8E93;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.cosmos-btab.active {
+  color: #007AFF;
+}
+
+.cosmos-btab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cosmos-btab-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.cosmos-btab-label {
+  font-size: 10px;
+  font-weight: 500;
+}
+
+/* ── MORE SHEET (StorePilot / Finance / etc.) ────────────────────────────────── */
+.cosmos-more-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 200;
+}
+
+.cosmos-more-backdrop.open {
+  display: block;
+}
+
+.cosmos-more-sheet {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 201;
+  background: #FFFFFF;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.15);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.cosmos-more-sheet.open {
+  display: block;
+  animation: cosmosSheetUp 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+@keyframes cosmosSheetUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.cosmos-more-sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: #D1D1D6;
+  margin: 12px auto 16px;
+}
+
+.cosmos-more-nav {
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cosmos-more-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  color: #000;
+  border-radius: 12px;
+  width: 100%;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.12s;
+}
+
+.cosmos-more-item:hover,
+.cosmos-more-item:active {
+  background: #F2F2F7;
+}
+
+.cosmos-more-item.active {
+  color: #007AFF;
+}
+
+body.cosmos-shell-cx .cosmos-more-item.active {
+  color: var(--acc2);
+}
+
+.cosmos-more-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+}
+
+.cosmos-more-item-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.cosmos-more-item-label {
+  flex: 1;
+}
+
+.cosmos-more-user-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 0.5px solid rgba(0, 0, 0, 0.12);
+  margin-top: 8px;
+}
+
+/* ── MAIN offset when shell is present ─────────────────────────────────────── */
+body.cosmos-app-shell.cosmos-has-ios-shell .main {
+  margin-left: 0;
+  margin-top: 60px;
+  flex: 1;
+  height: calc(100vh - 60px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+body.cosmos-app-shell.cosmos-has-ios-shell .main {
+  height: calc(100dvh - 60px);
+  max-height: calc(100dvh - 60px);
+  overflow: hidden !important;
+}
+
+@media (max-width: 768px) {
+  .cosmos-topnav {
+    height: calc(44px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 16px 0;
+    justify-content: center;
+  }
+
+  .cosmos-topnav-tabs,
+  .cosmos-topnav-brand,
+  .cosmos-topnav-user {
+    display: none;
+  }
+
+  .cosmos-topnav-mobile-title {
+    display: flex;
+  }
+
+  .cosmos-bottom-tabs {
+    display: flex;
+  }
+
+  body.cosmos-app-shell.cosmos-has-ios-shell .main {
+    margin-top: calc(44px + env(safe-area-inset-top, 0px));
+    height: calc(100vh - 44px - env(safe-area-inset-top, 0px));
+    max-height: calc(100vh - 44px - env(safe-area-inset-top, 0px));
+  }
+
+  body.cosmos-app-shell.cosmos-has-ios-shell .main {
+    height: calc(100dvh - 44px - env(safe-area-inset-top, 0px));
+    max-height: calc(100dvh - 44px - env(safe-area-inset-top, 0px));
+  }
+
+  body.cosmos-app-shell.cosmos-has-ios-shell .page {
+    padding-bottom: calc(49px + env(safe-area-inset-bottom, 0px) + 16px);
+  }
+
+  body.cx360-mobile.cx360-active .cosmos-topnav,
+  body.cx360-mobile.cx360-active .cosmos-bottom-tabs {
+    display: none !important;
+  }
+
+  body.cx360-mobile.cx360-active.cosmos-has-ios-shell .main {
+    margin-top: 0;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+
+/* Customer 360 desktop: full-width content under top nav */
+body.cx360-active.cosmos-has-ios-shell .main {
+  margin-left: 0;
+}
+
+body.cx360-active #page-customer-360.page.active {
+  min-height: calc(100vh - 60px);
+}
+
+@media (max-width: 1024px) {
+  body.cx360-active #page-customer-360.page.active {
+    min-height: 100vh;
+  }
+}

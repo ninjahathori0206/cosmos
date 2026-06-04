@@ -172,7 +172,9 @@ const RAW_PERMISSION_GROUPS = [
     ['army.hiring.candidates.view', 'Hiring — View candidates & pipeline'],
     ['army.hiring.candidates.edit', 'Hiring — Update candidate status'],
     ['army.hiring.interview_templates.view', 'Hiring — View interview templates'],
-    ['army.hiring.interview_templates.edit', 'Hiring — Create / edit interview templates']
+    ['army.hiring.interview_templates.edit', 'Hiring — Create / edit interview templates'],
+    ['army.hiring.offers.view', 'Hiring — View offer letters'],
+    ['army.hiring.offers.edit', 'Hiring — Issue / accept offer letters']
   ]]
 ];
 
@@ -201,7 +203,7 @@ function buildCatalogueGroups() {
 }
 
 /** Bump when adding keys — Command Unit fetches with this revision to avoid stale catalogue. */
-const PERMISSION_CATALOGUE_REVISION = '20260603-army-employees-s5';
+const PERMISSION_CATALOGUE_REVISION = '20260604-army-ops-s6-s12';
 
 const PERMISSION_CATALOGUE_GROUPS = buildCatalogueGroups();
 

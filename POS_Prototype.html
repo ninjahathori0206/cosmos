@@ -11,17 +11,19 @@
 <link rel="apple-touch-icon" href="/img/storeos-icon-192.png">
 <title>Store OS — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-bucket-z">
+<link rel="stylesheet" href="/css/cosmos-time-monitor.css?v=cosmos-time-v1">
 <link rel="stylesheet" href="/css/pos.css?v=sos-shell-2026c">
-<link rel="stylesheet" href="/css/lenskart-pos.css?v=cx-picker-no-footer-v1">
+<link rel="stylesheet" href="/css/lenskart-pos.css?v=gatepass-ci-v2">
 <link rel="stylesheet" href="/css/cosmos-cx-search.css?v=cx-picker-inline-v1">
 <script src="/js/cosmos-ui-polish.js?v=20260602-ist-wire" defer></script>
+<script src="/js/cosmos-time-monitor.js?v=cosmos-time-v1" defer></script>
 <script src="/js/cosmos-pwa-update.js?v=20260528-pwa-update" defer></script>
 <script src="/js/storeos-pwa.js?v=20260528-pwa-update" defer></script>
 <script src="/js/pos-order-queue-catalog.js" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260523-cart-bucket" defer></script>
 <script src="/js/pos-customer-family-name-copy.js" defer></script>
-<script src="/js/cosmos-cx-search.js?v=gatepass-cx-fallback-v5" defer></script>
-<script src="/js/pos.js?v=storeos-20260604-lens-cart-fix" defer></script>
+<script src="/js/cosmos-cx-search.js?v=gatepass-bubble-v1" defer></script>
+<script src="/js/pos.js?v=gatepass-fab" defer></script>
 </head>
 <body class="pos-target-tablet-landscape">
 
@@ -1058,7 +1060,7 @@
     </button>
   </nav>
 
-  <section id="pos-gatepass-widget" class="pos-gatepass-widget" aria-label="Visitor queue" hidden>
+  <section id="pos-gatepass-widget" class="pos-gatepass-widget" aria-label="GatePass" hidden style="display:none!important">
     <div class="pos-gatepass-widget-head">
       <span class="pos-gatepass-widget-title">Visitors</span>
       <span id="pos-gatepass-widget-count" class="pos-gatepass-widget-count" aria-live="polite">0</span>
@@ -1184,29 +1186,28 @@
 <!-- GatePass — staff check-in -->
 <div id="overlay-gatepass-checkin" class="pos-lens-newcust-overlay" role="dialog" aria-modal="true" aria-labelledby="gatepass-checkin-title">
   <div class="pos-lens-newcust-backdrop" id="gatepass-checkin-backdrop" tabindex="-1"></div>
-  <div class="pos-lens-newcust-sheet pos-lens-newcust-sheet--wide">
-    <div class="pos-lens-newcust-head">
-      <div>
-        <h2 id="gatepass-checkin-title" class="pos-lens-newcust-title">Check In Visitor</h2>
-        <p class="pos-lens-newcust-sub">Register a walk-in. They appear in the live queue immediately.</p>
-      </div>
-      <button type="button" class="pos-lens-newcust-dismiss" id="gatepass-checkin-dismiss" aria-label="Close">&times;</button>
+  <div class="sp-ci-sheet pos-lens-newcust-sheet--wide" style="z-index:2;position:relative" onclick="event.stopPropagation()">
+    <div class="sp-ci-handle-bar" aria-hidden="true"></div>
+    <div class="sp-ci-header">
+      <h2 id="gatepass-checkin-title" class="sp-ci-title">Check In</h2>
+      <button type="button" class="sp-ci-close" id="gatepass-checkin-dismiss" aria-label="Close">&times;</button>
     </div>
-    <div class="pos-cust-form" style="padding:0 4px">
-      <label class="pos-field-label" for="gatepass-checkin-phone">Mobile</label>
-      <input id="gatepass-checkin-phone" class="pos-search-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="10-digit mobile" aria-label="Visitor mobile">
-      <label class="pos-field-label" for="gatepass-checkin-name">Full name</label>
-      <input id="gatepass-checkin-name" class="pos-search-input" type="text" autocomplete="name" placeholder="Visitor name" aria-label="Visitor name">
-      <label class="pos-field-label" for="gatepass-checkin-purpose">Purpose (optional)</label>
-      <select id="gatepass-checkin-purpose" class="pos-search-input" aria-label="Visit purpose">
-        <option value="">— Select —</option>
-      </select>
-      <label class="pos-field-label" for="gatepass-checkin-notes">Notes (optional)</label>
-      <textarea id="gatepass-checkin-notes" class="pos-search-input" rows="2" placeholder="Optional note" aria-label="Check-in notes"></textarea>
+    <p class="sp-ci-subtitle">Search by mobile to link a CX profile, then fill details.</p>
+
+    <div class="cosmos-cx-search-wrap" data-ci-bubble="1">
+      <input id="gatepass-checkin-phone" class="sp-ci-field" type="tel" inputmode="tel" autocomplete="tel" placeholder="10-digit mobile" aria-label="Visitor mobile">
     </div>
-    <div class="pos-lens-newcust-actions">
-      <button type="button" id="gatepass-checkin-cancel" class="pos-lens-newcust-btn-cancel">Cancel</button>
-      <button type="button" id="gatepass-checkin-submit" class="pos-next-btn pos-lens-newcust-btn-submit">Check In</button>
+    <div id="pos-ci-bubble-results" class="sp-ci-results" hidden></div>
+
+    <input id="gatepass-checkin-name" class="sp-ci-field" type="text" autocomplete="name" placeholder="Full name" aria-label="Visitor name">
+    <select id="gatepass-checkin-purpose" class="sp-ci-field sp-ci-field--select" aria-label="Visit purpose">
+      <option value="">— Select —</option>
+    </select>
+    <textarea id="gatepass-checkin-notes" class="sp-ci-field" rows="2" placeholder="Notes (optional)" aria-label="Check-in notes"></textarea>
+
+    <div class="sp-ci-cta">
+      <button type="button" id="gatepass-checkin-cancel" class="sp-ci-btn-cancel">Cancel</button>
+      <button type="button" id="gatepass-checkin-submit" class="sp-ci-btn-submit">Check In</button>
     </div>
   </div>
 </div>
@@ -1428,6 +1429,27 @@
     <div class="pos-invoice-preview-actions">
       <button type="button" id="btn-pos-invoice-preview-print" class="pos-handover-btn pos-handover-btn-primary">Print</button>
       <button type="button" id="btn-pos-invoice-preview-close" class="pos-handover-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="pos-gp-fab-root" hidden>
+  <button type="button" id="pos-gp-fab" class="pos-gp-fab" aria-label="GatePass" aria-expanded="false">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M13 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+      <path d="M18 17a5 5 0 0 0-10 0"/>
+      <path d="M6 11a4 4 0 0 0-4 4h3"/>
+    </svg>
+    <span id="pos-gp-fab-badge" class="pos-gp-fab-badge" hidden aria-live="polite">0</span>
+  </button>
+  <div id="pos-gp-fab-panel" class="pos-gp-fab-panel" hidden role="dialog" aria-label="GatePass">
+    <div class="pos-gp-fab-panel-head">
+      <span class="pos-gp-fab-panel-title">GatePass</span>
+      <button type="button" id="pos-gp-fab-close" class="pos-gp-fab-close" aria-label="Close">&times;</button>
+    </div>
+    <div id="pos-gp-contacts-container"></div>
+    <div class="pos-gp-fab-panel-footer">
+      <button type="button" id="pos-gp-fab-checkin" class="pos-login-btn" style="padding:8px 16px;font-size:13px" hidden>+ Check In</button>
     </div>
   </div>
 </div>

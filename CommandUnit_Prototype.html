@@ -10,7 +10,9 @@
 <link rel="stylesheet" href="/css/cosmos-ui.css">
 <link rel="stylesheet" href="/css/command-unit.css">
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260525-toast-date">
+<link rel="stylesheet" href="/css/cosmos-time-monitor.css?v=cosmos-time-v1">
 <script src="/js/cosmos-ui-polish.js?v=20260602-ist-wire" defer></script>
+<script src="/js/cosmos-time-monitor.js?v=cosmos-time-v1" defer></script>
 
 </head>
 <body class="cosmos-app-shell">
@@ -64,6 +66,9 @@
     </div>
     <div class="nav-item" onclick="showPage('store-types', this)">
       <span class="icon">🏪</span> Store Types
+    </div>
+    <div class="nav-item" onclick="showPage('cx-settings', this)">
+      <span class="icon">📊</span> CX Settings
     </div>
     <div class="nav-item" onclick="showPage('leavetypes', this)">
       <span class="icon">📅</span> Leave Types
@@ -527,6 +532,7 @@
       <div class="tab" onclick="switchTab(this,'tab-loyalty')">Loyalty Rules</div>
       <div class="tab" onclick="switchTab(this,'tab-promoter')">Promoter Commission</div>
       <div class="tab" onclick="switchTab(this,'tab-misc')">Miscellaneous</div>
+      <div class="tab" onclick="switchTab(this,'tab-cosmos-time'); if (window.cuLoadCosmosTime) window.cuLoadCosmosTime();">Cosmos Time</div>
     </div>
 
     <div id="tab-gst">
@@ -619,6 +625,30 @@
           <div class="setting-row"><div><div class="fw-600 text-sm">Rx Validity Period</div><div class="td-muted text-xs">Months before a prescription is considered stale</div></div><div><input type="number" value="12" style="width:100px"> months</div></div>
           <div class="setting-row"><div><div class="fw-600 text-sm">Slow Mover Alert Threshold</div><div class="td-muted text-xs">Days without a sale before SKU is flagged as slow mover</div></div><div><input type="number" value="30" style="width:100px"> days</div></div>
           <div class="setting-row"><div><div class="fw-600 text-sm">Low Stock Reorder Threshold</div><div class="td-muted text-xs">Default minimum units at warehouse before alert fires</div></div><div><input type="number" value="5" style="width:100px"> units</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-cosmos-time" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Cosmos Time</div>
+            <div class="td-muted text-xs" style="margin-top:4px">Compare device, Node server, and SQL Server IST clocks. Drift above threshold triggers a global alert on all modules.</div>
+          </div>
+          <button type="button" class="topbar-btn" id="cu-cosmos-time-refresh-btn" style="font-size:12px">Refresh now</button>
+        </div>
+        <div class="card-body">
+          <div id="cu-cosmos-time-clocks" class="cosmos-time-cu-grid"></div>
+          <div id="cu-cosmos-time-skews"></div>
+          <div class="form-grid" style="grid-template-columns:minmax(0,220px) auto;align-items:end;max-width:420px;margin-top:8px">
+            <div class="form-group" style="margin:0">
+              <label for="cu-cosmos-time-threshold">Drift alert threshold (minutes)</label>
+              <input type="number" id="cu-cosmos-time-threshold" min="1" max="60" step="1" value="5">
+            </div>
+            <button type="button" class="topbar-btn primary" id="cu-cosmos-time-save-btn">Save threshold</button>
+          </div>
+          <p class="td-muted text-xs" style="margin-top:14px;line-height:1.45">Cosmos cannot change OS or SQL clocks from here. Sync Windows Time / NTP on the app server and SQL VPS, and verify tablet date/time settings.</p>
         </div>
       </div>
     </div>
@@ -791,6 +821,39 @@
             </tr>
           </thead>
           <tbody id="cu-store-types-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE: CX SETTINGS ═══ -->
+  <div class="page" id="page-cx-settings">
+    <div class="page-header flex items-center">
+      <div>
+        <div class="page-title">CX Settings</div>
+        <div class="page-subtitle">GatePass visit purposes shown at check-in (Store OS, Store Pilot, CX search). Keys are stored in the database; labels drive dropdowns and badges.</div>
+      </div>
+      <button type="button" class="topbar-btn primary ml-auto" id="cu-gp-purpose-add-btn">+ Add Purpose</button>
+    </div>
+    <div class="alert alert-blue" style="margin-bottom:16px">
+      <span class="alert-icon">ℹ️</span>
+      <div>Deactivate only when no visits reference that purpose. Inactive purposes are hidden from new check-ins but still display on historical visits.</div>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Label</th>
+              <th>Badge</th>
+              <th>Sort</th>
+              <th>Visits</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="cu-gp-purpose-tbody"></tbody>
         </table>
       </div>
     </div>
@@ -1567,6 +1630,7 @@
         <div class="tab active" data-stab="stab-details" onclick="switchTab(this,'stab-details')">Details</div>
         <div class="tab" data-stab="stab-modules" onclick="switchTab(this,'stab-modules')">Modules</div>
         <div class="tab" data-stab="stab-tablets" id="cu-store-detail-tab-tablets" onclick="switchTab(this,'stab-tablets'); if (window.cuReloadStoreModalTablets) window.cuReloadStoreModalTablets();">Store OS tablets</div>
+        <div class="tab" data-stab="stab-vms" id="cu-store-detail-tab-vms" onclick="switchTab(this,'stab-vms'); if (window.cuLoadGatepassVms) window.cuLoadGatepassVms();">Visitor settings</div>
         <div class="tab" data-stab="stab-stats" onclick="switchTab(this,'stab-stats')">Stats</div>
       </div>
       <div id="stab-details">
@@ -1599,6 +1663,14 @@
             </tbody>
           </table>
         </div>
+      </div>
+      <div id="stab-vms" style="display:none">
+        <p class="td-muted" style="font-size:13px;line-height:1.55;margin-bottom:14px;color:var(--text2)">
+          Per-store overrides for the visitor queue (GatePass). Leave blank to use global defaults. Self check-in is used by Eyewoot Go (Phase 5).
+        </p>
+        <div id="cu-gatepass-vms-form" class="form-grid"></div>
+        <div id="cu-gatepass-vms-error" class="td-muted" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
+        <button type="button" class="topbar-btn primary" id="cu-gatepass-vms-save-btn" style="margin-top:12px">Save visitor settings</button>
       </div>
       <div id="stab-modules" style="display:none">
         <div class="toggle-row"><div><div class="toggle-label">🔩 Foundry</div></div><div class="toggle on" onclick="this.classList.toggle('on')"></div></div>
@@ -1732,6 +1804,53 @@
       <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-edit-store-type')">Cancel</button>
       <button type="button" class="topbar-btn" id="cu-st-edit-deactivate-btn" style="border-color:var(--red);color:var(--red)">Deactivate</button>
       <button type="button" class="topbar-btn primary" id="cu-st-edit-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- GatePass visit purpose -->
+<div class="modal-overlay" id="modal-cu-new-gp-purpose">
+  <div class="modal" style="width:520px">
+    <div class="modal-header">
+      <div class="modal-title">Add Visit Purpose</div>
+      <div class="modal-close" onclick="closeModal('modal-cu-new-gp-purpose')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Purpose key <span class="label-req">*</span></label><input id="cu-gp-new-key" type="text" placeholder="e.g. repair" autocomplete="off"><div class="form-hint">Lowercase letters, numbers, underscore. Fixed after create.</div></div>
+        <div class="form-group"><label>Display label <span class="label-req">*</span></label><input id="cu-gp-new-label" type="text" placeholder="e.g. Frame repair"></div>
+        <div class="form-group"><label>Badge colour</label><select id="cu-gp-new-badge" class="form-input"></select></div>
+        <div class="form-group"><label>Sort order</label><input id="cu-gp-new-sort" type="number" min="0" max="9999" value="100" class="form-input"></div>
+      </div>
+      <div id="cu-gp-new-error" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-new-gp-purpose')">Cancel</button>
+      <button type="button" class="topbar-btn primary" id="cu-gp-new-save-btn">Create</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-cu-edit-gp-purpose">
+  <div class="modal" style="width:520px">
+    <div class="modal-header">
+      <div><div class="modal-title" id="cu-gp-edit-title">Edit Visit Purpose</div></div>
+      <div class="modal-close" onclick="closeModal('modal-cu-edit-gp-purpose')">×</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Purpose key</label><input id="cu-gp-edit-key" type="text" readonly class="font-mono" style="opacity:0.85"></div>
+        <div class="form-group"><label>Display label <span class="label-req">*</span></label><input id="cu-gp-edit-label" type="text"></div>
+        <div class="form-group"><label>Badge colour</label><select id="cu-gp-edit-badge" class="form-input"></select></div>
+        <div class="form-group"><label>Sort order</label><input id="cu-gp-edit-sort" type="number" min="0" max="9999" class="form-input"></div>
+        <div class="form-group"><label>Status</label><select id="cu-gp-edit-active" class="form-input"><option value="1">Active</option><option value="0">Inactive</option></select></div>
+      </div>
+      <div id="cu-gp-edit-error" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="topbar-btn" onclick="closeModal('modal-cu-edit-gp-purpose')">Cancel</button>
+      <button type="button" class="topbar-btn" id="cu-gp-edit-deactivate-btn" style="border-color:var(--red);color:var(--red)">Deactivate</button>
+      <button type="button" class="topbar-btn primary" id="cu-gp-edit-save-btn">Save</button>
     </div>
   </div>
 </div>
@@ -2220,7 +2339,7 @@ function showPage(id, el, _opts) {
     settings: 'System Settings', 'pos-settings': 'POS Settings', membership: 'Membership Tiers',
     'membership-plans': 'Membership Plans',
     promotion: 'Configure Offer',
-    leavetypes: 'Leave Types', 'store-types': 'Store Types', 'foundry-settings': 'Foundry Settings',
+    leavetypes: 'Leave Types', 'store-types': 'Store Types', 'cx-settings': 'CX Settings', 'foundry-settings': 'Foundry Settings',
     'label-templates': 'Label Templates', audit: 'Audit Logs',
     'cu-suppliers': 'Suppliers', 'cu-maker-master': 'Maker Master', 'cu-branding-agents': 'Branding Agents',
     tablets: 'Store OS Tablets'
@@ -2265,6 +2384,7 @@ function switchTab(el, targetId) {
 <link rel="stylesheet" href="/css/label-template-configurator.css?v=20260528-ltc11">
 <script src="/js/label-zone-align.js?v=20260528-ltc11" defer></script>
 <script src="/js/label-template-configurator.js?v=20260528-ltc13" defer></script>
-<script src="/js/command-unit-prototype.js?v=20260528-offer-tier-fix" defer></script>
+<script src="/js/gatepass-purpose-settings.js?v=gp-purpose-catalog-v1" defer></script>
+<script src="/js/command-unit-prototype.js?v=gp-purpose-catalog-v1" defer></script>
 </body>
 </html>

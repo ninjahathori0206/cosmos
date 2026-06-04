@@ -3,7 +3,14 @@ const sql = require('mssql');
 const Joi = require('joi');
 const { executeStoredProcedure, getPool } = require('../config/db');
 const { clearCacheByPrefix } = require('../cache/ttlCache');
-const { requireModule, requirePermission } = require('../middleware/authorize');
+const { requireModule, requireAnyModule, requirePermission } = require('../middleware/authorize');
+const { getGatepassPurposeBadgeVariants } = require('../config/gatepassPurposeBadgeCatalog');
+const {
+  getAdminCatalog,
+  createPurpose,
+  updatePurpose,
+  deactivatePurpose
+} = require('../services/gatepassPurposeCatalogService');
 const { writeAuditLog } = require('../services/auditService');
 const { wallClockIso } = require('../lib/cosmosIst');
 const { SCOPE_DIMENSIONS, ALLOWED_SCOPE_KINDS } = require('../config/offerScopeDimensions');
@@ -21,11 +28,25 @@ const {
   structuredOfferTypeRespectsAllocation
 } = require('../config/customerOfferDiscountTypes')
 const { CAPABILITY_KEYS } = require('../config/membershipCapabilityGroups');
+const {
+  getCosmosTimeSnapshot,
+  setThresholdMinutes,
+  evaluateCosmosTimeHealth
+} = require('../services/cosmosTimeHealthService');
 
 const router = express.Router();
 
 const settingsView = [requireModule('command_unit'), requirePermission('command_unit.settings.view')];
 const settingsManage = [requireModule('command_unit'), requirePermission('command_unit.settings.edit')];
+
+const purposeCatalogView = [
+  requireAnyModule(['command_unit', 'cx']),
+  requirePermission('command_unit.settings.view', 'cx.admin', 'cx.customers.view')
+];
+const purposeCatalogManage = [
+  requireAnyModule(['command_unit', 'cx']),
+  requirePermission('command_unit.settings.edit', 'cx.admin')
+];
 /** Eyewoot Go customer_offers — view/manage from Command Unit → Promotion (fallback to settings perm until roles are seeded). */
 const promotionsView = [
   requireModule('command_unit'),
@@ -41,6 +62,14 @@ const posSettingsPutSchema = Joi.object({
   composition_scheme: Joi.boolean(),
   prices_gst_inclusive: Joi.boolean()
 }).min(1);
+
+const cosmosTimePutSchema = Joi.object({
+  threshold_minutes: Joi.number().integer().min(1).max(60).required()
+});
+
+const cosmosTimeDeviceQuerySchema = Joi.object({
+  device_ist_wire: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/).optional()
+});
 
 async function upsertAppSetting(pool, {
   settingKey,
@@ -830,6 +859,122 @@ router.delete('/leave-types/:id', ...settingsManage, async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
+// ─── GATEPASS VISIT PURPOSES (CX / GatePass check-in) ───────────────────────────
+
+const purposeKeySchema = Joi.string()
+  .trim()
+  .max(50)
+  .pattern(/^[a-z][a-z0-9_]*$/)
+  .required()
+  .messages({
+    'string.pattern.base':
+      'purpose_key must start with a letter and use only lowercase letters, numbers, and underscores.'
+  });
+
+const purposeCreateSchema = Joi.object({
+  purpose_key: purposeKeySchema,
+  label: Joi.string().max(200).required(),
+  badge_variant: Joi.string().max(20).required(),
+  sort_order: Joi.number().integer().min(0).max(9999).optional(),
+  is_active: Joi.boolean().optional()
+});
+
+const purposeUpdateSchema = Joi.object({
+  label: Joi.string().max(200).optional(),
+  badge_variant: Joi.string().max(20).optional(),
+  sort_order: Joi.number().integer().min(0).max(9999).optional(),
+  is_active: Joi.boolean().optional()
+}).min(1);
+
+router.get('/gatepass-purpose-catalog', ...purposeCatalogView, async (req, res, next) => {
+  try {
+    const purposes = await getAdminCatalog();
+    return res.json({
+      success: true,
+      data: {
+        purposes,
+        badge_variants: getGatepassPurposeBadgeVariants()
+      }
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/gatepass-purpose-catalog', ...purposeCatalogManage, async (req, res, next) => {
+  try {
+    const { error, value } = purposeCreateSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      });
+    }
+    const row = await createPurpose({
+      purpose_key: value.purpose_key,
+      label: value.label,
+      badge_variant: value.badge_variant,
+      sort_order: value.sort_order,
+      is_active: value.is_active !== false
+    });
+    return res.status(201).json({ success: true, data: { ...row, visitor_count: 0 } });
+  } catch (err) {
+    if (err.statusCode === 400) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    if (/duplicate key|UNIQUE|PK_gatepass_purpose/i.test(String(err.message || ''))) {
+      return res.status(409).json({ success: false, message: 'A purpose with this key already exists.' });
+    }
+    return next(err);
+  }
+});
+
+router.put('/gatepass-purpose-catalog/:purposeKey', ...purposeCatalogManage, async (req, res, next) => {
+  try {
+    const purposeKey = String(req.params.purposeKey || '').trim();
+    const { error, value } = purposeUpdateSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      });
+    }
+    const row = await updatePurpose(purposeKey, {
+      label: value.label,
+      badge_variant: value.badge_variant,
+      sort_order: value.sort_order,
+      is_active: value.is_active
+    });
+    return res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ success: false, message: err.message });
+    }
+    if (err.statusCode === 400) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    return next(err);
+  }
+});
+
+router.delete('/gatepass-purpose-catalog/:purposeKey', ...purposeCatalogManage, async (req, res, next) => {
+  try {
+    const purposeKey = String(req.params.purposeKey || '').trim();
+    const row = await deactivatePurpose(purposeKey);
+    return res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ success: false, message: err.message });
+    }
+    if (err.statusCode === 422) {
+      return res.status(422).json({ success: false, message: err.message });
+    }
+    return next(err);
+  }
+});
+
 // ─── PROMOTION: CUSTOMER OFFERS (Eyewoot Go) ────────────────────────────────────
 
 const scopeItemSchema = Joi.object({
@@ -1572,6 +1717,57 @@ router.put('/loyalty', ...settingsManage, async (req, res, next) => {
         settings,
         loyalty_engine_v2: flagVal === '1' || flagVal.toLowerCase() === 'true'
       }
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/cosmos-time', ...settingsView, async (req, res, next) => {
+  try {
+    const { error, value } = cosmosTimeDeviceQuerySchema.validate(req.query);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      });
+    }
+    const snapshot = await getCosmosTimeSnapshot();
+    const evaluation = evaluateCosmosTimeHealth(snapshot, value.device_ist_wire || null);
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      success: true,
+      data: Object.assign({}, snapshot, evaluation)
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.put('/cosmos-time', ...settingsManage, async (req, res, next) => {
+  try {
+    const { error, value } = cosmosTimePutSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map((d) => d.message)
+      });
+    }
+    const pool = await getPool();
+    const thresholdMinutes = await setThresholdMinutes(pool, value.threshold_minutes);
+    await writeAuditLog({
+      req,
+      action: 'update',
+      entityType: 'app_settings',
+      entityId: 'cosmos_time_drift_threshold_minutes',
+      notes: 'threshold_minutes=' + thresholdMinutes
+    });
+    const snapshot = await getCosmosTimeSnapshot({ pool });
+    return res.json({
+      success: true,
+      data: Object.assign({}, snapshot, { threshold_minutes: thresholdMinutes })
     });
   } catch (err) {
     return next(err);

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Cosmos</title>
+  <link rel="stylesheet" href="/css/hub.css">
+</head>
+<body>
+
+  <!-- ── LOGIN SCREEN ── -->
+  <div class="screen" id="screen-login">
+    <div class="login-wrap">
+      <div class="login-brand">
+        <div class="login-logo">COSMOS</div>
+        <div class="login-tagline">Operating System for Eyewoot</div>
+      </div>
+      <div class="login-card">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="login-username" autocomplete="username" placeholder="Enter username">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="login-password" autocomplete="current-password" placeholder="Enter password">
+        </div>
+        <div class="login-error" id="login-error"></div>
+        <button class="btn-primary" id="login-btn">Sign In</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── HUB SCREEN ── -->
+  <div class="screen" id="screen-hub">
+    <header class="hub-header">
+      <div class="hub-brand">COSMOS</div>
+      <div class="hub-user-wrap">
+        <div class="hub-user-info">
+          <span class="hub-user-name" id="hub-user-name"></span>
+          <span class="hub-user-role" id="hub-user-role"></span>
+        </div>
+        <button class="btn-signout" id="hub-signout-btn">Sign Out</button>
+      </div>
+    </header>
+
+    <main class="hub-main">
+      <div class="hub-greeting" id="hub-greeting"></div>
+      <div class="hub-grid" id="hub-grid"></div>
+    </main>
+  </div>
+
+  <script src="/js/hub.js"></script>
+</body>
+</html>

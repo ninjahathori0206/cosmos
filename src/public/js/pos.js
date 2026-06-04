@@ -1597,6 +1597,11 @@
     pkg: null,
     addonIds: [],
     powerMode: null,
+    savedRxList: [],
+    savedRxLoading: false,
+    savedRxLoaded: false,
+    savedRxLoadError: null,
+    savedTestId: null,
     rx: { od: { sph: '', cyl: '', axis: '', plano: false }, os: { sph: '', cyl: '', axis: '', plano: false }, pd: '', doctor: '' }
   }
 
@@ -1972,6 +1977,9 @@
         phone: phone != null ? String(phone).trim() : ''
       }
       lensWizard.customerName = primaryName
+      lensWizard.savedRxLoaded = false
+      lensWizard.savedRxList = []
+      lensWizard.savedRxLoadError = null
       const session = getPosSession()
       if (session && session.token) {
         void loadPosOffersPanel(session, 'pos-cart-coupon-list', null, false)
@@ -2055,6 +2063,11 @@
       pkg: null,
       addonIds: [],
       powerMode: null,
+      savedRxList: [],
+      savedRxLoading: false,
+      savedRxLoaded: false,
+      savedRxLoadError: null,
+      savedTestId: null,
       brandFilter: 'all',
       customerName: null,
       patientName: null,
@@ -4884,6 +4897,11 @@
       pkg: null,
       addonIds: [],
       powerMode: null,
+      savedRxList: [],
+      savedRxLoading: false,
+      savedRxLoaded: false,
+      savedRxLoadError: null,
+      savedTestId: null,
       brandFilter: 'all',
       customerName: primary || null,
       patientName: initialPatient,
@@ -4978,6 +4996,7 @@
   var posGatepassPollTimer = null
   var posGatepassActiveVisitor = null
   var posGatepassPurposeOptions = null
+  var posGpFabOpen = false
 
   function posGatepassHasPerm(key) {
     var perms = posJwtPermissions().map(function (p) { return String(p).toLowerCase() })
@@ -5013,13 +5032,125 @@
     return apiPost(path, payload, session.token).then(function (body) { return body.data })
   }
 
+  function posGpInitials(name) {
+    var parts = String(name || '').trim().split(/\s+/)
+    if (!parts[0]) return '?'
+    return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase()
+  }
+
+  function posGpBuildBubble(v, isExited) {
+    var item = document.createElement('button')
+    item.type = 'button'
+    item.className = 'pos-gp-contact-item' + (isExited ? ' pos-gp-contact-item--exited' : '')
+    item.setAttribute('role', 'listitem')
+    var avatarCls = isExited
+      ? 'pos-gp-contact-avatar--exited'
+      : (v.status === 'in_service' ? 'pos-gp-contact-avatar--inservice' : 'pos-gp-contact-avatar--waiting')
+    var statusLabel = isExited ? 'Exited' : (v.status === 'in_service' ? 'In service' : 'Waiting')
+    var firstName = String(v.name || '').split(' ')[0].slice(0, 8)
+    item.innerHTML =
+      '<div class="pos-gp-contact-avatar ' + avatarCls + '">' + escapeHtml(posGpInitials(v.name)) + '</div>'
+      + '<div class="pos-gp-contact-name">' + escapeHtml(firstName) + '</div>'
+      + '<div class="pos-gp-contact-status">' + escapeHtml(statusLabel) + '</div>'
+    item.addEventListener('click', function () {
+      posGpFabClose()
+      openGatepassActionsSheet(v)
+    })
+    return item
+  }
+
+  function posGpRenderContacts(inStore, exited) {
+    var container = document.getElementById('pos-gp-contacts-container')
+    if (!container) return
+    container.innerHTML = ''
+
+    if (inStore.length) {
+      var lbl1 = document.createElement('div')
+      lbl1.className = 'pos-gp-section-label'
+      lbl1.textContent = 'In store'
+      container.appendChild(lbl1)
+
+      var row1 = document.createElement('div')
+      row1.className = 'pos-gp-contacts-row'
+      inStore.forEach(function (v) { row1.appendChild(posGpBuildBubble(v, false)) })
+      container.appendChild(row1)
+    }
+
+    if (exited.length) {
+      var lbl2 = document.createElement('div')
+      lbl2.className = 'pos-gp-section-label'
+      lbl2.style.marginTop = inStore.length ? '14px' : '0'
+      lbl2.textContent = 'Exited · 24 h'
+      container.appendChild(lbl2)
+
+      var row2 = document.createElement('div')
+      row2.className = 'pos-gp-contacts-row'
+      exited.slice(0, 3).forEach(function (v) { row2.appendChild(posGpBuildBubble(v, true)) })
+      container.appendChild(row2)
+    }
+
+    if (!inStore.length && !exited.length) {
+      var empty = document.createElement('div')
+      empty.style.cssText = 'font-size:13px;color:var(--text2);padding:8px 0;text-align:center'
+      empty.textContent = 'No visitors today.'
+      container.appendChild(empty)
+    }
+  }
+
+  function _posGpDoOpen() {
+    var panel = document.getElementById('pos-gp-fab-panel')
+    var fab = document.getElementById('pos-gp-fab')
+    if (!panel) return
+    panel.hidden = false
+    posGpFabOpen = true
+    if (fab) fab.setAttribute('aria-expanded', 'true')
+    setTimeout(function () {
+      document.addEventListener('click', _posGpOutsideClick, { capture: true, once: true })
+      document.addEventListener('keydown', _posGpEscKey)
+    }, 10)
+  }
+
+  function posGpFabClose() {
+    var panel = document.getElementById('pos-gp-fab-panel')
+    var fab = document.getElementById('pos-gp-fab')
+    if (!panel) return
+    panel.hidden = true
+    posGpFabOpen = false
+    if (fab) fab.setAttribute('aria-expanded', 'false')
+    document.removeEventListener('click', _posGpOutsideClick, { capture: true })
+    document.removeEventListener('keydown', _posGpEscKey)
+  }
+
+  function _posGpOutsideClick(e) {
+    var root = document.getElementById('pos-gp-fab-root')
+    if (root && !root.contains(e.target)) posGpFabClose()
+  }
+
+  function _posGpEscKey(e) {
+    if (e.key === 'Escape') posGpFabClose()
+  }
+
+  function posGpFabToggle() {
+    if (posGpFabOpen) {
+      posGpFabClose()
+    } else {
+      var root = document.getElementById('pos-gp-fab-root')
+      var inStore = (root && root._posLastInStore) || []
+      var exited = (root && root._posLastExited) || []
+      posGpRenderContacts(inStore, exited)
+      _posGpDoOpen()
+    }
+  }
+
   function posGatepassSyncUi() {
     var canView = posGatepassHasPerm('gatepass.view')
     var canCheckin = posGatepassHasPerm('gatepass.checkin')
     var navBtn = document.getElementById('btn-gatepass-checkin-nav')
-    var widget = document.getElementById('pos-gatepass-widget')
+    var fabRoot = document.getElementById('pos-gp-fab-root')
     if (navBtn) navBtn.hidden = !canCheckin
-    if (widget) widget.hidden = !canView
+    if (fabRoot) fabRoot.hidden = !canView
+    var fabCheckin = document.getElementById('pos-gp-fab-checkin')
+    if (fabCheckin) fabCheckin.hidden = !canCheckin
     if (canView) {
       void posGatepassRefreshWidget()
       posGatepassStartPoll()
@@ -5239,7 +5370,7 @@
     }
   }
 
-  function posCreateCxSearchInstance(inputEl, prevInstance, handlers) {
+  function posCreateCxSearchInstance(inputEl, prevInstance, handlers, bubbleResultsEl) {
     if (typeof window.cosmosCxSearch === 'undefined') return null
     var storeId = posGatepassStoreId()
     if (!inputEl || !storeId) return null
@@ -5249,6 +5380,7 @@
     return window.cosmosCxSearch.init({
       inputEl: inputEl,
       storeId: storeId,
+      bubbleResultsEl: bubbleResultsEl || null,
       apiGet: function (path) { return posGatepassApiGet(path) },
       apiPatch: function (path, payload) { return posGatepassApiPatch(path, payload) },
       canSearchCx: function () { return posGatepassCanSearchCx() },
@@ -5371,35 +5503,24 @@
   async function posGatepassRefreshWidget() {
     if (!posGatepassHasPerm('gatepass.view')) return
     var storeId = posGatepassStoreId()
-    var list = document.getElementById('pos-gatepass-widget-list')
-    var countEl = document.getElementById('pos-gatepass-widget-count')
-    if (!storeId || !list) return
+    var badge = document.getElementById('pos-gp-fab-badge')
+    var fabRoot = document.getElementById('pos-gp-fab-root')
+    if (!storeId || !fabRoot) return
     try {
-      var rows = await posGatepassApiGet('/api/gatepass/queue/' + encodeURIComponent(storeId))
-      list.innerHTML = ''
-      if (!rows || !rows.length) {
-        var empty = document.createElement('div')
-        empty.className = 'pos-gatepass-widget-empty'
-        empty.innerHTML = '<div style="font-weight:600;margin-bottom:4px">No visitors waiting</div><div>Check in walk-ins to see them here.</div>'
-        list.appendChild(empty)
-        if (countEl) countEl.textContent = '0'
-        return
+      var data = await posGatepassApiGet('/api/gatepass/search?storeId=' + encodeURIComponent(storeId) + '&phone=')
+      var inStore = Array.isArray(data.inStore) ? data.inStore : []
+      var exited = Array.isArray(data.exited) ? data.exited : []
+      var n = inStore.length
+      if (badge) {
+        badge.textContent = String(n)
+        badge.hidden = n === 0
       }
-      if (countEl) countEl.textContent = String(rows.length)
-      await posGatepassLoadPurposes()
-      rows.forEach(function (v) {
-        var btn = document.createElement('button')
-        btn.type = 'button'
-        btn.className = 'pos-gatepass-widget-row tr-link'
-        btn.setAttribute('role', 'listitem')
-        var dot = v.has_customer ? '🟢' : '🟠'
-        var purpose = v.purpose ? posGatepassPurposeLabel(v.purpose) : 'General'
-        var wait = v.wait_minutes != null ? v.wait_minutes + 'm' : ''
-        btn.innerHTML = '<div class="pos-gatepass-widget-row-name">' + dot + ' ' + escapeHtml(v.name) + '</div>'
-          + '<div class="pos-gatepass-widget-row-meta">' + escapeHtml(purpose) + ' · ' + escapeHtml(wait) + '</div>'
-        btn.addEventListener('click', function () { openGatepassActionsSheet(v) })
-        list.appendChild(btn)
-      })
+      if (posGpFabOpen) {
+        posGpRenderContacts(inStore, exited)
+      } else {
+        fabRoot._posLastInStore = inStore
+        fabRoot._posLastExited = exited
+      }
     } catch (_err) {
       /* silent poll failure */
     }
@@ -5471,7 +5592,6 @@
 
   function bindGatepassModule() {
     var navBtn = document.getElementById('btn-gatepass-checkin-nav')
-    var widgetCheckin = document.getElementById('pos-gatepass-widget-checkin')
     var submitBtn = document.getElementById('gatepass-checkin-submit')
     var cancelBtn = document.getElementById('gatepass-checkin-cancel')
     var dismissBtn = document.getElementById('gatepass-checkin-dismiss')
@@ -5483,7 +5603,6 @@
     var actClose = document.getElementById('gatepass-action-close')
 
     if (navBtn) navBtn.addEventListener('click', function () { openGatepassCheckInModal('', '') })
-    if (widgetCheckin) widgetCheckin.addEventListener('click', function () { openGatepassCheckInModal('', '') })
     if (submitBtn) submitBtn.addEventListener('click', function () { void submitGatepassCheckIn(submitBtn) })
     if (cancelBtn) cancelBtn.addEventListener('click', closeGatepassCheckInModal)
     if (dismissBtn) dismissBtn.addEventListener('click', closeGatepassCheckInModal)
@@ -5499,12 +5618,40 @@
 
     var phoneEl = document.getElementById('gatepass-checkin-phone')
     var nameEl = document.getElementById('gatepass-checkin-name')
+    var bubbleResultsEl = document.getElementById('pos-ci-bubble-results')
     if (phoneEl && typeof cosmosFieldClear === 'function') {
       phoneEl.addEventListener('input', function () { cosmosFieldClear(phoneEl) })
     }
     if (nameEl && typeof cosmosFieldClear === 'function') {
       nameEl.addEventListener('input', function () { cosmosFieldClear(nameEl) })
     }
+    if (phoneEl && bubbleResultsEl) {
+      posCreateCxSearchInstance(phoneEl, null, {
+        onSelect: function (ctx) { posGatepassHandleVisitorSelect(ctx, 'checkin') },
+        onCheckInNew: function (phone) {
+          if (phoneEl) phoneEl.value = phone
+          var nm = document.getElementById('gatepass-checkin-name')
+          if (nm) nm.focus()
+        },
+        onCreateCx: function () {}
+      }, bubbleResultsEl)
+    }
+
+    // ── FAB wiring ──────────────────────────────────────────────────────────
+    var fab = document.getElementById('pos-gp-fab')
+    if (fab) fab.addEventListener('click', function () { posGpFabToggle() })
+
+    var fabClose = document.getElementById('pos-gp-fab-close')
+    if (fabClose) fabClose.addEventListener('click', function () { posGpFabClose() })
+
+    var fabCheckin = document.getElementById('pos-gp-fab-checkin')
+    if (fabCheckin) fabCheckin.addEventListener('click', function () {
+      posGpFabClose()
+      openGatepassCheckInModal('', '')
+    })
+
+    var fabShowAll = document.getElementById('sp-gp-fab-showall')
+    if (fabShowAll) fabShowAll.addEventListener('click', function () { posGpFabClose() })
   }
 
   function openPosCustomerPickerModal() {
@@ -6097,7 +6244,10 @@
 
         html.push('<div class="pos-lk-section-lbl">I know my power</div>')
         html.push('<div class="pos-lk-know-power-region" role="group" aria-label="Power source options">')
-        html.push(buildPowerCard('saved',   '🔖', '#2563EB', 'Saved Power',           '3 saved prescriptions for this Cx'))
+        html.push(buildPowerCard('saved',   '🔖', '#2563EB', 'Saved Power',           lensSavedRxSubtitle()))
+        if (lensWizard.powerMode === 'saved') {
+          html.push(renderSavedRxPickerHtml())
+        }
         html.push(buildPowerCard('manual',  '✎',  '#7C3AED', 'Enter Power Manually',  'SPH / CYL / AXIS'))
         if (lensWizard.powerMode === 'manual') {
           html.push(
@@ -6117,13 +6267,39 @@
     if (showProfile) bindLensPatientChooser(body)
     bindCustomerFramePhotoBlock(body)
 
+    if (lensWizard.powerMode === 'saved' && lensWizard.savedRxLoading) {
+      var pickerSk = document.getElementById('pos-lk-saved-rx-picker')
+      if (pickerSk && typeof cosmosSkeletonRows === 'function') cosmosSkeletonRows('pos-lk-saved-rx-picker', 3)
+    }
+
     body.querySelectorAll('[data-pwm-key]').forEach(function (el) {
       el.addEventListener('click', function () {
         const key = el.getAttribute('data-pwm-key')
         if (key !== 'manual') closeLensRxManualModal()
+        if (key === 'saved') {
+          lensWizard.powerMode = 'saved'
+          if (!lensWizard.savedRxLoaded && !lensWizard.savedRxLoading) {
+            void loadLensSavedRxList()
+          } else {
+            renderLensStep()
+          }
+          return
+        }
         lensWizard.powerMode = key
         if (key === 'manual') openLensRxManualModal()
         renderLensStep()
+      })
+    })
+
+    body.querySelectorAll('.pos-lk-saved-rx-use').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation()
+        var tid = parseInt(btn.getAttribute('data-saved-rx-id'), 10)
+        if (!tid) return
+        var row = (lensWizard.savedRxList || []).find(function (r) {
+          return Number(r.test_id) === tid
+        })
+        applySavedRxToLensWizard(row)
       })
     })
 
@@ -6178,6 +6354,132 @@
           btn.setAttribute('aria-pressed', on ? 'true' : 'false')
         })
       })
+    }
+  }
+
+  function lensSavedRxSubtitle () {
+    if (!posSelectedCustomerId || posSelectedCustomerId <= 0) {
+      return 'Link a Cx to use saved prescriptions'
+    }
+    if (lensWizard.savedRxLoading) return 'Loading saved prescriptions…'
+    if (lensWizard.savedRxLoadError) return lensWizard.savedRxLoadError
+    var n = (lensWizard.savedRxList || []).length
+    if (lensWizard.savedRxLoaded && n === 0) return 'No saved prescriptions for this Cx'
+    if (n > 0) {
+      return n + ' saved prescription' + (n === 1 ? '' : 's') + ' for this Cx'
+    }
+    return 'Tap to load saved prescriptions'
+  }
+
+  function formatSavedRxEyeLine (sph, cyl, axis, add) {
+    var parts = [sph, cyl, axis, add].filter(function (x) {
+      return x != null && x !== ''
+    })
+    return parts.length ? parts.map(String).join(' / ') : '—'
+  }
+
+  function renderSavedRxPickerHtml () {
+    if (lensWizard.powerMode !== 'saved') return ''
+    if (!posSelectedCustomerId || posSelectedCustomerId <= 0) {
+      return (
+        '<div class="pos-lk-saved-rx-picker">' +
+        '<p class="pos-lk-saved-rx-hint">Link a customer on this order to load saved Rx.</p></div>'
+      )
+    }
+    if (lensWizard.savedRxLoading) {
+      return '<div class="pos-lk-saved-rx-picker" id="pos-lk-saved-rx-picker"></div>'
+    }
+    var rows = lensWizard.savedRxList || []
+    if (!rows.length) {
+      return (
+        '<div class="pos-lk-saved-rx-picker">' +
+        '<p class="pos-lk-saved-rx-hint">' +
+        escapeHtml(lensWizard.savedRxLoadError || 'No saved prescriptions yet.') +
+        '</p></div>'
+      )
+    }
+    var items = rows.map(function (row) {
+      var label = row.patient_name || row.family_name || 'Prescription'
+      var dateStr = ''
+      if (row.tested_at && typeof cosmosFmtDate === 'function') {
+        dateStr = cosmosFmtDate(row.tested_at)
+      } else if (row.tested_at) {
+        dateStr = String(row.tested_at).slice(0, 10)
+      }
+      var reLine = formatSavedRxEyeLine(row.re_sph, row.re_cyl, row.re_axis, row.re_add)
+      var leLine = formatSavedRxEyeLine(row.le_sph, row.le_cyl, row.le_axis, row.le_add)
+      return (
+        '<div class="pos-lk-saved-rx-item">' +
+        '<div class="pos-lk-saved-rx-item-head">' +
+        '<span class="pos-lk-saved-rx-chip">' + escapeHtml(dateStr || '—') + '</span>' +
+        '<span class="pos-lk-saved-rx-name">' + escapeHtml(label) + '</span>' +
+        '</div>' +
+        '<div class="pos-lk-saved-rx-lines">RE: ' + escapeHtml(reLine) + ' · LE: ' + escapeHtml(leLine) +
+        (row.pd ? ' · PD ' + escapeHtml(String(row.pd)) : '') +
+        '</div>' +
+        '<button type="button" class="btn sm primary pos-lk-saved-rx-use" data-saved-rx-id="' +
+        escapeHtml(String(row.test_id)) + '">Use this</button>' +
+        '</div>'
+      )
+    }).join('')
+    return '<div class="pos-lk-saved-rx-picker">' + items + '</div>'
+  }
+
+  function applySavedRxToLensWizard (row) {
+    if (!row) return
+    lensWizard.rx = lensWizard.rx || {
+      od: { sph: '', cyl: '', axis: '', plano: false },
+      os: { sph: '', cyl: '', axis: '', plano: false },
+      pd: '',
+      doctor: ''
+    }
+    lensWizard.rx.od.sph = row.re_sph != null ? String(row.re_sph) : ''
+    lensWizard.rx.od.cyl = row.re_cyl != null ? String(row.re_cyl) : ''
+    lensWizard.rx.od.axis = row.re_axis != null ? String(row.re_axis) : ''
+    lensWizard.rx.os.sph = row.le_sph != null ? String(row.le_sph) : ''
+    lensWizard.rx.os.cyl = row.le_cyl != null ? String(row.le_cyl) : ''
+    lensWizard.rx.os.axis = row.le_axis != null ? String(row.le_axis) : ''
+    if (row.re_add != null) lensWizard.rx.od.add = String(row.re_add)
+    if (row.le_add != null) lensWizard.rx.os.add = String(row.le_add)
+    lensWizard.rx.pd = row.pd != null ? String(row.pd) : ''
+    lensWizard.savedTestId = row.test_id
+    lensWizard.powerMode = 'manual'
+    if (typeof cosmosToastSuccess === 'function') {
+      cosmosToastSuccess('Saved prescription applied.')
+    }
+    renderLensStep()
+  }
+
+  async function loadLensSavedRxList () {
+    if (!posSelectedCustomerId || posSelectedCustomerId <= 0) {
+      lensWizard.savedRxList = []
+      lensWizard.savedRxLoaded = true
+      lensWizard.savedRxLoadError = null
+      if (typeof cosmosToastWarn === 'function') {
+        cosmosToastWarn('Link a Cx customer first.')
+      }
+      renderLensStep()
+      return
+    }
+    lensWizard.savedRxLoading = true
+    lensWizard.savedRxLoadError = null
+    renderLensStep()
+    try {
+      var session = getPosSession()
+      var res = await apiGet(
+        '/api/pos/customers/' + encodeURIComponent(String(posSelectedCustomerId)) + '/prescriptions/for-pos',
+        session && session.token
+      )
+      lensWizard.savedRxList = (res && res.data) || []
+      lensWizard.savedRxLoaded = true
+    } catch (err) {
+      lensWizard.savedRxList = []
+      lensWizard.savedRxLoaded = true
+      lensWizard.savedRxLoadError = (err && err.message) || 'Could not load prescriptions'
+      if (typeof cosmosToastError === 'function') cosmosToastError(lensWizard.savedRxLoadError)
+    } finally {
+      lensWizard.savedRxLoading = false
+      renderLensStep()
     }
   }
 
@@ -8622,6 +8924,11 @@
       pkg: null,
       addonIds: [],
       powerMode: null,
+      savedRxList: [],
+      savedRxLoading: false,
+      savedRxLoaded: false,
+      savedRxLoadError: null,
+      savedTestId: null,
       brandFilter: 'all',
       rx: { od: { sph: '', cyl: '', axis: '', plano: false }, os: { sph: '', cyl: '', axis: '', plano: false }, pd: '', doctor: '' }
     }

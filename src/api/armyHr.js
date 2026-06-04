@@ -65,6 +65,8 @@ const {
   verifyEmployeeDocument,
   getEmployeeDashboardStats
 } = require('../services/armyEmployeeRepository');
+const mountArmyOpsRoutes = require('./armyOpsRoutes');
+const { getOpsMeta } = require('../services/armyOpsRepository');
 
 const router = express.Router();
 
@@ -242,6 +244,7 @@ router.get('/meta/statuses', ...armyHrMetaView, async (req, res, next) => {
         employee_document_types: getArmyEmployeeDocumentTypeCatalog(),
         employee_onboarding_items: getArmyEmployeeOnboardingItemCatalog(),
         employees_tables_ready: await isEmployeesTablesReady(),
+        ...(await getOpsMeta()),
         stores: await listHiringStores(),
         db_ready: await isHiringTablesReady()
       }
@@ -651,5 +654,7 @@ router.patch('/employees/:id/documents/:docId/verify', ...staffEdit, async (req,
     return handleServiceError(err, res, next);
   }
 });
+
+mountArmyOpsRoutes(router, { handleServiceError });
 
 module.exports = router;

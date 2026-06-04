@@ -67,10 +67,23 @@ Migration **86**:
 - `npm run gatepass:expire`  
 - Uses IST `expiry_at` already set at check-in  
 
-## Implementation files (planned)
+## Implementation files
 
-- `sql/migrations/86_gatepass_phase3_ops.sql`  
-- `src/api/gatepass.js` (extend)  
-- `StorePilot_Prototype.html`, `src/public/js/storepilot-prototype.js`, CSS  
-- `CommandUnit_Prototype.html`, `src/public/js/command-unit-prototype.js` (store VMS block)  
-- `src/config/permissionsCatalogue.js` (if `gatepass.config` added)
+| File | Status |
+|------|--------|
+| `sql/migrations/86_gatepass_phase3_ops.sql` | Done — run `npm run migrate:86-gatepass-phase3` |
+| `src/api/gatepass.js` | Done — settings GET/PUT, assign PATCH |
+| `src/config/gatepassVmsCatalog.js` | Done |
+| `StorePilot_Prototype.html`, `storepilot-gatepass.js`, `storepilot-prototype.js`, `storepilot-theme.css` | Done — queue page, sidebar widget, modals |
+| `CommandUnit_Prototype.html`, `command-unit-prototype.js` | Done — **Visitor settings** tab on store detail |
+| `scripts/gatepass-expire-visitors.js` | Done — `npm run gatepass:expire` |
+
+**Design:** Pencil skipped per user — UI matches POS gatepass widget patterns.
+
+## Verify
+
+1. `npm run migrate:86-gatepass-phase3` then restart API  
+2. Store Pilot: nav **Visitor queue** (`gatepass.view`); check-in / assign (`gatepass.checkin`, `gatepass.action`)  
+3. Sidebar widget polls every 30s  
+4. Command Unit: open store → **Visitor settings** → save overrides (`command_unit.stores.edit`)  
+5. Cron: `npm run gatepass:expire`

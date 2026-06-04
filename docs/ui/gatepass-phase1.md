@@ -75,6 +75,6 @@ Live visitor queue per store: staff check-in, search/select visitors via shared 
 
 | Phase | Status |
 |-------|--------|
-| 3 — SP Visitors page, assign staff, expiry job, CU VMS | Next |
-| 4 — SP sidebar widget, `cosmos-cx-search` embed | After 3 |
+| 3 — SP Visitors page, assign staff, expiry job, CU VMS | Done |
+| 4 — SP sidebar widget, `cosmos-cx-search` embed | Done |
 | 5 — Self check-in via **Eyewoot Go** (not standalone PWA) | Last |

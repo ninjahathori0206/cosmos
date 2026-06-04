@@ -26,7 +26,8 @@ const { getTreasuryLedgerMetaForApi } = require('../config/treasuryLedgerCatalog
 const { getPaymentMachineProviderCatalog } = require('../config/paymentMachineProviderCatalog')
 const { MEMBERSHIP_CAPABILITY_GROUPS } = require('../config/membershipCapabilityGroups');
 const { getMembershipDependentRelationshipsForApi } = require('../config/membershipDependentRelationshipsCatalog');
-const { getGatepassPurposeCatalog } = require('../config/gatepassPurposeCatalog');
+const { getGatepassPurposeCatalogAsync } = require('../config/gatepassPurposeCatalog');
+const { getCosmosTimeSnapshot } = require('../services/cosmosTimeHealthService');
 
 const router = express.Router();
 
@@ -210,10 +211,15 @@ router.get(
 
 router.get(
   '/gatepass-purposes',
-  requireAnyModule(['pos', 'storepilot']),
-  requirePermission('gatepass.view', 'gatepass.checkin'),
-  (req, res) => {
-    res.json({ success: true, data: getGatepassPurposeCatalog() });
+  requireAnyModule(['pos', 'storepilot', 'cx']),
+  requirePermission('gatepass.view', 'gatepass.checkin', 'cx.customers.view', 'cx.admin'),
+  async (req, res, next) => {
+    try {
+      const data = await getGatepassPurposeCatalogAsync({ activeOnly: true });
+      res.json({ success: true, data });
+    } catch (err) {
+      return next(err);
+    }
   }
 );
 
@@ -223,6 +229,29 @@ router.get(
   (req, res) => {
     const { getReadingPowerCatalog } = require('../config/readingPowersCatalog');
     res.json({ success: true, data: getReadingPowerCatalog() });
+  }
+);
+
+router.get(
+  '/rx-modal-catalog',
+  requireAnyModule(['command_unit', 'foundry', 'storepilot', 'pos', 'cx', 'finance', 'army']),
+  (req, res) => {
+    const { getRxModalCatalog } = require('../config/rxModalCatalog');
+    res.json({ success: true, data: getRxModalCatalog() });
+  }
+);
+
+router.get(
+  '/cosmos-time',
+  requireAnyModule(['command_unit', 'foundry', 'storepilot', 'pos', 'cx', 'finance', 'army']),
+  async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      const data = await getCosmosTimeSnapshot();
+      res.json({ success: true, data: data });
+    } catch (err) {
+      return next(err);
+    }
   }
 );
 

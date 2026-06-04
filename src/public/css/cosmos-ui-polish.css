@@ -1477,6 +1477,26 @@ body.cosmos-app-shell .cosmos-app-scroll:has(.page.active .sp-page-body) > .page
   display: none !important;
 }
 
+.cosmos-module-hub-link {
+  display: block;
+  width: 100%;
+  padding: 8px 14px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  transition: color 0.15s ease;
+}
+.cosmos-module-hub-link:hover {
+  color: rgba(255, 255, 255, 0.92);
+}
+.cosmos-module-hub-link:focus-visible {
+  outline: 2px solid rgba(139, 92, 246, 0.65);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .cosmos-sidebar-footer-modules {
   width: 100%;
   display: flex;

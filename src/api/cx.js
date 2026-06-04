@@ -2,7 +2,12 @@ const express = require('express')
 const sql = require('mssql')
 const { getPool } = require('../config/db')
 const { authJwt } = require('../middleware/authJwt')
-const { requireModule, requireCxPermission } = require('../middleware/authorize')
+const {
+  requireModule,
+  requireCxPermission,
+  requireAnyModule,
+  requirePermission
+} = require('../middleware/authorize')
 const orderService = require('../services/orderService')
 const { grantCustomerMembership } = require('../services/membershipGrantService')
 const {
@@ -477,6 +482,55 @@ router.post('/customers/:id/membership', authJwt, requireModule('cx'), requireCx
    STAFF: Eye Tests — enter prescription for a customer
 ══════════════════════════════════════════════════════════════ */
 
+function mapEyeTestInsertPayload (body, defaults) {
+  const b = body || {}
+  return {
+    customerId: defaults.customerId,
+    visitorId: defaults.visitorId ?? null,
+    familyNameId: b.family_name_id != null ? parseInt(String(b.family_name_id), 10) : null,
+    patientName: b.patient_name != null ? String(b.patient_name).trim() || null : defaults.patientName ?? null,
+    testedAt: b.tested_at || defaults.testedAt || wallClockIso(),
+    storeId: b.store_id != null ? parseInt(String(b.store_id), 10) : defaults.storeId ?? null,
+    actorUserId: defaults.actorUserId ?? null,
+    reSph: b.re_sph ?? null,
+    reCyl: b.re_cyl ?? null,
+    reAxis: b.re_axis ?? null,
+    reAdd: b.re_add ?? null,
+    reVa: b.re_va ?? null,
+    leSph: b.le_sph ?? null,
+    leCyl: b.le_cyl ?? null,
+    leAxis: b.le_axis ?? null,
+    leAdd: b.le_add ?? null,
+    leVa: b.le_va ?? null,
+    pd: b.pd ?? null,
+    lensType: b.lens_type ?? null,
+    notes: b.notes ?? null
+  }
+}
+
+function mapEyeTestForPos (row) {
+  if (!row) return null
+  const primaryName = row.patient_name || null
+  const familyName = row.family_name || null
+  return {
+    test_id: row.test_id,
+    tested_at: row.tested_at,
+    patient_name: primaryName || familyName || null,
+    family_name: familyName,
+    family_name_id: row.family_name_id,
+    re_sph: row.re_sph,
+    re_cyl: row.re_cyl,
+    re_axis: row.re_axis,
+    re_add: row.re_add,
+    le_sph: row.le_sph,
+    le_cyl: row.le_cyl,
+    le_axis: row.le_axis,
+    le_add: row.le_add,
+    pd: row.pd,
+    lens_type: row.lens_type
+  }
+}
+
 /** POST /api/cx/customers/:id/eye-tests — staff enters prescription */
 router.post('/customers/:id/eye-tests', authJwt, requireModule('cx'), requireCxPermission('cx.eye_tests.create'), async (req, res, next) => {
   try {
@@ -484,44 +538,32 @@ router.post('/customers/:id/eye-tests', authJwt, requireModule('cx'), requireCxP
     const customerId = parseInt(req.params.id, 10)
     if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
 
-    const {
-      tested_at, store_id,
-      re_sph, re_cyl, re_axis, re_add, re_va,
-      le_sph, le_cyl, le_axis, le_add, le_va,
-      pd, lens_type, notes
-    } = req.body || {}
-
-    const testedDate = tested_at || wallClockIso()
-
-    const r = await pool.request()
-      .input('cid',      customerId)
-      .input('uid',      req.user.user_id || null)
-      .input('sid',      store_id || req.user.store_id || null)
-      .input('tested_at', testedDate)
-      .input('re_sph',   re_sph   || null).input('re_cyl',  re_cyl  || null)
-      .input('re_axis',  re_axis  || null).input('re_add',  re_add  || null)
-      .input('re_va',    re_va    || null)
-      .input('le_sph',   le_sph   || null).input('le_cyl',  le_cyl  || null)
-      .input('le_axis',  le_axis  || null).input('le_add',  le_add  || null)
-      .input('le_va',    le_va    || null)
-      .input('pd',       pd       || null)
-      .input('lens_type', lens_type || null)
-      .input('notes',    notes    || null)
-      .query(`
-        INSERT INTO dbo.eye_tests
-          (customer_id, tested_at, store_id, tested_by_user_id, source,
-           re_sph, re_cyl, re_axis, re_add, re_va,
-           le_sph, le_cyl, le_axis, le_add, le_va,
-           pd, lens_type, notes)
-        OUTPUT INSERTED.test_id
-        VALUES
-          (@cid, @tested_at, @sid, @uid, N'STAFF',
-           @re_sph, @re_cyl, @re_axis, @re_add, @re_va,
-           @le_sph, @le_cyl, @le_axis, @le_add, @le_va,
-           @pd, @lens_type, @notes)
-      `)
-    return res.status(201).json({ success: true, test_id: r.recordset[0].test_id })
+    const payload = mapEyeTestInsertPayload(req.body, {
+      customerId,
+      visitorId: req.body && req.body.visitor_id != null ? parseInt(String(req.body.visitor_id), 10) : null,
+      storeId: req.user && req.user.store_id != null ? Number(req.user.store_id) : null,
+      actorUserId: req.user && req.user.user_id != null ? Number(req.user.user_id) : null
+    })
+    const row = await cxService.insertStaffEyeTest(pool, payload)
+    const lif = req.body && req.body.lifestyle
+    if (customerId && lif && typeof lif === 'object') {
+      try {
+        await cxService.upsertRxModalLifestyle(
+          pool,
+          customerId,
+          lif,
+          req.user && req.user.user_id != null ? Number(req.user.user_id) : null
+        )
+      } catch (_) {
+        /* Rx saved; lifestyle best-effort */
+      }
+    }
+    return res.status(201).json({ success: true, test_id: row && row.test_id })
   } catch (err) {
+    const msg = String(err.message || '')
+    if (msg.includes('required') || msg.includes('family_name')) {
+      return res.status(400).json({ success: false, message: msg })
+    }
     return next(err)
   }
 })
@@ -743,6 +785,48 @@ router.get(
   }
 )
 
+/** GET /api/cx/customers/:id/prescriptions/for-pos — lightweight list for POS Saved Power */
+router.get(
+  '/customers/:id/prescriptions/for-pos',
+  authJwt,
+  requireAnyModule(['cx', 'pos']),
+  requirePermission('cx.customers.view', 'pos.customers.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit || '30'), 10) || 30))
+      const rows = await cxService.getCustomerEyeTests(pool, customerId, limit)
+      return res.json({
+        success: true,
+        data: rows.map(mapEyeTestForPos).filter(Boolean)
+      })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
+/** GET /api/cx/customers/:id/family-names — for Add Rx patient picker */
+router.get(
+  '/customers/:id/family-names',
+  authJwt,
+  requireAnyModule(['cx', 'pos', 'storepilot']),
+  requirePermission('cx.customers.view', 'pos.customers.view', 'gatepass.view'),
+  async (req, res, next) => {
+    try {
+      const customerId = parseCustomerId(req)
+      if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+      const pool = await getPool()
+      const rows = await cxService.listCustomerFamilyNameRows(pool, customerId)
+      return res.json({ success: true, data: rows })
+    } catch (err) {
+      return next(err)
+    }
+  }
+)
+
 router.get(
   '/customers/:id/orders',
   authJwt,
@@ -837,22 +921,24 @@ router.put(
   '/customers/:id/lifestyle',
   authJwt,
   requireModule('cx'),
-  requireCxPermission('cx.customers.edit', 'cx.admin'),
+  requirePermission('cx.customers.edit', 'cx.admin', 'cx.eye_tests.create', 'gatepass.action'),
   async (req, res, next) => {
     try {
       const customerId = parseCustomerId(req)
       if (!customerId) return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
       const b = req.body || {}
       const pool = await getPool()
-      const row = await cxService.upsertCustomerLifestyle(pool, {
-        customerId,
-        screenHrs: b.screen_hrs,
-        framePref: b.frame_pref,
-        budgetMin: b.budget_min,
-        budgetMax: b.budget_max,
-        notes: b.notes,
-        actorUserId: req.user?.user_id || null
-      })
+      const row = b.lifestyle && typeof b.lifestyle === 'object'
+        ? await cxService.upsertRxModalLifestyle(pool, customerId, b.lifestyle, req.user?.user_id || null)
+        : await cxService.upsertCustomerLifestyle(pool, {
+          customerId,
+          screenHrs: b.screen_hrs,
+          framePref: b.frame_pref,
+          budgetMin: b.budget_min,
+          budgetMax: b.budget_max,
+          notes: b.notes,
+          actorUserId: req.user?.user_id || null
+        })
       return res.json({ success: true, data: row })
     } catch (err) {
       return next(err)

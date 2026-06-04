@@ -1,0 +1,135 @@
+/* Cosmos time drift monitor — global modal on all shells */
+
+.cosmos-time-drift-overlay {
+  z-index: 10050;
+}
+
+.cosmos-time-drift-overlay .modal {
+  max-width: min(520px, 94vw);
+}
+
+.cosmos-time-drift-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text1, #0f172a);
+}
+
+.cosmos-time-drift-sub {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text2, #475569);
+}
+
+.cosmos-time-drift-clocks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 560px) {
+  .cosmos-time-drift-clocks {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cosmos-time-drift-clock {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--bg, #f8fafc);
+}
+
+.cosmos-time-drift-clock-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text3, #64748b);
+  margin-bottom: 4px;
+}
+
+.cosmos-time-drift-clock-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text1, #0f172a);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.cosmos-time-drift-issues {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--goldL, #fffbeb);
+  border: 1px solid var(--gold, #fcd34d);
+  color: var(--text1, #0f172a);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.cosmos-time-drift-issues ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.cosmos-time-drift-fix {
+  margin: 0 0 16px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text2, #475569);
+}
+
+.cosmos-time-drift-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cosmos-time-cu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .cosmos-time-cu-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cosmos-time-cu-skew-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  font-size: 13px;
+}
+
+.cosmos-time-cu-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cosmos-time-cu-badge--ok {
+  background: var(--greenL, #dcfce7);
+  color: var(--green, #166534);
+}
+
+.cosmos-time-cu-badge--warn {
+  background: var(--goldL, #fffbeb);
+  color: #92400e;
+}
+
+.cosmos-time-cu-badge--bad {
+  background: var(--redL, #fee2e2);
+  color: var(--red, #b91c1c);
+}

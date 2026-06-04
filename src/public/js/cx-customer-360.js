@@ -75,6 +75,9 @@ function cx360Path (customerId, tab) {
 }
 
 function cx360Empty (icon, headline, sub, actionHtml) {
+  var subBlock = sub
+    ? '<div style="font-size:13px;color:var(--text2);margin-bottom:16px">' + escCx(sub) + '</div>'
+    : ''
   return (
     '<div class="empty">' +
     '<div class="empty-ic">' +
@@ -83,9 +86,7 @@ function cx360Empty (icon, headline, sub, actionHtml) {
     '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">' +
     escCx(headline) +
     '</div>' +
-    '<div style="font-size:13px;color:var(--text2);margin-bottom:16px">' +
-    escCx(sub) +
-    '</div>' +
+    subBlock +
     (actionHtml || '') +
     '</div>'
   )
@@ -123,25 +124,14 @@ function cx360UpdateShellLayout () {
   var mobile = cx360IsMobile()
   document.body.classList.toggle('cx360-mobile', mobile)
   var bc = document.getElementById('cx-bc')
-  var breadcrumb = document.getElementById('cx-breadcrumb')
-  if (bc && _cx360.header) {
-    bc.textContent = mobile ? 'Customer 360' : _cx360.header.full_name || 'Customer'
+  if (!bc) return
+  if (!_cx360.header) {
+    bc.textContent = mobile ? 'Customer 360' : 'Customer'
+    return
   }
-  if (breadcrumb && !mobile && _cx360.header) {
-    breadcrumb.innerHTML =
-      '<span class="breadcrumb-prefix">CX <span style="color:var(--text3);margin:0 4px">›</span></span>' +
-      '<button type="button" style="background:none;border:none;color:var(--acc);cursor:pointer;font:inherit;font-size:13px" id="cx360-bc-link">Customers</button>' +
-      '<span style="color:var(--text3);margin:0 4px">›</span>' +
-      '<span class="cur">' +
-      escCx(_cx360.header.full_name || 'Customer') +
-      '</span>'
-    var link = document.getElementById('cx360-bc-link')
-    if (link) {
-      link.addEventListener('click', function () {
-        window.cx360Back()
-      })
-    }
-  }
+  bc.textContent = mobile
+    ? 'Customer 360'
+    : (_cx360.header.full_name || 'Customer')
 }
 
 function cx360RenderHeaderUi (h) {
@@ -688,11 +678,7 @@ async function cx360RenderVisits () {
   var res = await cxApiFetch('GET', '/api/cx/customers/' + _cx360.customerId + '/visits')
   var rows = res.data || []
   if (!rows.length) {
-    return cx360Empty(
-      '🏪',
-      'No store visits yet',
-      'Visits appear when this customer checks in via GatePass at any store.'
-    )
+    return cx360Empty('🏪', 'No store visits yet', '')
   }
   if (cx360IsMobile()) {
     return rows
@@ -747,45 +733,118 @@ async function cx360RenderVisits () {
   )
 }
 
+function cx360RxRowHtml (t) {
+  var re = [t.re_sph, t.re_cyl, t.re_axis, t.re_add].filter(function (x) {
+    return x != null && x !== ''
+  })
+  var le = [t.le_sph, t.le_cyl, t.le_axis, t.le_add].filter(function (x) {
+    return x != null && x !== ''
+  })
+  return (
+    '<div class="cx360-rx-row" style="padding:12px 0;border-bottom:1px solid var(--border)">' +
+    '<div style="font-weight:600">' +
+    escCx(fmtCxDateOnly(t.tested_at || t.created_at)) +
+    (t.store_name ? ' · ' + escCx(t.store_name) : '') +
+    (t.visitor_id ? ' · Visit #' + escCx(String(t.visitor_id)) : '') +
+    '</div>' +
+    '<div class="td2" style="font-size:12px;margin-top:4px">RE: ' +
+    escCx(re.length ? re.join(' / ') : '—') +
+    ' · LE: ' +
+    escCx(le.length ? le.join(' / ') : '—') +
+    (t.pd ? ' · PD ' + escCx(String(t.pd)) : '') +
+    '</div></div>'
+  )
+}
+
+function cx360GroupPrescriptions (rows, primaryName) {
+  var primary = []
+  var byFamily = {}
+  ;(rows || []).forEach(function (t) {
+    if (t.family_name_id && t.family_name) {
+      var key = String(t.family_name_id)
+      if (!byFamily[key]) byFamily[key] = { name: t.family_name, rows: [] }
+      byFamily[key].rows.push(t)
+    } else {
+      primary.push(t)
+    }
+  })
+  var sections = []
+  var pLabel = primaryName || 'Customer'
+  if (primary.length) {
+    sections.push({
+      title: 'PRIMARY — ' + pLabel,
+      html: primary.map(cx360RxRowHtml).join('')
+    })
+  }
+  Object.keys(byFamily)
+    .sort(function (a, b) {
+      return String(byFamily[a].name).localeCompare(String(byFamily[b].name))
+    })
+    .forEach(function (k) {
+      var g = byFamily[k]
+      sections.push({
+        title: 'FAMILY — ' + g.name,
+        html: g.rows.map(cx360RxRowHtml).join('')
+      })
+    })
+  return sections
+}
+
+window.cx360OpenAddRxModal = function () {
+  if (typeof window.openRxModal !== 'function') return
+  var h = _cx360.header || {}
+  window.openRxModal({
+    source: 'cx',
+    customerId: _cx360.customerId,
+    customerName: h.full_name || '',
+    visitorName: null
+  })
+  window._rxModalOnSaved = function () {
+    delete _cx360.loaded.prescriptions
+    void cx360LoadTab('prescriptions')
+  }
+}
+
 async function cx360RenderPrescriptions () {
   var res = await cxApiFetch('GET', '/api/cx/customers/' + _cx360.customerId + '/prescriptions')
   var rows = res.data || []
+  var primaryName = (_cx360.header && _cx360.header.full_name) || 'Customer'
+  var canAdd = window.cosmosCxAllows(['cx.eye_tests.create'])
   if (!rows.length) {
     var addBtn = ''
-    if (window.cosmosCxAllows(['cx.eye_tests.create'])) {
+    if (canAdd) {
       addBtn =
-        '<button type="button" class="btn primary" id="cx360-add-eyetest">+ Add eye test</button>'
+        '<button type="button" class="btn primary" id="cx360-add-rx">+ Add Rx</button>'
     }
-    return cx360Empty('👓', 'No prescriptions yet', 'Record an eye test to build prescription history.', addBtn)
+    return cx360Empty('👓', 'No prescriptions yet', '', addBtn)
   }
-  var inner = rows
-    .map(function (t) {
-      var re = [t.re_sph, t.re_cyl, t.re_axis, t.re_add].filter(function (x) {
-        return x != null && x !== ''
-      })
-      var le = [t.le_sph, t.le_cyl, t.le_axis, t.le_add].filter(function (x) {
-        return x != null && x !== ''
-      })
+  var sections = cx360GroupPrescriptions(rows, primaryName)
+  if (!sections.length) {
+    sections.push({ title: 'PRESCRIPTIONS', html: rows.map(cx360RxRowHtml).join('') })
+  }
+  var inner = sections
+    .map(function (sec) {
+      if (cx360IsMobile()) {
+        return (
+          '<div class="cx360-list-card"><div class="sec">' +
+          escCx(sec.title) +
+          '</div>' +
+          sec.html +
+          '</div>'
+        )
+      }
       return (
-        '<div style="padding:12px 0;border-bottom:1px solid var(--border)">' +
-        '<div style="font-weight:600">' +
-        escCx(fmtCxDateOnly(t.tested_at || t.created_at)) +
-        (t.store_name ? ' · ' + escCx(t.store_name) : '') +
+        '<div style="margin-bottom:16px"><div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--text3);margin-bottom:8px">' +
+        escCx(sec.title) +
         '</div>' +
-        '<div class="td2" style="font-size:12px;margin-top:4px">RE: ' +
-        escCx(re.length ? re.join(' / ') : '—') +
-        ' · LE: ' +
-        escCx(le.length ? le.join(' / ') : '—') +
-        (t.pd ? ' · PD ' + escCx(String(t.pd)) : '') +
-        '</div></div>'
+        sec.html +
+        '</div>'
       )
     })
     .join('')
   return (
     '<div class="card"><div class="ch"><div class="ct">Prescriptions</div>' +
-    (window.cosmosCxAllows(['cx.eye_tests.create'])
-      ? '<button type="button" class="btn sm primary" id="cx360-add-eyetest">+ Add eye test</button>'
-      : '') +
+    (canAdd ? '<button type="button" class="btn sm primary" id="cx360-add-rx">+ Add Rx</button>' : '') +
     '</div><div class="cb">' +
     inner +
     '</div></div>'
@@ -796,7 +855,7 @@ async function cx360RenderOrders () {
   var res = await cxApiFetch('GET', '/api/cx/customers/' + _cx360.customerId + '/orders')
   var rows = res.data || []
   if (!rows.length) {
-    return cx360Empty('📦', 'No orders yet', 'Orders from POS and lab will appear here.')
+    return cx360Empty('📦', 'No orders yet', '')
   }
   if (cx360IsMobile()) {
     return (
@@ -848,7 +907,7 @@ async function cx360RenderInvoices () {
   var res = await cxApiFetch('GET', '/api/cx/customers/' + _cx360.customerId + '/invoices')
   var rows = res.data || []
   if (!rows.length) {
-    return cx360Empty('🧾', 'No invoices yet', 'Invoices are created when orders are billed.')
+    return cx360Empty('🧾', 'No invoices yet', '')
   }
   return (
     '<div class="card"><div class="tw"><table><thead><tr><th>Invoice</th><th>Store</th><th class="text-right">Amount</th><th>When</th></tr></thead><tbody>' +
@@ -936,7 +995,7 @@ async function cx360RenderCoins () {
     escCx(String(live)) +
     ' coins</div></div></div>'
   if (!ledger.length) {
-    return head + cx360Empty('🪙', 'No coin activity', 'Earn and redeem events will show in the ledger.')
+    return head + cx360Empty('🪙', 'No coin activity', '')
   }
   return (
     head +
@@ -966,16 +1025,12 @@ async function cx360RenderCoins () {
 
 async function cx360RenderOffers () {
   if (!window.cosmosCxAllows(['cx.customers.view', 'cx.offers.view'])) {
-    return cx360Empty('🎁', 'Offers not available', 'Your role cannot view customer offer assignments.')
+    return cx360Empty('🎁', 'Offers not available', '')
   }
   var res = await cxApiFetch('GET', '/api/cx/customers/' + _cx360.customerId + '/offers-assignments?active_only=0')
   var rows = res.data || []
   if (!rows.length) {
-    return cx360Empty(
-      '🎁',
-      'No assigned offers',
-      'Assign promotions from Command Unit or CX when offer management is enabled.'
-    )
+    return cx360Empty('🎁', 'No assigned offers', '')
   }
   return (
     '<div class="card"><div class="tw"><table><thead><tr><th>Offer</th><th>Assigned</th><th>Status</th></tr></thead><tbody>' +
@@ -1000,12 +1055,12 @@ async function cx360RenderOffers () {
 
 async function cx360RenderAudit () {
   if (!window.cosmosCxAllows(['cx.audit.view', 'cx.admin'])) {
-    return cx360Empty('📋', 'Audit restricted', 'Assign cx.audit.view or cx.admin to see change history.')
+    return cx360Empty('📋', 'Audit restricted', '')
   }
   var res = await cxApiFetch('GET', '/api/cx/customers/' + _cx360.customerId + '/audit')
   var rows = res.data || []
   if (!rows.length) {
-    return cx360Empty('📋', 'No audit entries', 'Profile, lifestyle, and coin changes are logged here.')
+    return cx360Empty('📋', 'No audit entries', '')
   }
   return (
     '<div class="card"><div class="tw"><table><thead><tr><th>When</th><th>Action</th><th>Detail</th><th>By</th></tr></thead><tbody>' +
@@ -1138,7 +1193,7 @@ window.cx360ApplyRoute = function (options) {
   document.querySelectorAll('.main .page').forEach(function (p) {
     p.classList.remove('active')
   })
-  document.querySelectorAll('.sidebar-nav .nav-item').forEach(function (n) {
+  document.querySelectorAll('.cosmos-tab[data-cx-page], .cosmos-btab[data-cx-page]').forEach(function (n) {
     n.classList.remove('active')
   })
   var page = document.getElementById('page-customer-360')
@@ -1158,7 +1213,7 @@ window.cx360ApplyRoute = function (options) {
   }
 
   cx360SyncDeskTabUi()
-  if (typeof window.cxCloseSidebar === 'function') window.cxCloseSidebar()
+  if (window.cosmosResetAppScroll) window.cosmosResetAppScroll()
 
   void cx360LoadHeader().then(function () {
     var loadTab = _cx360.tab
@@ -1177,7 +1232,9 @@ window.cx360Teardown = function () {
 window.cx360Back = function () {
   window.cx360Teardown()
   document.body.classList.add('cx-page-customers')
-  var navEl = document.querySelector('.sidebar-nav .nav-item[data-cx-page="customers"]')
+  var navEl =
+    document.querySelector('.cosmos-topnav-tabs .cosmos-tab[data-cx-page="customers"]') ||
+    document.querySelector('.cosmos-bottom-tabs .cosmos-btab[data-cx-page="customers"]')
   if (window.history.length > 1) {
     window.history.pushState({ module: 'cx', page: 'customers' }, '', '/cx/customers')
   }
@@ -1220,11 +1277,8 @@ function cx360InitOnce () {
   }
 
   document.addEventListener('click', function (e) {
-    if (e.target.id === 'cx360-add-eyetest') {
-      var h = _cx360.header || {}
-      if (typeof window.openEyeTestModal === 'function') {
-        window.openEyeTestModal(_cx360.customerId, h.full_name || '')
-      }
+    if (e.target.id === 'cx360-add-rx' || e.target.id === 'cx360-add-eyetest') {
+      window.cx360OpenAddRxModal()
     }
   })
 

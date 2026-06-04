@@ -9,6 +9,9 @@
     pipeline: '/army/hr/pipeline',
     employees: '/army/hr/employees'
   };
+  if (window.__cosmosArmyHrRegistry && window.__cosmosArmyHrRegistry.paths) {
+    Object.assign(ARMY_PAGE_PATHS, window.__cosmosArmyHrRegistry.paths);
+  }
 
   var _user = null;
   var _meta = { job_opening_statuses: [], application_statuses: [], db_ready: false };
@@ -600,6 +603,13 @@
     if (p.indexOf('/army/hr/interview-templates') === 0) return 'interview-templates';
     if (p.indexOf('/army/hr/pipeline') === 0) return 'pipeline';
     if (p.indexOf('/army/hr/employees') === 0) return 'employees';
+    var reg = window.__cosmosArmyHrRegistry;
+    if (reg && reg.pathMatchers) {
+      for (var i = 0; i < reg.pathMatchers.length; i++) {
+        var m = reg.pathMatchers[i];
+        if (p.indexOf(m[0]) === 0) return m[1];
+      }
+    }
     return 'dashboard';
   }
 
@@ -625,6 +635,9 @@
       pipeline: 'Candidate Pipeline',
       employees: 'Employees'
     };
+    if (window.__cosmosArmyHrRegistry && window.__cosmosArmyHrRegistry.labels) {
+      Object.assign(labels, window.__cosmosArmyHrRegistry.labels);
+    }
     var bc = document.getElementById('army-breadcrumb');
     if (bc) bc.textContent = labels[pageKey] || 'Dashboard';
 
@@ -642,6 +655,10 @@
       syncEmployeesNewBtn();
       loadEmployeeStats();
       loadEmployees();
+    }
+    var opsLoaders = window.__cosmosArmyHrRegistry && window.__cosmosArmyHrRegistry.loaders;
+    if (opsLoaders && typeof opsLoaders[pageKey] === 'function') {
+      opsLoaders[pageKey]();
     }
   }
 
@@ -1959,7 +1976,6 @@
       return;
     }
     initUserChrome();
-    bindNav();
     bindFilters();
     bindGlobalActions();
     if (typeof window.initCosmosModuleSwitchFooter === 'function') {
@@ -1970,6 +1986,15 @@
     } catch (err) {
       cosmosToastError(err.message);
     }
+    window.__cosmosArmyHrHasPerm = hasPerm;
+    window.__cosmosArmyHrApiGet = apiGet;
+    window.__cosmosArmyHrApiPost = apiPost;
+    window.__cosmosArmyHrApiPatch = apiPatch;
+    window.__cosmosArmyHrRebindNav = bindNav;
+    if (typeof window.__cosmosArmyHrOpsInit === 'function') {
+      window.__cosmosArmyHrOpsInit(_meta);
+    }
+    bindNav();
     var initial = pageFromPath();
     if (window.location.pathname === '/army/hr') {
       window.history.replaceState({ page: initial }, '', ARMY_PAGE_PATHS[initial]);

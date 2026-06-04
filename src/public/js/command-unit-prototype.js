@@ -14,6 +14,7 @@ const COMMAND_UNIT_PAGE_PATHS = {
   promotion: '/command-unit/promotion',
   leavetypes: '/command-unit/leavetypes',
   'store-types': '/command-unit/store-types',
+  'cx-settings': '/command-unit/cx-settings',
   'foundry-settings': '/command-unit/foundry-settings',
   'cu-suppliers': '/command-unit/cu-suppliers',
   'cu-maker-master': '/command-unit/cu-maker-master',
@@ -731,6 +732,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (tabTablet) {
       tabTablet.style.display = cuHasPermission('command_unit.tablets.view') ? '' : 'none';
     }
+    const tabVms = document.getElementById('cu-store-detail-tab-vms');
+    if (tabVms) {
+      tabVms.style.display =
+        cuHasPermission('command_unit.stores.view') || cuHasPermission('gatepass.view') ? '' : 'none';
+    }
     const addTabletStoreDetail = document.getElementById('cu-store-detail-add-tablet-btn');
     if (addTabletStoreDetail) {
       addTabletStoreDetail.style.display = cuHasPermission('command_unit.tablets.create') ? '' : 'none';
@@ -800,6 +806,273 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadStoreDetailTablets(sid);
   }
   window.cuReloadStoreModalTablets = cuReloadStoreModalTablets;
+
+  function cuGatepassVmsCanView() {
+    return cuHasPermission('command_unit.stores.view') || cuHasPermission('gatepass.view');
+  }
+
+  function cuGatepassVmsCanEdit() {
+    return cuHasPermission('command_unit.stores.edit');
+  }
+
+  function cuRenderGatepassVmsForm(payload) {
+    const form = document.getElementById('cu-gatepass-vms-form');
+    const saveBtn = document.getElementById('cu-gatepass-vms-save-btn');
+    if (!form) return;
+    form.innerHTML = '';
+    const items = (payload && payload.settings) || [];
+    if (!items.length) {
+      form.innerHTML = '<p class="td-muted">No visitor settings catalog.</p>';
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'form-row';
+      row.style.marginBottom = '14px';
+      row.dataset.settingKey = item.key;
+      const label = document.createElement('label');
+      label.className = 'form-label';
+      label.textContent = item.label || item.key;
+      label.setAttribute('for', 'cu-vms-' + item.key.replace(/\./g, '-'));
+      row.appendChild(label);
+      if (item.description) {
+        const hint = document.createElement('div');
+        hint.className = 'td-muted';
+        hint.style.fontSize = '12px';
+        hint.style.marginBottom = '6px';
+        hint.textContent = item.description;
+        row.appendChild(hint);
+      }
+      const inputId = 'cu-vms-' + item.key.replace(/\./g, '-');
+      let input;
+      if (item.type === 'bool') {
+        input = document.createElement('select');
+        input.id = inputId;
+        input.className = 'form-input';
+        input.innerHTML =
+          '<option value="">Use global default</option>'
+          + '<option value="1">Enabled</option>'
+          + '<option value="0">Disabled</option>';
+        if (item.has_store_override) {
+          input.value = item.effective ? '1' : '0';
+        }
+      } else {
+        input = document.createElement('input');
+        input.type = 'number';
+        input.id = inputId;
+        input.className = 'form-input';
+        input.min = '1';
+        input.placeholder = 'Use global default';
+        if (item.has_store_override && item.store_value != null) {
+          input.value = String(item.store_value);
+        }
+      }
+      input.dataset.cuVmsKey = item.key;
+      input.dataset.cuVmsType = item.type;
+      if (!cuGatepassVmsCanEdit()) input.disabled = true;
+      row.appendChild(input);
+      const eff = document.createElement('div');
+      eff.className = 'td-muted';
+      eff.style.fontSize = '12px';
+      eff.style.marginTop = '4px';
+      const effLabel =
+        item.type === 'bool'
+          ? (item.effective ? 'Enabled' : 'Disabled')
+          : String(item.effective);
+      const globalHint =
+        item.global_value != null && String(item.global_value).trim() !== ''
+          ? ' · Global: ' + (item.type === 'bool'
+            ? (item.global_value === '1' || item.global_value === 'true' ? 'Enabled' : 'Disabled')
+            : item.global_value)
+          : '';
+      eff.textContent = 'Effective now: ' + effLabel + globalHint;
+      row.appendChild(eff);
+      form.appendChild(row);
+    });
+    if (saveBtn) saveBtn.hidden = !cuGatepassVmsCanEdit();
+  }
+
+  async function cuLoadGatepassVms() {
+    const md = document.getElementById('modal-store-detail');
+    const errEl = document.getElementById('cu-gatepass-vms-error');
+    if (!md || !cuGatepassVmsCanView()) {
+      if (errEl) errEl.textContent = 'No permission to view visitor settings.';
+      return;
+    }
+    const sid = Number(md.dataset.storeId);
+    if (!Number.isFinite(sid) || sid <= 0) {
+      if (errEl) errEl.textContent = 'Invalid store.';
+      return;
+    }
+    if (errEl) errEl.textContent = '';
+    const form = document.getElementById('cu-gatepass-vms-form');
+    if (form) {
+      form.innerHTML = '';
+      for (let i = 0; i < 3; i += 1) {
+        const sk = document.createElement('div');
+        sk.className = 'form-row';
+        sk.style.marginBottom = '14px';
+        sk.innerHTML =
+          '<div class="skeleton-line" style="height:14px;width:40%;margin-bottom:8px"></div>'
+          + '<div class="skeleton-line" style="height:36px;width:100%"></div>';
+        form.appendChild(sk);
+      }
+    }
+    try {
+      const payload = await apiGet('/api/gatepass/settings?storeId=' + encodeURIComponent(sid));
+      cuRenderGatepassVmsForm(payload);
+    } catch (err) {
+      if (errEl) errEl.textContent = err.message || 'Failed to load visitor settings.';
+      if (form) form.innerHTML = '';
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to load visitor settings.');
+    }
+  }
+  window.cuLoadGatepassVms = cuLoadGatepassVms;
+
+  let _cuCosmosTimePoll = null;
+
+  function cuCosmosTimeSkewBadge(minutes, threshold) {
+    const t = Number(threshold) || 5;
+    const m = minutes == null ? null : Number(minutes);
+    if (m == null) return '<span class="cosmos-time-cu-badge cosmos-time-cu-badge--ok">—</span>';
+    const abs = Math.abs(m);
+    if (abs <= t) return '<span class="cosmos-time-cu-badge cosmos-time-cu-badge--ok">OK (' + abs + ' min)</span>';
+    if (abs <= t * 2) return '<span class="cosmos-time-cu-badge cosmos-time-cu-badge--warn">' + abs + ' min</span>';
+    return '<span class="cosmos-time-cu-badge cosmos-time-cu-badge--bad">' + abs + ' min</span>';
+  }
+
+  function cuFmtIstWire(wire) {
+    if (!wire) return '—';
+    if (typeof cosmosFmtDateTime === 'function') return cosmosFmtDateTime(wire);
+    return String(wire).replace('T', ' ');
+  }
+
+  function cuRenderCosmosTime(data) {
+    const clocksEl = document.getElementById('cu-cosmos-time-clocks');
+    const skewEl = document.getElementById('cu-cosmos-time-skews');
+    const thresholdEl = document.getElementById('cu-cosmos-time-threshold');
+    if (!clocksEl || !skewEl) return;
+    const threshold = Number(data.threshold_minutes) || 5;
+    const deviceWire = data.device_ist_wire
+      || (window.cosmosTimeMonitor && window.cosmosTimeMonitor.deviceIstWire
+        ? window.cosmosTimeMonitor.deviceIstWire()
+        : null);
+    const skews = data.skews || {
+      device_server_minutes: window.cosmosTimeMonitor
+        ? window.cosmosTimeMonitor.skewMinutes(deviceWire, data.server_ist_wire || data.node_ist_wire)
+        : null,
+      device_sql_minutes: window.cosmosTimeMonitor
+        ? window.cosmosTimeMonitor.skewMinutes(deviceWire, data.sql_ist_wire)
+        : null,
+      node_sql_minutes: data.skew_node_sql_minutes
+    };
+
+    clocksEl.innerHTML =
+      '<div class="cosmos-time-drift-clock"><div class="cosmos-time-drift-clock-label">This device</div>'
+      + '<div class="cosmos-time-drift-clock-value">' + cuFmtIstWire(deviceWire) + '</div></div>'
+      + '<div class="cosmos-time-drift-clock"><div class="cosmos-time-drift-clock-label">Node server</div>'
+      + '<div class="cosmos-time-drift-clock-value">' + cuFmtIstWire(data.server_ist_wire || data.node_ist_wire) + '</div></div>'
+      + '<div class="cosmos-time-drift-clock"><div class="cosmos-time-drift-clock-label">SQL server</div>'
+      + '<div class="cosmos-time-drift-clock-value">' + cuFmtIstWire(data.sql_ist_wire) + '</div></div>';
+
+    skewEl.innerHTML =
+      '<div class="cosmos-time-cu-skew-row"><span>Device ↔ Server</span>' + cuCosmosTimeSkewBadge(skews.device_server_minutes, threshold) + '</div>'
+      + '<div class="cosmos-time-cu-skew-row"><span>Device ↔ SQL</span>' + cuCosmosTimeSkewBadge(skews.device_sql_minutes, threshold) + '</div>'
+      + '<div class="cosmos-time-cu-skew-row"><span>Node ↔ SQL</span>' + cuCosmosTimeSkewBadge(skews.node_sql_minutes, threshold) + '</div>';
+
+    if (thresholdEl) thresholdEl.value = String(threshold);
+
+    if (!data.healthy && Array.isArray(data.issues) && data.issues.length) {
+      skewEl.innerHTML += '<div class="alert alert-gold" style="margin-top:12px"><span class="alert-icon">!</span><div>'
+        + data.issues.map(function (item) { return '<div>' + item + '</div>'; }).join('')
+        + '</div></div>';
+    }
+  }
+
+  async function cuLoadCosmosTime() {
+    const clocksEl = document.getElementById('cu-cosmos-time-clocks');
+    if (!clocksEl) return;
+    if (typeof cosmosSkeletonCards === 'function') cosmosSkeletonCards('cu-cosmos-time-clocks', 3);
+    try {
+      const deviceWire = window.cosmosTimeMonitor && window.cosmosTimeMonitor.deviceIstWire
+        ? window.cosmosTimeMonitor.deviceIstWire()
+        : new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T').slice(0, 19);
+      const data = await apiGet('/api/settings/cosmos-time?device_ist_wire=' + encodeURIComponent(deviceWire));
+      cuRenderCosmosTime(data);
+    } catch (err) {
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Failed to load Cosmos Time');
+    }
+  }
+  window.cuLoadCosmosTime = cuLoadCosmosTime;
+
+  async function cuSaveCosmosTimeThreshold(btn) {
+    const input = document.getElementById('cu-cosmos-time-threshold');
+    const minutes = input ? Number(input.value) : NaN;
+    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 60) {
+      if (input && typeof cosmosFieldError === 'function') cosmosFieldError(input, 'Enter 1–60 minutes');
+      return;
+    }
+    if (input && typeof cosmosFieldClear === 'function') cosmosFieldClear(input);
+    if (typeof cosmosBtnLoading === 'function') cosmosBtnLoading(btn);
+    try {
+      const data = await apiPut('/api/settings/cosmos-time', { threshold_minutes: Math.round(minutes) });
+      cuRenderCosmosTime(data);
+      if (typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(btn);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Time threshold saved');
+    } catch (err) {
+      if (typeof cosmosBtnDone === 'function') cosmosBtnDone(btn);
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed');
+    }
+  }
+
+  function cuStartCosmosTimePoll() {
+    if (_cuCosmosTimePoll) return;
+    _cuCosmosTimePoll = window.setInterval(function () {
+      const tab = document.getElementById('tab-cosmos-time');
+      if (tab && tab.style.display !== 'none') void cuLoadCosmosTime();
+    }, 30000);
+  }
+
+  async function cuSaveGatepassVms() {
+    const md = document.getElementById('modal-store-detail');
+    const errEl = document.getElementById('cu-gatepass-vms-error');
+    const saveBtn = document.getElementById('cu-gatepass-vms-save-btn');
+    if (!md || !cuGatepassVmsCanEdit()) {
+      if (typeof cosmosToastWarn === 'function') cosmosToastWarn('No permission to edit visitor settings.');
+      return;
+    }
+    const sid = Number(md.dataset.storeId);
+    if (!Number.isFinite(sid) || sid <= 0) return;
+    if (errEl) errEl.textContent = '';
+    const settings = {};
+    document.querySelectorAll('#cu-gatepass-vms-form [data-cu-vms-key]').forEach((el) => {
+      const key = el.dataset.cuVmsKey;
+      const type = el.dataset.cuVmsType;
+      const raw = String(el.value || '').trim();
+      if (!raw) return;
+      if (type === 'bool') {
+        settings[key] = raw === '1';
+      } else {
+        const n = parseInt(raw, 10);
+        if (Number.isFinite(n)) settings[key] = n;
+      }
+    });
+    if (!Object.keys(settings).length) {
+      if (errEl) errEl.textContent = 'Set at least one store override to save.';
+      return;
+    }
+    if (saveBtn && typeof cosmosBtnLoading === 'function') cosmosBtnLoading(saveBtn);
+    try {
+      const payload = await apiPut('/api/gatepass/settings', { store_id: sid, settings });
+      cuRenderGatepassVmsForm(payload);
+      if (typeof cosmosToastSuccess === 'function') cosmosToastSuccess('Visitor settings saved');
+      if (saveBtn && typeof cosmosBtnSuccess === 'function') cosmosBtnSuccess(saveBtn);
+    } catch (err) {
+      if (saveBtn && typeof cosmosBtnDone === 'function') cosmosBtnDone(saveBtn);
+      if (errEl) errEl.textContent = err.message || 'Save failed';
+      if (typeof cosmosToastError === 'function') cosmosToastError(err.message || 'Save failed');
+    }
+  }
 
   async function refreshCuTabletUIs() {
     const filter = document.getElementById('cu-tablets-store-filter');
@@ -3110,6 +3383,68 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof window.cosmosBtnSuccess === 'function' && btn) window.cosmosBtnSuccess(btn);
   }
 
+  function cuGatepassPurposeCanEdit() {
+    return cuHasPermission('command_unit.settings.edit');
+  }
+
+  function cuGatepassPurposeCanView() {
+    return cuHasPermission('command_unit.settings.view') || cuGatepassPurposeCanEdit();
+  }
+
+  let _cuGpPurposeInited = false;
+
+  function cuInitGatepassPurposeSettings() {
+    if (!cuGatepassPurposeCanView()) {
+      const tbody = document.getElementById('cu-gp-purpose-tbody');
+      if (tbody) {
+        tbody.innerHTML =
+          '<tr><td colspan="7" class="td-muted" style="text-align:center;padding:20px">No permission to view CX settings.</td></tr>';
+      }
+      const addBtn = document.getElementById('cu-gp-purpose-add-btn');
+      if (addBtn) addBtn.hidden = true;
+      return;
+    }
+    if (!window.cosmosGatepassPurposeAdmin) return;
+    if (!_cuGpPurposeInited) {
+      window.cosmosGatepassPurposeAdmin.init({
+        tbodyId: 'cu-gp-purpose-tbody',
+        addBtnId: 'cu-gp-purpose-add-btn',
+        newModalId: 'modal-cu-new-gp-purpose',
+        editModalId: 'modal-cu-edit-gp-purpose',
+        newKeyId: 'cu-gp-new-key',
+        newLabelId: 'cu-gp-new-label',
+        newBadgeId: 'cu-gp-new-badge',
+        newSortId: 'cu-gp-new-sort',
+        newErrorId: 'cu-gp-new-error',
+        newSaveBtnId: 'cu-gp-new-save-btn',
+        editTitleId: 'cu-gp-edit-title',
+        editKeyId: 'cu-gp-edit-key',
+        editLabelId: 'cu-gp-edit-label',
+        editBadgeId: 'cu-gp-edit-badge',
+        editSortId: 'cu-gp-edit-sort',
+        editActiveId: 'cu-gp-edit-active',
+        editErrorId: 'cu-gp-edit-error',
+        editSaveBtnId: 'cu-gp-edit-save-btn',
+        editDeactivateBtnId: 'cu-gp-edit-deactivate-btn',
+        canEdit: cuGatepassPurposeCanEdit(),
+        escHtml: escHtml,
+        get: apiGet,
+        post: apiPost,
+        put: apiPut,
+        del: apiDelete
+      });
+      _cuGpPurposeInited = true;
+    }
+    const opts = window.cosmosGatepassPurposeAdmin;
+    if (opts && opts.init) {
+      /* refresh canEdit when role changes are rare; reload handles data */
+    }
+    if (window.cosmosGatepassPurposeAdmin.setCanEdit) {
+      window.cosmosGatepassPurposeAdmin.setCanEdit(cuGatepassPurposeCanEdit());
+    }
+    void window.cosmosGatepassPurposeAdmin.reload();
+  }
+
   async function handleCuDeactivateStoreType() {
     if (!cuStoreTypeEditKey) return;
     if (!window.confirm('Deactivate this store type? It will be hidden from new store forms.')) return;
@@ -4607,6 +4942,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  const cuGatepassVmsSave = document.getElementById('cu-gatepass-vms-save-btn');
+  if (cuGatepassVmsSave) {
+    cuGatepassVmsSave.addEventListener('click', () => {
+      void cuSaveGatepassVms();
+    });
+  }
+
   const cuStoreDetailAddTablet = document.getElementById('cu-store-detail-add-tablet-btn');
   if (cuStoreDetailAddTablet) {
     cuStoreDetailAddTablet.addEventListener('click', () => {
@@ -4681,6 +5023,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       }
       if (id === 'store-types') void loadStoreTypeCatalogAdmin();
+      if (id === 'cx-settings') cuInitGatepassPurposeSettings();
     };
   }
 
@@ -4704,5 +5047,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     void loadInventoryHubSettings();
   }
   if (_cuBootPage === 'store-types') void loadStoreTypeCatalogAdmin();
+  if (_cuBootPage === 'cx-settings') cuInitGatepassPurposeSettings();
   if (_cuBootPage === 'membership-plans') void loadMembershipPlans();
+
+  const cuCosmosTimeRefreshBtn = document.getElementById('cu-cosmos-time-refresh-btn');
+  const cuCosmosTimeSaveBtn = document.getElementById('cu-cosmos-time-save-btn');
+  if (cuCosmosTimeRefreshBtn) {
+    cuCosmosTimeRefreshBtn.addEventListener('click', function () { void cuLoadCosmosTime(); });
+  }
+  if (cuCosmosTimeSaveBtn) {
+    cuCosmosTimeSaveBtn.addEventListener('click', function () { void cuSaveCosmosTimeThreshold(cuCosmosTimeSaveBtn); });
+  }
+  cuStartCosmosTimePoll();
 });

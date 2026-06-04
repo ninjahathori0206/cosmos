@@ -7,9 +7,11 @@
 <link rel="icon" href="/favicon.ico" type="image/png" sizes="32x32">
 <title>Army HR — Cosmos ERP</title>
 <link rel="stylesheet" href="/css/fonts.css">
-<link rel="stylesheet" href="/css/army-prototype.css?v=20260603-employees-s5">
+<link rel="stylesheet" href="/css/army-prototype.css?v=20260604-ops-s6-s12">
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css">
+<link rel="stylesheet" href="/css/cosmos-time-monitor.css?v=cosmos-time-v1">
 <script src="/js/cosmos-ui-polish.js?v=20260602-ist-wire" defer></script>
+<script src="/js/cosmos-time-monitor.js?v=cosmos-time-v1" defer></script>
 </head>
 <body class="cosmos-app-shell">
 
@@ -26,6 +28,7 @@
     <div class="nav-item" data-page="pipeline" tabindex="0" role="button" aria-label="Candidate pipeline"><span class="ic">👥</span> Candidate Pipeline</div>
     <div class="nav-group">People</div>
     <div class="nav-item" data-page="employees" tabindex="0" role="button" aria-label="Employees" id="nav-employees" hidden><span class="ic">🧑‍💼</span> Employees</div>
+    <div id="army-nav-ops-slot"></div>
     <div class="nav-group">Portal</div>
     <div class="nav-item" id="nav-careers-link" tabindex="0" role="link" aria-label="Public careers portal"><span class="ic">🌐</span> Careers Portal</div>
   </nav>
@@ -199,7 +202,293 @@
       </div>
     </div>
   </section>
+
+  <section class="page" id="page-placements" data-page="placements">
+    <div class="ph sp-page-title-row">
+      <div><div class="pt">Placements</div><div class="ps">Assign employees to stores and confirm when they join.</div></div>
+      <div class="sp-page-tools"><button type="button" class="btn primary" id="placements-new-btn" hidden>+ New placement</button></div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct">All placements</div></div>
+      <div class="cb tw"><table><thead><tr><th>Employee</th><th>Store</th><th>Status</th><th>Actions</th></tr></thead><tbody id="placements-tbody"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-attendance" data-page="attendance">
+    <div class="ph sp-page-title-row">
+      <div><div class="pt">Attendance</div><div class="ps">Mark who was present, late, or absent each day.</div></div>
+      <div class="sp-page-tools"><button type="button" class="btn primary" id="attendance-new-btn" hidden>+ Mark attendance</button></div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct">Attendance log</div></div>
+      <div class="cb tw"><table><thead><tr><th>Date</th><th>Employee</th><th>Status</th><th>Check-in</th><th>Store</th></tr></thead><tbody id="attendance-tbody"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-rosters" data-page="rosters">
+    <div class="ph sp-page-title-row">
+      <div><div class="pt">Rosters</div><div class="ps">Create weekly shift schedules for each store.</div></div>
+      <div class="sp-page-tools"><button type="button" class="btn primary" id="rosters-new-btn" hidden>+ New roster week</button></div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct">Roster weeks</div></div>
+      <div class="cb tw"><table><thead><tr><th>Store</th><th>Week start</th><th>Entries</th><th>Status</th><th>Actions</th></tr></thead><tbody id="rosters-tbody"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-leaves" data-page="leaves">
+    <div class="ph sp-page-title-row">
+      <div><div class="pt">Leave requests</div><div class="ps">Submit leave on behalf of staff or approve pending requests.</div></div>
+      <div class="sp-page-tools"><button type="button" class="btn primary" id="leaves-new-btn" hidden>+ New leave request</button></div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct">Pending &amp; recent</div></div>
+      <div class="cb tw"><table><thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Reason</th><th>Actions</th></tr></thead><tbody id="leaves-tbody"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-payroll" data-page="payroll">
+    <div class="ph sp-page-title-row">
+      <div><div class="pt">Payroll</div><div class="ps">Run monthly salary and approve when ready.</div></div>
+      <div class="sp-page-tools"><button type="button" class="btn primary" id="payroll-new-btn" hidden>+ New payroll run</button></div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct">Payroll runs</div></div>
+      <div class="cb tw"><table><thead><tr><th>Month</th><th>Status</th><th>Employees</th><th>Total net</th><th>Actions</th></tr></thead><tbody id="payroll-tbody"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-training" data-page="training">
+    <div class="ph sp-page-title-row">
+      <div><div class="pt">Training</div><div class="ps">Courses, assignments, and training sessions.</div></div>
+      <div class="sp-page-tools">
+        <button type="button" class="btn sm" id="training-course-btn" hidden>+ Course</button>
+        <button type="button" class="btn sm" id="training-session-btn" hidden>+ Session</button>
+        <button type="button" class="btn primary" id="training-assign-btn" hidden>+ Assign training</button>
+      </div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct">Training overview</div></div>
+      <div class="cb tw"><table><thead><tr><th>Type</th><th>Title</th><th>Employee / Store</th><th>Status</th></tr></thead><tbody id="training-tbody"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-performance" data-page="performance">
+    <div class="ph sp-page-title-row">
+      <div><div class="pt">Performance</div><div class="ps">Monthly scores from sales, attendance, and training.</div></div>
+      <div class="sp-page-tools"><button type="button" class="btn primary" id="perf-compute-btn" hidden>Compute scores</button></div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct">Scores</div></div>
+      <div class="cb tw"><table><thead><tr><th>Month</th><th>Employee</th><th>Sales</th><th>Attendance</th><th>Training</th><th>Total</th></tr></thead><tbody id="performance-tbody"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-exit" data-page="exit">
+    <div class="ph sp-page-title-row">
+      <div><div class="pt">Offboarding</div><div class="ps">Start exit process when someone is leaving.</div></div>
+      <div class="sp-page-tools"><button type="button" class="btn primary" id="exit-new-btn" hidden>+ Start exit</button></div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct">Exit requests</div></div>
+      <div class="cb tw"><table><thead><tr><th>Employee</th><th>Last working day</th><th>Reason</th><th>Status</th><th>Actions</th></tr></thead><tbody id="exit-tbody"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-offers" data-page="offers">
+    <div class="ph sp-page-title-row">
+      <div><div class="pt">Offer letters</div><div class="ps">Create an offer, send it to the candidate, then add them as an employee when they accept.</div></div>
+      <div class="sp-page-tools"><button type="button" class="btn primary" id="offers-new-btn" hidden>+ New offer letter</button></div>
+    </div>
+    <div class="card"><div class="ch"><div class="ct">All offers</div></div>
+      <div class="cb tw"><table><thead><tr><th>Candidate</th><th>Role</th><th>CTC (₹/year)</th><th>Joining date</th><th>Actions</th></tr></thead><tbody id="offers-tbody"></tbody></table></div>
+    </div>
+  </section>
 </main>
+
+<!-- Army HR Ops modals -->
+<div class="overlay" id="modal-offer" role="dialog" aria-modal="true" aria-labelledby="modal-offer-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="modal-offer-title">New offer letter</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-offer" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <p class="army-form-hint" style="margin-bottom:14px">Pick a candidate from the hiring pipeline, enter their annual salary (CTC), and joining date.</p>
+      <div class="army-job-form">
+        <label class="army-form-field" for="offer-form-candidate"><span class="army-form-label">Candidate *</span>
+          <select id="offer-form-candidate" class="army-form-input"><option value="">Select candidate…</option></select></label>
+        <label class="army-form-field" for="offer-form-ctc"><span class="army-form-label">Annual CTC (₹) *</span>
+          <input id="offer-form-ctc" class="army-form-input" type="number" min="1" step="1000" placeholder="e.g. 240000"></label>
+        <label class="army-form-field" for="offer-form-joining"><span class="army-form-label">Joining date *</span>
+          <input id="offer-form-joining" class="army-form-input" type="date"></label>
+      </div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-offer">Cancel</button><button type="button" class="btn primary" id="modal-offer-save">Save offer</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-placement" role="dialog" aria-modal="true" aria-labelledby="modal-placement-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="modal-placement-title">New placement</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-placement" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <div class="army-job-form">
+        <label class="army-form-field" for="placement-form-employee"><span class="army-form-label">Employee *</span>
+          <select id="placement-form-employee" class="army-form-input"><option value="">Select employee…</option></select></label>
+        <label class="army-form-field" for="placement-form-store"><span class="army-form-label">Store *</span>
+          <select id="placement-form-store" class="army-form-input"><option value="">Select store…</option></select></label>
+        <label class="army-form-field" for="placement-form-notes"><span class="army-form-label">Notes</span>
+          <textarea id="placement-form-notes" class="army-form-input army-form-textarea" rows="2" placeholder="Optional"></textarea></label>
+      </div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-placement">Cancel</button><button type="button" class="btn primary" id="modal-placement-save">Create placement</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-attendance" role="dialog" aria-modal="true" aria-labelledby="modal-attendance-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="modal-attendance-title">Mark attendance</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-attendance" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <div class="army-job-form">
+        <label class="army-form-field" for="attendance-form-employee"><span class="army-form-label">Employee *</span>
+          <select id="attendance-form-employee" class="army-form-input"><option value="">Select employee…</option></select></label>
+        <label class="army-form-field" for="attendance-form-date"><span class="army-form-label">Date *</span>
+          <input id="attendance-form-date" class="army-form-input" type="date"></label>
+        <label class="army-form-field" for="attendance-form-status"><span class="army-form-label">Status *</span>
+          <select id="attendance-form-status" class="army-form-input"></select></label>
+        <label class="army-form-field" for="attendance-form-store"><span class="army-form-label">Store</span>
+          <select id="attendance-form-store" class="army-form-input"><option value="">—</option></select></label>
+      </div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-attendance">Cancel</button><button type="button" class="btn primary" id="modal-attendance-save">Save</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-roster" role="dialog" aria-modal="true" aria-labelledby="modal-roster-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="modal-roster-title">New roster week</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-roster" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <p class="army-form-hint" style="margin-bottom:14px">Pick the store and the Monday that starts the week.</p>
+      <div class="army-job-form">
+        <label class="army-form-field" for="roster-form-store"><span class="army-form-label">Store *</span>
+          <select id="roster-form-store" class="army-form-input"><option value="">Select store…</option></select></label>
+        <label class="army-form-field" for="roster-form-week"><span class="army-form-label">Week starting (Monday) *</span>
+          <input id="roster-form-week" class="army-form-input" type="date"></label>
+      </div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-roster">Cancel</button><button type="button" class="btn primary" id="modal-roster-save">Create roster</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-leave" role="dialog" aria-modal="true" aria-labelledby="modal-leave-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="modal-leave-title">New leave request</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-leave" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <div class="army-job-form">
+        <label class="army-form-field" for="leave-form-employee"><span class="army-form-label">Employee *</span>
+          <select id="leave-form-employee" class="army-form-input"><option value="">Select employee…</option></select></label>
+        <label class="army-form-field" for="leave-form-type"><span class="army-form-label">Leave type *</span>
+          <select id="leave-form-type" class="army-form-input"></select></label>
+        <div class="army-form-row">
+          <label class="army-form-field" for="leave-form-from"><span class="army-form-label">From *</span>
+            <input id="leave-form-from" class="army-form-input" type="date"></label>
+          <label class="army-form-field" for="leave-form-to"><span class="army-form-label">To *</span>
+            <input id="leave-form-to" class="army-form-input" type="date"></label>
+        </div>
+        <label class="army-form-field" for="leave-form-reason"><span class="army-form-label">Reason</span>
+          <textarea id="leave-form-reason" class="army-form-input army-form-textarea" rows="2" placeholder="Optional"></textarea></label>
+      </div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-leave">Cancel</button><button type="button" class="btn primary" id="modal-leave-save">Submit request</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-payroll" role="dialog" aria-modal="true" aria-labelledby="modal-payroll-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="modal-payroll-title">New payroll run</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-payroll" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <p class="army-form-hint" style="margin-bottom:14px">This calculates salary for all active employees for the selected month.</p>
+      <label class="army-form-field" for="payroll-form-month"><span class="army-form-label">Month *</span>
+        <input id="payroll-form-month" class="army-form-input" type="month"></label>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-payroll">Cancel</button><button type="button" class="btn primary" id="modal-payroll-save">Create run</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-performance" role="dialog" aria-modal="true" aria-labelledby="modal-performance-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="modal-performance-title">Compute performance scores</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-performance" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <p class="army-form-hint" style="margin-bottom:14px">Recalculates monthly scores for every active employee.</p>
+      <label class="army-form-field" for="perf-form-month"><span class="army-form-label">Month *</span>
+        <input id="perf-form-month" class="army-form-input" type="month"></label>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-performance">Cancel</button><button type="button" class="btn primary" id="modal-performance-save">Compute</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-exit" role="dialog" aria-modal="true" aria-labelledby="modal-exit-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="modal-exit-title">Start exit process</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-exit" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <div class="army-job-form">
+        <label class="army-form-field" for="exit-form-employee"><span class="army-form-label">Employee *</span>
+          <select id="exit-form-employee" class="army-form-input"><option value="">Select employee…</option></select></label>
+        <label class="army-form-field" for="exit-form-lwd"><span class="army-form-label">Last working day *</span>
+          <input id="exit-form-lwd" class="army-form-input" type="date"></label>
+        <label class="army-form-field" for="exit-form-reason"><span class="army-form-label">Reason for leaving *</span>
+          <textarea id="exit-form-reason" class="army-form-input army-form-textarea" rows="3" placeholder="e.g. Relocation, better opportunity…"></textarea></label>
+      </div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-exit">Cancel</button><button type="button" class="btn primary" id="modal-exit-save">Start exit</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-training-assign" role="dialog" aria-modal="true" aria-labelledby="modal-training-assign-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="modal-training-assign-title">Assign training</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-training-assign" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <div class="army-job-form">
+        <label class="army-form-field" for="train-assign-employee"><span class="army-form-label">Employee *</span>
+          <select id="train-assign-employee" class="army-form-input"><option value="">Select employee…</option></select></label>
+        <label class="army-form-field" for="train-assign-course"><span class="army-form-label">Course *</span>
+          <select id="train-assign-course" class="army-form-input"><option value="">Select course…</option></select></label>
+        <label class="army-form-field" for="train-assign-due"><span class="army-form-label">Complete by</span>
+          <input id="train-assign-due" class="army-form-input" type="date"></label>
+      </div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-training-assign">Cancel</button><button type="button" class="btn primary" id="modal-training-assign-save">Assign</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-training-course" role="dialog" aria-modal="true" aria-labelledby="modal-training-course-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="modal-training-course-title">New course</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-training-course" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <div class="army-job-form">
+        <label class="army-form-field" for="train-course-title"><span class="army-form-label">Course title *</span>
+          <input id="train-course-title" class="army-form-input" type="text" maxlength="200" placeholder="e.g. Product knowledge"></label>
+        <label class="army-form-field" for="train-course-desc"><span class="army-form-label">Description</span>
+          <textarea id="train-course-desc" class="army-form-input army-form-textarea" rows="2"></textarea></label>
+      </div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-training-course">Cancel</button><button type="button" class="btn primary" id="modal-training-course-save">Create course</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-training-session" role="dialog" aria-modal="true" aria-labelledby="modal-training-session-title">
+  <div class="modal modal-lg">
+    <div class="modal-h"><h2 id="modal-training-session-title">Schedule training session</h2><button type="button" class="btn sm ops-modal-close" data-modal="modal-training-session" aria-label="Close">✕</button></div>
+    <div class="modal-b">
+      <div class="army-job-form">
+        <label class="army-form-field" for="train-session-title"><span class="army-form-label">Session title *</span>
+          <input id="train-session-title" class="army-form-input" type="text" maxlength="200"></label>
+        <div class="army-form-row">
+          <label class="army-form-field" for="train-session-type"><span class="army-form-label">Type</span>
+            <select id="train-session-type" class="army-form-input"><option value="ONSITE">At store</option><option value="OFFSITE">Offsite</option></select></label>
+          <label class="army-form-field" for="train-session-datetime"><span class="army-form-label">Date &amp; time *</span>
+            <input id="train-session-datetime" class="army-form-input" type="datetime-local"></label>
+        </div>
+        <label class="army-form-field" for="train-session-store"><span class="army-form-label">Store</span>
+          <select id="train-session-store" class="army-form-input"><option value="">—</option></select></label>
+        <label class="army-form-field" for="train-session-venue"><span class="army-form-label">Venue</span>
+          <input id="train-session-venue" class="army-form-input" type="text" maxlength="200"></label>
+        <label class="army-form-field" for="train-session-trainer"><span class="army-form-label">Trainer name</span>
+          <input id="train-session-trainer" class="army-form-input" type="text" maxlength="120"></label>
+      </div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn ops-modal-close" data-modal="modal-training-session">Cancel</button><button type="button" class="btn primary" id="modal-training-session-save">Schedule</button></div>
+  </div>
+</div>
 
 <div class="overlay" id="modal-job" role="dialog" aria-modal="true" aria-labelledby="modal-job-title">
   <div class="modal modal-lg">
@@ -346,6 +635,7 @@
 
 <script src="/js/cosmos-modules-catalog.js"></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal"></script>
-<script src="/js/army-prototype.js?v=20260603-employees-s5"></script>
+<script src="/js/army-prototype-ops.js?v=20260604-ops-modals"></script>
+<script src="/js/army-prototype.js?v=20260604-ops-modals"></script>
 </body>
 </html>

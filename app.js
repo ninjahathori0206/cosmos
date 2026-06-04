@@ -436,6 +436,13 @@ app.get(['/finance', '/finance/*'], (req, res) => sendModuleShell(res, 'finance'
 app.get(['/command-unit', '/command-unit/*'], (req, res) => sendModuleShell(res, 'command-unit'));
 app.get(['/cx', '/cx/*'], (req, res) => sendModuleShell(res, 'cx'));
 app.get(['/army/hr', '/army/hr/*'], (req, res) => sendModuleShell(res, 'army'));
+
+// Cosmos Hub — unified launcher
+app.get(['/hub', '/hub/*'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'src', 'public', 'hub.html'));
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({

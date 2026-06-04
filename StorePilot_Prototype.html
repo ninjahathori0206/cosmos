@@ -35,35 +35,58 @@
     --text1:   #0F172A;
     --text2:   #5C6B7A;
     --text3:   #8B9CAE;
-    --sidebar: 252px;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; display:flex; overflow:hidden; }
+  body { font-family:'Inter',sans-serif; background:#F2F2F7; color:var(--text1); min-height:100vh; overflow:hidden; }
 
-  /* ── SIDEBAR ──────────────────────────────────────────────────────────────── */
-  .sidebar { width:var(--sidebar); background:var(--navy); height:100vh; display:flex; flex-direction:column; flex-shrink:0; position:fixed; left:0; top:0; z-index:100; }
-  .sidebar-logo { padding:20px 20px 16px; border-bottom:1px solid rgba(255,255,255,0.08); }
-  .cosmos-tag { font-family:'Inter',sans-serif; font-size:10px; font-weight:700; letter-spacing:3px; color:rgba(255,255,255,0.3); text-transform:uppercase; margin-bottom:3px; }
-  .module-name { font-family:'Inter',sans-serif; font-size:18px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; }
-  .mod-dot { width:8px; height:8px; border-radius:50%; background:var(--acc2); box-shadow:0 0 8px var(--acc2); }
-  .sidebar-nav { flex:1; padding:10px 0; overflow-y:auto; }
-  .nav-group { font-size:10px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,0.22); padding:14px 20px 5px; }
-  .nav-item { display:flex; align-items:center; gap:10px; padding:10px 20px; cursor:pointer; color:rgba(255,255,255,0.52); font-size:13px; font-weight:400; border-left:3px solid transparent; transition:all .15s; }
-  .nav-item:hover { background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.85); }
-  .nav-item.active { background:rgba(43,140,255,0.2); color:#fff; border-left-color:var(--acc2); font-weight:500; }
-  .nav-item .ic { font-size:15px; width:20px; text-align:center; }
-  .sidebar-user { padding:14px 20px; border-top:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; gap:10px; }
-  .u-av { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; font-family:'Inter',sans-serif; flex-shrink:0; }
-  .u-name { font-size:12.5px; font-weight:500; color:#fff; }
-  .u-role { font-size:11px; color:rgba(255,255,255,0.35); }
+  /* ── iOS TOP NAV ──────────────────────────────────────────────────────────── */
+  .sp-topnav { position:fixed; top:0; left:0; right:0; z-index:100; background:#FFFFFF; border-bottom:0.5px solid rgba(0,0,0,0.18); display:flex; align-items:center; height:60px; padding:0 20px; gap:0; }
+  .sp-topnav-brand { display:flex; align-items:center; flex-shrink:0; margin-right:20px; }
+  .sp-topnav-wordmark { font-family:'Inter',sans-serif; font-size:12px; font-weight:800; letter-spacing:2.5px; color:#000; text-transform:uppercase; }
+  .sp-topnav-tabs { display:flex; align-items:stretch; flex:1; height:100%; overflow-x:auto; scrollbar-width:none; }
+  .sp-topnav-tabs::-webkit-scrollbar { display:none; }
+  .sp-tab { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:0 14px; height:100%; border:none; background:none; cursor:pointer; font-family:'Inter',sans-serif; color:#8E8E93; border-bottom:2.5px solid transparent; transition:color .15s; white-space:nowrap; -webkit-tap-highlight-color:transparent; }
+  .sp-tab:hover { color:#3A3A3C; }
+  .sp-tab.active { color:#007AFF; border-bottom-color:#007AFF; }
+  .sp-tab-icon { display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .sp-tab-icon svg { width:18px; height:18px; }
+  .sp-tab-label { font-size:11px; font-weight:500; }
+  .sp-topnav-user { display:flex; align-items:center; gap:10px; flex-shrink:0; margin-left:16px; }
+  .sp-topnav-av { width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg,#007AFF,#5AC8FA); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; flex-shrink:0; font-family:'Inter',sans-serif; }
+  .sp-topnav-name { font-size:13px; font-weight:500; color:#000; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sp-topnav-updated { font-size:11px; color:var(--text3); white-space:nowrap; }
+  .sp-topnav-signout { display:flex; align-items:center; justify-content:center; width:32px; height:32px; border:none; background:none; cursor:pointer; border-radius:8px; color:#8E8E93; transition:color .15s,background .15s; padding:0; flex-shrink:0; }
+  .sp-topnav-signout:hover { background:#F2F2F7; color:#FF3B30; }
+  .sp-topnav-signout svg { width:16px; height:16px; }
+  .sp-topnav-mobile-title { display:none; flex:1; font-family:'Inter',sans-serif; font-size:17px; font-weight:600; color:#000; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* ── BOTTOM TAB BAR (mobile only) ────────────────────────────────────────── */
+  .sp-bottom-tabs { display:none; position:fixed; bottom:0; left:0; right:0; height:calc(49px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px); background:rgba(249,249,249,0.94); -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px); border-top:0.5px solid rgba(0,0,0,0.2); z-index:100; align-items:center; justify-content:space-around; }
+  .sp-btab { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; flex:1; height:49px; border:none; background:none; cursor:pointer; font-family:'Inter',sans-serif; color:#8E8E93; padding:0; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+  .sp-btab.active { color:#007AFF; }
+  .sp-btab-icon { display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .sp-btab-icon svg { width:24px; height:24px; }
+  .sp-btab-label { font-size:10px; font-weight:500; }
+
+  /* ── MORE SHEET ───────────────────────────────────────────────────────────── */
+  .sp-more-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:200; }
+  .sp-more-backdrop.open { display:block; }
+  .sp-more-sheet { display:none; position:fixed; left:0; right:0; bottom:0; z-index:201; background:#FFFFFF; border-radius:14px 14px 0 0; box-shadow:0 -4px 30px rgba(0,0,0,.15); padding-bottom:env(safe-area-inset-bottom,0px); }
+  .sp-more-sheet.open { display:block; animation:spSheetUp .25s cubic-bezier(.25,.46,.45,.94); }
+  @keyframes spSheetUp { from { transform:translateY(100%); opacity:0; } to { transform:translateY(0); opacity:1; } }
+  .sp-more-sheet-handle { width:36px; height:4px; border-radius:2px; background:#D1D1D6; margin:12px auto 16px; }
+  .sp-more-nav { padding:0 16px; display:flex; flex-direction:column; gap:2px; }
+  .sp-more-item { display:flex; align-items:center; gap:14px; padding:14px 12px; border:none; background:none; cursor:pointer; font-family:'Inter',sans-serif; font-size:16px; font-weight:400; color:#000; border-radius:12px; width:100%; text-align:left; -webkit-tap-highlight-color:transparent; touch-action:manipulation; transition:background .12s; }
+  .sp-more-item:hover, .sp-more-item:active { background:#F2F2F7; }
+  .sp-more-item.active { color:#007AFF; }
+  .sp-more-item-icon { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:28px; }
+  .sp-more-item-icon svg { width:22px; height:22px; }
+  .sp-more-item-label { flex:1; }
+  .sp-more-user-row { display:flex; align-items:center; gap:12px; padding:14px 20px; border-top:0.5px solid rgba(0,0,0,.12); margin-top:8px; }
 
   /* ── MAIN ─────────────────────────────────────────────────────────────────── */
-  .main { margin-left:var(--sidebar); flex:1; height:100vh; overflow-y:auto; display:flex; flex-direction:column; }
-  body.cosmos-app-shell .main { height:100dvh; max-height:100dvh; overflow:hidden !important; }
-  .topbar { background:var(--card); border-bottom:1px solid var(--border); padding:0 28px; height:54px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; position:sticky; top:0; z-index:50; }
-  body.cosmos-app-shell .topbar { position:relative; top:auto; flex-shrink:0; }
-  .breadcrumb { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text2); }
-  .breadcrumb .cur { color:var(--text1); font-weight:500; }
+  .main { margin-left:0; margin-top:60px; flex:1; height:calc(100vh - 60px); overflow-y:auto; display:flex; flex-direction:column; }
+  body.cosmos-app-shell .main { height:calc(100dvh - 60px); max-height:calc(100dvh - 60px); overflow:hidden !important; }
 
   /* ── PAGES ────────────────────────────────────────────────────────────────── */
   body.cosmos-app-shell .cosmos-app-scroll {
@@ -95,14 +118,6 @@
     align-items:center;
     gap:8px;
     flex-wrap:wrap;
-  }
-  .topbar-center {
-    flex:1;
-    min-width:0;
-    display:flex;
-    flex-direction:column;
-    align-items:flex-start;
-    gap:2px;
   }
   .sp-page-filters {
     display:flex;
@@ -253,12 +268,6 @@
   .cat-cart-bar-btn { background:var(--acc2); color:#fff; border:none; border-radius:8px; padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif; transition:background .15s; }
   .cat-cart-bar-btn:hover { background:var(--accD); }
 
-  /* ── HAMBURGER / MOBILE SIDEBAR ──────────────────────────────────────────── */
-  .menu-toggle { display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:8px; background:var(--bg); border:1.5px solid var(--border); cursor:pointer; flex-shrink:0; gap:0; flex-direction:column; padding:0; }
-  .menu-toggle span { display:block; width:16px; height:2px; border-radius:2px; background:var(--text1); transition:all .2s; }
-  .menu-toggle span:nth-child(2) { margin:3px 0; }
-  .sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:99; }
-  .sidebar-overlay.open { display:block; }
 
   /* ── MODAL OVERLAY ─────────────────────────────────────────────────────────── */
   .overlay { display:none; position:fixed; inset:0; background:rgba(15,30,53,.55); backdrop-filter:blur(4px); z-index:300; align-items:center; justify-content:center; }
@@ -293,49 +302,35 @@
   .sp-pwa-ios-hint .sp-pwa-install-copy { color: var(--gold); font-weight: 600; }
   .sp-pwa-ios-sub { font-size: 12px; color: var(--text2); font-weight: 400; display: block; margin-top: 4px; }
   .sp-pwa-install-actions { display: flex; gap: 8px; flex-shrink: 0; }
-  body.sp-pwa-standalone .topbar { box-shadow: 0 1px 0 var(--border); }
+  body.sp-pwa-standalone .sp-topnav { box-shadow: 0 1px 0 var(--border); }
 
   /* ── RESPONSIVE BREAKPOINTS ───────────────────────────────────────────────── */
   @media (max-width:768px) {
-    .topbar {
-      padding-top: env(safe-area-inset-top, 0px);
-      min-height: calc(54px + env(safe-area-inset-top, 0px));
-      height: auto;
+    /* iOS top nav: compact title bar */
+    .sp-topnav {
+      height: calc(44px + env(safe-area-inset-top, 0px));
+      padding: env(safe-area-inset-top, 0px) 16px 0;
+      justify-content: center;
     }
-    .sidebar,
-    .sidebar.open {
-      padding-top: env(safe-area-inset-top, 0px);
-      padding-bottom: env(safe-area-inset-bottom, 0px);
-      height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    .sp-topnav-tabs, .sp-topnav-brand, .sp-topnav-user { display:none; }
+    .sp-topnav-mobile-title { display:flex; }
+    /* Show bottom tab bar */
+    .sp-bottom-tabs { display:flex; }
+    /* Adjust main for mobile nav heights */
+    .main {
+      margin-top: calc(44px + env(safe-area-inset-top, 0px));
+      height: calc(100vh - 44px - env(safe-area-inset-top, 0px));
     }
-    .menu-toggle {
-      min-width: 44px;
-      min-height: 44px;
-      -webkit-tap-highlight-color: transparent;
+    body.cosmos-app-shell .main {
+      height: calc(100dvh - 44px - env(safe-area-inset-top, 0px));
+      max-height: calc(100dvh - 44px - env(safe-area-inset-top, 0px));
     }
-    .btn,
-    .nav-item {
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
+    /* Page body scroll: leave room for bottom tab bar */
+    .sp-page-body {
+      padding-bottom: calc(49px + env(safe-area-inset-bottom, 0px) + 16px);
     }
-    tr.tr-link {
-      touch-action: manipulation;
-    }
-    /* Sidebar: off-canvas slide */
-    .sidebar { transform:translateX(-100%); transition:transform .25s ease; position:fixed; z-index:200; height:100vh; }
-    .sidebar.open { transform:translateX(0); }
-    /* Main: no sidebar margin */
-    .main { margin-left:0 !important; }
-    /* Show hamburger */
-    .menu-toggle { display:flex; }
-    /* Topbar compact */
-    .topbar { padding:0 14px; gap:10px; height:auto; min-height:calc(52px + env(safe-area-inset-top, 0px)); align-items:flex-start; }
-    .topbar-center { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; padding:8px 0 6px; }
-    .breadcrumb { flex-wrap:wrap; line-height:1.35; white-space:normal; overflow:visible; }
-    .breadcrumb-prefix { display:none; }
-    .breadcrumb .cur { word-break:break-word; }
-    .topbar-updated { font-size:11px; }
-    .topbar-updated:empty { display:none; }
+    .btn { touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+    tr.tr-link { touch-action:manipulation; }
     .sp-page-title-row { flex-direction:column; align-items:stretch; }
     .sp-page-tools { width:100%; display:flex; flex-direction:column; gap:8px; align-items:stretch; }
     .sp-page-tools .sw { width:100% !important; max-width:none !important; }
@@ -356,7 +351,6 @@
     .tw { overflow-x:auto; -webkit-overflow-scrolling:touch; }
     table { min-width:520px; }
     /* Larger touch targets */
-    .nav-item { min-height:48px; padding:12px 20px; }
     .btn { min-height:40px; }
     .qty-input { width:72px; padding:7px 10px; }
     /* SKU card grid: single column on very small */
@@ -382,10 +376,22 @@
   .sp-inv-share:hover { background:var(--acc2); color:#fff; }
   @media (max-width:600px) { .sp-inv-grid { grid-template-columns:1fr; } }
 
+  .overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(4px); z-index:400; align-items:center; justify-content:center; padding:16px; }
+  #modal-add-rx { z-index:1400 !important; padding:0; align-items:stretch; }
+  #modal-add-rx[style*="flex"] { display:flex !important; }
+  .cx-modal { background:var(--card); border-radius:14px; width:100%; box-shadow:0 20px 50px rgba(0,0,0,.2); }
+  .cx-mh { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--border); }
+  .cx-mt { font-size:16px; font-weight:700; }
+  .cx-mclose { border:none; background:transparent; font-size:20px; cursor:pointer; color:var(--text2); }
+  .et-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .et-grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .et-section-lbl { font-size:11px; font-weight:700; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; }
+  .label-req { color:var(--red); }
+
   /* ── PRINT ────────────────────────────────────────────────────────────────── */
   @media print {
-    .sidebar, .topbar, .btn { display:none !important; }
-    .main { margin-left:0 !important; height:auto !important; overflow:visible !important; }
+    .sp-topnav, .sp-bottom-tabs, .sp-more-backdrop, .sp-more-sheet, .btn { display:none !important; }
+    .main { margin-top:0 !important; height:auto !important; overflow:visible !important; }
     .page { display:none !important; }
     #page-reports.active { display:block !important; overflow:visible !important; height:auto !important; flex:none !important; padding:20px !important; }
     #page-reports.active .sp-page-body { overflow:visible !important; flex:none !important; }
@@ -394,8 +400,13 @@
   }
 </style>
 <link rel="stylesheet" href="/css/cosmos-ui-polish.css?v=20260528-shipments-fix">
-<link rel="stylesheet" href="/css/storepilot-theme.css?v=20260602-day-store-collection">
+<link rel="stylesheet" href="/css/cosmos-time-monitor.css?v=cosmos-time-v1">
+<link rel="stylesheet" href="/css/cosmos-cx-search.css?v=gatepass-phase4">
+<link rel="stylesheet" href="/css/storepilot-theme.css?v=gatepass-ci-v2">
+<link rel="stylesheet" href="/css/rx-modal.css?v=20260604-rx-v3">
 <script src="/js/cosmos-ui-polish.js?v=20260602-ist-wire" defer></script>
+<script src="/js/cosmos-time-monitor.js?v=cosmos-time-v1" defer></script>
+<script src="/js/cosmos-cx-search.js?v=gatepass-checkin-new-only-v6" defer></script>
 <script src="/js/cosmos-invoice-share-canvas.js?v=20260528-inv-rich" defer></script>
 <script src="/js/cosmos-day-store-report-share-canvas.js?v=20260602-day-store-share-16x9" defer></script>
 <script src="/js/cosmos-record-list.js?v=20260528-shipments-fix" defer></script>
@@ -404,66 +415,77 @@
 </head>
 <body class="cosmos-app-shell">
 
-<aside class="sidebar">
-  <nav class="sidebar-nav">
-    <div class="nav-group">Overview</div>
-    <div class="nav-item active" data-storepilot-menu="dashboard" data-storepilot-permission="storepilot.dashboard.view" onclick="spNav('dashboard',this)"><span class="ic">⊞</span> Dashboard</div>
-
-    <div class="nav-group">Stock View</div>
-    <div class="nav-item" data-storepilot-menu="stock-browse" data-storepilot-permission="storepilot.catalogue.view,foundry.catalogue.view" onclick="spNav('stock-browse',this)"><span class="ic">🗂️</span> Browse Catalogue</div>
-    <div class="nav-item" data-storepilot-menu="store-catalogue" data-storepilot-permission="storepilot.catalogue.view,foundry.catalogue.view" onclick="spNav('store-catalogue',this)"><span class="ic">🏪</span> Store Catalogue</div>
-
-    <div class="nav-group">Foundry Connect</div>
-    <div class="nav-item" data-storepilot-menu="transfers-history" data-storepilot-permission="storepilot.transfers.view,foundry.transfers.view" onclick="spNav('transfers-history',this)"><span class="ic">📋</span> My Requests</div>
-    <div class="nav-group">Reports</div>
-    <div class="nav-item" data-storepilot-menu="reports" data-storepilot-permission="storepilot.reports.view" onclick="spNav('reports',this)"><span class="ic">📊</span> Store Reports</div>
-    <div class="nav-item" data-storepilot-menu="lab-orders" data-storepilot-permission="storepilot.lab.view,storepilot.dashboard.view" onclick="spNav('lab-orders',this)"><span class="ic">🧪</span> Lab Orders</div>
-    <div class="nav-item" data-storepilot-menu="invoices" data-storepilot-permission="storepilot.invoices.view" onclick="spNav('invoices',this)"><span class="ic">🧾</span> Invoices</div>
-
+<!-- ── iOS Top Nav ─────────────────────────────────────────────────────────── -->
+<header class="sp-topnav">
+  <div class="sp-topnav-brand">
+    <span class="sp-topnav-wordmark">StorePilot</span>
+  </div>
+  <nav class="sp-topnav-tabs" role="tablist" aria-label="Main navigation">
+    <button class="sp-tab active" data-storepilot-menu="dashboard" data-storepilot-permission="storepilot.dashboard.view" onclick="spNav('dashboard',this)" role="tab" tabindex="0" aria-label="Dashboard">
+      <span class="sp-tab-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/></svg></span>
+      <span class="sp-tab-label">Dashboard</span>
+    </button>
+    <button class="sp-tab" data-storepilot-menu="visitors" data-storepilot-permission="gatepass.view" onclick="spNav('visitors',this)" role="tab" tabindex="0" aria-label="GatePass">
+      <span class="sp-tab-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="6" r="3"/><path d="M4 17c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg></span>
+      <span class="sp-tab-label">GatePass</span>
+    </button>
+    <button class="sp-tab" data-storepilot-menu="stock-browse" data-storepilot-permission="storepilot.catalogue.view,foundry.catalogue.view" onclick="spNav('stock-browse',this)" role="tab" tabindex="0" aria-label="Stock">
+      <span class="sp-tab-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 7l8-4 8 4-8 4-8-4z"/><path d="M2 12l8 4 8-4"/><line x1="10" y1="3" x2="10" y2="16"/></svg></span>
+      <span class="sp-tab-label">Stock</span>
+    </button>
+    <button class="sp-tab" data-storepilot-menu="transfers-history" data-storepilot-permission="storepilot.transfers.view,foundry.transfers.view" onclick="spNav('transfers-history',this)" role="tab" tabindex="0" aria-label="Transfers">
+      <span class="sp-tab-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h14"/><path d="M14 4l3 3-3 3"/><path d="M17 13H3"/><path d="M6 10l-3 3 3 3"/></svg></span>
+      <span class="sp-tab-label">Transfers</span>
+    </button>
+    <button class="sp-tab" data-storepilot-menu="reports" data-storepilot-permission="storepilot.reports.view" onclick="spNav('reports',this)" role="tab" tabindex="0" aria-label="Reports">
+      <span class="sp-tab-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="17" x2="17" y2="17"/><rect x="4" y="11" width="3" height="6" rx="0.5"/><rect x="9" y="8" width="3" height="9" rx="0.5"/><rect x="14" y="5" width="3" height="12" rx="0.5"/></svg></span>
+      <span class="sp-tab-label">Reports</span>
+    </button>
+    <button class="sp-tab sp-tab-more" onclick="spToggleMoreSheet()" role="tab" tabindex="0" aria-label="More" aria-expanded="false" aria-haspopup="true">
+      <span class="sp-tab-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="16" cy="10" r="1.5" fill="currentColor"/></svg></span>
+      <span class="sp-tab-label">More</span>
+    </button>
   </nav>
-  <div class="sidebar-user sidebar-user--with-modules">
-    <div class="sidebar-user-top">
-      <div class="u-av" id="sp-user-av">—</div>
-      <div class="sidebar-user-meta">
-        <div class="sidebar-user-name-row">
-          <div class="u-name" id="sp-user-name">Loading…</div>
-          <button type="button" class="sidebar-logout-btn" onclick="cosmosSignOut()" aria-label="Sign out" title="Sign out"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="16 17 21 12 16 7"/><line fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" x1="21" y1="12" x2="9" y2="12"/></svg></button>
-        </div>
-        <div class="u-role" id="sp-user-role">Store Pilot</div>
-      </div>
+  <div class="sp-topnav-user">
+    <span id="dash-last-updated" class="sp-topnav-updated" hidden></span>
+    <div class="sp-topnav-av" id="sp-user-av">—</div>
+    <div class="sp-topnav-name" id="sp-user-name">Loading…</div>
+    <button type="button" class="sp-topnav-signout" onclick="cosmosSignOut()" aria-label="Sign out" title="Sign out"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="16 17 21 12 16 7"/><line fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" x1="21" y1="12" x2="9" y2="12"/></svg></button>
+  </div>
+  <!-- Mobile: current page title (iOS nav bar style) -->
+  <div class="sp-topnav-mobile-title" id="sp-bc">Dashboard</div>
+</header>
+
+<!-- ── More Sheet ──────────────────────────────────────────────────────────── -->
+<div class="sp-more-backdrop" id="sp-more-backdrop" onclick="spCloseMoreSheet()"></div>
+<div class="sp-more-sheet" id="sp-more-sheet" role="dialog" aria-modal="true" aria-label="More navigation">
+  <div class="sp-more-sheet-handle"></div>
+  <nav class="sp-more-nav" aria-label="Additional pages">
+    <button class="sp-more-item" data-storepilot-menu="store-catalogue" data-storepilot-permission="storepilot.catalogue.view,foundry.catalogue.view" onclick="spNav('store-catalogue',this);spCloseMoreSheet()" tabindex="0">
+      <span class="sp-more-item-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l6 6 8-8V5H9L3 11z"/><circle cx="7.5" cy="7.5" r="1"/></svg></span>
+      <span class="sp-more-item-label">Store Catalogue</span>
+    </button>
+    <button class="sp-more-item" data-storepilot-menu="lab-orders" data-storepilot-permission="storepilot.lab.view,storepilot.dashboard.view" onclick="spNav('lab-orders',this);spCloseMoreSheet()" tabindex="0">
+      <span class="sp-more-item-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2h6"/><path d="M8 2v6l-4 7a1 1 0 0 0 .9 1.5h10.2a1 1 0 0 0 .9-1.5L12 8V2"/></svg></span>
+      <span class="sp-more-item-label">Lab Orders</span>
+    </button>
+    <button class="sp-more-item" data-storepilot-menu="invoices" data-storepilot-permission="storepilot.invoices.view" onclick="spNav('invoices',this);spCloseMoreSheet()" tabindex="0">
+      <span class="sp-more-item-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2h7l4 4v12H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M12 2v4h4"/><line x1="7" y1="10" x2="13" y2="10"/><line x1="7" y1="13" x2="13" y2="13"/><line x1="7" y1="16" x2="11" y2="16"/></svg></span>
+      <span class="sp-more-item-label">Invoices</span>
+    </button>
+  </nav>
+  <div class="sp-more-user-row">
+    <div class="sp-topnav-av" id="sp-more-av">—</div>
+    <div style="flex:1;min-width:0">
+      <div id="sp-more-name" style="font-size:14px;font-weight:600;color:#000;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Loading…</div>
+      <div id="sp-user-role" style="font-size:12px;color:#8E8E93">Store Pilot</div>
     </div>
     <div id="cosmos-module-switch-footer" data-current-module="storepilot"></div>
+    <button type="button" class="sp-topnav-signout" onclick="cosmosSignOut()" aria-label="Sign out" title="Sign out"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="16 17 21 12 16 7"/><line fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" x1="21" y1="12" x2="9" y2="12"/></svg></button>
   </div>
-</aside>
-
-<div class="sidebar-overlay" id="sp-sidebar-overlay" onclick="closeSidebar()"></div>
+</div>
 
 <main class="main">
-  <div class="topbar">
-    <button class="menu-toggle" id="sp-menu-toggle" onclick="openSidebar()" aria-label="Open menu">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="topbar-center">
-      <div class="breadcrumb" id="sp-breadcrumb">
-        <span class="breadcrumb-prefix">Store Pilot <span style="color:var(--text3);margin:0 4px">›</span></span>
-        <span class="cur" id="sp-bc">Dashboard</span>
-      </div>
-      <span id="dash-last-updated" class="topbar-updated" hidden></span>
-    </div>
-  </div>
-
-  <div id="sp-pwa-install-banner" class="sp-pwa-install-banner" hidden role="region" aria-label="Install app">
-    <div class="sp-pwa-install-copy">Install Store Pilot for quick access from your home screen.</div>
-    <div class="sp-pwa-install-actions">
-      <button type="button" class="btn primary sm" id="sp-pwa-install-btn" onclick="spPwaInstall()">Install</button>
-      <button type="button" class="btn sm" onclick="spPwaDismissInstall()">Not now</button>
-    </div>
-  </div>
-
-  <div id="sp-pwa-ios-hint" class="sp-pwa-ios-hint" hidden role="region" aria-label="Add to Home Screen">
-    <div class="sp-pwa-install-copy">Add to Home Screen<span class="sp-pwa-ios-sub">Tap Share, then Add to Home Screen to install Store Pilot.</span></div>
-    <button type="button" class="btn sm" onclick="spPwaDismissIosHint()">Got it</button>
-  </div>
 
   <div class="cosmos-app-scroll" id="cosmos-app-scroll">
 
@@ -576,19 +598,11 @@
       <div class="ph sp-page-title-row">
         <div>
           <div class="pt">Transfers</div>
-          <div class="ps">Goods requests to HQ and inbound shipment documents. On <strong>Dispatched</strong>, see requests plus all shipments—tap a shipment to <strong>Accept</strong>, then <strong>Stock</strong>.</div>
         </div>
         <div class="sp-page-tools" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <button type="button" class="btn sm primary" id="sp-tr-create-btn" style="display:none" onclick="openSpCreateRequestModal()">+ Create Request</button>
           <button type="button" class="btn sm" onclick="loadTransferHistory()">↻ Refresh</button>
         </div>
-      </div>
-
-      <div class="hint" style="margin-bottom:18px">
-        <strong>Store Request flow:</strong>
-        You submit a request (SUBMITTED) → HQ reviews and approves quantities (APPROVED) →
-        HQ dispatches stock (DISPATCHED / PARTIALLY DISPATCHED) → open the request and use <strong>Shipments</strong> to accept and stock each arrival (PARTIALLY RECEIVED until complete).
-        Use <strong>Create Request</strong> above to submit a new goods request.
       </div>
 
       <div class="sp-page-filters" id="sp-tr-filters" role="toolbar" aria-label="Filter transfer requests">
@@ -614,7 +628,6 @@
     <div class="card">
       <div class="ch" style="padding:14px 16px 8px;border-bottom:1px solid var(--border)">
         <div class="ct">Inbound shipments</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:4px;font-weight:400">All HQ dispatches to your store—via your requests or HQ direct. Tap to accept and stock.</div>
       </div>
       <div id="sp-direct-err" class="err-msg" style="margin:8px 16px 0"></div>
       <div id="sp-direct-transfers-wrap" class="cosmos-record-list"></div>
@@ -640,7 +653,6 @@
       <div class="ch">
         <div class="sp-day-report-head-copy">
           <div class="ct">Day store report</div>
-          <p class="sp-day-report-sub">Daily snapshot — invoiced sales, bookings, collections, and memberships (IST).</p>
         </div>
         <div class="sp-day-report-controls">
           <input type="date" id="day-store-report-date" class="fi sp-day-report-date" aria-label="Report date">
@@ -649,7 +661,7 @@
         </div>
       </div>
       <div id="day-store-report-body" class="cb sp-day-report-body">
-        <div class="sp-day-report-placeholder">Choose a date and tap Generate report. Today&apos;s date loads automatically when you open this page.</div>
+        <div class="sp-day-report-placeholder" hidden></div>
       </div>
     </div>
     </div>
@@ -660,7 +672,6 @@
       <div class="ph sp-page-title-row">
         <div>
           <div class="pt">Lab Orders</div>
-          <div class="ps">Receive from lab, complete store QC, and mark ready for handover.</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <div class="sw" style="width:260px;max-width:100%">
@@ -700,25 +711,66 @@
     </div>
   </div>
 
+  <!-- ═══ VISITORS (GatePass) ═══ -->
+  <div class="page" id="page-visitors">
+    <div class="sp-page-head">
+      <div class="ph sp-page-title-row">
+        <div>
+          <div class="pt">GatePass</div>
+        </div>
+        <div class="sp-page-tools">
+          <button type="button" class="btn sm" id="sp-visitors-refresh-btn" aria-label="Refresh queue">↻ Refresh</button>
+          <button type="button" class="btn primary sm" id="sp-visitors-checkin-btn" hidden>+ Check In</button>
+        </div>
+      </div>
+      <div class="sp-invoice-search-wrap" style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+        <input type="search" id="sp-visitors-filter" class="sp-invoice-search-input" placeholder="Filter by name or phone…" aria-label="Filter visitors" autocomplete="off" style="flex:1;min-width:180px">
+        <select id="sp-visitors-status-filter" class="pos-search-input" aria-label="Status filter" style="min-width:160px">
+          <option value="">Active (waiting + in service)</option>
+          <option value="waiting">Waiting only</option>
+          <option value="in_service">In service only</option>
+        </select>
+      </div>
+    </div>
+    <div class="sp-page-body">
+      <div class="card">
+        <div style="overflow:auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Visitor</th>
+                <th>Purpose</th>
+                <th>Wait</th>
+                <th>Assigned</th>
+                <th>Status</th>
+                <th>Check-in</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="sp-visitors-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══ INVOICES ═══ -->
   <div class="page" id="page-invoices">
     <div class="sp-page-head">
       <div class="ph sp-page-title-row">
         <div>
           <div class="pt">Invoices</div>
-          <div class="ps">Last 7 days · your store. Search by customer name or mobile to find older invoices.</div>
         </div>
         <div class="sp-page-tools">
           <button class="btn sm" onclick="exportSpInvoicesCsv()" aria-label="Export invoices as CSV">⬇ Export CSV</button>
           <button class="btn sm" onclick="loadSpInvoices()" aria-label="Refresh invoices">↻ Refresh</button>
         </div>
       </div>
-      <div class="sp-invoice-search-wrap">
+      <div class="sp-invoice-search-wrap cosmos-cx-search-wrap">
         <input type="search" id="sp-invoice-search" class="sp-invoice-search-input"
           placeholder="Search customer name or mobile…"
           aria-label="Search invoices by customer name or mobile"
           inputmode="search" enterkeyhint="search"
-          oninput="onSpInvoiceSearch(this.value)"
           autocomplete="off">
       </div>
     </div>
@@ -776,13 +828,7 @@
                   <span class="sp-cr-results-label">Search results</span>
                   <span class="sp-cr-results-count" id="sp-cr-results-count"></span>
                 </div>
-                <div id="tc-results" class="sp-create-request-results">
-                  <div class="sp-cr-empty-hint">
-                    <div class="empty-ic">🔍</div>
-                    <div class="sp-cr-empty-title">Search SKU catalogue</div>
-                    <div class="sp-cr-empty-sub">Brand, SKU code, or 7-digit unit code — not where the unit is stocked.</div>
-                  </div>
-                </div>
+                <div id="tc-results" class="sp-create-request-results"></div>
               </div>
             </div>
             <div class="sp-cr-pane sp-cr-pane--cart" id="sp-cr-cart-section">
@@ -791,13 +837,7 @@
                   <div class="ct">Request cart</div>
                   <span id="tc-cart-count" class="sp-cr-cart-badge b b-orange">0 items</span>
                 </div>
-                <div id="tc-cart-body" class="sp-cr-cart-list">
-                  <div class="sp-cr-empty-cart">
-                    <div class="empty-ic">🛒</div>
-                    <div class="sp-cr-empty-title">Cart is empty</div>
-                    <div class="sp-cr-empty-sub">Add items from search results above.</div>
-                  </div>
-                </div>
+                <div id="tc-cart-body" class="sp-cr-cart-list"></div>
               </div>
               <div class="sp-cr-notes-block card sp-create-request-meta-card">
                 <div class="sp-create-request-meta-inner">
@@ -857,7 +897,7 @@
         <button class="modal-close" onclick="closeSpQcNoteModal()">✕</button>
       </div>
       <div class="modal-body" style="padding:20px">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:14px" id="sp-qc-note-modal-desc"></div>
+        <div id="sp-qc-note-modal-desc" hidden></div>
         <label style="font-size:13px;font-weight:600;color:var(--text1);display:block;margin-bottom:6px">Note <span style="color:var(--red)">*</span></label>
         <textarea id="sp-qc-note-input" rows="4" placeholder="Describe the defect or issue…"
           style="width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px;resize:vertical;background:var(--bg);color:var(--text1)"></textarea>
@@ -919,8 +959,7 @@
     </div>
     <div class="modal-body bucket-modal-body" style="padding:16px 20px">
       <div id="bucket-screen-idle">
-        <p style="font-size:13px;color:var(--text2);margin:0 0 16px">Scan each <strong>unit on this transfer document</strong> once. Codes not on the Foundry challan are rejected.</p>
-        <button type="button" class="btn primary" style="width:100%" onclick="bucketStartScanning()">Start scanning</button>
+        <button type="button" class="btn primary" style="width:100%;margin-bottom:0" onclick="bucketStartScanning()">Start scanning</button>
       </div>
       <div id="bucket-screen-scan" style="display:none">
         <div class="bucket-scan-viewport" id="bucket-scan-viewport">
@@ -934,7 +973,6 @@
           <div id="bucket-focus-reticle" class="bucket-focus-reticle" aria-hidden="true"></div>
           <div id="bucket-scan-flash" class="bucket-scan-flash"></div>
         </div>
-        <p class="bucket-scan-focus-hint">Aim QR in frame · tap to scan</p>
         <div style="margin-top:12px;font-size:14px;font-weight:600;color:var(--text1)" id="bucket-score-label">0 / 0 units verified</div>
         <div class="bucket-score-bar"><div id="bucket-score-bar-fill" class="bucket-score-bar-fill"></div></div>
         <div id="bucket-scan-status" class="bucket-scan-status" role="status" aria-live="polite"></div>
@@ -976,6 +1014,120 @@
 <script src="/js/cosmos-modules-catalog.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-module-switch.js?v=20260524-sidebar-minimal" defer></script>
 <script src="/js/cosmos-bucket-scan.js?v=20260528-partial-receive" defer></script>
-<script src="/js/storepilot-prototype.js?v=20260602-day-store-collection" defer></script>
+<div id="overlay-sp-gatepass-checkin" class="sp-gatepass-overlay" role="dialog" aria-modal="true" aria-labelledby="sp-gatepass-checkin-title">
+  <div class="sp-ci-sheet" onclick="event.stopPropagation()">
+    <div class="sp-ci-handle-bar" aria-hidden="true"></div>
+    <div class="sp-ci-header">
+      <h2 id="sp-gatepass-checkin-title" class="sp-ci-title">Check In</h2>
+      <button type="button" class="sp-ci-close" id="sp-gatepass-checkin-cancel" aria-label="Close">&times;</button>
+    </div>
+    <p class="sp-ci-subtitle">Enter mobile and name for a new visit. One active check-in per mobile number.</p>
+
+    <div class="cosmos-cx-search-wrap" data-ci-bubble="1">
+      <input id="sp-gatepass-checkin-phone" class="sp-ci-field" type="tel" inputmode="tel" autocomplete="tel" placeholder="10-digit mobile" aria-label="Visitor mobile">
+    </div>
+    <div id="sp-ci-bubble-results" class="sp-ci-results" hidden></div>
+
+    <input id="sp-gatepass-checkin-name" class="sp-ci-field" type="text" autocomplete="name" placeholder="Full name">
+    <select id="sp-gatepass-checkin-purpose" class="sp-ci-field sp-ci-field--select" aria-label="Visit purpose"></select>
+    <textarea id="sp-gatepass-checkin-notes" class="sp-ci-field" rows="2" placeholder="Notes (optional)"></textarea>
+
+    <div class="sp-ci-cta">
+      <button type="button" class="sp-ci-btn-cancel" id="sp-gatepass-checkin-cancel-btn">Cancel</button>
+      <button type="button" class="sp-ci-btn-submit" id="sp-gatepass-checkin-submit">Check In</button>
+    </div>
+  </div>
+  <div id="sp-gatepass-checkin-backdrop" style="position:absolute;inset:0" tabindex="-1" aria-hidden="true"></div>
+</div>
+
+<div id="overlay-sp-gatepass-actions" class="sp-gatepass-overlay" role="dialog" aria-modal="true" aria-labelledby="sp-gatepass-actions-title">
+  <div class="sp-gatepass-sheet" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 id="sp-gatepass-actions-title" class="modal-title">Visitor</h2>
+      <button type="button" class="modal-close" id="sp-gatepass-actions-dismiss" aria-label="Close">&times;</button>
+    </div>
+    <div id="sp-gatepass-actions-summary" style="margin-bottom:16px"></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button type="button" class="btn primary" id="sp-gatepass-action-add-rx">+ Add Rx</button>
+      <button type="button" class="btn primary" id="sp-gatepass-action-assign">Assign to me</button>
+      <button type="button" class="btn" id="sp-gatepass-action-inservice">Mark in service</button>
+      <button type="button" class="btn" id="sp-gatepass-action-close">Close visit</button>
+    </div>
+  </div>
+  <div id="sp-gatepass-actions-backdrop" style="position:absolute;inset:0" tabindex="-1" aria-hidden="true"></div>
+</div>
+
+<!-- Add Rx modal — 3-step wizard -->
+<div class="overlay" id="modal-add-rx" style="display:none" role="dialog" aria-modal="true" aria-labelledby="rx-modal-title" onclick="if(event.target===this)closeRxModal()">
+  <div class="cx-modal rx-wizard-modal" onclick="event.stopPropagation()">
+    <div class="cx-mh">
+      <div class="cx-mt" id="rx-modal-title">Record prescription</div>
+      <button type="button" class="cx-mclose" id="rx-modal-close-btn" aria-label="Close">✕</button>
+    </div>
+    <div class="cx-mb" style="padding:0;display:flex;flex-direction:column;min-height:0">
+      <nav id="rx-modal-stepnav" class="rx-stepnav" role="tablist" aria-label="Rx steps"></nav>
+      <div id="rx-modal-pane" class="rx-wizard-scroll"></div>
+      <div id="rx-modal-error" style="color:var(--red);font-size:12px;display:none;padding:0 18px"></div>
+      <footer class="rx-wizard-foot">
+        <button type="button" class="btn" id="rx-modal-back-btn" hidden>← Back</button>
+        <div style="display:flex;gap:8px;margin-left:auto">
+          <button type="button" class="btn" id="rx-modal-cancel-btn">Cancel</button>
+          <button type="button" class="btn primary" id="rx-modal-next-btn">Next: Lifestyle →</button>
+          <button type="button" class="btn primary" id="rx-modal-save-btn" hidden>Save Rx</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+</div>
+
+<script src="/js/rx-modal.js?v=20260604-rx-v3" defer></script>
+<script src="/js/storepilot-gatepass.js?v=gatepass-checkin-dedupe-v6" defer></script>
+<script src="/js/storepilot-prototype.js?v=gatepass-fab" defer></script>
+
+<div id="sp-gp-fab-root" hidden>
+  <button type="button" id="sp-gp-fab" class="sp-gp-fab" aria-label="GatePass" aria-expanded="false">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M13 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+      <path d="M18 17a5 5 0 0 0-10 0"/>
+      <path d="M6 11a4 4 0 0 0-4 4h3"/>
+    </svg>
+    <span id="sp-gp-fab-badge" class="sp-gp-fab-badge" hidden aria-live="polite">0</span>
+  </button>
+  <div id="sp-gp-fab-panel" class="sp-gp-fab-panel" hidden role="dialog" aria-label="GatePass">
+    <div class="sp-gp-fab-panel-head">
+      <span class="sp-gp-fab-panel-title">GatePass</span>
+      <button type="button" id="sp-gp-fab-close" class="sp-gp-fab-close" aria-label="Close">&times;</button>
+    </div>
+    <div id="sp-gp-contacts-container"></div>
+    <div class="sp-gp-fab-panel-footer">
+      <button type="button" id="sp-gp-fab-checkin" class="btn primary sm" hidden>+ Check In</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Mobile: Bottom Tab Bar ────────────────────────────────────────────── -->
+<nav class="sp-bottom-tabs" role="tablist" aria-label="Main navigation">
+  <button class="sp-btab active" data-storepilot-menu="dashboard" onclick="spNav('dashboard',this)" role="tab" tabindex="0" aria-label="Dashboard">
+    <span class="sp-btab-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/></svg></span>
+    <span class="sp-btab-label">Dashboard</span>
+  </button>
+  <button class="sp-btab" data-storepilot-menu="visitors" onclick="spNav('visitors',this)" role="tab" tabindex="0" aria-label="GatePass">
+    <span class="sp-btab-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="6" r="3"/><path d="M4 17c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg></span>
+    <span class="sp-btab-label">GatePass</span>
+  </button>
+  <button class="sp-btab" data-storepilot-menu="stock-browse" onclick="spNav('stock-browse',this)" role="tab" tabindex="0" aria-label="Stock">
+    <span class="sp-btab-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 7l8-4 8 4-8 4-8-4z"/><path d="M2 12l8 4 8-4"/><line x1="10" y1="3" x2="10" y2="16"/></svg></span>
+    <span class="sp-btab-label">Stock</span>
+  </button>
+  <button class="sp-btab" data-storepilot-menu="transfers-history" onclick="spNav('transfers-history',this)" role="tab" tabindex="0" aria-label="Transfers">
+    <span class="sp-btab-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h14"/><path d="M14 4l3 3-3 3"/><path d="M17 13H3"/><path d="M6 10l-3 3 3 3"/></svg></span>
+    <span class="sp-btab-label">Transfers</span>
+  </button>
+  <button class="sp-btab sp-btab-more" onclick="spToggleMoreSheet()" role="tab" tabindex="0" aria-label="More" aria-expanded="false">
+    <span class="sp-btab-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="16" cy="10" r="1.5" fill="currentColor"/></svg></span>
+    <span class="sp-btab-label">More</span>
+  </button>
+</nav>
+
 </body>
 </html>

@@ -2,20 +2,25 @@
    Scope: registered at / — only caches Store Pilot shell + shared static assets + login.
    Strategy: network-only for /api/*; network-first for /js/* and /css/*; cache-first fallback for other static. */
 
-var CACHE_NAME = 'storepilot-v6-pwa-update';
+var CACHE_NAME = 'storepilot-v10-gatepass-ci';
 
 var SHELL_URLS = [
   '/',
   '/login.html',
   '/storepilot/dashboard',
   '/css/cosmos-ui-polish.css',
+  '/css/cosmos-time-monitor.css',
   '/css/fonts.css',
   '/js/cosmos-ui-polish.js',
+  '/js/cosmos-time-monitor.js',
   '/js/cosmos-modules-catalog.js',
   '/js/cosmos-module-switch.js',
   '/js/cosmos-bucket-scan.js',
   '/js/cosmos-record-list.js',
   '/js/storepilot-prototype.js',
+  '/js/storepilot-gatepass.js',
+  '/js/cosmos-cx-search.js',
+  '/css/cosmos-cx-search.css',
   '/js/storepilot-pwa.js',
   '/js/cosmos-pwa-update.js',
   '/js/login.js',

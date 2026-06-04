@@ -37,6 +37,19 @@ var cxApiGet = function (p) {
   return cxApiFetch('GET', p)
 }
 
+if (typeof window.openModal !== 'function') {
+  window.openModal = function (id) {
+    var el = document.getElementById(id)
+    if (el) el.classList.add('open')
+  }
+}
+if (typeof window.closeModal !== 'function') {
+  window.closeModal = function (id) {
+    var el = document.getElementById(id)
+    if (el) el.classList.remove('open')
+  }
+}
+
 function escCx (s) {
   if (!s) return ''
   return String(s)
@@ -81,13 +94,93 @@ window.cosmosCxAllows = function cosmosCxAllows (keys) {
   return false
 }
 
+var _cxGpPurposeInited = false
+
+window.cxInitGatepassPurposeSettings = function cxInitGatepassPurposeSettings () {
+  var canView = window.cosmosCxAllows(['cx.customers.view', 'cx.admin'])
+  var canEdit = window.cosmosCxAllows(['cx.admin'])
+  var hint = document.getElementById('cx-gp-purpose-readonly-hint')
+  if (hint) hint.style.display = canView && !canEdit ? 'block' : 'none'
+  if (!canView) {
+    var tbody = document.getElementById('cx-gp-purpose-tbody')
+    if (tbody) {
+      tbody.innerHTML =
+        '<tr><td colspan="7" class="td-muted" style="text-align:center;padding:20px">No permission to view CX settings.</td></tr>'
+    }
+    return
+  }
+  if (!window.cosmosGatepassPurposeAdmin) return
+  if (!_cxGpPurposeInited) {
+    window.cosmosGatepassPurposeAdmin.init({
+      tbodyId: 'cx-gp-purpose-tbody',
+      addBtnId: 'cx-gp-purpose-add-btn',
+      newModalId: 'modal-cx-new-gp-purpose',
+      editModalId: 'modal-cx-edit-gp-purpose',
+      newKeyId: 'cx-gp-new-key',
+      newLabelId: 'cx-gp-new-label',
+      newBadgeId: 'cx-gp-new-badge',
+      newSortId: 'cx-gp-new-sort',
+      newErrorId: 'cx-gp-new-error',
+      newSaveBtnId: 'cx-gp-new-save-btn',
+      editTitleId: 'cx-gp-edit-title',
+      editKeyId: 'cx-gp-edit-key',
+      editLabelId: 'cx-gp-edit-label',
+      editBadgeId: 'cx-gp-edit-badge',
+      editSortId: 'cx-gp-edit-sort',
+      editActiveId: 'cx-gp-edit-active',
+      editErrorId: 'cx-gp-edit-error',
+      editSaveBtnId: 'cx-gp-edit-save-btn',
+      editDeactivateBtnId: 'cx-gp-edit-deactivate-btn',
+      canEdit: canEdit,
+      escHtml: escCx,
+      get: function (p) {
+        return cxApiFetch('GET', p).then(function (r) { return r.data })
+      },
+      post: function (p, body) {
+        return cxApiFetch('POST', p, body).then(function (r) { return r.data })
+      },
+      put: function (p, body) {
+        return cxApiFetch('PUT', p, body).then(function (r) { return r.data })
+      },
+      del: function (p) {
+        return cxApiFetch('DELETE', p).then(function (r) { return r.data })
+      }
+    })
+    _cxGpPurposeInited = true
+  }
+  if (window.cosmosGatepassPurposeAdmin.setCanEdit) {
+    window.cosmosGatepassPurposeAdmin.setCanEdit(canEdit)
+  }
+  void window.cosmosGatepassPurposeAdmin.reload()
+}
+
 function cxApplyFinePermissionsUi () {
-  var dash = document.querySelector('[data-cx-page="dashboard"]')
-  var cust = document.querySelector('[data-cx-page="customers"]')
-  var off = document.querySelector('[data-cx-page="offers"]')
-  if (dash) dash.style.display = window.cosmosCxAllows(['cx.dashboard.view']) ? '' : 'none'
-  if (cust) cust.style.display = window.cosmosCxAllows(['cx.customers.view']) ? '' : 'none'
-  if (off) off.style.display = window.cosmosCxAllows(['cx.offers.view', 'cx.offers.manage']) ? '' : 'none'
+  var settingsAllowed = window.cosmosCxAllows(['cx.customers.view', 'cx.admin'])
+  document.querySelectorAll('[data-cx-page="settings"]').forEach(function (el) {
+    el.hidden = !settingsAllowed
+    el.style.display = settingsAllowed ? '' : 'none'
+  })
+  document.querySelectorAll('[data-cx-page="dashboard"]').forEach(function (el) {
+    el.style.display = window.cosmosCxAllows(['cx.dashboard.view']) ? '' : 'none'
+  })
+  document.querySelectorAll('[data-cx-page="customers"]').forEach(function (el) {
+    el.style.display = window.cosmosCxAllows(['cx.customers.view']) ? '' : 'none'
+  })
+  // GatePass visitors tab — uses gatepass.view (non-cx-prefixed permission)
+  var hasGpView = (typeof hasAnyPermission === 'function' && hasAnyPermission(['gatepass.view']))
+    || (function () {
+      try {
+        var u = JSON.parse(sessionStorage.getItem('cosmos_user') || '{}');
+        return String(u.role || '').toLowerCase() === 'super_admin';
+      } catch (_) { return false; }
+    }())
+  document.querySelectorAll('[data-cx-page="visitors"]').forEach(function (el) {
+    el.hidden = !hasGpView
+    el.style.display = hasGpView ? '' : 'none'
+  })
+  document.querySelectorAll('[data-cx-page="offers"]').forEach(function (el) {
+    el.style.display = window.cosmosCxAllows(['cx.offers.view', 'cx.offers.manage']) ? '' : 'none'
+  })
   var newOfferBtn = document.getElementById('cx-btn-new-offer')
   if (newOfferBtn) newOfferBtn.style.display = 'none'
   var gmEye = document.getElementById('gm-eye-test-btn')
@@ -663,7 +756,9 @@ function cxOrderStatusBadge (status) {
 var CX_PAGE_PATHS = {
   dashboard: '/cx/dashboard',
   customers: '/cx/customers',
-  offers:    '/cx/offers'
+  offers:    '/cx/offers',
+  settings:  '/cx/settings',
+  visitors:  '/cx/visitors'
 }
 
 function cxGetPageFromPath (pathname) {
@@ -678,34 +773,19 @@ function cxGetPageFromPath (pathname) {
 }
 
 function cxGetNavEl (id) {
-  return document.querySelector('.sidebar-nav .nav-item[data-cx-page="' + id + '"]') || null
-}
-
-window.cxOpenSidebar = function cxOpenSidebar () {
-  var sb = document.getElementById('cx-sidebar') || document.querySelector('.sidebar')
-  var ov = document.getElementById('cx-sidebar-overlay')
-  if (sb) sb.classList.add('open')
-  if (ov) ov.classList.add('open')
-  if (window.cosmosLockAppBodyScroll) window.cosmosLockAppBodyScroll()
-  else document.body.style.overflow = 'hidden'
-  var btn = document.getElementById('cx-menu-toggle')
-  if (btn) btn.setAttribute('aria-expanded', 'true')
-}
-
-window.cxCloseSidebar = function cxCloseSidebar () {
-  var sb = document.getElementById('cx-sidebar') || document.querySelector('.sidebar')
-  var ov = document.getElementById('cx-sidebar-overlay')
-  if (sb) sb.classList.remove('open')
-  if (ov) ov.classList.remove('open')
-  document.body.style.overflow = ''
-  var btn = document.getElementById('cx-menu-toggle')
-  if (btn) btn.setAttribute('aria-expanded', 'false')
+  return (
+    document.querySelector('.cosmos-topnav-tabs .cosmos-tab[data-cx-page="' + id + '"]') ||
+    document.querySelector('.cosmos-bottom-tabs .cosmos-btab[data-cx-page="' + id + '"]') ||
+    null
+  )
 }
 
 var CX_BC_MAP = {
   dashboard: 'Dashboard',
   customers: 'Customers',
-  offers:    'Customer Offers'
+  offers:    'Customer Offers',
+  settings:  'CX Settings',
+  visitors:  'GatePass'
 }
 
 function cxRebuildStatCards () {
@@ -739,17 +819,19 @@ window.cxNav = function (id, el, options) {
   if (id !== 'customer360' && typeof window.cx360Teardown === 'function') {
     window.cx360Teardown()
   }
-  document.body.classList.remove('cx-page-dashboard', 'cx-page-customers', 'cx-page-offers', 'cx-page-customer360')
+  document.body.classList.remove('cx-page-dashboard', 'cx-page-customers', 'cx-page-offers', 'cx-page-settings', 'cx-page-customer360', 'cx-page-visitors')
   if (id && id !== 'customer360') document.body.classList.add('cx-page-' + id)
   document.querySelectorAll('.main .page').forEach(function (p) {
     p.classList.remove('active')
   })
-  document.querySelectorAll('.sidebar-nav .nav-item').forEach(function (n) {
+  document.querySelectorAll('.cosmos-tab[data-cx-page], .cosmos-btab[data-cx-page]').forEach(function (n) {
     n.classList.remove('active')
   })
   var page = document.getElementById('page-' + id)
   if (page) page.classList.add('active')
-  if (el) el.classList.add('active')
+  document.querySelectorAll('[data-cx-page="' + id + '"]').forEach(function (n) {
+    if (n.style.display !== 'none') n.classList.add('active')
+  })
   var bc = document.getElementById('cx-bc')
   if (bc) bc.textContent = CX_BC_MAP[id] || id
   var nextPath = CX_PAGE_PATHS[id] || '/cx/dashboard'
@@ -759,7 +841,11 @@ window.cxNav = function (id, el, options) {
   if (id === 'dashboard') window.loadCxDashboardPage()
   if (id === 'customers') window.loadCxCustomersPage()
   if (id === 'offers' && typeof window.loadOffersPage === 'function') window.loadOffersPage()
-  if (typeof window.cxCloseSidebar === 'function') window.cxCloseSidebar()
+  if (id === 'visitors' && typeof window.cxGpLoadVisitorsPage === 'function') window.cxGpLoadVisitorsPage()
+  if (id === 'settings' && typeof window.cxInitGatepassPurposeSettings === 'function') {
+    window.cxInitGatepassPurposeSettings()
+  }
+  if (window.cosmosResetAppScroll) window.cosmosResetAppScroll()
 }
 
 function cxApplyRouteFromPath () {
@@ -785,6 +871,15 @@ function cxApplyRouteFromPath () {
     if (pid === 'dashboard') return window.cosmosCxAllows(['cx.dashboard.view'])
     if (pid === 'customers') return window.cosmosCxAllows(['cx.customers.view'])
     if (pid === 'offers') return window.cosmosCxAllows(['cx.offers.view', 'cx.offers.manage'])
+    if (pid === 'settings') {
+      return window.cosmosCxAllows(['cx.customers.view', 'cx.admin'])
+    }
+    if (pid === 'visitors') {
+      return (typeof hasAnyPermission === 'function' && hasAnyPermission(['gatepass.view']))
+        || (function () {
+          try { return String(JSON.parse(sessionStorage.getItem('cosmos_user') || '{}').role || '').toLowerCase() === 'super_admin'; } catch (_) { return false; }
+        }())
+    }
     return true
   }
   if (!allowed(pageId)) {
@@ -878,20 +973,12 @@ window.cxDashReloadOrdersTable = async function () {
     var sel = document.getElementById('cx-dash-orders-status')
     var filt = sel && sel.value ? String(sel.value) : ''
     var emptyHead = 'No orders yet'
-    var emptySub = filt === 'COMPLETED'
-      ? 'Completed sales appear here. Store OS hides completed bills on the tablet Orders screen.'
-      : filt === '__ALL__'
-        ? 'No orders match across stores yet.'
-        : 'Active (non-completed) POS orders appear here. Use Completed filter for settled bills.'
     if (!orders.length) {
       tbodyO.innerHTML =
         '<tr><td colspan="6" class="empty" style="border:none">' +
         '<div class="empty-ic">\uD83E\uDDE9</div>' +
-        '<div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px">' +
+        '<div style="font-size:15px;font-weight:600;color:var(--text1)">' +
         emptyHead +
-        '</div>' +
-        '<div style="font-size:13px;color:var(--text2);margin-bottom:16px">' +
-        emptySub +
         '</div>' +
         '</td></tr>'
       return
@@ -1246,9 +1333,7 @@ document.addEventListener('DOMContentLoaded', function () {
     cxLoadUser()
     cxApplyFinePermissionsUi()
     cxApplyRouteFromPath()
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') window.cxCloseSidebar()
-    })
+    if (typeof window.cxGpInit === 'function') window.cxGpInit()
     function cxBindCustomerPick (root, key) {
       if (!root || root.dataset[key]) return
       root.dataset[key] = '1'

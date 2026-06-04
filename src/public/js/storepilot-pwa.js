@@ -53,18 +53,11 @@
   }
 
   function showInstallBanner() {
-    if (isStandalone() || installDismissedRecently() || !deferredPrompt) return;
-    var el = document.getElementById('sp-pwa-install-banner');
-    if (el) el.hidden = false;
+    hideBanner();
   }
 
   function showIosHint() {
-    if (isStandalone() || !isIosSafari()) return;
-    try {
-      if (localStorage.getItem(LS_IOS_HINT)) return;
-    } catch (_) { return; }
-    var el = document.getElementById('sp-pwa-ios-hint');
-    if (el) el.hidden = false;
+    hideIosHint();
   }
 
   window.spPwaDismissInstall = function () {
@@ -74,9 +67,6 @@
 
   window.spPwaInstall = async function () {
     if (!deferredPrompt) {
-      if (typeof window.cosmosToastInfo === 'function') {
-        window.cosmosToastInfo('Use your browser menu to install this app.');
-      }
       return;
     }
     var btn = document.getElementById('sp-pwa-install-btn');
@@ -153,9 +143,7 @@
     registerServiceWorker();
     bindNetworkToasts();
     updateLoginOfflineMsg();
-    if (!isStandalone()) {
-      showInstallBanner();
-      showIosHint();
-    }
+    hideBanner();
+    hideIosHint();
   });
 })();

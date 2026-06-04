@@ -84,8 +84,8 @@ Sidebar **header** shows only “Cosmos ERP” branding — not the module title
 
 ## Status
 
-**Implemented** across Foundry, StorePilot, Finance, CX, and Command Unit (May 2026).
+**Updated Jun 2026:** Footer icon strip removed. Sidebar shows a single **Switch module** text link → `/hub` when the user has 2+ modules.
 
 - Catalog: `src/config/cosmosModulesCatalog.js` + `src/public/js/cosmos-modules-catalog.js`
-- UI: `cosmos-module-switch.js`, styles in `cosmos-ui-polish.css`
+- UI: `cosmos-module-switch.js`, `.cosmos-module-hub-link` in `cosmos-ui-polish.css`
 - Vertical “Switch Module” nav blocks removed from all five prototypes

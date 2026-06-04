@@ -98,6 +98,106 @@
     return String(row.display_name || row.full_name || row.primary_name || '').trim() || ('Cx #' + row.customer_id);
   }
 
+  function gpInitials(name) {
+    var parts = String(name || '').trim().split(/\s+/);
+    if (!parts[0]) return '?';
+    return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+  }
+
+  function buildBubble(label, name, avatarCls, tagText, tagCls, onClick) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sp-ci-bubble';
+    btn.innerHTML =
+      '<div class="sp-ci-bubble-av ' + avatarCls + '">' + escapeHtml(gpInitials(name)) + '</div>'
+      + '<div class="sp-ci-bubble-name">' + escapeHtml(String(name || '').split(' ')[0].slice(0, 8)) + '</div>'
+      + '<span class="sp-ci-bubble-tag ' + tagCls + '">' + escapeHtml(tagText) + '</span>';
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  /** Check-in modal: no visitor/Cx lists — only warn if this mobile is already active in queue. */
+  function renderCheckinNewOnly(container, inStore, fragment) {
+    container.innerHTML = '';
+    var digits = normalizeDigits(fragment);
+    if (digits.length !== 10) {
+      container.hidden = true;
+      return;
+    }
+    var active = null;
+    for (var i = 0; i < inStore.length; i += 1) {
+      if (normalizeDigits(inStore[i].phone) === digits) {
+        active = inStore[i];
+        break;
+      }
+    }
+    if (!active) {
+      container.hidden = true;
+      return;
+    }
+    container.hidden = false;
+    var warn = document.createElement('div');
+    warn.className = 'sp-ci-duplicate-warn';
+    warn.setAttribute('role', 'alert');
+    warn.textContent =
+      active.name +
+      ' is already in the queue (' +
+      (active.status === 'in_service' ? 'in service' : 'waiting') +
+      '). Finish or exit that visit before checking in again.';
+    container.appendChild(warn);
+  }
+
+  function renderBubbleResults(container, inStore, exited, cxProfiles, fragment, inst) {
+    container.innerHTML = '';
+    var hasAny = cxProfiles.length || inStore.length || exited.length;
+    if (!hasAny) { container.hidden = true; return; }
+    container.hidden = false;
+
+    var digits = normalizeDigits(fragment);
+
+    if (digits.length === 10 && cxProfiles.length) {
+      var lbl1 = document.createElement('div');
+      lbl1.className = 'sp-ci-results-label';
+      lbl1.textContent = 'CX PROFILES';
+      container.appendChild(lbl1);
+      var row1 = document.createElement('div');
+      row1.className = 'sp-ci-bubble-row';
+      cxProfiles.forEach(function (cx) {
+        row1.appendChild(buildBubble('cx', cxDisplayName(cx), 'sp-ci-bubble-av--cx', 'Cx profile', 'sp-ci-bubble-tag--cx', function () {
+          inst.handleSelectCx(cx);
+        }));
+      });
+      container.appendChild(row1);
+    }
+
+    if (inStore.length) {
+      var div1 = document.createElement('div'); div1.className = 'sp-ci-section-divider'; container.appendChild(div1);
+      var lbl2 = document.createElement('div'); lbl2.className = 'sp-ci-results-label'; lbl2.textContent = 'IN STORE NOW'; container.appendChild(lbl2);
+      var row2 = document.createElement('div'); row2.className = 'sp-ci-bubble-row';
+      inStore.forEach(function (v) {
+        var cls = v.status === 'in_service' ? 'sp-ci-bubble-av--svc' : 'sp-ci-bubble-av--wait';
+        var tag = v.status === 'in_service' ? 'In service' : 'Waiting';
+        var tagCls = v.status === 'in_service' ? 'sp-ci-bubble-tag--svc' : 'sp-ci-bubble-tag--wait';
+        row2.appendChild(buildBubble('vis', v.name, cls, tag, tagCls, function () { inst.handleSelect(v); }));
+      });
+      container.appendChild(row2);
+    } else if (digits.length >= 3) {
+      var div1b = document.createElement('div'); div1b.className = 'sp-ci-section-divider'; container.appendChild(div1b);
+      var lbl2b = document.createElement('div'); lbl2b.className = 'sp-ci-results-label'; lbl2b.textContent = 'IN STORE NOW'; container.appendChild(lbl2b);
+      var emp1 = document.createElement('div'); emp1.className = 'sp-ci-results-empty'; emp1.textContent = 'No visitors in store'; container.appendChild(emp1);
+    }
+
+    if (exited.length) {
+      var div2 = document.createElement('div'); div2.className = 'sp-ci-section-divider'; container.appendChild(div2);
+      var lbl3 = document.createElement('div'); lbl3.className = 'sp-ci-results-label'; lbl3.textContent = 'LAST EXITED (24H)'; container.appendChild(lbl3);
+      var row3 = document.createElement('div'); row3.className = 'sp-ci-bubble-row';
+      exited.slice(0, 3).forEach(function (v) {
+        row3.appendChild(buildBubble('ex', v.name, 'sp-ci-bubble-av--exit', 'Exited', 'sp-ci-bubble-tag--exit', function () { inst.handleSelect(v); }));
+      });
+      container.appendChild(row3);
+    }
+  }
+
   function buildCxRow(customer, fragment, inst) {
     var btn = document.createElement('button');
     btn.type = 'button';
@@ -286,6 +386,7 @@
     var inst = {
       inputEl: inputEl,
       dropdown: dropdown,
+      bubbleResultsEl: opts.bubbleResultsEl || null,
       storeId: opts.storeId,
       apiGet: opts.apiGet,
       apiPatch: opts.apiPatch,
@@ -293,6 +394,7 @@
       onCheckInNew: opts.onCheckInNew,
       onCreateCx: opts.onCreateCx,
       canSearchCx: opts.canSearchCx === true,
+      checkinNewOnly: opts.checkinNewOnly === true,
       debounceMs: opts.debounceMs || 150,
       _timer: null,
       destroy: function () {
@@ -303,25 +405,45 @@
       close: function () {
         dropdown.hidden = true;
         inputEl.setAttribute('aria-expanded', 'false');
+        if (inst.bubbleResultsEl) inst.bubbleResultsEl.hidden = true;
       },
       fetchAndRender: function () {
         var fragment = normalizeDigits(inputEl.value);
-        showSkeleton(dropdown);
+        if (!inst.checkinNewOnly && !inst.bubbleResultsEl) showSkeleton(dropdown);
         var url = '/api/gatepass/search?storeId=' + encodeURIComponent(inst.storeId)
           + '&phone=' + encodeURIComponent(fragment);
-        var cxUrl = '/api/pos/customer-search?q=' + encodeURIComponent(fragment);
 
-        return loadPurposes(inst.apiGet).then(function () {
-          return inst.apiGet(url);
-        }).then(function (gpPayload) {
+        var chain = inst.checkinNewOnly
+          ? inst.apiGet(url)
+          : loadPurposes(inst.apiGet).then(function () {
+            return inst.apiGet(url);
+          });
+
+        return chain.then(function (gpPayload) {
           var data = gpPayload && gpPayload.data ? gpPayload.data : gpPayload;
           var inStore = data.inStore || [];
           var exited = data.exited || [];
           var cxProfiles = Array.isArray(data.cxProfiles) ? data.cxProfiles.slice() : [];
 
+          if (inst.checkinNewOnly) {
+            if (inst.bubbleResultsEl) {
+              renderCheckinNewOnly(inst.bubbleResultsEl, inStore, fragment);
+            }
+            dropdown.hidden = true;
+            inputEl.setAttribute('aria-expanded', 'false');
+            return;
+          }
+
+          var cxUrl = '/api/pos/customer-search?q=' + encodeURIComponent(fragment);
+
           function done(profiles) {
-            renderDropdown(dropdown, inStore, exited, profiles, fragment, inst);
-            inputEl.setAttribute('aria-expanded', 'true');
+            if (inst.bubbleResultsEl) {
+              renderBubbleResults(inst.bubbleResultsEl, inStore, exited, profiles, fragment, inst);
+              dropdown.hidden = true;
+            } else {
+              renderDropdown(dropdown, inStore, exited, profiles, fragment, inst);
+              inputEl.setAttribute('aria-expanded', 'true');
+            }
           }
 
           if (fragment.length === 10 && !cxProfiles.length && resolveCanSearchCx(inst) && inst.apiGet) {
@@ -409,13 +531,21 @@
     inputEl.setAttribute('aria-autocomplete', 'list');
     inputEl.setAttribute('aria-expanded', 'false');
 
-    inputEl.addEventListener('focus', function () {
-      void inst.fetchAndRender();
-    });
+    if (!inst.checkinNewOnly) {
+      inputEl.addEventListener('focus', function () {
+        void inst.fetchAndRender();
+      });
+    }
     inputEl.addEventListener('input', function () {
       if (inst._timer) clearTimeout(inst._timer);
       inst._timer = setTimeout(function () {
-        void inst.fetchAndRender();
+        if (inst.checkinNewOnly) {
+          var frag = normalizeDigits(inputEl.value);
+          if (frag.length === 10) void inst.fetchAndRender();
+          else if (inst.bubbleResultsEl) inst.bubbleResultsEl.hidden = true;
+        } else {
+          void inst.fetchAndRender();
+        }
       }, inst.debounceMs);
     });
 
@@ -426,7 +556,7 @@
   }
 
   window.cosmosCxSearch = {
-    BUILD: 'gatepass-cx-fallback-v5',
+    BUILD: 'gatepass-cx-checkin-new-only-v6',
     init: function (opts) {
       return createInstance(opts || {});
     },

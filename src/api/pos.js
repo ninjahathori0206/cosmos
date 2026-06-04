@@ -57,6 +57,28 @@ const membershipSaleService = require('../services/membershipSaleService')
 const { wallClockIso } = require('../lib/cosmosIst')
 const { parseIndiaMobileForSave } = require('../lib/indiaMobile')
 const posCustomerRegister = require('../services/posCustomerRegisterService')
+const cxService = require('../services/cxService')
+
+function mapEyeTestForPos (row) {
+  if (!row) return null
+  return {
+    test_id: row.test_id,
+    tested_at: row.tested_at,
+    patient_name: row.patient_name || row.family_name || null,
+    family_name: row.family_name || null,
+    family_name_id: row.family_name_id,
+    re_sph: row.re_sph,
+    re_cyl: row.re_cyl,
+    re_axis: row.re_axis,
+    re_add: row.re_add,
+    le_sph: row.le_sph,
+    le_cyl: row.le_cyl,
+    le_axis: row.le_axis,
+    le_add: row.le_add,
+    pd: row.pd,
+    lens_type: row.lens_type
+  }
+}
 const {
   resolveMembershipForCustomer,
   getMembershipFamilyForCustomer,
@@ -1751,6 +1773,40 @@ router.get('/membership-plans', ...posMembershipSell, async (req, res, next) => 
       ORDER BY display_name ASC
     `)
     return res.json({ success: true, data: r.recordset || [] })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── GET /api/pos/customers/:customerId/prescriptions/for-pos ───────────────────
+router.get('/customers/:customerId/prescriptions/for-pos', ...posCustomersView, async (req, res, next) => {
+  try {
+    const customerId = parseInt(req.params.customerId, 10)
+    if (!customerId) {
+      return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+    }
+    const pool = await getPool()
+    const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit || '30'), 10) || 30))
+    const rows = await cxService.getCustomerEyeTests(pool, customerId, limit)
+    return res.json({
+      success: true,
+      data: rows.map(mapEyeTestForPos).filter(Boolean)
+    })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+// ── GET /api/pos/customers/:customerId/family-names ────────────────────────────
+router.get('/customers/:customerId/family-names', ...posCustomersView, async (req, res, next) => {
+  try {
+    const customerId = parseInt(req.params.customerId, 10)
+    if (!customerId) {
+      return res.status(400).json({ success: false, message: 'Invalid customer ID.' })
+    }
+    const pool = await getPool()
+    const rows = await cxService.listCustomerFamilyNameRows(pool, customerId)
+    return res.json({ success: true, data: rows })
   } catch (err) {
     return next(err)
   }
